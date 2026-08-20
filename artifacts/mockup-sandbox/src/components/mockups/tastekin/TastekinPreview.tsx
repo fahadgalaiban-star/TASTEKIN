@@ -277,13 +277,13 @@ export function TastekinPreview() {
           <section>
             <span className="tk-kicker">{selectedEdit.access === "locked" ? text("Subscribers only", "للمشتركين فقط") : text("Public Edit", "تعديل عام")}</span>
             <div className={`tk-detail-art ${selectedEdit.access === "locked" && !subscribed ? "tk-detail-locked" : ""}`}>
-              <img className="tk-detail-image" src={selectedEdit.access === "locked" && !subscribed ? selectedEdit.previewImage : selectedEdit.image} alt="" />
+              <img className="tk-detail-image" src={selectedEdit.access === "locked" && !subscribed ? selectedEdit.previewImage : selectedEdit.image} style={{ objectPosition: selectedEdit.imagePosition }} alt="" />
               {selectedEdit.access === "locked" && !subscribed ? <div className="tk-detail-overlay"><div className="tk-lock-mark"><LockKeyhole /></div><strong>{content(selectedEdit, "title")}</strong></div> : <span className="tk-access">{subscribed && selectedEdit.access === "locked" ? text("Unlocked · subscriber", "مفتوح · مشترك") : text("Fheed Alaiban", "فهيد العليبان")}</span>}
             </div>
             {selectedEdit.access === "locked" && !subscribed ? (
               <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وعاداته.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}>{text("Subscribe · $19.99 / month", "اشترك · $19.99 شهريًا")}</button></div>
             ) : (
-              <><h1 className="tk-page-title">{content(selectedEdit, "title")}</h1><p className="tk-page-copy">{content(selectedEdit, "caption")}</p><div className="tk-panel"><span className="tk-kicker">{text("Fheed’s notes", "ملاحظات فهيد")}</span><p>{text("A thoughtful detail worth saving for later. Product and place links are always clearly disclosed.", "تفصيل مدروس يستحق الحفظ لاحقاً. روابط المنتجات والأماكن موضحة دائماً بشفافية.")}</p></div><button className={`tk-button full ${saved.includes(selectedEdit.id) ? "primary" : ""}`} type="button" onClick={() => toggleSave(selectedEdit.id)}>{saved.includes(selectedEdit.id) ? text("Saved", "تم الحفظ") : text("Save this edit", "احفظ هذا التعديل")}</button></>
+              <><h1 className="tk-page-title" dir={textDirection(content(selectedEdit, "title"))}>{content(selectedEdit, "title")}</h1><p className="tk-page-copy" dir={textDirection(content(selectedEdit, "caption"))}>{content(selectedEdit, "caption")}</p><div className="tk-panel"><span className="tk-kicker">{text("Fheed’s notes", "ملاحظات فهيد")}</span><p>{text("A thoughtful detail worth saving for later. Product and place links are always clearly disclosed.", "تفصيل مدروس يستحق الحفظ لاحقاً. روابط المنتجات والأماكن موضحة دائماً بشفافية.")}</p></div><button className={`tk-button full ${saved.includes(selectedEdit.id) ? "primary" : ""}`} type="button" onClick={() => toggleSave(selectedEdit.id)}>{saved.includes(selectedEdit.id) ? text("Saved", "تم الحفظ") : text("Save this edit", "احفظ هذا التعديل")}</button></>
             )}
           </section>
         )}
@@ -363,10 +363,10 @@ function EditCard({ edit, title, caption, onClick, canViewProtected = false, tex
   const showPreview = edit.access === "locked" && !canViewProtected;
   return <button className="tk-card" type="button" onClick={onClick}>
     <div className={`tk-card-art ${showPreview ? "tk-card-protected" : ""}`}>
-      <img className="tk-card-image" src={showPreview ? edit.previewImage : edit.image} alt="" />
+      <img className="tk-card-image" src={showPreview ? edit.previewImage : edit.image} style={{ objectPosition: edit.imagePosition }} alt="" />
       <span className={`tk-access ${edit.access === "locked" ? "is-locked" : ""}`}>{edit.access === "locked" ? <><LockKeyhole size={11} /> {text("Subscribers only", "للمشتركين فقط")}</> : text("Public edit", "تعديل عام")}</span>
     </div>
-    <div className="tk-card-caption"><strong>{title}</strong>{caption && <span>{caption}</span>}</div>
+    <div className="tk-card-caption"><strong dir={textDirection(title)}>{title}</strong>{caption && <span dir={textDirection(caption)}>{caption}</span>}</div>
   </button>;
 }
 
@@ -381,7 +381,7 @@ function Profile({ isOwner, subscribed, following, profileTab, onTabChange, onFo
         <div><div className="tk-name-row"><h1 className="tk-name" dir="ltr">Fheed Alaiban</h1><span className="tk-verified" aria-label={text("Verified", "موثق")}><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait · Style · Travel · Places", "مدينة الكويت، الكويت · أناقة · سفر · أماكن")}</div></div>
       </div>
       <button className="tk-match" type="button" onClick={() => onTabChange("edits")}><Compass size={14} /> {text("92% Taste Match", "تطابق ذوق ٩٢٪")}</button>
-      {isOwner ? <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}><Eye size={14} /> {text("View as visitor", "عرض كزائر")}</button></div> : <div className="tk-actions"><button className="tk-button" type="button" onClick={onFollow}>{following ? text("Following", "تتابعه") : text("Follow", "تابع")}</button><button className="tk-button primary" type="button" onClick={onSubscribe}>{subscribed ? text("Subscribed", "مشترك") : text("Subscribe · $19.99", "اشترك · ١٩٫٩٩$")}</button></div>}
+      {isOwner ? <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}><Eye size={14} /> {text("View as visitor", "عرض كزائر")}</button></div> : <div className="tk-actions"><button className="tk-button" type="button" onClick={onFollow}>{following ? text("Following", "تتابع") : text("Follow", "متابعة")}</button><button className="tk-button primary" type="button" onClick={onSubscribe}>{subscribed ? text("Subscribed", "مشترك") : text("Subscribe · $19.99 / month", "اشترك · $19.99 شهريًا")}</button></div>}
     </div>
     <div className="tk-tab-row">
       {(["edits", "collections", "about"] as const).map((tab) => <button className={`tk-tab ${profileTab === tab ? "is-active" : ""}`} type="button" key={tab} onClick={() => onTabChange(tab)}>{text(tab === "edits" ? "Edits" : tab === "collections" ? "Collections" : "About", tab === "edits" ? "التعديلات" : tab === "collections" ? "المجموعات" : "حول")}</button>)}
@@ -397,10 +397,10 @@ function CollectionCard({ collection, title, description, text, onClick }: { col
   const coverImage = collection.access === "locked" ? cover.previewImage ?? cover.image : cover.image;
   return <button className="tk-collection" type="button" onClick={onClick}>
     <div className="tk-collection-art">
-      <img className="tk-collection-image" src={coverImage} alt="" />
-      {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers", "للمشتركين")}</span>}
+      <img className="tk-collection-image" src={coverImage} style={{ objectPosition: cover.imagePosition }} alt="" />
+      {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers only", "للمشتركين فقط")}</span>}
     </div>
-    <div className="tk-collection-body"><strong>{title}</strong><span>{collection.editIds.length} {text("included edits", "تعديلات متضمنة")}</span><p>{description}</p></div>
+    <div className="tk-collection-body"><strong dir={textDirection(title)}>{title}</strong><span>{collection.editIds.length} {text("included edits", "التعديلات المضمنة")}</span><p dir={textDirection(description)}>{description}</p></div>
   </button>;
 }
 
@@ -411,19 +411,19 @@ function CollectionDetail({ collection, subscribed, text, content, onEdit, onSub
   return <section>
     <span className="tk-kicker">{text("Collection", "مجموعة")}</span>
     <div className="tk-collection-hero">
-      <img src={coverImage} alt="" />
-      {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers", "للمشتركين")}</span>}
+      <img src={coverImage} style={{ objectPosition: cover.imagePosition }} alt="" />
+      {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers only", "للمشتركين فقط")}</span>}
     </div>
-    <h1 className="tk-page-title">{text(collection.title, collection.titleAr)}</h1>
-    <p className="tk-page-copy">{text(collection.description, collection.descriptionAr)}</p>
-    {collection.access === "locked" && !subscribed && <button className="tk-button primary full" type="button" onClick={onSubscribe}>{text("Unlock this collection · $19.99/month", "افتح هذه المجموعة · ١٩٫٩٩ دولار شهرياً")}</button>}
-    <span className="tk-kicker">{text("Included edits", "التعديلات المتضمنة")}</span>
+    <h1 className="tk-page-title" dir={textDirection(text(collection.title, collection.titleAr))}>{text(collection.title, collection.titleAr)}</h1>
+    <p className="tk-page-copy" dir={textDirection(text(collection.description, collection.descriptionAr))}>{text(collection.description, collection.descriptionAr)}</p>
+    {collection.access === "locked" && !subscribed && <button className="tk-button primary full" type="button" onClick={onSubscribe}>{text("Unlock this collection · $19.99 / month", "افتح هذه المجموعة · $19.99 شهريًا")}</button>}
+    <span className="tk-kicker">{text("Included edits", "التعديلات المضمنة")}</span>
     <div className="tk-collection-list">
       {included.map((edit) => {
         const protectedPreview = edit.access === "locked" && !subscribed;
         return <button className="tk-collection-row" key={edit.id} type="button" onClick={() => onEdit(edit)}>
-          <img src={protectedPreview ? edit.previewImage : edit.image} alt="" />
-          <span><strong>{content(edit, "title")}</strong><small>{protectedPreview ? text("Subscribers only", "للمشتركين فقط") : text("Open edit", "افتح التعديل")}</small></span>
+          <img src={protectedPreview ? edit.previewImage : edit.image} style={{ objectPosition: edit.imagePosition }} alt="" />
+          <span><strong dir={textDirection(content(edit, "title"))}>{content(edit, "title")}</strong><small>{protectedPreview ? text("Subscribers only", "للمشتركين فقط") : text("Open edit", "افتح التعديل")}</small></span>
           {protectedPreview ? <LockKeyhole size={16} /> : <ChevronRight size={17} />}
         </button>;
       })}
@@ -438,7 +438,7 @@ function AboutScreen({ onSubscribe, text }: { onSubscribe: () => void; text: (en
     <p className="tk-page-copy">{text("Kuwait City, Kuwait. I share considered style, places worth returning to, quiet travel notes, and routines that make everyday life feel better.", "مدينة الكويت، الكويت. أشارك أناقة مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وعادات تجعل الحياة اليومية أفضل.")}</p>
     <div className="tk-panel"><span className="tk-kicker">{text("Taste pillars", "ركائز الذوق")}</span><p>{text("Style · Travel · Fitness · Places · Food", "الأناقة · السفر · اللياقة · الأماكن · الطعام")}</p></div>
     <div className="tk-panel"><span className="tk-kicker">{text("What subscribers get", "ما يحصل عليه المشتركون")}</span><p>{text("Private travel diaries, complete training notes, product details and early access to new collections.", "مذكرات سفر خاصة، ملاحظات تدريب كاملة، تفاصيل منتجات، ووصول مبكر إلى المجموعات الجديدة.")}</p></div>
-    <button className="tk-button primary full" type="button" onClick={onSubscribe}>{text("Subscribe · $19.99/month", "اشترك · ١٩٫٩٩ دولار شهرياً")}</button>
+    <button className="tk-button primary full" type="button" onClick={onSubscribe}>{text("Subscribe · $19.99 / month", "اشترك · $19.99 شهريًا")}</button>
     <p className="tk-page-copy" style={{ marginTop: 18 }}>{text("Transparency: paid partnerships and affiliate links are always labelled clearly.", "الشفافية: تُعرض الشراكات المدفوعة وروابط الأفلييت بوضوح دائماً.")}</p>
   </section>;
 }
