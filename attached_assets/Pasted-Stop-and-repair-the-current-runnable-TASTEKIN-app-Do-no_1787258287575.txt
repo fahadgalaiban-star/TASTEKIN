@@ -1,0 +1,64 @@
+Stop and repair the current runnable TASTEKIN app. Do not create another Canvas concept and do not redesign the app from scratch.
+
+The latest “Explore different approaches” design is rejected. Remove or ignore all blank, duplicate, and experimental Canvas frames.
+
+Fix the following:
+
+1. Restore the global bottom navigation on every main screen:
+Home, Explore, Add, Saved, You.
+Never replace it with Taste Map, Collections, or About Fheed.
+
+2. Fix the creator profile structure:
+- Compact avatar and profile header.
+- English name: Fheed Alaiban.
+- Arabic name: فهيد العيبان.
+- Username: @fheed.
+- Location: Kuwait City, Kuwait / مدينة الكويت، الكويت.
+- Verification badge.
+- 92% Taste Match.
+- Follow button.
+- Subscribe button at $19.99/month.
+- No public follower count.
+- Tabs: Edits, Collections, About.
+
+3. The category buttons All, Style, Travel, Places, and Routines must only filter the Edits inside the same page. Do not create a separate oversized page for every category.
+
+4. Remove these unnecessary elements:
+- “09 Edits in Orbit”
+- “02 Complete Worlds”
+- “04 Taste Lanes”
+- Repeated “Today’s Focus”
+- Oversized editorial marketing blocks
+- Excessive empty space
+
+5. Populate every section:
+- Edits: public and subscriber-only Edits.
+- Collections: at least two working Collections.
+- About: a compact biography, taste pillars, location, and subscriber benefits.
+No empty tabs or blank pages.
+
+6. Typography:
+- Use a clean, refined modern sans-serif as the primary font.
+- Use Instrument Sans for English.
+- Use IBM Plex Sans Arabic for Arabic.
+- Do not use oversized fashion-magazine serif headlines.
+- Keep headings compact and readable.
+
+7. Layout:
+- Optimize for 390×844 mobile screens.
+- Use consistent margins, card sizes, spacing, and alignment.
+- Nothing may be hidden underneath the fixed bottom navigation.
+- Add correct bottom safe-area padding.
+
+8. Arabic and English:
+- Full RTL layout when Arabic is selected.
+- Full LTR layout when English is selected.
+- Translate navigation, profile tabs, buttons, subscription screens, Collections, About, and filters.
+- Keep English names correctly displayed inside Arabic pages.
+- Format the Arabic price as: 19.99 دولار شهريًا.
+
+9. Preserve the supplied real photos and their correct crops. Do not generate replacement people or reuse the wrong image.
+
+10. Make all tabs, filters, cards, back buttons, Follow, Subscribe, language selection, and owner/visitor switching functional and persistent.
+
+After implementation, test every screen at 390×844 in both Arabic and English. Present one connected live Preview for review and stop. Do not create another alternative design concept, and do not apply the changes to the main version until I approve the Preview.
