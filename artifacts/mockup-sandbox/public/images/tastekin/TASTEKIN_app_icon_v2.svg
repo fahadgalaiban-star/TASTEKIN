@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <title>TASTEKIN — App Icon v2</title>
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FBF9F5"/>
+      <stop offset="1" stop-color="#EEE7DD"/>
+    </linearGradient>
+    <filter id="softShadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="18" result="blur"/>
+      <feOffset dy="18" result="offsetBlur"/>
+      <feFlood flood-color="#171416" flood-opacity=".12" result="shadowColor"/>
+      <feComposite in="shadowColor" in2="offsetBlur" operator="in" result="shadow"/>
+      <feMerge><feMergeNode in="shadow"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <rect width="1024" height="1024" rx="228" fill="url(#canvas)"/>
+  <circle cx="512" cy="512" r="344" fill="#FFFFFF" stroke="#E8E7E1" stroke-width="8"/>
+  <g filter="url(#softShadow)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="82">
+    <path d="M453 332H335c-78 0-141 63-141 141v78c0 78 63 141 141 141h118" stroke="#4B1F2A"/>
+    <path d="M571 332h118c78 0 141 63 141 141v78c0 78-63 141-141 141H571" stroke="#171416"/>
+  </g>
+  <circle cx="512" cy="512" r="58" fill="#E85F42" stroke="#171416" stroke-width="18"/>
+</svg>
