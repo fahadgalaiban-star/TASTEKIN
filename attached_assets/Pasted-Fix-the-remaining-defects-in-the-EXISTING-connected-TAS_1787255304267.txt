@@ -1,0 +1,35 @@
+Fix the remaining defects in the EXISTING connected TASTEKIN preview only. Do not create another Canvas, Design Frame, alternative concept, or separate prototype. Preserve all current working routes, role switching, localization, filters, subscriptions, and persistence.
+
+Required fixes:
+
+1. Use the supplied original yellow-outfit image as Fheed Alaiban’s profile avatar. Do not use the green-polo portrait as the avatar.
+2. Re-crop all supplied photos cleanly from the source assets. Never include baked-in captions, interface text, watermarks, cropped words, or labels inside an image.
+3. Do not crop faces, heads, or important clothing details. Use consistent editorial image ratios and object-position values for mobile.
+4. The bottom navigation active state must match the current page:
+    * Home pages → Home
+    * Explore and visitor discovery → Explore
+    * Saved pages → Saved
+    * Consumer/owner profile and settings → You
+    * Add must only be active on actual creation pages
+5. Use one canonical subscription price everywhere: $19.99 / month in English and $19.99 شهريًا in Arabic. Never use 19,99.
+6. Improve Arabic UI wording:
+    * Follow → متابعة
+    * Following → تتابع
+    * Subscribers Only → للمشتركين فقط
+    * Included Edits → التعديلات المضمنة
+    * Mock checkout → الدفع التجريبي
+7. Arabic interface must remain fully RTL, while English creator names and English content titles keep correct LTR rendering without broken punctuation.
+8. When content language is “Both,” mixed Arabic and English content is allowed. Interface labels must still follow the selected interface language.
+9. Keep the current clean sans-serif typography. Do not reintroduce large serif or italic headings.
+10. Verify that Edits, Collections, About, subscription, owner/visitor switching, and locked-media behavior still work after these fixes.
+
+Test at 390×844 and present screenshots of:
+
+* English Home
+* Arabic Home
+* Fheed owner profile
+* Fheed visitor profile
+* Both collection-detail pages
+* Subscribe page
+
+Stop for review and do not apply changes to the main version automatically.
