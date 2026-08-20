@@ -25,14 +25,15 @@ import "./_group.css";
 type Role = "owner" | "consumer";
 type InterfaceLanguage = "en" | "ar";
 type ContentLanguage = "en" | "ar" | "both";
-type Screen = "home" | "explore" | "saved" | "you" | "profile" | "collections" | "about" | "match" | "edit" | "subscribe";
+type Screen = "home" | "explore" | "saved" | "you" | "profile" | "collections" | "collection-detail" | "about" | "match" | "edit" | "subscribe";
 type Category = "All" | "Following" | "Style" | "Travel" | "Places" | "Routines";
 
 type Edit = {
   id: string;
   category: Exclude<Category, "All" | "Following"> | "Food";
   access: "public" | "locked";
-  art: string;
+  image: string;
+  previewImage?: string;
   title: string;
   titleAr: string;
   caption: string;
@@ -40,20 +41,31 @@ type Edit = {
 };
 
 const edits: Edit[] = [
-  { id: "quiet-tailoring", category: "Style", access: "public", art: "tk-art-style", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة." },
-  { id: "black-uniform", category: "Style", access: "public", art: "tk-art-style", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً." },
-  { id: "private-hotel", category: "Travel", access: "locked", art: "tk-art-travel", title: "Private hotel weekend", titleAr: "عطلة فندقية خاصة", caption: "The stay, the packing list, and where I ate.", captionAr: "الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام." },
-  { id: "coastal-notes", category: "Travel", access: "public", art: "tk-art-travel", title: "Coastal notes", titleAr: "ملاحظات من الساحل", caption: "A slow itinerary for wind, coffee, and open horizons.", captionAr: "برنامج هادئ للهواء والقهوة والأفق المفتوح." },
-  { id: "places-returning", category: "Places", access: "public", art: "tk-art-places", title: "Places worth returning to", titleAr: "أماكن تستحق العودة إليها", caption: "A Kuwaiti table and a London room I keep thinking about.", captionAr: "مائدة كويتية ومكان في لندن لا يفارق ذاكرتي." },
-  { id: "hotel-breakfast", category: "Places", access: "locked", art: "tk-art-places", title: "Hotel breakfast, unhurried", titleAr: "إفطار فندقي بلا استعجال", caption: "My private list for a considered morning.", captionAr: "قائمتي الخاصة لصباح هادئ ومدروس." },
-  { id: "what-i-ordered", category: "Food", access: "public", art: "tk-art-food", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار." },
-  { id: "training-week", category: "Routines", access: "locked", art: "tk-art-routines", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً." },
-  { id: "sunday-reset", category: "Routines", access: "public", art: "tk-art-routines", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط." },
+  { id: "quiet-tailoring", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/quiet-tailoring.webp", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة." },
+  { id: "black-uniform", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/black-uniform.webp", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً." },
+  { id: "private-hotel", category: "Travel", access: "locked", image: "/__mockup/images/tastekin/media/private-hotel-source.webp", previewImage: "/__mockup/images/tastekin/media/private-hotel-preview.webp", title: "Private hotel weekend", titleAr: "عطلة فندقية خاصة", caption: "The stay, the packing list, and where I ate.", captionAr: "الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام." },
+  { id: "coastal-notes", category: "Travel", access: "public", image: "/__mockup/images/tastekin/media/coastal-notes.webp", title: "Coastal notes", titleAr: "ملاحظات من الساحل", caption: "A slow itinerary for wind, coffee, and open horizons.", captionAr: "برنامج هادئ للهواء والقهوة والأفق المفتوح." },
+  { id: "places-returning", category: "Places", access: "public", image: "/__mockup/images/tastekin/media/places-returning.webp", title: "Places worth returning to", titleAr: "أماكن تستحق العودة إليها", caption: "A Kuwaiti table and a London room I keep thinking about.", captionAr: "مائدة كويتية ومكان في لندن لا يفارق ذاكرتي." },
+  { id: "hotel-breakfast", category: "Places", access: "locked", image: "/__mockup/images/tastekin/media/hotel-breakfast-source.webp", previewImage: "/__mockup/images/tastekin/media/hotel-breakfast-preview.webp", title: "Hotel breakfast, unhurried", titleAr: "إفطار فندقي بلا استعجال", caption: "My private list for a considered morning.", captionAr: "قائمتي الخاصة لصباح هادئ ومدروس." },
+  { id: "what-i-ordered", category: "Food", access: "public", image: "/__mockup/images/tastekin/media/what-i-ordered.webp", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار." },
+  { id: "training-week", category: "Routines", access: "locked", image: "/__mockup/images/tastekin/media/training-week-preview.webp", previewImage: "/__mockup/images/tastekin/media/training-week-preview.webp", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً." },
+  { id: "sunday-reset", category: "Routines", access: "public", image: "/__mockup/images/tastekin/media/sunday-reset.webp", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط." },
 ];
 
-const collections = [
-  { id: "quiet-luxury", title: "Quiet Luxury", titleAr: "فخامة هادئة", description: "Tailoring, materials, and a quieter way to dress.", descriptionAr: "تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.", count: 4, access: "public" as const, art: "" },
-  { id: "coastal-edit", title: "The Coastal Edit", titleAr: "اختيارات الساحل", description: "Places, packing and private travel notes.", descriptionAr: "أماكن وحقائب وملاحظات سفر خاصة.", count: 5, access: "locked" as const, art: "coastal" },
+type Collection = {
+  id: string;
+  title: string;
+  titleAr: string;
+  description: string;
+  descriptionAr: string;
+  access: "public" | "locked";
+  editIds: string[];
+  coverEditId: string;
+};
+
+const collections: Collection[] = [
+  { id: "quiet-luxury", title: "Quiet Luxury", titleAr: "فخامة هادئة", description: "Tailoring, materials, and a quieter way to dress.", descriptionAr: "تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.", access: "public", editIds: ["quiet-tailoring", "black-uniform", "places-returning", "what-i-ordered"], coverEditId: "quiet-tailoring" },
+  { id: "coastal-edit", title: "The Coastal Edit", titleAr: "اختيارات الساحل", description: "Places, packing and private travel notes.", descriptionAr: "أماكن وحقائب وملاحظات سفر خاصة.", access: "locked", editIds: ["coastal-notes", "private-hotel", "hotel-breakfast", "sunday-reset"], coverEditId: "private-hotel" },
 ];
 
 const stored = <T,>(key: string, fallback: T): T => {
@@ -78,6 +90,14 @@ function useStored<T>(key: string, fallback: T) {
 }
 
 export function TastekinPreview() {
+  const qa = new URLSearchParams(window.location.search);
+  const qaMode = qa.get("qa") === "1";
+  const qaScreen = qa.get("screen");
+  const qaRole = qa.get("role");
+  const qaLanguage = qa.get("language");
+  const qaContentLanguage = qa.get("content");
+  const qaTab = qa.get("tab");
+  const qaCollection = qa.get("collection");
   const [role, setRole] = useStored<Role>("tastekin-demo-role", "owner");
   const [interfaceLanguage, setInterfaceLanguage] = useStored<InterfaceLanguage>("tastekin-interface-language", "en");
   const [contentLanguage, setContentLanguage] = useStored<ContentLanguage>("tastekin-content-language", "both");
@@ -85,23 +105,27 @@ export function TastekinPreview() {
   const [subscribed, setSubscribed] = useStored("tastekin-subscribed-fheed", false);
   const [saved, setSaved] = useStored<string[]>("tastekin-saved-edits", []);
   const [consumer, setConsumer] = useStored("tastekin-consumer-identity", { name: "Alex Morgan", username: "alexmorgan", demo: true });
-  const [screen, setScreen] = useState<Screen>("home");
+  const [screen, setScreen] = useState<Screen>(() => qaMode && ["home", "explore", "saved", "you", "profile", "collections", "collection-detail", "about", "match", "edit", "subscribe"].includes(qaScreen ?? "") ? qaScreen as Screen : "home");
   const [category, setCategory] = useState<Category>("All");
-  const [profileTab, setProfileTab] = useState<"edits" | "collections" | "about">("edits");
+  const [profileTab, setProfileTab] = useState<"edits" | "collections" | "about">(() => qaMode && ["edits", "collections", "about"].includes(qaTab ?? "") ? qaTab as "edits" | "collections" | "about" : "edits");
   const [selectedEdit, setSelectedEdit] = useState<Edit>(edits[0]);
+  const [selectedCollection, setSelectedCollection] = useState<Collection>(() => qaMode ? collections.find((collection) => collection.id === qaCollection) ?? collections[0] : collections[0]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [newIdentity, setNewIdentity] = useState({ name: "", username: "" });
 
-  const ar = interfaceLanguage === "ar";
-  const isOwner = role === "owner";
+  const displayRole: Role = qaMode && (qaRole === "owner" || qaRole === "consumer") ? qaRole : role;
+  const displayInterfaceLanguage: InterfaceLanguage = qaMode && (qaLanguage === "en" || qaLanguage === "ar") ? qaLanguage : interfaceLanguage;
+  const displayContentLanguage: ContentLanguage = qaMode && (qaContentLanguage === "en" || qaContentLanguage === "ar" || qaContentLanguage === "both") ? qaContentLanguage : contentLanguage;
+  const ar = displayInterfaceLanguage === "ar";
+  const isOwner = displayRole === "owner";
   const text = (en: string, arabic: string) => (ar ? arabic : en);
   const content = (edit: Edit, field: "title" | "caption") => {
-    if (contentLanguage === "ar") return field === "title" ? edit.titleAr : edit.captionAr;
-    if (contentLanguage === "en") return field === "title" ? edit.title : edit.caption;
+    if (displayContentLanguage === "ar") return field === "title" ? edit.titleAr : edit.captionAr;
+    if (displayContentLanguage === "en") return field === "title" ? edit.title : edit.caption;
     return edit.id.length % 2 === 0 ? (field === "title" ? edit.titleAr : edit.captionAr) : (field === "title" ? edit.title : edit.caption);
   };
   const collectionText = (item: (typeof collections)[number], field: "title" | "description") =>
-    contentLanguage === "ar" || (contentLanguage === "both" && item.id === "coastal-edit")
+    displayContentLanguage === "ar" || (displayContentLanguage === "both" && item.id === "coastal-edit")
       ? field === "title" ? item.titleAr : item.descriptionAr
       : field === "title" ? item.title : item.description;
 
@@ -114,6 +138,10 @@ export function TastekinPreview() {
   const showEdit = (edit: Edit) => {
     setSelectedEdit(edit);
     setScreen("edit");
+  };
+  const showCollection = (collection: Collection) => {
+    setSelectedCollection(collection);
+    setScreen("collection-detail");
   };
 
   const toggleSave = (id: string) => setSaved((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id]);
@@ -140,7 +168,7 @@ export function TastekinPreview() {
     <div className="tastekin-preview tk-rtl-fix" dir={ar ? "rtl" : "ltr"}>
       <main className="tk-shell">
         <header className="tk-topbar">
-          {screen !== "home" && screen !== "you" ? backTo(screen === "edit" ? "profile" : "home") : <span style={{ width: 44 }} />}
+          {screen !== "home" && screen !== "you" ? backTo(screen === "edit" ? "profile" : screen === "collection-detail" ? "collections" : "home") : <span style={{ width: 44 }} />}
           <img className="tk-brand" src="/__mockup/images/tastekin/TASTEKIN_logo_horizontal.svg" alt="TASTEKIN" />
           <button className="tk-icon" type="button" onClick={() => setMenuOpen(true)} aria-label={text("Open main menu", "فتح القائمة الرئيسية")}><Settings2 size={20} /></button>
         </header>
@@ -160,7 +188,7 @@ export function TastekinPreview() {
               ))}
             </div>
             <div className="tk-feed">
-              {filteredEdits.length ? filteredEdits.map((edit) => <EditCard key={edit.id} edit={edit} title={content(edit, "title")} caption={content(edit, "caption")} onClick={() => showEdit(edit)} />) : (
+              {filteredEdits.length ? filteredEdits.map((edit) => <EditCard key={edit.id} edit={edit} title={content(edit, "title")} caption={content(edit, "caption")} onClick={() => showEdit(edit)} text={text} />) : (
                 <div className="tk-empty">{text("Nothing here yet. Follow Fheed or choose another taste filter.", "لا يوجد محتوى هنا بعد. تابع فهيد أو اختر فلتر ذوق مختلف.")}</div>
               )}
             </div>
@@ -178,7 +206,7 @@ export function TastekinPreview() {
             onSubscribe={() => setScreen("subscribe")}
             onViewVisitor={openVisitorProfile}
             onEdit={showEdit}
-            onCollection={() => setScreen("collections")}
+            onCollection={showCollection}
             text={text}
             content={content}
           />
@@ -202,16 +230,21 @@ export function TastekinPreview() {
             <p className="tk-page-copy">{text("Complete taste worlds, not a pile of posts.", "عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.")}</p>
             <div className="tk-grid">
               {collections.map((collection) => (
-                <button className="tk-collection" key={collection.id} type="button" onClick={() => setScreen("edit")}>
-                  <div className={`tk-collection-art ${collection.art}`}>
-                    {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers", "للمشتركين")}</span>}
-                    <strong>{collectionText(collection, "title")}</strong>
-                  </div>
-                  <div className="tk-collection-body">{collection.count} {text("ordered edits", "تعديل مرتب")} · {collectionText(collection, "description")}</div>
-                </button>
+                <CollectionCard key={collection.id} collection={collection} title={collectionText(collection, "title")} description={collectionText(collection, "description")} text={text} onClick={() => showCollection(collection)} />
               ))}
             </div>
           </section>
+        )}
+
+        {screen === "collection-detail" && (
+          <CollectionDetail
+            collection={selectedCollection}
+            subscribed={subscribed}
+            text={text}
+            content={content}
+            onEdit={showEdit}
+            onSubscribe={() => setScreen("subscribe")}
+          />
         )}
 
         {screen === "about" && <AboutScreen onSubscribe={() => setScreen("subscribe")} text={text} />}
@@ -232,8 +265,9 @@ export function TastekinPreview() {
         {screen === "edit" && (
           <section>
             <span className="tk-kicker">{selectedEdit.access === "locked" ? text("Subscribers only", "للمشتركين فقط") : text("Public Edit", "تعديل عام")}</span>
-            <div className={`tk-detail-art ${selectedEdit.art} ${selectedEdit.access === "locked" && !subscribed ? "tk-art-lock" : ""}`}>
-              {selectedEdit.access === "locked" && !subscribed ? <><div className="tk-lock-mark"><LockKeyhole /></div><h1>{content(selectedEdit, "title")}</h1></> : <><span className="tk-access">{subscribed && selectedEdit.access === "locked" ? text("Unlocked · subscriber", "مفتوح · مشترك") : text("Fheed Alaiban", "فهيد العليبان")}</span><h1>{content(selectedEdit, "title")}</h1></>}
+            <div className={`tk-detail-art ${selectedEdit.access === "locked" && !subscribed ? "tk-detail-locked" : ""}`}>
+              <img className="tk-detail-image" src={selectedEdit.access === "locked" && !subscribed ? selectedEdit.previewImage : selectedEdit.image} alt="" />
+              {selectedEdit.access === "locked" && !subscribed ? <div className="tk-detail-overlay"><div className="tk-lock-mark"><LockKeyhole /></div><strong>{content(selectedEdit, "title")}</strong></div> : <span className="tk-access">{subscribed && selectedEdit.access === "locked" ? text("Unlocked · subscriber", "مفتوح · مشترك") : text("Fheed Alaiban", "فهيد العليبان")}</span>}
             </div>
             {selectedEdit.access === "locked" && !subscribed ? (
               <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وعاداته.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}>{text("Subscribe · $19.99/month", "اشترك · ١٩٫٩٩ دولار شهرياً")}</button></div>
@@ -262,7 +296,7 @@ export function TastekinPreview() {
             <h1 className="tk-page-title">{text("Saved", "المحفوظات")}</h1>
             <p className="tk-page-copy">{text("Return to ideas when the moment is right.", "عد إلى الأفكار عندما يحين وقتها.")}</p>
             <div className="tk-feed">
-              {edits.filter((item) => saved.includes(item.id)).map((edit) => <EditCard key={edit.id} edit={edit} title={content(edit, "title")} caption={content(edit, "caption")} onClick={() => showEdit(edit)} />)}
+              {edits.filter((item) => saved.includes(item.id)).map((edit) => <EditCard key={edit.id} edit={edit} title={content(edit, "title")} caption={content(edit, "caption")} onClick={() => showEdit(edit)} text={text} />)}
               {!saved.length && <div className="tk-empty">{text("Nothing saved yet. Explore Fheed’s edits and keep what speaks to you.", "لا توجد محفوظات بعد. اكتشف تعديلات فهيد واحفظ ما يناسب ذوقك.")}</div>}
             </div>
           </section>
@@ -273,7 +307,7 @@ export function TastekinPreview() {
             <span className="tk-kicker">{text("Explore", "اكتشف")}</span>
             <h1 className="tk-page-title">{text("Find your next taste.", "اكتشف ذوقك القادم.")}</h1>
             <div className="tk-panel"><Search size={18} style={{ verticalAlign: "middle", marginInlineEnd: 8 }} /><span>{text("Search creators, places, and edits", "ابحث عن المبدعين والأماكن والتعديلات")}</span></div>
-            <Profile isOwner={false} subscribed={subscribed} following={following} profileTab="edits" onTabChange={setProfileTab} onFollow={() => setFollowing(!following)} onSubscribe={() => setScreen("subscribe")} onViewVisitor={openVisitorProfile} onEdit={showEdit} onCollection={() => setScreen("collections")} text={text} content={content} compact />
+            <Profile isOwner={false} subscribed={subscribed} following={following} profileTab="edits" onTabChange={setProfileTab} onFollow={() => setFollowing(!following)} onSubscribe={() => setScreen("subscribe")} onViewVisitor={openVisitorProfile} onEdit={showEdit} onCollection={showCollection} text={text} content={content} compact />
           </section>
         )}
 
@@ -302,7 +336,7 @@ export function TastekinPreview() {
       <nav className="tk-bottom-nav" aria-label={text("Main navigation", "التنقل الرئيسي")}>
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active = item.id === "profile" ? screen === "profile" || screen === "collections" || screen === "about" || screen === "match" || screen === "edit" : screen === item.id;
+          const active = item.id === "profile" ? screen === "profile" || screen === "collections" || screen === "collection-detail" || screen === "about" || screen === "match" || screen === "edit" : screen === item.id;
           return <button key={item.label} className={`tk-nav-item ${active ? "is-active" : ""}`} type="button" onClick={() => item.id === "profile" ? setScreen(isOwner ? "you" : "profile") : setScreen(item.id)}><Icon size={21} /><span>{item.label}</span></button>;
         })}
       </nav>
@@ -310,24 +344,29 @@ export function TastekinPreview() {
   );
 }
 
-function EditCard({ edit, title, caption, onClick }: { edit: Edit; title: string; caption: string; onClick: () => void }) {
+function ProfilePhoto({ small = false }: { small?: boolean }) {
+  return <img className={`tk-avatar ${small ? "tk-avatar-small" : ""}`} src="/__mockup/images/tastekin/media/fheed-profile.webp" alt="Fheed Alaiban" />;
+}
+
+function EditCard({ edit, title, caption, onClick, canViewProtected = false, text }: { edit: Edit; title: string; caption: string; onClick: () => void; canViewProtected?: boolean; text: (en: string, ar: string) => string }) {
+  const showPreview = edit.access === "locked" && !canViewProtected;
   return <button className="tk-card" type="button" onClick={onClick}>
-    <div className={`tk-card-art ${edit.art} ${edit.access === "locked" ? "tk-art-lock" : ""}`}>
-      <span className={`tk-access ${edit.access === "locked" ? "is-locked" : ""}`}>{edit.access === "locked" ? <><LockKeyhole size={11} /> Subscribers only</> : "Public edit"}</span>
-      <strong className="tk-card-title">{title}</strong>
+    <div className={`tk-card-art ${showPreview ? "tk-card-protected" : ""}`}>
+      <img className="tk-card-image" src={showPreview ? edit.previewImage : edit.image} alt="" />
+      <span className={`tk-access ${edit.access === "locked" ? "is-locked" : ""}`}>{edit.access === "locked" ? <><LockKeyhole size={11} /> {text("Subscribers only", "للمشتركين فقط")}</> : text("Public edit", "تعديل عام")}</span>
     </div>
-    <div className="tk-card-caption">{caption}</div>
+    <div className="tk-card-caption"><strong>{title}</strong>{caption && <span>{caption}</span>}</div>
   </button>;
 }
 
 function Profile({ isOwner, subscribed, following, profileTab, onTabChange, onFollow, onSubscribe, onViewVisitor, onEdit, onCollection, text, content, compact = false }: {
-  isOwner: boolean; subscribed: boolean; following: boolean; profileTab: "edits" | "collections" | "about"; onTabChange: (tab: "edits" | "collections" | "about") => void; onFollow: () => void; onSubscribe: () => void; onViewVisitor: () => void; onEdit: (edit: Edit) => void; onCollection: () => void; text: (en: string, ar: string) => string; content: (edit: Edit, field: "title" | "caption") => string; compact?: boolean;
+  isOwner: boolean; subscribed: boolean; following: boolean; profileTab: "edits" | "collections" | "about"; onTabChange: (tab: "edits" | "collections" | "about") => void; onFollow: () => void; onSubscribe: () => void; onViewVisitor: () => void; onEdit: (edit: Edit) => void; onCollection: (collection: Collection) => void; text: (en: string, ar: string) => string; content: (edit: Edit, field: "title" | "caption") => string; compact?: boolean;
 }) {
-  if (compact) return <button className="tk-panel" type="button" onClick={onViewVisitor} style={{ textAlign: "start", width: "100%" }}><div className="tk-identity"><div className="tk-avatar">F</div><div><div className="tk-name-row"><h2 className="tk-name" dir="ltr">Fheed Alaiban</h2><span className="tk-verified"><Check size={11} /></span></div><p className="tk-meta">{text("Style · Travel · Places", "أناقة · سفر · أماكن")}</p></div><ChevronRight /></div></button>;
+  if (compact) return <button className="tk-panel" type="button" onClick={onViewVisitor} style={{ textAlign: "start", width: "100%" }}><div className="tk-identity"><ProfilePhoto small /><div><div className="tk-name-row"><h2 className="tk-name" dir="ltr">Fheed Alaiban</h2><span className="tk-verified"><Check size={11} /></span></div><p className="tk-meta">{text("Style · Travel · Places", "أناقة · سفر · أماكن")}</p></div><ChevronRight /></div></button>;
   return <section>
     <div className="tk-profile-head">
       <div className="tk-identity">
-        <div className="tk-avatar">F</div>
+        <ProfilePhoto />
         <div><div className="tk-name-row"><h1 className="tk-name" dir="ltr">Fheed Alaiban</h1><span className="tk-verified" aria-label={text("Verified", "موثق")}><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait · Style · Travel · Places", "مدينة الكويت، الكويت · أناقة · سفر · أماكن")}</div></div>
       </div>
       <button className="tk-match" type="button" onClick={() => onTabChange("edits")}><Compass size={14} /> {text("92% Taste Match", "تطابق ذوق ٩٢٪")}</button>
@@ -336,9 +375,48 @@ function Profile({ isOwner, subscribed, following, profileTab, onTabChange, onFo
     <div className="tk-tab-row">
       {(["edits", "collections", "about"] as const).map((tab) => <button className={`tk-tab ${profileTab === tab ? "is-active" : ""}`} type="button" key={tab} onClick={() => onTabChange(tab)}>{text(tab === "edits" ? "Edits" : tab === "collections" ? "Collections" : "About", tab === "edits" ? "التعديلات" : tab === "collections" ? "المجموعات" : "حول")}</button>)}
     </div>
-    {profileTab === "edits" && <div className="tk-grid">{edits.slice(0, 6).map((edit) => <EditCard key={edit.id} edit={edit} title={content(edit, "title")} caption="" onClick={() => onEdit(edit)} />)}</div>}
-    {profileTab === "collections" && <div className="tk-grid">{collections.map((collection) => <button type="button" className="tk-collection" key={collection.id} onClick={onCollection}><div className={`tk-collection-art ${collection.art}`}>{collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers", "للمشتركين")}</span>}<strong>{text(collection.title, collection.titleAr)}</strong></div><div className="tk-collection-body">{collection.count} {text("ordered edits", "تعديل مرتب")} · {text(collection.description, collection.descriptionAr)}</div></button>)}</div>}
+    {profileTab === "edits" && <div className="tk-grid">{edits.slice(0, 6).map((edit) => <EditCard key={edit.id} edit={edit} title={content(edit, "title")} caption="" onClick={() => onEdit(edit)} canViewProtected={subscribed || isOwner} text={text} />)}</div>}
+    {profileTab === "collections" && <div className="tk-grid">{collections.map((collection) => <CollectionCard key={collection.id} collection={collection} title={text(collection.title, collection.titleAr)} description={text(collection.description, collection.descriptionAr)} text={text} onClick={() => onCollection(collection)} />)}</div>}
     {profileTab === "about" && <AboutScreen onSubscribe={onSubscribe} text={text} />}
+  </section>;
+}
+
+function CollectionCard({ collection, title, description, text, onClick }: { collection: Collection; title: string; description: string; text: (en: string, ar: string) => string; onClick: () => void }) {
+  const cover = edits.find((edit) => edit.id === collection.coverEditId)!;
+  const coverImage = collection.access === "locked" ? cover.previewImage ?? cover.image : cover.image;
+  return <button className="tk-collection" type="button" onClick={onClick}>
+    <div className="tk-collection-art">
+      <img className="tk-collection-image" src={coverImage} alt="" />
+      {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers", "للمشتركين")}</span>}
+    </div>
+    <div className="tk-collection-body"><strong>{title}</strong><span>{collection.editIds.length} {text("included edits", "تعديلات متضمنة")}</span><p>{description}</p></div>
+  </button>;
+}
+
+function CollectionDetail({ collection, subscribed, text, content, onEdit, onSubscribe }: { collection: Collection; subscribed: boolean; text: (en: string, ar: string) => string; content: (edit: Edit, field: "title" | "caption") => string; onEdit: (edit: Edit) => void; onSubscribe: () => void }) {
+  const cover = edits.find((edit) => edit.id === collection.coverEditId)!;
+  const coverImage = collection.access === "locked" && !subscribed ? cover.previewImage ?? cover.image : cover.image;
+  const included = collection.editIds.map((id) => edits.find((edit) => edit.id === id)!).filter(Boolean);
+  return <section>
+    <span className="tk-kicker">{text("Collection", "مجموعة")}</span>
+    <div className="tk-collection-hero">
+      <img src={coverImage} alt="" />
+      {collection.access === "locked" && <span className="tk-access is-locked"><LockKeyhole size={11} /> {text("Subscribers", "للمشتركين")}</span>}
+    </div>
+    <h1 className="tk-page-title">{text(collection.title, collection.titleAr)}</h1>
+    <p className="tk-page-copy">{text(collection.description, collection.descriptionAr)}</p>
+    {collection.access === "locked" && !subscribed && <button className="tk-button primary full" type="button" onClick={onSubscribe}>{text("Unlock this collection · $19.99/month", "افتح هذه المجموعة · ١٩٫٩٩ دولار شهرياً")}</button>}
+    <span className="tk-kicker">{text("Included edits", "التعديلات المتضمنة")}</span>
+    <div className="tk-collection-list">
+      {included.map((edit) => {
+        const protectedPreview = edit.access === "locked" && !subscribed;
+        return <button className="tk-collection-row" key={edit.id} type="button" onClick={() => onEdit(edit)}>
+          <img src={protectedPreview ? edit.previewImage : edit.image} alt="" />
+          <span><strong>{content(edit, "title")}</strong><small>{protectedPreview ? text("Subscribers only", "للمشتركين فقط") : text("Open edit", "افتح التعديل")}</small></span>
+          {protectedPreview ? <LockKeyhole size={16} /> : <ChevronRight size={17} />}
+        </button>;
+      })}
+    </div>
   </section>;
 }
 
@@ -358,7 +436,7 @@ function YouScreen({ isOwner, consumer, subscribed, onViewVisitor, onProfile, te
   if (isOwner) return <section>
     <span className="tk-kicker">{text("Creator owner mode", "وضع مالك الحساب")}</span>
     <h1 className="tk-page-title">{text("Your profile", "ملفك الشخصي")}</h1>
-    <div className="tk-panel"><div className="tk-identity"><div className="tk-avatar">F</div><div><div className="tk-name-row"><h2 className="tk-name" dir="ltr">Fheed Alaiban</h2><span className="tk-verified"><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait", "مدينة الكويت، الكويت")}</div></div></div></div>
+    <div className="tk-panel"><div className="tk-identity"><ProfilePhoto /><div><div className="tk-name-row"><h2 className="tk-name" dir="ltr">Fheed Alaiban</h2><span className="tk-verified"><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait", "مدينة الكويت، الكويت")}</div></div></div></div>
     <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}>{text("View as visitor", "عرض كزائر")}</button></div>
     <div className="tk-panel"><h3>{text("Your taste", "ذوقك")}</h3><p>{text("Considered style, places, travel notes, and routines with less noise.", "أناقة مدروسة، أماكن، ملاحظات سفر، وعادات أقل ضوضاء.")}</p></div>
     <div className="tk-item-list"><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("Edits", "التعديلات")}</strong><span>9 <ChevronRight size={15} /></span></button><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("Collections", "المجموعات")}</strong><span>2 <ChevronRight size={15} /></span></button><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("About & subscription", "حول والاشتراك")}</strong><span><ChevronRight size={15} /></span></button></div>
