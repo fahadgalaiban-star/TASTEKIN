@@ -1,0 +1,1 @@
+- [TASTEKIN reference assets](tastekin-reference-assets.md) — supplied UI screenshots are retina-resolution; calculate media crops using their physical pixels.
