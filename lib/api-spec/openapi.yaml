@@ -10,6 +10,10 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: discovery
+    description: Consumer discovery and taste surfaces
+  - name: relationships
+    description: Consumer trust and save relationships
 paths:
   /healthz:
     get:
@@ -24,6 +28,115 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /feed:
+    get:
+      operationId: getFeed
+      tags: [discovery]
+      summary: Get the consumer home feed
+      responses:
+        "200":
+          description: Mixed feed
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Edit"
+  /creators:
+    get:
+      operationId: listCreators
+      tags: [discovery]
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: city
+          schema: { type: string }
+      responses:
+        "200":
+          description: Creator results
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Creator"
+  /creators/{username}:
+    get:
+      operationId: getCreator
+      tags: [discovery]
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Creator profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorProfile"
+        "404":
+          description: Creator not found
+  /explore:
+    get:
+      operationId: explore
+      tags: [discovery]
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: category
+          schema: { type: string }
+        - in: query
+          name: city
+          schema: { type: string }
+      responses:
+        "200":
+          description: Grouped discovery results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExploreResults"
+  /edits/{id}:
+    get:
+      operationId: getEdit
+      tags: [discovery]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Edit detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Edit"
+  /relationships:
+    post:
+      operationId: updateRelationship
+      tags: [relationships]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RelationshipInput"
+      responses:
+        "200":
+          description: Updated relationship
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Relationship"
 components:
   schemas:
     HealthStatus:
@@ -33,4 +146,103 @@ components:
           type: string
       required:
         - status
+    Creator:
+      type: object
+      required: [id, username, displayName, categories, city, matchScore, verified]
+      properties:
+        id: { type: string }
+        username: { type: string }
+        displayName: { type: string }
+        avatar: { type: string }
+        categories:
+          type: array
+          items: { type: string }
+        city: { type: string }
+        matchScore: { type: number, format: int32 }
+        verified: { type: boolean }
+        bio: { type: string }
+    CreatorProfile:
+      allOf:
+        - $ref: "#/components/schemas/Creator"
+        - type: object
+          required: [editCount, collectionCount, reasons, edits, collections]
+          properties:
+            editCount: { type: number, format: int32 }
+            collectionCount: { type: number, format: int32 }
+            reasons:
+              type: array
+              items: { type: string }
+            edits:
+              type: array
+              items: { $ref: "#/components/schemas/Edit" }
+            collections:
+              type: array
+              items: { $ref: "#/components/schemas/Collection" }
+    Edit:
+      type: object
+      required: [id, creatorUsername, creatorName, title, caption, contentType, access, image, tags, saved]
+      properties:
+        id: { type: string }
+        creatorUsername: { type: string }
+        creatorName: { type: string }
+        creatorAvatar: { type: string }
+        creatorVerified: { type: boolean }
+        title: { type: string }
+        caption: { type: string }
+        contentType: { type: string }
+        access: { type: string, enum: [public, subscribers] }
+        image: { type: string }
+        altText: { type: string }
+        location: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        saved: { type: boolean }
+        sponsored: { type: boolean }
+        publishedAt: { type: string }
+    Collection:
+      type: object
+      required: [id, creatorUsername, title, description, image, itemCount, access]
+      properties:
+        id: { type: string }
+        creatorUsername: { type: string }
+        title: { type: string }
+        description: { type: string }
+        image: { type: string }
+        itemCount: { type: number, format: int32 }
+        access: { type: string, enum: [public, mixed, subscribers] }
+        updatedAt: { type: string }
+    ExploreResults:
+      type: object
+      required: [creators, edits, collections, places, products]
+      properties:
+        creators:
+          type: array
+          items: { $ref: "#/components/schemas/Creator" }
+        edits:
+          type: array
+          items: { $ref: "#/components/schemas/Edit" }
+        collections:
+          type: array
+          items: { $ref: "#/components/schemas/Collection" }
+        places:
+          type: array
+          items: { type: string }
+        products:
+          type: array
+          items: { type: string }
+    RelationshipInput:
+      type: object
+      required: [type, targetId, active]
+      properties:
+        type: { type: string, enum: [follow, save, block, mute] }
+        targetId: { type: string }
+        active: { type: boolean }
+    Relationship:
+      allOf:
+        - $ref: "#/components/schemas/RelationshipInput"
+        - type: object
+          required: [updatedAt]
+          properties:
+            updatedAt: { type: string }
 

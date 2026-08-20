@@ -1,0 +1,49 @@
+The previous revision is incomplete. Do not merely create a typography specimen or describe the changes. Implement and verify every requirement below in the actual running TASTEKIN app.
+
+1. Replace the current English serif and italic display typography throughout the real app. I do not approve the current font style.
+
+* Use Instrument Sans across the entire English interface, including headings and creator names.
+* Remove the oversized serif and decorative italic typography.
+* Create distinction through weight, spacing, color, and layout rather than theatrical fonts.
+* Maximum mobile hero heading: 42px.
+* Page headings: 30–34px.
+* Body text: 16–18px.
+* Use IBM Plex Sans Arabic for Arabic.
+* The result must feel elegant, unique, quiet, modern, premium, and easy to use.
+
+2. Add a visible language selector in onboarding and Preferences:
+
+* العربية
+* English
+* Both for content preference
+    Changing to Arabic must translate the actual interface and switch the entire app to proper RTL. Add realistic Arabic seed content, not only an Arabic typography sample. Language selection must persist after refresh.
+
+3. Update the canonical Fheed Alaiban profile everywhere:
+
+* Location: Kuwait City, Kuwait
+* Subscription price: $19.99/month
+* Remove every remaining reference to Riyadh and $8.
+* Keep public follower counts hidden.
+* Update Taste Match explanations to reference Kuwait rather than Riyadh.
+
+4. Implement the mock subscriber journey now:
+
+* The Subscribe button must work.
+* Show benefits and $19.99/month.
+* Continue to a clearly labelled demo/mock checkout with no real payment.
+* Activating the demo subscription must unlock the Subscribers Only Edit.
+* Include cancellation and reset-demo controls.
+* Never expose protected original media before entitlement.
+
+5. Fix Follow persistence. After following Fheed, refreshing or reopening must still show Following.
+6. Fix Save persistence and ensure saved Edits, creators, and Collections appear in the correct Saved tabs after refresh.
+7. The You page must represent the current signed-in user, not permanently show Alex Morgan. Allow the user to edit display name, username, avatar, bio, and location.
+
+Before marking this ready for review:
+
+* Restart the running preview so it serves the new build.
+* Test the actual mobile app at 390×844.
+* Verify Arabic RTL, English typography, Kuwait location, $19.99 price, working mock subscription, Follow persistence, Save persistence, and current-user profile.
+* Provide screenshots or a working Preview showing each completed requirement.
+
+Do not apply changes to the main version. Stop after producing the corrected Preview for my approval. Do not begin creator publishing or admin features.

@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "TASTEKIN"
+description = "A mobile-first social taste platform for discovering creators, places, products, and routines through compatible taste rather than popularity."
+version = "1.0.0"
+id = "artifacts/tastekin"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23385
+
+[services.development]
+run = "pnpm --filter @workspace/tastekin run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/tastekin", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/tastekin/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23385"
+BASE_PATH = "/"

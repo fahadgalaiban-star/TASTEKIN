@@ -1,10 +1,11 @@
-# [Project name]
+# TASTEKIN
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+TASTEKIN helps people discover creators, places, products, and routines through compatible taste rather than popularity.
 
 ## Run & Operate
 
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- `pnpm --filter @workspace/tastekin run dev` — run the TASTEKIN web app
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
@@ -22,23 +23,33 @@ _Replace the heading above with the project's name, and this line with one sente
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/tastekin/` — Phase 1 React + Vite consumer web app
+- `artifacts/api-server/src/routes/discovery.ts` — seeded discovery and relationship API
+- `lib/api-spec/openapi.yaml` — source-of-truth API contract
+- `artifacts/tastekin/src/index.css` — TASTEKIN editorial design tokens and responsive styles
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Phase 1 uses deterministic seeded discovery data and a provider-neutral relationship endpoint; production persistence and auth expansion belong to the next phases.
+- Browser demo state (taste selections, saved edits, follows) is stored under a TASTEKIN-prefixed localStorage namespace so refreshes preserve the consumer journey without exposing secrets.
+- Locked media is represented with an explicit access label and presentation blur/lock state; subscriber entitlement and protected object storage are intentionally deferred to Phase 2.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Welcome, sign-in/sign-up, and Taste onboarding.
+- Mobile-first Home, Explore, Saved, and You navigation.
+- Creator profiles with explainable Taste Match details and creator-scoped Collections.
+- Public and Subscribers Only Edit cards/details, persistent save/follow relationships, and intentional loading, empty, error, and unavailable states.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Use Noto Sans for accessible UI copy and restrained serif display treatment for names and feature titles.
+- Keep canonical creator follower counts hidden; verification is an admin-controlled trust signal.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Vite build commands need `PORT` and `BASE_PATH` in direct shell runs; managed artifact workflows provide them automatically.
+- Run API codegen after OpenAPI changes before typechecking packages.
 
 ## Pointers
 

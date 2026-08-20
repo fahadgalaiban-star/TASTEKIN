@@ -1,0 +1,36 @@
+The latest Preview is improved, but it is not approved. Implement these remaining corrections in the actual running app:
+
+1. Typography
+
+* Completely remove the current serif and italic display fonts from every screen.
+* Use Manrope for the entire English interface, including hero headings, creator names, card titles, body text, buttons, and navigation.
+* Use IBM Plex Sans Arabic for the entire Arabic interface.
+* Do not use decorative italics.
+* Use weight, spacing, and color for brand personality.
+* Hero headings must not exceed 40px on mobile.
+* Card titles must not exceed 22px.
+* Verify the actual computed CSS font-family in the running Preview. Do not only change design tokens or create a specimen page.
+
+2. Complete Arabic localization
+
+* Arabic is currently applied only to navigation and some labels. Translate all actual interface text, headings, buttons, filters, settings, subscription screens, Taste Match explanations, empty states, and seeded content.
+* When Arabic content is selected, show Arabic creator bios, Edit titles, descriptions, categories, locations, and metadata.
+* When English is selected, show English content.
+* “Both for content” must show a mixed Arabic and English feed.
+* Wrap any English content displayed inside RTL mode with dir=“ltr” so punctuation and sentence order remain correct.
+* Persist language and content-language preferences after refresh.
+
+3. Make language selection easier to find
+
+* Keep it under You → Preferences.
+* Also add a clear AR / EN language control inside the main menu.
+* Label the two separate settings clearly: “Interface language” and “Content language.”
+
+4. Fix remaining UI issues
+
+* Make the category-chip row horizontally scrollable with proper starting and ending padding so no category is clipped.
+* The You page must show the current signed-in user instead of the fixed Alex Morgan seed profile.
+* Use Fheed Alaiban’s creator photo consistently on the subscription page instead of the FA placeholder.
+* Preserve the working Kuwait City location, $19.99 price, mock subscription, Follow persistence, and Saved persistence.
+
+Restart the Preview and verify these changes on the real Home, Explore, creator profile, subscription, Saved, You, and Preferences screens in both Arabic and English. Stop for review and do not apply to the main version.

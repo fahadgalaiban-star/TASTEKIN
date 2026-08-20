@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 320">
+  <title>TASTEKIN — horizontal primary logo</title>
+  <g transform="translate(30 25) scale(.52734375)">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="42">
+      <path d="M226 118H151c-55 0-99 44-99 99v78c0 55 44 99 99 99h75" stroke="#4B1F2A"/>
+      <path d="M286 118h75c55 0 99 44 99 99v78c0 55-44 99-99 99h-75" stroke="#171416"/>
+    </g>
+    <circle cx="256" cy="256" r="31" fill="#E85F42" stroke="#171416" stroke-width="10"/>
+  </g>
+  <text x="350" y="199" fill="#171416" font-family="Noto Sans, Arial, sans-serif" font-size="116" font-weight="700" letter-spacing="10">TASTEKIN</text>
+</svg>
