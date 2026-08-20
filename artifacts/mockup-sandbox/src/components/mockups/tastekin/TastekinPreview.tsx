@@ -25,13 +25,13 @@ import "./_group.css";
 type Role = "owner" | "consumer";
 type InterfaceLanguage = "en" | "ar";
 type ContentLanguage = "en" | "ar" | "both";
-type Screen = "home" | "explore" | "saved" | "you" | "profile" | "collections" | "collection-detail" | "about" | "match" | "edit" | "subscribe";
-type Category = "All" | "Following" | "Style" | "Travel" | "Places" | "Routines";
+type Screen = "home" | "explore" | "add" | "saved" | "you" | "profile" | "collections" | "collection-detail" | "about" | "match" | "edit" | "subscribe";
+type Category = "All" | "Style" | "Travel" | "Places" | "Routines";
 type NavId = "home" | "explore" | "add" | "saved" | "you";
 
 type Edit = {
   id: string;
-  category: Exclude<Category, "All" | "Following"> | "Food";
+  category: Exclude<Category, "All"> | "Food";
   access: "public" | "locked";
   image: string;
   previewImage?: string;
@@ -83,7 +83,7 @@ const textDirection = (value: string) => /[\u0600-\u06FF]/.test(value) ? "rtl" :
 
 function SubscriptionPrice({ arabic, withVerb = true }: { arabic: boolean; withVerb?: boolean }) {
   if (!arabic) return <>{withVerb ? "Subscribe · " : ""}$19.99 / month</>;
-  return <>اشترك · <bdi dir="ltr">$19.99</bdi> شهريًا</>;
+  return <>{withVerb ? "اشترك · " : ""}<bdi dir="ltr">19.99</bdi> دولار شهريًا</>;
 }
 
 function useStored<T>(key: string, fallback: T) {
@@ -114,7 +114,7 @@ export function TastekinPreview() {
   const [subscribed, setSubscribed] = useStored("tastekin-subscribed-fheed", false);
   const [saved, setSaved] = useStored<string[]>("tastekin-saved-edits", []);
   const [consumer, setConsumer] = useStored("tastekin-consumer-identity", { name: "Alex Morgan", username: "alexmorgan", demo: true });
-  const [screen, setScreen] = useState<Screen>(() => qaMode && ["home", "explore", "saved", "you", "profile", "collections", "collection-detail", "about", "match", "edit", "subscribe"].includes(qaScreen ?? "") ? qaScreen as Screen : "home");
+  const [screen, setScreen] = useState<Screen>(() => qaMode && ["home", "explore", "add", "saved", "you", "profile", "collections", "collection-detail", "about", "match", "edit", "subscribe"].includes(qaScreen ?? "") ? qaScreen as Screen : "home");
   const [category, setCategory] = useState<Category>("All");
   const [profileTab, setProfileTab] = useState<"edits" | "collections" | "about">(() => qaMode && ["edits", "collections", "about"].includes(qaTab ?? "") ? qaTab as "edits" | "collections" | "about" : "edits");
   const [selectedEdit, setSelectedEdit] = useState<Edit>(edits[0]);
@@ -142,9 +142,8 @@ export function TastekinPreview() {
 
   const filteredEdits = useMemo(() => {
     if (category === "All") return edits;
-    if (category === "Following") return following || isOwner ? edits : [];
     return edits.filter((edit) => edit.category === category);
-  }, [category, following, isOwner]);
+  }, [category]);
 
   const showEdit = (edit: Edit) => {
     setSelectedEdit(edit);
@@ -172,6 +171,8 @@ export function TastekinPreview() {
   ];
   const activeNav: NavId = screen === "home"
     ? "home"
+    : screen === "add"
+      ? "add"
     : screen === "saved"
       ? "saved"
       : screen === "you" || (screen === "profile" && isOwner)
@@ -199,9 +200,9 @@ export function TastekinPreview() {
               <p>{text("A considered feed of people, places, and routines shaped by what you actually like.", "تغذية منتقاة من الأشخاص والأماكن والعادات، تتشكل بحسب ما تحبه فعلاً.")}</p>
             </section>
             <div className="tk-pill-row" aria-label={text("Feed filters", "فلاتر التغذية")}>
-              {(["All", "Following", "Style", "Travel", "Places", "Routines"] as Category[]).map((item) => (
+              {(["All", "Style", "Travel", "Places", "Routines"] as Category[]).map((item) => (
                 <button key={item} className={`tk-pill ${category === item ? "is-active" : ""}`} type="button" onClick={() => setCategory(item)}>
-                  {text(item, ({ All: "الكل", Following: "أتابعهم", Style: "الأناقة", Travel: "السفر", Places: "أماكن", Routines: "العادات" } as Record<Category, string>)[item])}
+                  {text(item, ({ All: "الكل", Style: "الأناقة", Travel: "السفر", Places: "أماكن", Routines: "العادات" } as Record<Category, string>)[item])}
                 </button>
               ))}
             </div>
@@ -211,6 +212,25 @@ export function TastekinPreview() {
               )}
             </div>
           </>
+        )}
+
+        {screen === "add" && (
+          <section>
+            <span className="tk-kicker">{text("Creator tools", "أدوات المبدع")}</span>
+            <h1 className="tk-page-title">{text("Add an edit", "أضف تعديلاً")}</h1>
+            {isOwner ? (
+              <>
+                <p className="tk-page-copy">{text("Start a new public or subscriber-only recommendation from your creator workspace.", "ابدأ توصية جديدة عامة أو خاصة بالمشتركين من مساحة المبدع.")}</p>
+                <div className="tk-panel"><h3>{text("New edit draft", "مسودة تعديل جديد")}</h3><p>{text("Choose an image, add your notes, then decide whether the Edit is public or subscriber-only.", "اختر صورة، وأضف ملاحظاتك، ثم حدد إن كان التعديل عاماً أو للمشتركين فقط.")}</p></div>
+                <button className="tk-button primary full" type="button" onClick={() => setScreen("profile")}>{text("Continue to your edits", "تابع إلى تعديلاتك")}</button>
+              </>
+            ) : (
+              <>
+                <p className="tk-page-copy">{text("Publishing is available to the verified creator profile.", "النشر متاح لملف المبدع الموثق.")}</p>
+                <div className="tk-panel"><h3>{text("Switch to owner preview", "التبديل إلى معاينة المالك")}</h3><p>{text("Use the settings icon to switch into Fheed’s owner mode and access creator publishing tools.", "استخدم أيقونة الإعدادات للتبديل إلى وضع مالك فهيد والوصول إلى أدوات النشر.")}</p></div>
+              </>
+            )}
+          </section>
         )}
 
         {screen === "profile" && (
@@ -246,7 +266,7 @@ export function TastekinPreview() {
 
         {screen === "collections" && (
           <section>
-            <span className="tk-kicker">{text("Fheed Alaiban", "فهيد العليبان")}</span>
+            <span className="tk-kicker">{text("Fheed Alaiban", "فهيد العيبان")}</span>
             <h1 className="tk-page-title">{text("Collections", "المجموعات")}</h1>
             <p className="tk-page-copy">{text("Complete taste worlds, not a pile of posts.", "عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.")}</p>
             <div className="tk-grid">
@@ -291,7 +311,7 @@ export function TastekinPreview() {
             <span className="tk-kicker">{selectedEdit.access === "locked" ? contentText("Subscribers only", "للمشتركين فقط") : contentText("Public Edit", "تعديل عام")}</span>
             <div className={`tk-detail-art ${selectedEdit.access === "locked" && !subscribed ? "tk-detail-locked" : ""}`}>
               <img className="tk-detail-image" src={selectedEdit.access === "locked" && !subscribed ? selectedEdit.previewImage : selectedEdit.image} style={{ objectPosition: selectedEdit.imagePosition }} alt="" />
-              {selectedEdit.access === "locked" && !subscribed ? <div className="tk-detail-overlay"><div className="tk-lock-mark"><LockKeyhole /></div><strong>{content(selectedEdit, "title")}</strong></div> : <span className="tk-access">{subscribed && selectedEdit.access === "locked" ? contentText("Unlocked · subscriber", "مفتوح · مشترك") : contentText("Fheed Alaiban", "فهيد العليبان")}</span>}
+              {selectedEdit.access === "locked" && !subscribed ? <div className="tk-detail-overlay"><div className="tk-lock-mark"><LockKeyhole /></div><strong>{content(selectedEdit, "title")}</strong></div> : <span className="tk-access">{subscribed && selectedEdit.access === "locked" ? contentText("Unlocked · subscriber", "مفتوح · مشترك") : contentText("Fheed Alaiban", "فهيد العيبان")}</span>}
             </div>
             {selectedEdit.access === "locked" && !subscribed ? (
               <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وعاداته.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}><SubscriptionPrice arabic={ar} /></button></div>
@@ -303,7 +323,7 @@ export function TastekinPreview() {
 
         {screen === "subscribe" && (
           <section>
-            <span className="tk-kicker">{text("Fheed Alaiban", "فهيد العليبان")}</span>
+            <span className="tk-kicker">{text("Fheed Alaiban", "فهيد العيبان")}</span>
             <h1 className="tk-page-title">{subscribed ? text("You’re subscribed", "اشتراكك نشط") : text("Subscribe to Fheed", "اشترك في فهيد")}</h1>
             <div className="tk-panel"><h3><SubscriptionPrice arabic={ar} withVerb={false} /></h3><p>{text("Private travel diaries, training routines, outfit details, and early collections.", "مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.")}</p></div>
             <div className="tk-item-list">
@@ -361,7 +381,7 @@ export function TastekinPreview() {
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = item.id === activeNav;
-          return <button key={item.label} className={`tk-nav-item ${active ? "is-active" : ""}`} type="button" onClick={() => { if (item.id !== "add") setScreen(item.id); }}><Icon size={21} /><span>{item.label}</span></button>;
+          return <button key={item.label} className={`tk-nav-item ${active ? "is-active" : ""}`} type="button" onClick={() => setScreen(item.id)}><Icon size={21} /><span>{item.label}</span></button>;
         })}
       </nav>
     </div>
@@ -386,12 +406,12 @@ function EditCard({ edit, title, caption, onClick, canViewProtected = false, tex
 function Profile({ isOwner, subscribed, following, profileTab, onTabChange, onFollow, onSubscribe, onViewVisitor, onEdit, onCollection, text, arabic, contentText, content, collectionText, compact = false }: {
   isOwner: boolean; subscribed: boolean; following: boolean; profileTab: "edits" | "collections" | "about"; onTabChange: (tab: "edits" | "collections" | "about") => void; onFollow: () => void; onSubscribe: () => void; onViewVisitor: () => void; onEdit: (edit: Edit) => void; onCollection: (collection: Collection) => void; text: (en: string, ar: string) => string; arabic: boolean; contentText: (en: string, ar: string) => string; content: (edit: Edit, field: "title" | "caption") => string; collectionText: (collection: Collection, field: "title" | "description") => string; compact?: boolean;
 }) {
-  if (compact) return <button className="tk-panel" type="button" onClick={onViewVisitor} style={{ textAlign: "start", width: "100%" }}><div className="tk-identity"><ProfilePhoto small /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العليبان"))}>{text("Fheed Alaiban", "فهيد العليبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><p className="tk-meta">{text("Style · Travel · Places", "أناقة · سفر · أماكن")}</p></div><ChevronRight /></div></button>;
+  if (compact) return <button className="tk-panel" type="button" onClick={onViewVisitor} style={{ textAlign: "start", width: "100%" }}><div className="tk-identity"><ProfilePhoto small /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><p className="tk-meta">{text("Style · Travel · Places", "أناقة · سفر · أماكن")}</p></div><ChevronRight /></div></button>;
   return <section>
     <div className="tk-profile-head">
       <div className="tk-identity">
         <ProfilePhoto />
-        <div><div className="tk-name-row"><h1 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العليبان"))}>{text("Fheed Alaiban", "فهيد العليبان")}</h1><span className="tk-verified" aria-label={text("Verified", "موثق")}><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait · Style · Travel · Places", "مدينة الكويت، الكويت · أناقة · سفر · أماكن")}</div></div>
+        <div><div className="tk-name-row"><h1 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h1><span className="tk-verified" aria-label={text("Verified", "موثق")}><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait · Style · Travel · Places", "مدينة الكويت، الكويت · أناقة · سفر · أماكن")}</div></div>
       </div>
       <button className="tk-match" type="button" onClick={() => onTabChange("edits")}><Compass size={14} /> {text("92% Taste Match", "تطابق ذوق ٩٢٪")}</button>
       {isOwner ? <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}><Eye size={14} /> {text("View as visitor", "عرض كزائر")}</button></div> : <div className="tk-actions"><button className="tk-button" type="button" onClick={onFollow}>{following ? text("Following", "تتابع") : text("Follow", "متابعة")}</button><button className="tk-button primary" type="button" onClick={onSubscribe}>{subscribed ? text("Subscribed", "مشترك") : <SubscriptionPrice arabic={arabic} />}</button></div>}
@@ -447,7 +467,7 @@ function CollectionDetail({ collection, subscribed, text, arabic, contentText, c
 function AboutScreen({ onSubscribe, text, arabic }: { onSubscribe: () => void; text: (en: string, ar: string) => string; arabic: boolean }) {
   return <section>
     <span className="tk-kicker">{text("About Fheed", "عن فهيد")}</span>
-    <h1 className="tk-page-title" dir={textDirection(text("Fheed Alaiban", "فهيد العليبان"))}>{text("Fheed Alaiban", "فهيد العليبان")}</h1>
+    <h1 className="tk-page-title" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h1>
     <p className="tk-page-copy">{text("Kuwait City, Kuwait. I share considered style, places worth returning to, quiet travel notes, and routines that make everyday life feel better.", "مدينة الكويت، الكويت. أشارك أناقة مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وعادات تجعل الحياة اليومية أفضل.")}</p>
     <div className="tk-panel"><span className="tk-kicker">{text("Taste pillars", "ركائز الذوق")}</span><p>{text("Style · Travel · Fitness · Places · Food", "الأناقة · السفر · اللياقة · الأماكن · الطعام")}</p></div>
     <div className="tk-panel"><span className="tk-kicker">{text("What subscribers get", "ما يحصل عليه المشتركون")}</span><p>{text("Private travel diaries, complete training notes, product details and early access to new collections.", "مذكرات سفر خاصة، ملاحظات تدريب كاملة، تفاصيل منتجات، ووصول مبكر إلى المجموعات الجديدة.")}</p></div>
@@ -460,7 +480,7 @@ function YouScreen({ isOwner, consumer, subscribed, onViewVisitor, onProfile, te
   if (isOwner) return <section>
     <span className="tk-kicker">{text("Creator owner mode", "وضع مالك الحساب")}</span>
     <h1 className="tk-page-title">{text("Your profile", "ملفك الشخصي")}</h1>
-    <div className="tk-panel"><div className="tk-identity"><ProfilePhoto /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العليبان"))}>{text("Fheed Alaiban", "فهيد العليبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait", "مدينة الكويت، الكويت")}</div></div></div></div>
+    <div className="tk-panel"><div className="tk-identity"><ProfilePhoto /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait", "مدينة الكويت، الكويت")}</div></div></div></div>
     <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}>{text("View as visitor", "عرض كزائر")}</button></div>
     <div className="tk-panel"><h3>{text("Your taste", "ذوقك")}</h3><p>{text("Considered style, places, travel notes, and routines with less noise.", "أناقة مدروسة، أماكن، ملاحظات سفر، وعادات أقل ضوضاء.")}</p></div>
     <div className="tk-item-list"><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("Edits", "التعديلات")}</strong><span>9 <ChevronRight size={15} /></span></button><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("Collections", "المجموعات")}</strong><span>2 <ChevronRight size={15} /></span></button><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("About & subscription", "حول والاشتراك")}</strong><span><ChevronRight size={15} /></span></button></div>
@@ -470,7 +490,7 @@ function YouScreen({ isOwner, consumer, subscribed, onViewVisitor, onProfile, te
     <h1 className="tk-page-title">{consumer.name}</h1>
     <p className="tk-page-copy" dir="ltr">@{consumer.username} · {consumer.demo ? text("Demo consumer", "مستهلك تجريبي") : text("Newly created identity", "هوية تم إنشاؤها حديثاً")}</p>
     <div className="tk-panel"><h3>{text("Taste profile", "ملف الذوق")}</h3><p>{text("Style, travel, places, food, and routines. You can refine this anytime.", "الأناقة والسفر والأماكن والطعام والعادات. يمكنك تعديلها في أي وقت.")}</p></div>
-    <div className="tk-panel"><h3>{text("Subscription", "الاشتراك")}</h3><p>{subscribed ? text("Active with Fheed Alaiban.", "نشط مع فهيد العليبان.") : text("No active subscriptions. Open Fheed’s profile to unlock private edits.", "لا توجد اشتراكات نشطة. افتح ملف فهيد لفتح التعديلات الخاصة.")}</p></div>
+    <div className="tk-panel"><h3>{text("Subscription", "الاشتراك")}</h3><p>{subscribed ? text("Active with Fheed Alaiban.", "نشط مع فهيد العيبان.") : text("No active subscriptions. Open Fheed’s profile to unlock private edits.", "لا توجد اشتراكات نشطة. افتح ملف فهيد لفتح التعديلات الخاصة.")}</p></div>
     <button className="tk-button primary full" type="button" onClick={onViewVisitor}>{text("Visit Fheed’s profile", "زيارة ملف فهيد")}</button>
   </section>;
 }

@@ -1,2 +1,2 @@
 - [TASTEKIN reference assets](tastekin-reference-assets.md) — supplied UI screenshots are retina-resolution; calculate media crops using their physical pixels.
-- [TASTEKIN RTL prices](tastekin-rtl-prices.md) — isolate Latin currency strings inside Arabic UI to preserve visible dollar-sign order.
+- [TASTEKIN RTL numerals](tastekin-rtl-prices.md) — isolate Latin numerals inside Arabic UI to preserve their visible order.
