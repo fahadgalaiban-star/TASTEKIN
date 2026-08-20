@@ -27,6 +27,7 @@ type InterfaceLanguage = "en" | "ar";
 type ContentLanguage = "en" | "ar" | "both";
 type Screen = "home" | "explore" | "saved" | "you" | "profile" | "collections" | "collection-detail" | "about" | "match" | "edit" | "subscribe";
 type Category = "All" | "Following" | "Style" | "Travel" | "Places" | "Routines";
+type NavId = "home" | "explore" | "add" | "saved" | "you";
 
 type Edit = {
   id: string;
@@ -34,6 +35,7 @@ type Edit = {
   access: "public" | "locked";
   image: string;
   previewImage?: string;
+  imagePosition: string;
   title: string;
   titleAr: string;
   caption: string;
@@ -41,15 +43,15 @@ type Edit = {
 };
 
 const edits: Edit[] = [
-  { id: "quiet-tailoring", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/quiet-tailoring.webp", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة." },
-  { id: "black-uniform", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/black-uniform.webp", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً." },
-  { id: "private-hotel", category: "Travel", access: "locked", image: "/__mockup/images/tastekin/media/private-hotel-source.webp", previewImage: "/__mockup/images/tastekin/media/private-hotel-preview.webp", title: "Private hotel weekend", titleAr: "عطلة فندقية خاصة", caption: "The stay, the packing list, and where I ate.", captionAr: "الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام." },
-  { id: "coastal-notes", category: "Travel", access: "public", image: "/__mockup/images/tastekin/media/coastal-notes.webp", title: "Coastal notes", titleAr: "ملاحظات من الساحل", caption: "A slow itinerary for wind, coffee, and open horizons.", captionAr: "برنامج هادئ للهواء والقهوة والأفق المفتوح." },
-  { id: "places-returning", category: "Places", access: "public", image: "/__mockup/images/tastekin/media/places-returning.webp", title: "Places worth returning to", titleAr: "أماكن تستحق العودة إليها", caption: "A Kuwaiti table and a London room I keep thinking about.", captionAr: "مائدة كويتية ومكان في لندن لا يفارق ذاكرتي." },
-  { id: "hotel-breakfast", category: "Places", access: "locked", image: "/__mockup/images/tastekin/media/hotel-breakfast-source.webp", previewImage: "/__mockup/images/tastekin/media/hotel-breakfast-preview.webp", title: "Hotel breakfast, unhurried", titleAr: "إفطار فندقي بلا استعجال", caption: "My private list for a considered morning.", captionAr: "قائمتي الخاصة لصباح هادئ ومدروس." },
-  { id: "what-i-ordered", category: "Food", access: "public", image: "/__mockup/images/tastekin/media/what-i-ordered.webp", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار." },
-  { id: "training-week", category: "Routines", access: "locked", image: "/__mockup/images/tastekin/media/training-week-preview.webp", previewImage: "/__mockup/images/tastekin/media/training-week-preview.webp", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً." },
-  { id: "sunday-reset", category: "Routines", access: "public", image: "/__mockup/images/tastekin/media/sunday-reset.webp", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط." },
+  { id: "quiet-tailoring", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/quiet-tailoring.webp", imagePosition: "center 44%", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة." },
+  { id: "black-uniform", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/black-uniform.webp", imagePosition: "center 8%", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً." },
+  { id: "private-hotel", category: "Travel", access: "locked", image: "/__mockup/images/tastekin/media/private-hotel-source.webp", previewImage: "/__mockup/images/tastekin/media/private-hotel-preview.webp", imagePosition: "center 62%", title: "Private hotel weekend", titleAr: "عطلة فندقية خاصة", caption: "The stay, the packing list, and where I ate.", captionAr: "الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام." },
+  { id: "coastal-notes", category: "Travel", access: "public", image: "/__mockup/images/tastekin/media/coastal-notes.webp", imagePosition: "center 30%", title: "Coastal notes", titleAr: "ملاحظات من الساحل", caption: "A slow itinerary for wind, coffee, and open horizons.", captionAr: "برنامج هادئ للهواء والقهوة والأفق المفتوح." },
+  { id: "places-returning", category: "Places", access: "public", image: "/__mockup/images/tastekin/media/places-returning.webp", imagePosition: "center 52%", title: "Places worth returning to", titleAr: "أماكن تستحق العودة إليها", caption: "A Kuwaiti table and a London room I keep thinking about.", captionAr: "مائدة كويتية ومكان في لندن لا يفارق ذاكرتي." },
+  { id: "hotel-breakfast", category: "Places", access: "locked", image: "/__mockup/images/tastekin/media/hotel-breakfast-source.webp", previewImage: "/__mockup/images/tastekin/media/hotel-breakfast-preview.webp", imagePosition: "center", title: "Hotel breakfast, unhurried", titleAr: "إفطار فندقي بلا استعجال", caption: "My private list for a considered morning.", captionAr: "قائمتي الخاصة لصباح هادئ ومدروس." },
+  { id: "what-i-ordered", category: "Food", access: "public", image: "/__mockup/images/tastekin/media/what-i-ordered.webp", imagePosition: "center 36%", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار." },
+  { id: "training-week", category: "Routines", access: "locked", image: "/__mockup/images/tastekin/media/training-week-preview.webp", previewImage: "/__mockup/images/tastekin/media/training-week-preview.webp", imagePosition: "center 18%", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً." },
+  { id: "sunday-reset", category: "Routines", access: "public", image: "/__mockup/images/tastekin/media/sunday-reset.webp", imagePosition: "center", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط." },
 ];
 
 type Collection = {
@@ -76,6 +78,8 @@ const stored = <T,>(key: string, fallback: T): T => {
     return fallback;
   }
 };
+
+const textDirection = (value: string) => /[\u0600-\u06FF]/.test(value) ? "rtl" : "ltr";
 
 function useStored<T>(key: string, fallback: T) {
   const [value, setValue] = useState<T>(() => stored(key, fallback));
@@ -152,13 +156,20 @@ export function TastekinPreview() {
     setProfileTab("edits");
   };
 
-  const navItems: Array<{ id: Screen; icon: typeof Home; label: string }> = [
+  const navItems: Array<{ id: NavId; icon: typeof Home; label: string }> = [
     { id: "home", icon: Home, label: text("Home", "الرئيسية") },
     { id: "explore", icon: Search, label: text("Explore", "اكتشف") },
-    { id: "profile", icon: PlusCircle, label: text("Add", "إضافة") },
+    { id: "add", icon: PlusCircle, label: text("Add", "إضافة") },
     { id: "saved", icon: Bookmark, label: text("Saved", "المحفوظات") },
     { id: "you", icon: UserRound, label: text("You", "أنت") },
   ];
+  const activeNav: NavId = screen === "home"
+    ? "home"
+    : screen === "saved"
+      ? "saved"
+      : screen === "you" || (screen === "profile" && isOwner)
+        ? "you"
+        : "explore";
 
   const backTo = (target: Screen) => (
     <button className="tk-icon" type="button" aria-label={text("Back", "رجوع")} onClick={() => setScreen(target)}><ArrowLeft size={22} /></button>
@@ -270,7 +281,7 @@ export function TastekinPreview() {
               {selectedEdit.access === "locked" && !subscribed ? <div className="tk-detail-overlay"><div className="tk-lock-mark"><LockKeyhole /></div><strong>{content(selectedEdit, "title")}</strong></div> : <span className="tk-access">{subscribed && selectedEdit.access === "locked" ? text("Unlocked · subscriber", "مفتوح · مشترك") : text("Fheed Alaiban", "فهيد العليبان")}</span>}
             </div>
             {selectedEdit.access === "locked" && !subscribed ? (
-              <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وعاداته.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}>{text("Subscribe · $19.99/month", "اشترك · ١٩٫٩٩ دولار شهرياً")}</button></div>
+              <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وعاداته.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}>{text("Subscribe · $19.99 / month", "اشترك · $19.99 شهريًا")}</button></div>
             ) : (
               <><h1 className="tk-page-title">{content(selectedEdit, "title")}</h1><p className="tk-page-copy">{content(selectedEdit, "caption")}</p><div className="tk-panel"><span className="tk-kicker">{text("Fheed’s notes", "ملاحظات فهيد")}</span><p>{text("A thoughtful detail worth saving for later. Product and place links are always clearly disclosed.", "تفصيل مدروس يستحق الحفظ لاحقاً. روابط المنتجات والأماكن موضحة دائماً بشفافية.")}</p></div><button className={`tk-button full ${saved.includes(selectedEdit.id) ? "primary" : ""}`} type="button" onClick={() => toggleSave(selectedEdit.id)}>{saved.includes(selectedEdit.id) ? text("Saved", "تم الحفظ") : text("Save this edit", "احفظ هذا التعديل")}</button></>
             )}
@@ -281,11 +292,11 @@ export function TastekinPreview() {
           <section>
             <span className="tk-kicker">{text("Fheed Alaiban", "فهيد العليبان")}</span>
             <h1 className="tk-page-title">{subscribed ? text("You’re subscribed", "اشتراكك نشط") : text("Subscribe to Fheed", "اشترك في فهيد")}</h1>
-            <div className="tk-panel"><h3>$19.99 <span style={{ color: "#766e66", fontSize: 13, fontWeight: 500 }}>{text("/ month", "/ شهرياً")}</span></h3><p>{text("Private travel diaries, training routines, outfit details, and early collections.", "مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.")}</p></div>
+            <div className="tk-panel"><h3>{text("$19.99 / month", "$19.99 شهريًا")}</h3><p>{text("Private travel diaries, training routines, outfit details, and early collections.", "مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.")}</p></div>
             <div className="tk-item-list">
               {[text("Private edits", "تعديلات خاصة"), text("Collections", "المجموعات"), text("Early access", "وصول مبكر")].map((item) => <div className="tk-list-item" key={item}><strong>{item}</strong><span>{subscribed ? text("Active", "نشط") : text("Included", "مشمول")}</span></div>)}
             </div>
-            {!isOwner && <button className="tk-button primary full" type="button" onClick={() => setSubscribed(!subscribed)}>{subscribed ? text("Reset test subscription", "إعادة ضبط الاشتراك التجريبي") : text("Continue to mock checkout", "المتابعة إلى الدفع التجريبي")}</button>}
+            {!isOwner && <button className="tk-button primary full" type="button" onClick={() => setSubscribed(!subscribed)}>{subscribed ? text("Reset test subscription", "إعادة ضبط الاشتراك التجريبي") : text("Continue to mock checkout", "الدفع التجريبي")}</button>}
             {isOwner && <div className="tk-empty">{text("You own this profile. Subscribers see the benefits above; you do not subscribe to yourself.", "أنت مالك هذا الملف. يرى المشتركون المزايا أعلاه؛ ولا تشترك في ملفك الشخصي.")}</div>}
           </section>
         )}
@@ -336,8 +347,8 @@ export function TastekinPreview() {
       <nav className="tk-bottom-nav" aria-label={text("Main navigation", "التنقل الرئيسي")}>
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active = item.id === "profile" ? screen === "profile" || screen === "collections" || screen === "collection-detail" || screen === "about" || screen === "match" || screen === "edit" : screen === item.id;
-          return <button key={item.label} className={`tk-nav-item ${active ? "is-active" : ""}`} type="button" onClick={() => item.id === "profile" ? setScreen(isOwner ? "you" : "profile") : setScreen(item.id)}><Icon size={21} /><span>{item.label}</span></button>;
+          const active = item.id === activeNav;
+          return <button key={item.label} className={`tk-nav-item ${active ? "is-active" : ""}`} type="button" onClick={() => { if (item.id !== "add") setScreen(item.id); }}><Icon size={21} /><span>{item.label}</span></button>;
         })}
       </nav>
     </div>
