@@ -123,6 +123,8 @@ export function TastekinPreview() {
   const ar = displayInterfaceLanguage === "ar";
   const isOwner = displayRole === "owner";
   const text = (en: string, arabic: string) => (ar ? arabic : en);
+  const contentText = (en: string, arabic: string) =>
+    displayContentLanguage === "ar" ? arabic : displayContentLanguage === "en" ? en : text(en, arabic);
   const content = (edit: Edit, field: "title" | "caption") => {
     if (displayContentLanguage === "ar") return field === "title" ? edit.titleAr : edit.captionAr;
     if (displayContentLanguage === "en") return field === "title" ? edit.title : edit.caption;
