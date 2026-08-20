@@ -26,12 +26,12 @@ type Role = "owner" | "consumer";
 type InterfaceLanguage = "en" | "ar";
 type ContentLanguage = "en" | "ar" | "both";
 type Screen = "home" | "explore" | "add" | "saved" | "you" | "profile" | "collections" | "collection-detail" | "about" | "match" | "edit" | "subscribe";
-type Category = "All" | "Style" | "Travel" | "Places" | "Routines";
+type Category = "All" | "Fashion" | "Travel" | "Places" | "Restaurants" | "DailyRoutine" | "PersonalCare" | "HealthFitness" | "Decor" | "Books" | "Vlogs";
 type NavId = "home" | "explore" | "add" | "saved" | "you";
 
 type Edit = {
   id: string;
-  category: Exclude<Category, "All"> | "Food";
+  category: Exclude<Category, "All">;
   access: "public" | "locked";
   image: string;
   previewImage?: string;
@@ -43,16 +43,37 @@ type Edit = {
 };
 
 const edits: Edit[] = [
-  { id: "quiet-tailoring", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/quiet-tailoring.webp", imagePosition: "center 44%", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة." },
-  { id: "black-uniform", category: "Style", access: "public", image: "/__mockup/images/tastekin/media/black-uniform.webp", imagePosition: "center 8%", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً." },
+  { id: "quiet-tailoring", category: "Fashion", access: "public", image: "/__mockup/images/tastekin/media/quiet-tailoring.webp", imagePosition: "center 44%", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة." },
+  { id: "black-uniform", category: "Fashion", access: "public", image: "/__mockup/images/tastekin/media/black-uniform.webp", imagePosition: "center 8%", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً." },
   { id: "private-hotel", category: "Travel", access: "locked", image: "/__mockup/images/tastekin/media/private-hotel-source.webp", previewImage: "/__mockup/images/tastekin/media/private-hotel-preview.webp", imagePosition: "center 62%", title: "Private hotel weekend", titleAr: "عطلة فندقية خاصة", caption: "The stay, the packing list, and where I ate.", captionAr: "الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام." },
   { id: "coastal-notes", category: "Travel", access: "public", image: "/__mockup/images/tastekin/media/coastal-notes.webp", imagePosition: "center 30%", title: "Coastal notes", titleAr: "ملاحظات من الساحل", caption: "A slow itinerary for wind, coffee, and open horizons.", captionAr: "برنامج هادئ للهواء والقهوة والأفق المفتوح." },
   { id: "places-returning", category: "Places", access: "public", image: "/__mockup/images/tastekin/media/places-returning.webp", imagePosition: "center 52%", title: "Places worth returning to", titleAr: "أماكن تستحق العودة إليها", caption: "A Kuwaiti table and a London room I keep thinking about.", captionAr: "مائدة كويتية ومكان في لندن لا يفارق ذاكرتي." },
   { id: "hotel-breakfast", category: "Places", access: "locked", image: "/__mockup/images/tastekin/media/hotel-breakfast-source.webp", previewImage: "/__mockup/images/tastekin/media/hotel-breakfast-preview.webp", imagePosition: "center", title: "Hotel breakfast, unhurried", titleAr: "إفطار فندقي بلا استعجال", caption: "My private list for a considered morning.", captionAr: "قائمتي الخاصة لصباح هادئ ومدروس." },
-  { id: "what-i-ordered", category: "Food", access: "public", image: "/__mockup/images/tastekin/media/what-i-ordered.webp", imagePosition: "center 36%", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار." },
-  { id: "training-week", category: "Routines", access: "locked", image: "/__mockup/images/tastekin/media/training-week-preview.webp", previewImage: "/__mockup/images/tastekin/media/training-week-preview.webp", imagePosition: "center 18%", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً." },
-  { id: "sunday-reset", category: "Routines", access: "public", image: "/__mockup/images/tastekin/media/sunday-reset.webp", imagePosition: "center", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط." },
+  { id: "what-i-ordered", category: "Restaurants", access: "public", image: "/__mockup/images/tastekin/media/what-i-ordered.webp", imagePosition: "center 36%", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار." },
+  { id: "training-week", category: "HealthFitness", access: "locked", image: "/__mockup/images/tastekin/media/training-week-preview.webp", previewImage: "/__mockup/images/tastekin/media/training-week-preview.webp", imagePosition: "center 18%", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً." },
+  { id: "sunday-reset", category: "DailyRoutine", access: "public", image: "/__mockup/images/tastekin/media/sunday-reset.webp", imagePosition: "center", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط." },
+  { id: "accessory-notes", category: "Fashion", access: "public", image: "/__mockup/images/tastekin/media/black-uniform.webp", imagePosition: "center 8%", title: "The finishing details", titleAr: "تفاصيل الإطلالة", caption: "Shoes, accessories, and the small choices that complete an outfit.", captionAr: "الأحذية والإكسسوارات والاختيارات الصغيرة التي تكمل الإطلالة." },
+  { id: "neighborhood-table", category: "Restaurants", access: "public", image: "/__mockup/images/tastekin/media/places-returning.webp", imagePosition: "center 52%", title: "A table nearby", titleAr: "مائدة قريبة", caption: "A neighbourhood restaurant worth making time for.", captionAr: "مطعم في الحي يستحق أن نخصص له وقتاً." },
+  { id: "morning-ritual", category: "PersonalCare", access: "public", image: "/__mockup/images/tastekin/media/sunday-reset.webp", imagePosition: "center", title: "A simple morning ritual", titleAr: "روتين صباحي بسيط", caption: "The personal-care steps that help me start well.", captionAr: "خطوات العناية الشخصية التي تساعدني على بداية أفضل." },
+  { id: "home-light", category: "Decor", access: "public", image: "/__mockup/images/tastekin/media/private-hotel-preview.webp", imagePosition: "center 62%", title: "Light at home", titleAr: "إضاءة المنزل", caption: "Small changes for a calmer room.", captionAr: "تغييرات صغيرة لغرفة أكثر هدوءاً." },
+  { id: "weekend-reading", category: "Books", access: "public", image: "/__mockup/images/tastekin/media/coastal-notes.webp", imagePosition: "center 30%", title: "Weekend reading", titleAr: "قراءة نهاية الأسبوع", caption: "Three books for a slower afternoon.", captionAr: "ثلاثة كتب لظهيرة أكثر هدوءاً." },
+  { id: "city-vlog", category: "Vlogs", access: "public", image: "/__mockup/images/tastekin/media/coastal-notes.webp", imagePosition: "center 30%", title: "A day around the city", titleAr: "يوم في المدينة", caption: "A quiet visual diary of places, food, and movement.", captionAr: "يوميات مصورة هادئة عن الأماكن والطعام والحركة." },
 ];
+
+const categories: Category[] = ["All", "Fashion", "Travel", "Places", "Restaurants", "DailyRoutine", "PersonalCare", "HealthFitness", "Decor", "Books", "Vlogs"];
+const categoryLabels: Record<Category, [string, string]> = {
+  All: ["All", "الكل"],
+  Fashion: ["Fashion & Outfits", "أزياء وإطلالات"],
+  Travel: ["Travel", "سفر"],
+  Places: ["Places", "أماكن"],
+  Restaurants: ["Restaurants", "مطاعم"],
+  DailyRoutine: ["Daily Routine", "روتين يومي"],
+  PersonalCare: ["Personal Care", "عناية شخصية"],
+  HealthFitness: ["Health & Fitness", "صحة ولياقة"],
+  Decor: ["Decor", "ديكور"],
+  Books: ["Books", "كتب"],
+  Vlogs: ["Vlogs", "فلوقات"],
+};
 
 type Collection = {
   id: string;
@@ -197,12 +218,12 @@ export function TastekinPreview() {
             <section className="tk-hero">
               <span className="tk-kicker">{text("Taste-led discovery", "اكتشاف مبني على الذوق")}</span>
               <h1>{text("Follow the taste, not the numbers.", "اتبع الذوق، لا الأرقام.")}</h1>
-              <p>{text("A considered feed of people, places, and routines shaped by what you actually like.", "تغذية منتقاة من الأشخاص والأماكن والعادات، تتشكل بحسب ما تحبه فعلاً.")}</p>
+              <p>{text("A considered feed of people, places, and daily routines shaped by what you actually like.", "تغذية منتقاة من الأشخاص وأماكنهم وروتينهم اليومي، تتشكل بحسب ما تحبه فعلاً.")}</p>
             </section>
             <div className="tk-pill-row" aria-label={text("Feed filters", "فلاتر التغذية")}>
-              {(["All", "Style", "Travel", "Places", "Routines"] as Category[]).map((item) => (
+              {categories.map((item) => (
                 <button key={item} className={`tk-pill ${category === item ? "is-active" : ""}`} type="button" onClick={() => setCategory(item)}>
-                  {text(item, ({ All: "الكل", Style: "الأناقة", Travel: "السفر", Places: "أماكن", Routines: "العادات" } as Record<Category, string>)[item])}
+                  {text(categoryLabels[item][0], categoryLabels[item][1])}
                 </button>
               ))}
             </div>
@@ -299,9 +320,9 @@ export function TastekinPreview() {
             <h1 className="tk-page-title">{text("Why you match", "لماذا يتطابق ذوقكما")}</h1>
             <p className="tk-page-copy">{text("A transparent score based on your selected taste preferences and saves.", "درجة شفافة مبنية على تفضيلات ذوقك والمحتوى الذي حفظته.")}</p>
             {[
-              [text("Style", "الأناقة"), "96%", text("Quiet tailoring and neutral palettes.", "تفصيل هادئ ولوحات ألوان حيادية.")],
-              [text("Travel", "السفر"), "91%", text("Boutique stays and slow itineraries.", "إقامات بوتيك وخطط سفر هادئة.")],
-              [text("Places", "الأماكن"), "94%", text("Coffee, restaurants, and spaces with intention.", "قهوة ومطاعم وأماكن ذات معنى.")],
+              [text("Fashion & Outfits", "أزياء وإطلالات"), "96%", text("Quiet tailoring and neutral palettes.", "تفصيل هادئ ولوحات ألوان حيادية.")],
+              [text("Travel", "سفر"), "91%", text("Boutique stays and slow itineraries.", "إقامات بوتيك وخطط سفر هادئة.")],
+              [text("Places", "أماكن"), "94%", text("Coffee, restaurants, and spaces with intention.", "قهوة ومطاعم وأماكن ذات معنى.")],
             ].map(([label, score, copy]) => <div className="tk-panel" key={label}><div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}><h3>{label}</h3><strong style={{ color: "#4b1f2a" }}>{score}</strong></div><p>{copy}</p></div>)}
           </section>
         )}
@@ -314,7 +335,7 @@ export function TastekinPreview() {
               {selectedEdit.access === "locked" && !subscribed ? <div className="tk-detail-overlay"><div className="tk-lock-mark"><LockKeyhole /></div><strong>{content(selectedEdit, "title")}</strong></div> : <span className="tk-access">{subscribed && selectedEdit.access === "locked" ? contentText("Unlocked · subscriber", "مفتوح · مشترك") : contentText("Fheed Alaiban", "فهيد العيبان")}</span>}
             </div>
             {selectedEdit.access === "locked" && !subscribed ? (
-              <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وعاداته.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}><SubscriptionPrice arabic={ar} /></button></div>
+              <div className="tk-panel"><h3>{text("This edit is for subscribers", "هذا التعديل للمشتركين")}</h3><p>{text("Unlock Fheed’s complete notes, places, and daily routines.", "افتح ملاحظات فهيد الكاملة وأماكنه وروتينه اليومي.")}</p><button className="tk-button primary full" type="button" onClick={() => setScreen("subscribe")}><SubscriptionPrice arabic={ar} /></button></div>
             ) : (
               <><h1 className="tk-page-title" dir={textDirection(content(selectedEdit, "title"))}>{content(selectedEdit, "title")}</h1><p className="tk-page-copy" dir={textDirection(content(selectedEdit, "caption"))}>{content(selectedEdit, "caption")}</p><div className="tk-panel"><span className="tk-kicker">{text("Fheed’s notes", "ملاحظات فهيد")}</span><p>{text("A thoughtful detail worth saving for later. Product and place links are always clearly disclosed.", "تفصيل مدروس يستحق الحفظ لاحقاً. روابط المنتجات والأماكن موضحة دائماً بشفافية.")}</p></div><button className={`tk-button full ${saved.includes(selectedEdit.id) ? "primary" : ""}`} type="button" onClick={() => toggleSave(selectedEdit.id)}>{saved.includes(selectedEdit.id) ? text("Saved", "تم الحفظ") : text("Save this edit", "احفظ هذا التعديل")}</button></>
             )}
@@ -406,12 +427,12 @@ function EditCard({ edit, title, caption, onClick, canViewProtected = false, tex
 function Profile({ isOwner, subscribed, following, profileTab, onTabChange, onFollow, onSubscribe, onViewVisitor, onEdit, onCollection, text, arabic, contentText, content, collectionText, compact = false }: {
   isOwner: boolean; subscribed: boolean; following: boolean; profileTab: "edits" | "collections" | "about"; onTabChange: (tab: "edits" | "collections" | "about") => void; onFollow: () => void; onSubscribe: () => void; onViewVisitor: () => void; onEdit: (edit: Edit) => void; onCollection: (collection: Collection) => void; text: (en: string, ar: string) => string; arabic: boolean; contentText: (en: string, ar: string) => string; content: (edit: Edit, field: "title" | "caption") => string; collectionText: (collection: Collection, field: "title" | "description") => string; compact?: boolean;
 }) {
-  if (compact) return <button className="tk-panel" type="button" onClick={onViewVisitor} style={{ textAlign: "start", width: "100%" }}><div className="tk-identity"><ProfilePhoto small /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><p className="tk-meta">{text("Style · Travel · Places", "أناقة · سفر · أماكن")}</p></div><ChevronRight /></div></button>;
+   if (compact) return <button className="tk-panel" type="button" onClick={onViewVisitor} style={{ textAlign: "start", width: "100%" }}><div className="tk-identity"><ProfilePhoto small /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><p className="tk-meta">{text("Fashion & Outfits · Travel · Places", "أزياء وإطلالات · سفر · أماكن")}</p></div><ChevronRight /></div></button>;
   return <section>
     <div className="tk-profile-head">
       <div className="tk-identity">
         <ProfilePhoto />
-        <div><div className="tk-name-row"><h1 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h1><span className="tk-verified" aria-label={text("Verified", "موثق")}><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait · Style · Travel · Places", "مدينة الكويت، الكويت · أناقة · سفر · أماكن")}</div></div>
+         <div><div className="tk-name-row"><h1 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h1><span className="tk-verified" aria-label={text("Verified", "موثق")}><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait · Fashion & Outfits · Travel · Places", "مدينة الكويت، الكويت · أزياء وإطلالات · سفر · أماكن")}</div></div>
       </div>
       <button className="tk-match" type="button" onClick={() => onTabChange("edits")}><Compass size={14} /> {text("92% Taste Match", "تطابق ذوق ٩٢٪")}</button>
       {isOwner ? <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}><Eye size={14} /> {text("View as visitor", "عرض كزائر")}</button></div> : <div className="tk-actions"><button className="tk-button" type="button" onClick={onFollow}>{following ? text("Following", "تتابع") : text("Follow", "متابعة")}</button><button className="tk-button primary" type="button" onClick={onSubscribe}>{subscribed ? text("Subscribed", "مشترك") : <SubscriptionPrice arabic={arabic} />}</button></div>}
@@ -468,8 +489,8 @@ function AboutScreen({ onSubscribe, text, arabic }: { onSubscribe: () => void; t
   return <section>
     <span className="tk-kicker">{text("About Fheed", "عن فهيد")}</span>
     <h1 className="tk-page-title" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h1>
-    <p className="tk-page-copy">{text("Kuwait City, Kuwait. I share considered style, places worth returning to, quiet travel notes, and routines that make everyday life feel better.", "مدينة الكويت، الكويت. أشارك أناقة مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وعادات تجعل الحياة اليومية أفضل.")}</p>
-    <div className="tk-panel"><span className="tk-kicker">{text("Taste pillars", "ركائز الذوق")}</span><p>{text("Style · Travel · Fitness · Places · Food", "الأناقة · السفر · اللياقة · الأماكن · الطعام")}</p></div>
+    <p className="tk-page-copy">{text("Kuwait City, Kuwait. I share Fashion & Outfits, places worth returning to, quiet travel notes, and daily routines that make everyday life feel better.", "مدينة الكويت، الكويت. أشارك أزياء وإطلالات مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وروتيناً يومياً يجعل الحياة أفضل.")}</p>
+    <div className="tk-panel"><span className="tk-kicker">{text("Taste pillars", "ركائز الذوق")}</span><p>{text("Fashion & Outfits · Travel · Health & Fitness · Places · Restaurants", "أزياء وإطلالات · سفر · صحة ولياقة · أماكن · مطاعم")}</p></div>
     <div className="tk-panel"><span className="tk-kicker">{text("What subscribers get", "ما يحصل عليه المشتركون")}</span><p>{text("Private travel diaries, complete training notes, product details and early access to new collections.", "مذكرات سفر خاصة، ملاحظات تدريب كاملة، تفاصيل منتجات، ووصول مبكر إلى المجموعات الجديدة.")}</p></div>
     <button className="tk-button primary full" type="button" onClick={onSubscribe}><SubscriptionPrice arabic={arabic} /></button>
     <p className="tk-page-copy" style={{ marginTop: 18 }}>{text("Transparency: paid partnerships and affiliate links are always labelled clearly.", "الشفافية: تُعرض الشراكات المدفوعة وروابط الأفلييت بوضوح دائماً.")}</p>
@@ -482,14 +503,14 @@ function YouScreen({ isOwner, consumer, subscribed, onViewVisitor, onProfile, te
     <h1 className="tk-page-title">{text("Your profile", "ملفك الشخصي")}</h1>
     <div className="tk-panel"><div className="tk-identity"><ProfilePhoto /><div><div className="tk-name-row"><h2 className="tk-name" dir={textDirection(text("Fheed Alaiban", "فهيد العيبان"))}>{text("Fheed Alaiban", "فهيد العيبان")}</h2><span className="tk-verified"><Check size={11} /></span></div><div className="tk-handle" dir="ltr">@fheed</div><div className="tk-meta">{text("Kuwait City, Kuwait", "مدينة الكويت، الكويت")}</div></div></div></div>
     <div className="tk-actions"><button className="tk-button primary" type="button">{text("Edit profile", "تعديل الملف")}</button><button className="tk-button" type="button" onClick={onViewVisitor}>{text("View as visitor", "عرض كزائر")}</button></div>
-    <div className="tk-panel"><h3>{text("Your taste", "ذوقك")}</h3><p>{text("Considered style, places, travel notes, and routines with less noise.", "أناقة مدروسة، أماكن، ملاحظات سفر، وعادات أقل ضوضاء.")}</p></div>
+     <div className="tk-panel"><h3>{text("Your taste", "ذوقك")}</h3><p>{text("Fashion & outfits, places, travel notes, and daily routines with less noise.", "أزياء وإطلالات، أماكن، ملاحظات سفر، وروتين يومي أقل ضوضاء.")}</p></div>
     <div className="tk-item-list"><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("Edits", "التعديلات")}</strong><span>9 <ChevronRight size={15} /></span></button><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("Collections", "المجموعات")}</strong><span>2 <ChevronRight size={15} /></span></button><button className="tk-list-item" type="button" onClick={onProfile}><strong>{text("About & subscription", "حول والاشتراك")}</strong><span><ChevronRight size={15} /></span></button></div>
   </section>;
   return <section>
     <span className="tk-kicker">{consumer.demo ? text("Demo consumer", "مستهلك تجريبي") : text("Your account", "حسابك")}</span>
     <h1 className="tk-page-title">{consumer.name}</h1>
     <p className="tk-page-copy" dir="ltr">@{consumer.username} · {consumer.demo ? text("Demo consumer", "مستهلك تجريبي") : text("Newly created identity", "هوية تم إنشاؤها حديثاً")}</p>
-    <div className="tk-panel"><h3>{text("Taste profile", "ملف الذوق")}</h3><p>{text("Style, travel, places, food, and routines. You can refine this anytime.", "الأناقة والسفر والأماكن والطعام والعادات. يمكنك تعديلها في أي وقت.")}</p></div>
+     <div className="tk-panel"><h3>{text("Taste profile", "ملف الذوق")}</h3><p>{text("Fashion & outfits, travel, places, restaurants, and daily routines. You can refine this anytime.", "أزياء وإطلالات، سفر، أماكن، مطاعم، وروتين يومي. يمكنك تعديلها في أي وقت.")}</p></div>
     <div className="tk-panel"><h3>{text("Subscription", "الاشتراك")}</h3><p>{subscribed ? text("Active with Fheed Alaiban.", "نشط مع فهيد العيبان.") : text("No active subscriptions. Open Fheed’s profile to unlock private edits.", "لا توجد اشتراكات نشطة. افتح ملف فهيد لفتح التعديلات الخاصة.")}</p></div>
     <button className="tk-button primary full" type="button" onClick={onViewVisitor}>{text("Visit Fheed’s profile", "زيارة ملف فهيد")}</button>
   </section>;
