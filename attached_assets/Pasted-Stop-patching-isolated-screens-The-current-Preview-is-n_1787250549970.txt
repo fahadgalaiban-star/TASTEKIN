@@ -1,0 +1,113 @@
+Stop patching isolated screens. The current Preview is not approved. Perform one coherent product repair pass across the actual running TASTEKIN application.
+
+A. Fix account and role confusion
+
+The Preview currently shows Alex Morgan under “You” while Fheed Alaiban is the creator being followed and subscribed to. This is confusing.
+
+Implement an explicit demo identity switcher in the main menu:
+
+1. Creator/Owner mode: Fheed Alaiban
+2. Consumer/Visitor mode: Alex Morgan
+
+Default the founder Preview to Creator/Owner mode as Fheed Alaiban.
+
+In Creator/Owner mode:
+
+* “You” must show Fheed Alaiban, his photo, @fheed, Kuwait City, Kuwait, bio, verification, Edits, Collections, About, and subscription information.
+* Do not show Follow or Subscribe buttons on the owner’s own profile.
+* Show “Edit profile” and “View as visitor.”
+
+In Consumer/Visitor mode:
+
+* “You” may show Alex Morgan and must clearly display “Demo consumer.”
+* Alex may follow, save, and mock-subscribe to Fheed.
+* Following, saving, language, and subscription state must persist after refresh.
+
+For newly signed-up users, never assign Alex Morgan automatically. Collect display name and username during onboarding and show that identity under You.
+
+B. Make all profile sections real and populated
+
+Fheed Alaiban’s visitor profile must contain:
+
+* At least 6 realistic Edits across Style, Travel, Places, Food, and Routines.
+* At least 2 complete Collections with covers and ordered items.
+* A complete About tab with bio, Kuwait location, categories, disclosure information, and subscription benefits.
+* Public and Subscribers Only content.
+* No public follower count.
+
+Every tab and card must be clickable. No empty or decorative-only profile sections.
+
+C. Fix the Home category controls
+
+The highlighted controls All, Following, Style, Travel, Places, and Routines are filters, not navigation pages.
+
+Make each filter actually update the feed:
+
+* All: mixed feed.
+* Following: content only from followed creators.
+* Style, Travel, Places, Routines: matching content only.
+* Seed at least two items for every category so filters never appear broken.
+* Show a deliberate bilingual empty state if no item exists.
+* Make the row smoothly horizontally scrollable without clipping the first or last chip.
+* Clearly show the active filter and update the result immediately.
+
+D. Replace the typography for real
+
+The current fonts are still not approved.
+
+Install and bundle actual font files using:
+
+* @fontsource/plus-jakarta-sans for all English text.
+* @fontsource/ibm-plex-sans-arabic for all Arabic text.
+
+Do not rely on system fallbacks. Import the font weights in the production application and verify computed CSS font-family.
+
+Remove every serif font and every italic decorative heading from:
+
+* Home
+* Onboarding
+* Explore
+* Creator profile
+* Subscription
+* Saved
+* You
+* Preferences
+* Arabic screens
+
+Typography scale:
+
+* Mobile hero: 34–38px, weight 600.
+* Page title: 28–32px.
+* Section heading: 20–24px.
+* Card title: 17–20px.
+* Body: 15–17px.
+* Metadata: 12–13px.
+
+No title should dominate half the screen, overlap content, or use decorative italics.
+
+E. Complete localization
+
+* Interface language and content language must remain separate.
+* Arabic interface must use professional natural Arabic, not literal machine-like wording.
+* Arabic content mode must show Arabic Edit titles, captions, categories, metadata, creator bios, Collections, subscription screen, and Taste Match reasons.
+* English mode must show English.
+* Both mode must show a genuinely mixed feed.
+* Preserve correct RTL layout and isolate English names/text with dir=“ltr” when necessary.
+* Persist preferences after refresh.
+
+F. Acceptance test before claiming completion
+
+Do not mark Ready for review until you have manually verified:
+
+1. Owner mode shows Fheed under You.
+2. Visitor mode clearly shows Alex as a demo consumer.
+3. View as visitor opens Fheed’s complete visitor profile.
+4. Edits, Collections, and About are populated and clickable.
+5. Every Home filter changes the visible content.
+6. English uses Plus Jakarta Sans with no serif or italic fonts.
+7. Arabic uses IBM Plex Sans Arabic with complete Arabic content.
+8. $19.99 mock subscription still works.
+9. Following and Saved state survive refresh.
+10. No public follower count appears.
+
+Restart the Preview and provide the working mobile Preview for review. Do not apply anything to the main version.
