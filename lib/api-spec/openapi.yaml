@@ -14,6 +14,10 @@ tags:
     description: Consumer discovery and taste surfaces
   - name: relationships
     description: Consumer trust and save relationships
+  - name: creator-workspace
+    description: Shared creator publishing workspace
+  - name: storage
+    description: Protected creator media storage
 paths:
   /healthz:
     get:
@@ -137,6 +141,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Relationship"
+  /creator-workspace:
+    get:
+      operationId: getCreatorWorkspace
+      tags: [creator-workspace]
+      summary: Get Fheed's shared creator workspace
+      responses:
+        "200":
+          description: Shared workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorWorkspace"
+    put:
+      operationId: saveCreatorWorkspace
+      tags: [creator-workspace]
+      summary: Save Fheed's shared creator workspace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatorWorkspaceInput"
+      responses:
+        "200":
+          description: Saved shared workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorWorkspace"
+        "400":
+          description: Invalid creator workspace
+        "403":
+          description: Creator owner preview required
+  /storage/uploads/request-url:
+    post:
+      operationId: requestUploadUrl
+      tags: [storage]
+      summary: Request a private creator-media upload URL
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatorUploadRequest"
+      responses:
+        "200":
+          description: Private upload URL
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorUploadResponse"
+        "400":
+          description: Invalid image metadata
+        "403":
+          description: Creator owner preview required
 components:
   schemas:
     HealthStatus:
@@ -245,4 +304,82 @@ components:
           required: [updatedAt]
           properties:
             updatedAt: { type: string }
+    CreatorImageMetadata:
+      type: object
+      required: [name, size, contentType]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 255 }
+        size: { type: number, format: int32, minimum: 1, maximum: 8388608 }
+        contentType: { type: string, minLength: 1, maxLength: 120 }
+    CreatorEdit:
+      type: object
+      required: [id, category, title, titleAr, caption, captionAr, image, location, locationAr, altText, access, status, collectionIds]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 120 }
+        category: { type: string, enum: [Fashion, Travel, Places, Restaurants, DailyRoutine, PersonalCare, HealthFitness, Decor, Books, Vlogs] }
+        title: { type: string, maxLength: 160 }
+        titleAr: { type: string, maxLength: 160 }
+        caption: { type: string, maxLength: 2000 }
+        captionAr: { type: string, maxLength: 2000 }
+        image: { type: string, minLength: 1, maxLength: 1024 }
+        imageMetadata: { $ref: "#/components/schemas/CreatorImageMetadata" }
+        location: { type: string, maxLength: 240 }
+        locationAr: { type: string, maxLength: 240 }
+        altText: { type: string, maxLength: 500 }
+        access: { type: string, enum: [public, locked] }
+        status: { type: string, enum: [draft, published, archived] }
+        collectionIds:
+          type: array
+          maxItems: 30
+          items: { type: string, minLength: 1, maxLength: 120 }
+    CreatorCollection:
+      type: object
+      required: [id, title, titleAr, description, descriptionAr, access, coverEditId, editIds]
+      properties:
+        id: { type: string, minLength: 1, maxLength: 120 }
+        title: { type: string, maxLength: 160 }
+        titleAr: { type: string, maxLength: 160 }
+        description: { type: string, maxLength: 2000 }
+        descriptionAr: { type: string, maxLength: 2000 }
+        access: { type: string, enum: [public, locked] }
+        coverEditId: { type: string, minLength: 1, maxLength: 120 }
+        editIds:
+          type: array
+          maxItems: 100
+          items: { type: string, minLength: 1, maxLength: 120 }
+    CreatorWorkspaceInput:
+      type: object
+      required: [edits, collections]
+      properties:
+        edits:
+          type: array
+          maxItems: 500
+          items: { $ref: "#/components/schemas/CreatorEdit" }
+        collections:
+          type: array
+          maxItems: 100
+          items: { $ref: "#/components/schemas/CreatorCollection" }
+        expectedRevision:
+          type: number
+          format: int32
+          minimum: 1
+    CreatorWorkspace:
+      allOf:
+        - $ref: "#/components/schemas/CreatorWorkspaceInput"
+        - type: object
+          required: [creatorId, revision, updatedAt]
+          properties:
+            creatorId: { type: string }
+            revision: { type: number, format: int32 }
+            updatedAt: { type: string, format: date-time }
+    CreatorUploadRequest:
+      allOf:
+        - $ref: "#/components/schemas/CreatorImageMetadata"
+    CreatorUploadResponse:
+      type: object
+      required: [uploadURL, objectPath, metadata]
+      properties:
+        uploadURL: { type: string }
+        objectPath: { type: string, pattern: "^/objects/" }
+        metadata: { $ref: "#/components/schemas/CreatorImageMetadata" }
 

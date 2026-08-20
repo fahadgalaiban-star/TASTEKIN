@@ -22,6 +22,10 @@ import type {
 import type {
   Creator,
   CreatorProfile,
+  CreatorUploadRequest,
+  CreatorUploadResponse,
+  CreatorWorkspace,
+  CreatorWorkspaceInput,
   Edit,
   ExploreParams,
   ExploreResults,
@@ -574,5 +578,224 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getUpdateRelationshipMutationOptions(options));
+    }
+
+export const getGetCreatorWorkspaceUrl = () => {
+
+
+
+
+  return `/api/creator-workspace`
+}
+
+/**
+ * @summary Get Fheed's shared creator workspace
+ */
+export const getCreatorWorkspace = async ( options?: Parameters<typeof customFetch>[1]): Promise<CreatorWorkspace> => {
+
+  return customFetch<CreatorWorkspace>(getGetCreatorWorkspaceUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCreatorWorkspaceQueryKey = () => {
+    return [
+    `/api/creator-workspace`
+    ] as const;
+    }
+
+
+export const getGetCreatorWorkspaceQueryOptions = <TData = Awaited<ReturnType<typeof getCreatorWorkspace>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorWorkspace>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCreatorWorkspaceQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCreatorWorkspace>>> = ({ signal }) => getCreatorWorkspace({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCreatorWorkspace>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCreatorWorkspaceQueryResult = NonNullable<Awaited<ReturnType<typeof getCreatorWorkspace>>>
+export type GetCreatorWorkspaceQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get Fheed's shared creator workspace
+ */
+
+export function useGetCreatorWorkspace<TData = Awaited<ReturnType<typeof getCreatorWorkspace>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorWorkspace>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCreatorWorkspaceQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveCreatorWorkspaceUrl = () => {
+
+
+
+
+  return `/api/creator-workspace`
+}
+
+/**
+ * @summary Save Fheed's shared creator workspace
+ */
+export const saveCreatorWorkspace = async (creatorWorkspaceInput: CreatorWorkspaceInput, options?: Parameters<typeof customFetch>[1]): Promise<CreatorWorkspace> => {
+
+  return customFetch<CreatorWorkspace>(getSaveCreatorWorkspaceUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(creatorWorkspaceInput)
+  }
+);}
+
+
+
+
+
+export const getSaveCreatorWorkspaceMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveCreatorWorkspace>>, TError,{data: BodyType<CreatorWorkspaceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveCreatorWorkspace>>, TError,{data: BodyType<CreatorWorkspaceInput>}, TContext> => {
+
+const mutationKey = ['saveCreatorWorkspace'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveCreatorWorkspace>>, {data: BodyType<CreatorWorkspaceInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveCreatorWorkspace(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveCreatorWorkspaceMutationResult = NonNullable<Awaited<ReturnType<typeof saveCreatorWorkspace>>>
+    export type SaveCreatorWorkspaceMutationBody = BodyType<CreatorWorkspaceInput>
+    export type SaveCreatorWorkspaceMutationError = ErrorType<void>
+
+    /**
+ * @summary Save Fheed's shared creator workspace
+ */
+export const useSaveCreatorWorkspace = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveCreatorWorkspace>>, TError,{data: BodyType<CreatorWorkspaceInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveCreatorWorkspace>>,
+        TError,
+        {data: BodyType<CreatorWorkspaceInput>},
+        TContext
+      > => {
+      return useMutation(getSaveCreatorWorkspaceMutationOptions(options));
+    }
+
+export const getRequestUploadUrlUrl = () => {
+
+
+
+
+  return `/api/storage/uploads/request-url`
+}
+
+/**
+ * @summary Request a private creator-media upload URL
+ */
+export const requestUploadUrl = async (creatorUploadRequest: CreatorUploadRequest, options?: Parameters<typeof customFetch>[1]): Promise<CreatorUploadResponse> => {
+
+  return customFetch<CreatorUploadResponse>(getRequestUploadUrlUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(creatorUploadRequest)
+  }
+);}
+
+
+
+
+
+export const getRequestUploadUrlMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<CreatorUploadRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<CreatorUploadRequest>}, TContext> => {
+
+const mutationKey = ['requestUploadUrl'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof requestUploadUrl>>, {data: BodyType<CreatorUploadRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  requestUploadUrl(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RequestUploadUrlMutationResult = NonNullable<Awaited<ReturnType<typeof requestUploadUrl>>>
+    export type RequestUploadUrlMutationBody = BodyType<CreatorUploadRequest>
+    export type RequestUploadUrlMutationError = ErrorType<void>
+
+    /**
+ * @summary Request a private creator-media upload URL
+ */
+export const useRequestUploadUrl = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof requestUploadUrl>>, TError,{data: BodyType<CreatorUploadRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof requestUploadUrl>>,
+        TError,
+        {data: BodyType<CreatorUploadRequest>},
+        TContext
+      > => {
+      return useMutation(getRequestUploadUrlMutationOptions(options));
     }
 

@@ -78,6 +78,8 @@ button { font:inherit; cursor:pointer; }
 .match p { grid-column:1/-1; }
 .approved-empty { padding:32px 16px; border:1px dashed #d4cabf; border-radius:18px; color:#746d65; font-size:13px; line-height:1.55; text-align:center; }
 .workspace-notice { margin:8px 0 12px; padding:9px 11px; border:1px solid #d89b65; border-radius:12px; background:#fff1e4; color:#6d3516; font-size:11px; font-weight:700; line-height:1.4; }
+.workspace-notice button { margin-inline-start:8px; padding:0; border:0; background:transparent; color:var(--tk-wine); font:inherit; font-weight:800; text-decoration:underline; }
+.workspace-sync { margin:8px 0 12px; padding:9px 11px; border:1px solid #c9dcd5; border-radius:12px; background:#eef7f3; color:#296657; font-size:11px; font-weight:700; line-height:1.4; }
 .approved-location { display:flex; align-items:center; gap:5px; margin:8px 0 14px; color:var(--tk-stone); font-size:12px; }
 .collection-gate { display:grid; justify-items:center; gap:8px; margin-top:22px; text-align:center; }
 .collection-gate svg { color:var(--tk-coral); }

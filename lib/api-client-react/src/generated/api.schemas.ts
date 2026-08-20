@@ -104,6 +104,154 @@ export type Relationship = RelationshipInput & {
   updatedAt: string;
 };
 
+export interface CreatorImageMetadata {
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
+  name: string;
+  /**
+     * @minimum 1
+     * @maximum 8388608
+     */
+  size: number;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  contentType: string;
+}
+
+export type CreatorEditCategory = typeof CreatorEditCategory[keyof typeof CreatorEditCategory];
+
+
+export const CreatorEditCategory = {
+  Fashion: 'Fashion',
+  Travel: 'Travel',
+  Places: 'Places',
+  Restaurants: 'Restaurants',
+  DailyRoutine: 'DailyRoutine',
+  PersonalCare: 'PersonalCare',
+  HealthFitness: 'HealthFitness',
+  Decor: 'Decor',
+  Books: 'Books',
+  Vlogs: 'Vlogs',
+} as const;
+
+export type CreatorEditAccess = typeof CreatorEditAccess[keyof typeof CreatorEditAccess];
+
+
+export const CreatorEditAccess = {
+  public: 'public',
+  locked: 'locked',
+} as const;
+
+export type CreatorEditStatus = typeof CreatorEditStatus[keyof typeof CreatorEditStatus];
+
+
+export const CreatorEditStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export interface CreatorEdit {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  id: string;
+  category: CreatorEditCategory;
+  /** @maxLength 160 */
+  title: string;
+  /** @maxLength 160 */
+  titleAr: string;
+  /** @maxLength 2000 */
+  caption: string;
+  /** @maxLength 2000 */
+  captionAr: string;
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  image: string;
+  imageMetadata?: CreatorImageMetadata;
+  /** @maxLength 240 */
+  location: string;
+  /** @maxLength 240 */
+  locationAr: string;
+  /** @maxLength 500 */
+  altText: string;
+  access: CreatorEditAccess;
+  status: CreatorEditStatus;
+  /**
+     * @maxItems 30
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  collectionIds: string[];
+}
+
+export type CreatorCollectionAccess = typeof CreatorCollectionAccess[keyof typeof CreatorCollectionAccess];
+
+
+export const CreatorCollectionAccess = {
+  public: 'public',
+  locked: 'locked',
+} as const;
+
+export interface CreatorCollection {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  id: string;
+  /** @maxLength 160 */
+  title: string;
+  /** @maxLength 160 */
+  titleAr: string;
+  /** @maxLength 2000 */
+  description: string;
+  /** @maxLength 2000 */
+  descriptionAr: string;
+  access: CreatorCollectionAccess;
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  coverEditId: string;
+  /**
+     * @maxItems 100
+     * @items.minLength 1
+     * @items.maxLength 120
+     */
+  editIds: string[];
+}
+
+export interface CreatorWorkspaceInput {
+  /** @maxItems 500 */
+  edits: CreatorEdit[];
+  /** @maxItems 100 */
+  collections: CreatorCollection[];
+  /** @minimum 1 */
+  expectedRevision?: number;
+}
+
+export type CreatorWorkspace = CreatorWorkspaceInput & {
+  creatorId: string;
+  revision: number;
+  updatedAt: string;
+};
+
+export type CreatorUploadRequest = CreatorImageMetadata;
+
+export interface CreatorUploadResponse {
+  uploadURL: string;
+  /** @pattern ^/objects/ */
+  objectPath: string;
+  metadata: CreatorImageMetadata;
+}
+
 export type ListCreatorsParams = {
 q?: string;
 category?: string;

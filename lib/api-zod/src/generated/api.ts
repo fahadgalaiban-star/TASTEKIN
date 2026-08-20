@@ -200,3 +200,311 @@ export const UpdateRelationshipResponse = zod.object({
 }))
 
 
+/**
+ * @summary Get Fheed's shared creator workspace
+ */
+export const getCreatorWorkspaceResponseOneEditsItemIdMax = 120;
+
+export const getCreatorWorkspaceResponseOneEditsItemTitleMax = 160;
+
+export const getCreatorWorkspaceResponseOneEditsItemTitleArMax = 160;
+
+export const getCreatorWorkspaceResponseOneEditsItemCaptionMax = 2000;
+
+export const getCreatorWorkspaceResponseOneEditsItemCaptionArMax = 2000;
+
+export const getCreatorWorkspaceResponseOneEditsItemImageMax = 1024;
+
+export const getCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax = 255;
+
+export const getCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 8388608;
+
+export const getCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax = 120;
+
+export const getCreatorWorkspaceResponseOneEditsItemLocationMax = 240;
+
+export const getCreatorWorkspaceResponseOneEditsItemLocationArMax = 240;
+
+export const getCreatorWorkspaceResponseOneEditsItemAltTextMax = 500;
+
+export const getCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax = 120;
+
+export const getCreatorWorkspaceResponseOneEditsItemCollectionIdsMax = 30;
+
+export const getCreatorWorkspaceResponseOneEditsMax = 500;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemIdMax = 120;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemTitleMax = 160;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemTitleArMax = 160;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemDescriptionMax = 2000;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax = 2000;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax = 120;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax = 120;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax = 100;
+
+export const getCreatorWorkspaceResponseOneCollectionsMax = 100;
+
+
+
+
+export const GetCreatorWorkspaceResponse = zod.object({
+  "edits": zod.array(zod.object({
+  "id": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemIdMax),
+  "category": zod.enum(['Fashion', 'Travel', 'Places', 'Restaurants', 'DailyRoutine', 'PersonalCare', 'HealthFitness', 'Decor', 'Books', 'Vlogs']),
+  "title": zod.string().max(getCreatorWorkspaceResponseOneEditsItemTitleMax),
+  "titleAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemTitleArMax),
+  "caption": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionMax),
+  "captionAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionArMax),
+  "image": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMax),
+  "imageMetadata": zod.object({
+  "name": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax),
+  "size": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax),
+  "contentType": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax)
+}).optional(),
+  "location": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationMax),
+  "locationAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationArMax),
+  "altText": zod.string().max(getCreatorWorkspaceResponseOneEditsItemAltTextMax),
+  "access": zod.enum(['public', 'locked']),
+  "status": zod.enum(['draft', 'published', 'archived']),
+  "collectionIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax)).max(getCreatorWorkspaceResponseOneEditsItemCollectionIdsMax)
+})).max(getCreatorWorkspaceResponseOneEditsMax),
+  "collections": zod.array(zod.object({
+  "id": zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemIdMax),
+  "title": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemTitleMax),
+  "titleAr": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemTitleArMax),
+  "description": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionMax),
+  "descriptionAr": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
+  "access": zod.enum(['public', 'locked']),
+  "coverEditId": zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
+})).max(getCreatorWorkspaceResponseOneCollectionsMax),
+  "expectedRevision": zod.number().min(1).optional()
+}).and(zod.object({
+  "creatorId": zod.string(),
+  "revision": zod.number(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Save Fheed's shared creator workspace
+ */
+export const saveCreatorWorkspaceBodyEditsItemIdMax = 120;
+
+export const saveCreatorWorkspaceBodyEditsItemTitleMax = 160;
+
+export const saveCreatorWorkspaceBodyEditsItemTitleArMax = 160;
+
+export const saveCreatorWorkspaceBodyEditsItemCaptionMax = 2000;
+
+export const saveCreatorWorkspaceBodyEditsItemCaptionArMax = 2000;
+
+export const saveCreatorWorkspaceBodyEditsItemImageMax = 1024;
+
+export const saveCreatorWorkspaceBodyEditsItemImageMetadataNameMax = 255;
+
+export const saveCreatorWorkspaceBodyEditsItemImageMetadataSizeMax = 8388608;
+
+export const saveCreatorWorkspaceBodyEditsItemImageMetadataContentTypeMax = 120;
+
+export const saveCreatorWorkspaceBodyEditsItemLocationMax = 240;
+
+export const saveCreatorWorkspaceBodyEditsItemLocationArMax = 240;
+
+export const saveCreatorWorkspaceBodyEditsItemAltTextMax = 500;
+
+export const saveCreatorWorkspaceBodyEditsItemCollectionIdsItemMax = 120;
+
+export const saveCreatorWorkspaceBodyEditsItemCollectionIdsMax = 30;
+
+export const saveCreatorWorkspaceBodyEditsMax = 500;
+
+export const saveCreatorWorkspaceBodyCollectionsItemIdMax = 120;
+
+export const saveCreatorWorkspaceBodyCollectionsItemTitleMax = 160;
+
+export const saveCreatorWorkspaceBodyCollectionsItemTitleArMax = 160;
+
+export const saveCreatorWorkspaceBodyCollectionsItemDescriptionMax = 2000;
+
+export const saveCreatorWorkspaceBodyCollectionsItemDescriptionArMax = 2000;
+
+export const saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax = 120;
+
+export const saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax = 120;
+
+export const saveCreatorWorkspaceBodyCollectionsItemEditIdsMax = 100;
+
+export const saveCreatorWorkspaceBodyCollectionsMax = 100;
+
+
+
+
+export const SaveCreatorWorkspaceBody = zod.object({
+  "edits": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemIdMax),
+  "category": zod.enum(['Fashion', 'Travel', 'Places', 'Restaurants', 'DailyRoutine', 'PersonalCare', 'HealthFitness', 'Decor', 'Books', 'Vlogs']),
+  "title": zod.string().max(saveCreatorWorkspaceBodyEditsItemTitleMax),
+  "titleAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemTitleArMax),
+  "caption": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionMax),
+  "captionAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionArMax),
+  "image": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMax),
+  "imageMetadata": zod.object({
+  "name": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMetadataNameMax),
+  "size": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMetadataSizeMax),
+  "contentType": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMetadataContentTypeMax)
+}).optional(),
+  "location": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationMax),
+  "locationAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationArMax),
+  "altText": zod.string().max(saveCreatorWorkspaceBodyEditsItemAltTextMax),
+  "access": zod.enum(['public', 'locked']),
+  "status": zod.enum(['draft', 'published', 'archived']),
+  "collectionIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemCollectionIdsItemMax)).max(saveCreatorWorkspaceBodyEditsItemCollectionIdsMax)
+})).max(saveCreatorWorkspaceBodyEditsMax),
+  "collections": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemIdMax),
+  "title": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemTitleMax),
+  "titleAr": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemTitleArMax),
+  "description": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionMax),
+  "descriptionAr": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionArMax),
+  "access": zod.enum(['public', 'locked']),
+  "coverEditId": zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
+  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax)
+})).max(saveCreatorWorkspaceBodyCollectionsMax),
+  "expectedRevision": zod.number().min(1).optional()
+})
+
+export const saveCreatorWorkspaceResponseOneEditsItemIdMax = 120;
+
+export const saveCreatorWorkspaceResponseOneEditsItemTitleMax = 160;
+
+export const saveCreatorWorkspaceResponseOneEditsItemTitleArMax = 160;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCaptionMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCaptionArMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneEditsItemImageMax = 1024;
+
+export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax = 255;
+
+export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 8388608;
+
+export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax = 120;
+
+export const saveCreatorWorkspaceResponseOneEditsItemLocationMax = 240;
+
+export const saveCreatorWorkspaceResponseOneEditsItemLocationArMax = 240;
+
+export const saveCreatorWorkspaceResponseOneEditsItemAltTextMax = 500;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax = 120;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCollectionIdsMax = 30;
+
+export const saveCreatorWorkspaceResponseOneEditsMax = 500;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemIdMax = 120;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemTitleMax = 160;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemTitleArMax = 160;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemDescriptionMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax = 120;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax = 120;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax = 100;
+
+export const saveCreatorWorkspaceResponseOneCollectionsMax = 100;
+
+
+
+
+export const SaveCreatorWorkspaceResponse = zod.object({
+  "edits": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemIdMax),
+  "category": zod.enum(['Fashion', 'Travel', 'Places', 'Restaurants', 'DailyRoutine', 'PersonalCare', 'HealthFitness', 'Decor', 'Books', 'Vlogs']),
+  "title": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemTitleMax),
+  "titleAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemTitleArMax),
+  "caption": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionMax),
+  "captionAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionArMax),
+  "image": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMax),
+  "imageMetadata": zod.object({
+  "name": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax),
+  "size": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax),
+  "contentType": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax)
+}).optional(),
+  "location": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationMax),
+  "locationAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationArMax),
+  "altText": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemAltTextMax),
+  "access": zod.enum(['public', 'locked']),
+  "status": zod.enum(['draft', 'published', 'archived']),
+  "collectionIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax)).max(saveCreatorWorkspaceResponseOneEditsItemCollectionIdsMax)
+})).max(saveCreatorWorkspaceResponseOneEditsMax),
+  "collections": zod.array(zod.object({
+  "id": zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemIdMax),
+  "title": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemTitleMax),
+  "titleAr": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemTitleArMax),
+  "description": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionMax),
+  "descriptionAr": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
+  "access": zod.enum(['public', 'locked']),
+  "coverEditId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
+})).max(saveCreatorWorkspaceResponseOneCollectionsMax),
+  "expectedRevision": zod.number().min(1).optional()
+}).and(zod.object({
+  "creatorId": zod.string(),
+  "revision": zod.number(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Request a private creator-media upload URL
+ */
+export const requestUploadUrlBodyOneNameMax = 255;
+
+export const requestUploadUrlBodyOneSizeMax = 8388608;
+
+export const requestUploadUrlBodyOneContentTypeMax = 120;
+
+
+
+export const RequestUploadUrlBody = zod.object({
+  "name": zod.string().min(1).max(requestUploadUrlBodyOneNameMax),
+  "size": zod.number().min(1).max(requestUploadUrlBodyOneSizeMax),
+  "contentType": zod.string().min(1).max(requestUploadUrlBodyOneContentTypeMax)
+})
+
+export const requestUploadUrlResponseObjectPathRegExp = new RegExp('^/objects');
+export const requestUploadUrlResponseMetadataNameMax = 255;
+
+export const requestUploadUrlResponseMetadataSizeMax = 8388608;
+
+export const requestUploadUrlResponseMetadataContentTypeMax = 120;
+
+
+
+export const RequestUploadUrlResponse = zod.object({
+  "uploadURL": zod.string(),
+  "objectPath": zod.string().regex(requestUploadUrlResponseObjectPathRegExp),
+  "metadata": zod.object({
+  "name": zod.string().min(1).max(requestUploadUrlResponseMetadataNameMax),
+  "size": zod.number().min(1).max(requestUploadUrlResponseMetadataSizeMax),
+  "contentType": zod.string().min(1).max(requestUploadUrlResponseMetadataContentTypeMax)
+})
+})
+
+

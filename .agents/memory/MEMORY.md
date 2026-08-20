@@ -1,3 +1,4 @@
 - [TASTEKIN reference assets](tastekin-reference-assets.md) — supplied UI screenshots are retina-resolution; calculate media crops using their physical pixels.
 - [TASTEKIN RTL numerals](tastekin-rtl-prices.md) — isolate Latin numerals inside Arabic UI to preserve their visible order.
 - [TASTEKIN Phase 1 boundary](tastekin-phase1.md) — consumer discovery ships first; subscriptions, creator tools, and admin moderation follow approval.
+- [TASTEKIN OpenAPI URL fields](tastekin-openapi-url-fields.md) — avoid URI-format validation for private object paths; they are app-relative routes, not absolute URLs.
