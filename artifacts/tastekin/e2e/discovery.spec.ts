@@ -302,6 +302,62 @@ test('persists saves, follow state, collections, and the owner profile entry poi
   await expect(page.getByRole('button', { name: 'Save profile' })).toBeVisible();
 });
 
+test('keeps owner controls compact and persists featured collection choices', async ({ page }) => {
+  await page.route('**/api/creator-workspace', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        creatorId: 'fheed',
+        revision: 1,
+        edits: [
+          { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: '/tastekin-media/quiet-tailoring.webp', location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Tailoring.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
+          { id: 'private-hotel', category: 'Travel', title: 'Private hotel weekend', titleAr: 'عطلة فندقية خاصة', caption: 'The stay, the packing list, and where I ate.', captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.', image: '/tastekin-media/private-hotel-preview.webp', location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'Private hotel preview.', access: 'locked', status: 'published', collectionIds: ['coastal-edit'] },
+        ],
+        collections: [
+          { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+        ],
+      }),
+    });
+  });
+  await page.reload();
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+
+  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
+  const visitorPreview = page.getByRole('button', { name: 'View as visitor' });
+  await expect(visitorPreview).toBeVisible();
+  const previewBox = await visitorPreview.boundingBox();
+  expect(previewBox?.width).toBeLessThanOrEqual(52);
+  await expect(page.getByRole('button', { name: 'Insights' })).toHaveCount(0);
+
+  const featuredCards = page.locator('[data-testid^="featured-collection-"]');
+  await expect(featuredCards).toHaveCount(2);
+  await page.getByTestId('featured-collection-quiet-luxury').click();
+  await expect(page.getByRole('heading', { name: 'Quiet Luxury' })).toBeVisible();
+
+  await page.getByTestId('nav-add').click();
+  await page.getByRole('button', { name: 'Manage collections' }).click();
+  await expect(page.getByRole('button', { name: 'Unfeature' })).toHaveCount(2);
+  await page.getByRole('button', { name: 'Move featured collection later' }).first().click();
+  await page.getByRole('button', { name: 'Unfeature' }).first().click();
+
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await expect(featuredCards).toHaveCount(1);
+  await expect(page.getByTestId('featured-collection-quiet-luxury')).toHaveCount(0);
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+
+  const persistedFeaturedIds = await page.evaluate(() => localStorage.getItem('tastekin:featured-collection-ids'));
+  expect(persistedFeaturedIds).toBe(JSON.stringify(['coastal-edit']));
+  await page.addInitScript((value) => localStorage.setItem('tastekin:featured-collection-ids', value), persistedFeaturedIds);
+  await page.reload();
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await expect(featuredCards).toHaveCount(1);
+  await expect(page.getByTestId('featured-collection-quiet-luxury')).toHaveCount(0);
+});
+
 test('keeps a subscriber-only edit on its locked preview until media access is authorized', async ({ page }) => {
   await switchToConsumer(page);
   await page.getByTestId('nav-home').click();

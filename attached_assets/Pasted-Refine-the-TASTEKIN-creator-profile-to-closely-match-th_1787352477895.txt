@@ -1,0 +1,99 @@
+Refine the TASTEKIN creator profile to closely match the attached approved reference image.
+
+This is a focused profile-layout task. Do not modify authentication, image cropping, upload, publishing, Place Edits, Taste Rating, Taste Match calculations, subscriptions, verification rules, or existing creator data.
+
+1. Profile header
+
+Create a compact, premium mobile profile header at 390px:
+
+* Profile photo on the left.
+* Display name and Taste Seal aligned cleanly on one line.
+* Username below the name.
+* City and country with a small location icon.
+* Bio displayed clearly below.
+* Taste Match badge positioned below the bio.
+* Taste categories should appear as a quiet text line, not crowded beside the location.
+* Keep age visible only when the creator enabled “Show my age.”
+* Preserve the existing premium TASTEKIN Taste Seal exactly.
+
+Avoid excessive vertical space. The complete identity section should feel balanced and editorial like the attached reference.
+
+2. Owner controls
+
+When the creator views their own profile:
+
+* Keep “Edit profile.”
+* Change “View as visitor” into a compact eye-icon button beside it.
+* Do not add inactive or fake buttons.
+* Do not add an Insights button until a real Insights screen exists.
+* Reserve clean visual space so Insights can be added later without redesigning the header.
+
+When viewed as a visitor:
+
+* Keep Follow visible.
+* Keep Subscribe · $19.99 / month visible for eligible verified creators.
+* Do not show follower or following counts.
+
+3. Featured Collections
+
+Add a “Featured collections” section between the profile controls and the Edits / Collections / About tabs.
+
+* Show up to 3 collections selected by the creator.
+* Use horizontally arranged portrait cards similar to the reference.
+* Each card uses the collection cover image with a subtle dark gradient and collection name.
+* Cards open the correct collection.
+* If the creator has no featured collections, hide the entire section.
+* Add a simple control inside Manage Collections allowing the owner to feature, unfeature, and reorder up to 3 collections.
+* Persist these choices.
+
+4. Profile tabs and filters
+
+Keep:
+
+* Edits
+* Collections
+* About
+
+Under Edits:
+
+* Keep “All” first.
+* Generate the remaining category filters only from that creator’s published Edits.
+* Keep the category row horizontally scrollable.
+* Never show empty category filters.
+* Reset to All when opening another creator’s profile.
+
+5. Edit grid
+
+Keep the approved strict two-column grid:
+
+* Matching 4:5 card sizes.
+* Photos fill their frame without beige letterboxing or distortion.
+* No-photo Place cards remain aligned with photo cards.
+* Subscriber-only cards remain blurred and clearly locked.
+* Caption first line only with ellipsis.
+* Do not display “Untitled Edit.”
+* Preserve Place name, readable location, Taste Rating, review, and map link.
+* Add a small Save/bookmark icon to public cards only if the existing save function can be reused. Do not create a fake control.
+
+6. Mobile layout
+
+Match the hierarchy, spacing, proportions, and luxury editorial feeling of the supplied reference, while retaining TASTEKIN’s ivory, oxblood, and muted green design system.
+
+Do not copy Instagram styling or introduce follower counts, highlight circles, reels tabs, or unrelated social features.
+
+7. Test at 390×844
+
+Confirm:
+
+* Owner profile layout.
+* Visitor profile layout.
+* Profile with and without a bio.
+* Profile with age on and off.
+* Profile with and without featured collections.
+* Featured collection persistence after refresh.
+* All dynamic category filters.
+* Normal, no-photo, and subscriber-only cards.
+* No horizontal page overflow.
+* Existing crop, upload, Publish, Taste Match, Place Edit, Follow, Subscribe, and verification behavior remain unchanged.
+
+Do not make unrelated architecture changes.
