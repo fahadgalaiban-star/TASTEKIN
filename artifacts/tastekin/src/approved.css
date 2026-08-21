@@ -64,6 +64,8 @@ button { font:inherit; cursor:pointer; }
 .approved-tabs button { position:relative; padding:13px 5px 11px; border:0; background:transparent; color:#776f68; font-size:12px; font-weight:700; }
 .approved-tabs button.active { color:var(--tk-wine); }
 .approved-tabs button.active::after { content:""; position:absolute; inset-inline:8px; bottom:-1px; height:3px; border-radius:3px; background:var(--tk-wine); }
+.approved-feed-tabs { margin-top:2px; margin-bottom:17px; }
+.profile-edit-filters { margin:0 0 17px; }
 .approved-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .approved-grid-card, .approved-collection { overflow:hidden; padding:0; border:0; border-radius:16px; background:var(--tk-card); color:var(--tk-ink); text-align:start; box-shadow:0 6px 20px rgba(38,25,23,.06); }
 .approved-grid-card img { width:100%; height:auto; display:block; object-fit:cover; background:#ded6cb; }
