@@ -1,0 +1,103 @@
+Reorganize Home, Explore, and creator-profile content filters with one focused navigation cleanup.
+
+Important: Do not modify or regress authentication, Taste Match calculation, Tune Your Taste, Taste Seal, Edit Profile, profile-photo crop, upload, publishing, visibility permissions, Follow, Subscribe, outfit details, collections, or existing creator data.
+
+1. Simplify Home
+
+Remove the global category strip from Home:
+
+* All
+* Fashion & Outfits
+* Travel
+* Places
+* Restaurants
+* Personal Care
+* Health & Fitness
+* Decor
+* Books
+* Vlogs
+
+Replace it with three simple feed tabs:
+
+* For You
+* Following
+* Subscribed
+
+Behavior:
+
+* For You: keep the current personalized taste-led feed.
+* Following: show Edits from creators the authenticated user follows.
+* Subscribed: show content from creators for whom the viewer has an active subscription, using the existing subscription/demo state. Do not build real payment processing in this task.
+* If Following or Subscribed is empty, show a refined empty state with an action linking to Explore.
+* Keep the existing “Follow the taste, not the numbers.” Home identity.
+* Do not display follower counts.
+
+2. Keep global discovery categories in Explore
+
+Keep the global category filters in Explore because they are used to discover creators, places, and Edits across TASTEKIN.
+
+Do not duplicate the Home feed tabs inside Explore.
+
+Preserve:
+
+* Best Match
+* New
+* Global category filters
+* Real Taste Match scores and shared-taste reasons
+* Current authenticated-user exclusion from their own Explore results
+
+3. Add creator-specific filters inside Profile
+
+On every creator profile, keep the main tabs:
+
+* Edits
+* Collections
+* About
+
+Inside the Edits tab, add a horizontal filter row:
+
+* All
+* Only the categories that creator has actually published content in
+
+Example for Fheed:
+
+* All
+* Fashion & Outfits
+* Travel
+* Places
+
+Requirements:
+
+* Generate the profile category filters dynamically from the creator’s published Edits.
+* Do not show categories with no content.
+* Selecting a category filters only that creator’s Edits.
+* Keep Public and Subscribers Only visibility behavior unchanged.
+* Locked subscriber content may remain visible as a blurred locked preview but must not be unlocked without an active subscription.
+* Use human-readable labels such as “Daily Routine,” never raw database keys like DailyRoutine.
+* If the creator has content in only one category, the filter row may remain hidden to keep the profile clean.
+* The same profile filters must work in owner view and visitor view.
+
+4. Mobile layout
+
+At 390px iPhone width:
+
+* Home feed tabs must fit cleanly without horizontal clipping.
+* Explore category filters may scroll horizontally.
+* Creator-profile category filters may scroll horizontally.
+* Keep the bottom navigation and safe-area behavior unchanged.
+
+5. Acceptance tests
+
+Verify:
+
+* Home no longer shows the long global category list.
+* Home shows For You, Following, and Subscribed.
+* Explore still shows Best Match, New, and global categories.
+* Fheed’s profile Edits tab shows only categories in which Fheed has published Edits.
+* Selecting a profile category correctly filters the grid.
+* Visitor and owner views behave consistently.
+* Locked content remains protected.
+* Taste Match, profile editing, crop, upload, Publish, Follow, Subscribe, and Taste Seal still work.
+* All existing tests and production builds pass.
+
+Do not make unrelated design, billing, data-model, or architecture changes.
