@@ -77,7 +77,7 @@ test('keeps the five mobile destinations, all discovery filters, and RTL availab
   await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'ltr');
 });
 
-test('persists saves, follow state, collections, and the owner edit entry point', async ({ page }) => {
+test('persists saves, follow state, collections, and the owner profile entry point', async ({ page }) => {
   await page.getByTestId('edit-title-quiet-tailoring').click();
   await page.getByRole('button', { name: 'Save this edit' }).click();
   await expect(page.getByRole('main').getByRole('button', { name: 'Saved' })).toBeVisible();
@@ -111,8 +111,9 @@ test('persists saves, follow state, collections, and the owner edit entry point'
    await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeDisabled();
    await page.getByRole('button', { name: 'Exit visitor preview' }).click();
   await page.getByRole('button', { name: 'Edit profile' }).click();
-  await expect(page.getByText('Public Edit')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save this edit' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Edit profile' })).toBeVisible();
+  await expect(page.getByLabel('Change profile photo')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save profile' })).toBeVisible();
 });
 
 test('keeps a subscriber-only edit on its locked preview until media access is authorized', async ({ page }) => {

@@ -1,0 +1,2 @@
+ALTER TABLE "creator_workspaces"
+  ADD COLUMN IF NOT EXISTS "profile" jsonb NOT NULL DEFAULT '{"displayName":"Fheed Alaiban","username":"fheed","bio":"A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.","city":"Kuwait City","country":"Kuwait","interests":["Fashion","Travel","Places"],"dateOfBirth":null,"showAge":false,"avatar":"/tastekin-media/fheed-profile.webp"}'::jsonb;

@@ -16,6 +16,8 @@ tags:
     description: Consumer trust and save relationships
   - name: creator-workspace
     description: Shared creator publishing workspace
+  - name: creator-profile
+    description: Creator identity and public profile presentation
   - name: storage
     description: Protected creator media storage
 paths:
@@ -174,6 +176,39 @@ paths:
           description: Invalid creator workspace
         "403":
           description: Creator owner preview required
+  /creator-profile:
+    get:
+      operationId: getCreatorProfile
+      tags: [creator-profile]
+      summary: Get Fheed's public-safe creator profile
+      responses:
+        "200":
+          description: Creator profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorProfileSettings"
+    put:
+      operationId: saveCreatorProfile
+      tags: [creator-profile]
+      summary: Save the authenticated Fheed creator profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatorProfileInput"
+      responses:
+        "200":
+          description: Saved creator profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CreatorProfileSettings"
+        "400":
+          description: Invalid creator profile
+        "403":
+          description: Creator owner access required
   /storage/uploads/request-url:
     post:
       operationId: requestUploadUrl
@@ -340,6 +375,45 @@ components:
           items:
             type: string
             pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'
+    CreatorProfileSettings:
+      type: object
+      required: [displayName, username, bio, city, country, interests, avatar, age, dateOfBirth, showAge, verified, avatarObjectPath, revision]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        username: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-z0-9_]+$' }
+        bio: { type: string, maxLength: 500 }
+        city: { type: string, maxLength: 80 }
+        country: { type: string, maxLength: 80 }
+        interests:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 60 }
+        avatar: { type: string, minLength: 1, maxLength: 1024 }
+        avatarObjectPath: { type: ["string", "null"], maxLength: 1024 }
+        age: { type: ["number", "null"], format: int32, minimum: 13, maximum: 120 }
+        dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
+        showAge: { type: boolean }
+        verified: { type: boolean }
+        revision: { type: number, format: int32, minimum: 1 }
+    CreatorProfileInput:
+      type: object
+      required: [displayName, username, bio, city, country, interests, dateOfBirth, showAge, avatarObjectPath]
+      properties:
+        displayName: { type: string, minLength: 1, maxLength: 80 }
+        username: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-z0-9_]+$' }
+        bio: { type: string, maxLength: 500 }
+        city: { type: string, maxLength: 80 }
+        country: { type: string, maxLength: 80 }
+        interests:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 60 }
+        dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
+        showAge: { type: boolean }
+        avatarObjectPath:
+          type: ["string", "null"]
+          maxLength: 1024
+          pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'
     CreatorCrop:
       allOf:
         - type: object

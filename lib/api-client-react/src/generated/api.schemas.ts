@@ -131,6 +131,95 @@ export interface CreatorMediaCleanupRequest {
   objectPaths: string[];
 }
 
+export interface CreatorProfileSettings {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  displayName: string;
+  /**
+     * @minLength 3
+     * @maxLength 30
+     * @pattern ^[a-z0-9_]+$
+     */
+  username: string;
+  /** @maxLength 500 */
+  bio: string;
+  /** @maxLength 80 */
+  city: string;
+  /** @maxLength 80 */
+  country: string;
+  /**
+     * @maxItems 12
+     * @items.minLength 1
+     * @items.maxLength 60
+     */
+  interests: string[];
+  /**
+     * @minLength 1
+     * @maxLength 1024
+     */
+  avatar: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  avatarObjectPath: string | null;
+  /**
+     * @minimum 13
+     * @maximum 120
+     * @nullable
+     */
+  age: number | null;
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  dateOfBirth: string | null;
+  showAge: boolean;
+  verified: boolean;
+  /** @minimum 1 */
+  revision: number;
+}
+
+export interface CreatorProfileInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  displayName: string;
+  /**
+     * @minLength 3
+     * @maxLength 30
+     * @pattern ^[a-z0-9_]+$
+     */
+  username: string;
+  /** @maxLength 500 */
+  bio: string;
+  /** @maxLength 80 */
+  city: string;
+  /** @maxLength 80 */
+  country: string;
+  /**
+     * @maxItems 12
+     * @items.minLength 1
+     * @items.maxLength 60
+     */
+  interests: string[];
+  /**
+     * @nullable
+     * @pattern ^\d{4}-\d{2}-\d{2}$
+     */
+  dateOfBirth: string | null;
+  showAge: boolean;
+  /**
+     * @maxLength 1024
+     * @nullable
+     * @pattern ^/objects/uploads/[0-9a-fA-F-]{36}$
+     */
+  avatarObjectPath: string | null;
+}
+
 export type CreatorCropAspect = typeof CreatorCropAspect[keyof typeof CreatorCropAspect];
 
 

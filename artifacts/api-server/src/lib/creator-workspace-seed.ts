@@ -3,6 +3,17 @@ export const FHEED_CREATOR_ID = "fheed";
 const media = (name: string) => `/tastekin-media/${name}`;
 
 export const fheedWorkspaceSeed = {
+  profile: {
+    displayName: "Fheed Alaiban",
+    username: "fheed",
+    bio: "A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.",
+    city: "Kuwait City",
+    country: "Kuwait",
+    interests: ["Fashion", "Travel", "Places"],
+    dateOfBirth: null,
+    showAge: false,
+    avatar: "/tastekin-media/fheed-profile.webp",
+  },
   edits: [
     { id: "quiet-tailoring", category: "Fashion", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة.", image: media("quiet-tailoring.webp"), location: "Mayfair, London", locationAr: "مايفير، لندن", altText: "Fheed seated outside a London café in a linen polo.", access: "public", status: "published", collectionIds: ["quiet-luxury"] },
     { id: "black-uniform", category: "Fashion", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً.", image: media("black-uniform.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A black evening outfit on Fheed.", access: "public", status: "published", collectionIds: ["quiet-luxury"] },

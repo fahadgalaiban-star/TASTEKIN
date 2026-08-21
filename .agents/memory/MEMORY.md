@@ -4,3 +4,4 @@
 - [TASTEKIN OpenAPI URL fields](tastekin-openapi-url-fields.md) — avoid URI-format validation for private object paths; they are app-relative routes, not absolute URLs.
 - [TASTEKIN crop media lifecycle](tastekin-crop-media-lifecycle.md) — new crop renditions are discardable only until their workspace save begins.
 - [TASTEKIN canonical crop rendering](tastekin-canonical-crop-rendering.md) — public Edit media must display the saved canvas crop, never re-crop the source with CSS.
+- [TASTEKIN creator profiles](tastekin-creator-profiles.md) — creator identity belongs with its workspace; birth dates stay private and verification remains platform-controlled.

@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS "creator_workspaces" (
   "owner_user_id" text,
   "edits" jsonb NOT NULL,
   "collections" jsonb NOT NULL,
+  "profile" jsonb NOT NULL DEFAULT '{"displayName":"Fheed Alaiban","username":"fheed","bio":"A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.","city":"Kuwait City","country":"Kuwait","interests":["Fashion","Travel","Places"],"dateOfBirth":null,"showAge":false,"avatar":"/tastekin-media/fheed-profile.webp"}'::jsonb,
   "revision" integer NOT NULL DEFAULT 1,
   "created_at" timestamptz NOT NULL DEFAULT now(),
   "updated_at" timestamptz NOT NULL DEFAULT now()
@@ -29,3 +30,4 @@ CREATE TABLE IF NOT EXISTS "creator_workspaces" (
 ALTER TABLE "creator_workspaces" ADD COLUMN IF NOT EXISTS "owner_user_id" text;
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "role" text NOT NULL DEFAULT 'consumer';
 ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "is_verified" boolean NOT NULL DEFAULT false;
+ALTER TABLE "creator_workspaces" ADD COLUMN IF NOT EXISTS "profile" jsonb NOT NULL DEFAULT '{"displayName":"Fheed Alaiban","username":"fheed","bio":"A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.","city":"Kuwait City","country":"Kuwait","interests":["Fashion","Travel","Places"],"dateOfBirth":null,"showAge":false,"avatar":"/tastekin-media/fheed-profile.webp"}'::jsonb;

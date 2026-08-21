@@ -29,6 +29,21 @@ type Workspace = {
   edits: Edit[];
   collections: unknown[];
 };
+type CreatorProfile = {
+  displayName: string;
+  username: string;
+  bio: string;
+  city: string;
+  country: string;
+  interests: string[];
+  avatar: string;
+  avatarObjectPath: string | null;
+  age: number | null;
+  dateOfBirth: string | null;
+  showAge: boolean;
+  verified: boolean;
+  revision: number;
+};
 
 const ownerSession = 'tastekin-e2e-owner';
 const imagePath = path.resolve(import.meta.dirname, '../public/tastekin-media/private-hotel-preview.webp');
@@ -66,6 +81,21 @@ class PrivateCropApi {
   readonly uploadedPaths = new Set<string>();
   readonly cleanedPaths = new Set<string>();
   readonly cleanupRequests: string[][] = [];
+  profile: CreatorProfile = {
+    displayName: 'Fheed Alaiban',
+    username: 'fheed',
+    bio: 'A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.',
+    city: 'Kuwait City',
+    country: 'Kuwait',
+    interests: ['Fashion', 'Travel', 'Places'],
+    avatar: '/tastekin-media/fheed-profile.webp',
+    avatarObjectPath: null,
+    age: null,
+    dateOfBirth: null,
+    showAge: false,
+    verified: true,
+    revision: 1,
+  };
   private uploadNumber = 0;
   private saveMode: 'succeeds' | 'conflicts' | 'waits' = 'succeeds';
   private releaseSave: (() => void) | undefined;
@@ -184,6 +214,32 @@ class PrivateCropApi {
       }
     }
 
+    if (url.pathname === '/api/creator-profile') {
+      if (request.method() === 'GET') {
+        await route.fulfill({ json: owner ? { ...this.profile, revision: this.workspace.revision } : { ...this.profile, dateOfBirth: null, avatarObjectPath: null, revision: this.workspace.revision } });
+        return;
+      }
+      if (request.method() === 'PUT') {
+        if (!owner) {
+          await route.fulfill({ status: 403, json: { error: 'Only the verified Fheed creator can update this profile' } });
+          return;
+        }
+        const payload = this.requestBody(route) as Omit<CreatorProfile, 'avatar' | 'age' | 'verified'>;
+        const avatarObjectPath = payload.avatarObjectPath ?? this.profile.avatarObjectPath;
+        this.workspace = { ...this.workspace, revision: this.workspace.revision + 1, updatedAt: new Date().toISOString() };
+        this.profile = {
+          ...this.profile,
+          ...payload,
+          avatarObjectPath,
+          avatar: avatarObjectPath ? '/api/public-profile-media' : this.profile.avatar,
+          age: payload.showAge && payload.dateOfBirth ? 30 : null,
+          revision: this.workspace.revision,
+        };
+        await route.fulfill({ json: this.profile });
+        return;
+      }
+    }
+
     if (url.pathname === '/api/storage/uploads/request-url') {
       if (!owner) {
         await route.fulfill({ status: 401, json: { error: 'Sign in to upload media' } });
@@ -217,6 +273,11 @@ class PrivateCropApi {
     if (url.pathname.startsWith('/api/storage/objects/')) {
       const objectPath = url.pathname.replace('/api/storage', '');
       await this.image(route, owner && this.objectPaths.includes(objectPath) && !this.cleanedPaths.has(objectPath) ? 200 : 404);
+      return;
+    }
+
+    if (url.pathname === '/api/public-profile-media') {
+      await this.image(route, this.profile.avatarObjectPath && !this.cleanedPaths.has(this.profile.avatarObjectPath) ? 200 : 404);
       return;
     }
 
@@ -352,6 +413,60 @@ test('cancelling after a crop leaves no remote private renditions to clean up', 
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
   expect(api.objectPaths).toEqual([]);
   expect(api.cleanupRequests).toEqual([]);
+  await context.close();
+});
+
+test('creator profile photo, private birthday, and public age settings persist without exposing counts', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await page.getByRole('button', { name: 'Edit profile' }).click();
+  await page.getByLabel('Display name').fill('Fheed Alaiban Studio');
+  await page.getByLabel('Username').fill('fheedstudio');
+  await page.getByLabel('Bio').fill('A private profile edit that survives refresh.');
+  await page.getByLabel('City').fill('London');
+  await page.getByLabel('Country').fill('United Kingdom');
+  await page.getByRole('textbox', { name: 'Date of birth' }).fill('1996-04-15');
+  await page.getByRole('checkbox', { name: 'Show my age on my profile' }).check();
+  await page.getByLabel('Change profile photo').setInputFiles(imagePath);
+  await expect(page.getByLabel('Crop profile photo')).toBeVisible();
+  await page.getByRole('button', { name: 'Use photo' }).click();
+  await page.getByRole('button', { name: 'Save profile' }).click();
+
+  await expect(page.getByRole('status')).toContainText('Profile saved');
+  expect(api.profile).toMatchObject({
+    displayName: 'Fheed Alaiban Studio',
+    username: 'fheedstudio',
+    city: 'London',
+    country: 'United Kingdom',
+    dateOfBirth: '1996-04-15',
+    showAge: true,
+  });
+  expect(api.profile.avatarObjectPath).toBeTruthy();
+
+  await page.getByTestId('nav-add').click();
+  await page.getByRole('button', { name: 'Archive' }).click();
+  await expect.poll(() => api.workspace.edits[0]?.status).toBe('archived');
+
+  await page.reload();
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await expect(page.getByRole('heading', { name: 'Fheed Alaiban Studio' })).toBeVisible();
+  await expect(page.getByText(/Age 30/)).toBeVisible();
+  await expect(page.locator('.taste-seal img')).toHaveJSProperty('complete', true);
+  expect(await page.locator('.taste-seal img').evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
+  await page.getByRole('button', { name: 'Verified by TASTEKIN' }).click();
+  await expect(page.getByRole('dialog')).toContainText('Verified by TASTEKIN — selected for authentic taste and identity.');
+
+  await page.getByRole('button', { name: 'Open menu' }).click();
+  await page.getByTestId('identity-consumer').click();
+  await page.getByTestId('nav-explore').click();
+  await page.getByTestId('fheed-profile-mini').click();
+  await expect(page.getByRole('button', { name: 'Follow' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeVisible();
+  await expect(page.getByText(/followers/i)).toHaveCount(0);
   await context.close();
 });
 

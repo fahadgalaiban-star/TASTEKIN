@@ -23,6 +23,8 @@ import type {
   Creator,
   CreatorMediaCleanupRequest,
   CreatorProfile,
+  CreatorProfileInput,
+  CreatorProfileSettings,
   CreatorUploadRequest,
   CreatorUploadResponse,
   CreatorWorkspace,
@@ -727,6 +729,154 @@ export const useSaveCreatorWorkspace = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getSaveCreatorWorkspaceMutationOptions(options));
+    }
+
+export const getGetCreatorProfileUrl = () => {
+
+
+
+
+  return `/api/creator-profile`
+}
+
+/**
+ * @summary Get Fheed's public-safe creator profile
+ */
+export const getCreatorProfile = async ( options?: Parameters<typeof customFetch>[1]): Promise<CreatorProfileSettings> => {
+
+  return customFetch<CreatorProfileSettings>(getGetCreatorProfileUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCreatorProfileQueryKey = () => {
+    return [
+    `/api/creator-profile`
+    ] as const;
+    }
+
+
+export const getGetCreatorProfileQueryOptions = <TData = Awaited<ReturnType<typeof getCreatorProfile>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCreatorProfileQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCreatorProfile>>> = ({ signal }) => getCreatorProfile({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCreatorProfile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCreatorProfileQueryResult = NonNullable<Awaited<ReturnType<typeof getCreatorProfile>>>
+export type GetCreatorProfileQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get Fheed's public-safe creator profile
+ */
+
+export function useGetCreatorProfile<TData = Awaited<ReturnType<typeof getCreatorProfile>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorProfile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCreatorProfileQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveCreatorProfileUrl = () => {
+
+
+
+
+  return `/api/creator-profile`
+}
+
+/**
+ * @summary Save the authenticated Fheed creator profile
+ */
+export const saveCreatorProfile = async (creatorProfileInput: CreatorProfileInput, options?: Parameters<typeof customFetch>[1]): Promise<CreatorProfileSettings> => {
+
+  return customFetch<CreatorProfileSettings>(getSaveCreatorProfileUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(creatorProfileInput)
+  }
+);}
+
+
+
+
+
+export const getSaveCreatorProfileMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveCreatorProfile>>, TError,{data: BodyType<CreatorProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveCreatorProfile>>, TError,{data: BodyType<CreatorProfileInput>}, TContext> => {
+
+const mutationKey = ['saveCreatorProfile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveCreatorProfile>>, {data: BodyType<CreatorProfileInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveCreatorProfile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveCreatorProfileMutationResult = NonNullable<Awaited<ReturnType<typeof saveCreatorProfile>>>
+    export type SaveCreatorProfileMutationBody = BodyType<CreatorProfileInput>
+    export type SaveCreatorProfileMutationError = ErrorType<void>
+
+    /**
+ * @summary Save the authenticated Fheed creator profile
+ */
+export const useSaveCreatorProfile = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveCreatorProfile>>, TError,{data: BodyType<CreatorProfileInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveCreatorProfile>>,
+        TError,
+        {data: BodyType<CreatorProfileInput>},
+        TContext
+      > => {
+      return useMutation(getSaveCreatorProfileMutationOptions(options));
     }
 
 export const getRequestUploadUrlUrl = () => {

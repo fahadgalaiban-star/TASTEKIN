@@ -72,6 +72,10 @@ router.post("/storage/uploads/cleanup", async (req, res) => {
         .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage])
         .filter((path): path is string => typeof path === "string"),
     );
+    const profileAvatar = current?.profile && typeof current.profile === "object" && typeof (current.profile as { avatar?: unknown }).avatar === "string"
+      ? (current.profile as { avatar: string }).avatar
+      : undefined;
+    if (profileAvatar) referencedPaths.add(profileAvatar);
     if (paths.some((path) => referencedPaths.has(path))) return "referenced";
     const uploads = await tx.select().from(creatorMediaUploads).where(inArray(creatorMediaUploads.objectPath, paths));
     if (uploads.length !== paths.length || uploads.some((upload) => upload.ownerUserId !== req.user!.id || upload.state === "deleted")) return "unavailable";
@@ -107,9 +111,12 @@ router.get("/storage/objects/*path", async (req, res) => {
     const record = await workspace();
     const objectPath = `/objects/${path}`;
     const edits = (record?.edits ?? []) as Array<Record<string, unknown>>;
+    const profileAvatar = record?.profile && typeof record.profile === "object" && typeof (record.profile as { avatar?: unknown }).avatar === "string"
+      ? (record.profile as { avatar: string }).avatar
+      : undefined;
     const edit = edits.find((item) => [item.image, item.sourceImage, item.previewImage].includes(objectPath));
     const isOwner = Boolean(authorization.ok && claim?.ok && (!record?.ownerUserId || record.ownerUserId === req.user?.id));
-    if (!edit || !isOwner) {
+    if ((!edit && profileAvatar !== objectPath) || !isOwner) {
       res.status(404).json({ error: "Media object not found" });
       return;
     }
@@ -118,6 +125,22 @@ router.get("/storage/objects/*path", async (req, res) => {
   } catch (error) {
     req.log.warn({ err: error }, "Unable to serve private media object");
     res.status(404).json({ error: "Media object not found" });
+  }
+});
+
+router.get("/public-profile-media", async (_req, res) => {
+  try {
+    const record = await workspace();
+    const avatar = record?.profile && typeof record.profile === "object" && typeof (record.profile as { avatar?: unknown }).avatar === "string"
+      ? (record.profile as { avatar: string }).avatar
+      : undefined;
+    if (!avatar || !avatar.startsWith("/objects/")) {
+      res.status(404).json({ error: "Profile photo not found" });
+      return;
+    }
+    res.redirect(302, await getPrivateMediaDownloadURL(avatar));
+  } catch {
+    res.status(404).json({ error: "Profile photo not found" });
   }
 });
 

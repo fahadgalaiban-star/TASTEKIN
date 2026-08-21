@@ -21,6 +21,8 @@ export * from './creatorImageMetadata';
 export * from './creatorMediaCleanupRequest';
 export * from './creatorOutfitItem';
 export * from './creatorProfile';
+export * from './creatorProfileInput';
+export * from './creatorProfileSettings';
 export * from './creatorUploadRequest';
 export * from './creatorUploadResponse';
 export * from './creatorWorkspace';
