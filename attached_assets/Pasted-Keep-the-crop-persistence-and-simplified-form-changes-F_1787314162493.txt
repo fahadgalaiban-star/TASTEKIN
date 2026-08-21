@@ -1,0 +1,95 @@
+Keep the crop persistence and simplified form changes. Fix these two remaining issues without reverting the completed work.
+
+1. REMOVE ALL SIDE BARS AND EMPTY SPACE FROM THE CROPPER
+
+The Story/Reel 9:16 crop currently shows dark vertical bars on both sides of the image.
+
+This is incorrect. The cropper is using contain/fit behaviour instead of Instagram-style cover behaviour.
+
+Required behaviour for all formats:
+
+* Post Portrait 4:5
+* Post Square 1:1
+* Story/Reel 9:16
+
+The image must always fill 100% of the selected crop frame.
+
+Implementation:
+
+* Calculate the minimum cover scale:
+    minScale = max(frameWidth / imageWidth, frameHeight / imageHeight)
+* Start every newly selected format at this minimum cover scale.
+* The Zoom slider minimum must equal the cover scale.
+* Do not allow the user to zoom out below the cover scale.
+* Clamp X and Y dragging so no edge of the image can move inside the crop boundary.
+* Never show black, dark, white, transparent or background-coloured bars.
+* Do not use object-fit: contain.
+* The final canvas output must be completely filled with image pixels.
+
+When switching between 4:5, 1:1 and 9:16, recalculate the minimum cover scale for the new frame.
+
+Reset must return the image to:
+
+* centered position
+* minimum cover scale
+* no empty sides
+
+Verify the generated cropped image itself has no bars. Do not only hide the bars visually in the editor.
+
+Also ensure profile-grid and feed cards use the rendered cropped image and do not add contain-style letterboxing.
+
+2. OWNER PROFILE VS VISITOR PROFILE
+
+The current screenshot is the creator viewing their own profile, so showing “Edit profile” instead of Follow is correct.
+
+Do not allow a creator to follow or subscribe to their own account.
+
+Required profile states:
+
+Owner viewing their own profile:
+
+* Edit profile
+* View as visitor
+* Creator tools/dashboard access
+* No Follow button
+* No Subscribe button
+
+Another user or logged-out visitor viewing the creator:
+
+* Follow button
+* Subscribe · $19.99/month button
+* Taste Match
+* Edits / Collections / About
+* No Edit profile button
+* No follower count
+
+Add a clear “View as visitor” secondary button or option beside/below Edit profile.
+
+When the owner taps “View as visitor”:
+
+* display the exact public profile layout
+* show Follow and Subscribe visually
+* disable actual self-follow/self-subscription actions
+* include an “Exit visitor preview” action
+
+Verify Follow and Subscribe were not removed from the real public creator profile.
+
+Acceptance tests:
+
+A. Cropping:
+
+1. Upload the supplied vertical photo.
+2. Select Story/Reel 9:16.
+3. Confirm the image fills the complete frame with no side bars.
+4. Move and zoom it.
+5. Save and publish.
+6. Confirm no bars appear in Compose, feed, profile or Edit detail.
+
+B. Profile:
+
+1. Sign in as Fheed and open Fheed’s profile: show Edit profile and View as visitor.
+2. Enter visitor preview: show Follow and Subscribe.
+3. Open Fheed’s profile using a different test user: show functional Follow and Subscribe.
+4. Confirm the follower count remains hidden.
+
+Make the actual code changes and test the active mobile preview.

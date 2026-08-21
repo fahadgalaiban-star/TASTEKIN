@@ -225,7 +225,8 @@ export const getCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 15728
 
 export const getCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax = 120;
 
-export const getCreatorWorkspaceResponseOneEditsItemCropOneZoomMax = 3;
+export const getCreatorWorkspaceResponseOneEditsItemCropOneZoomMin = 0.001;
+export const getCreatorWorkspaceResponseOneEditsItemCropOneZoomMax = 3840;
 
 export const getCreatorWorkspaceResponseOneEditsItemCropOneXMin = -50;
 export const getCreatorWorkspaceResponseOneEditsItemCropOneXMax = 50;
@@ -301,7 +302,7 @@ export const GetCreatorWorkspaceResponse = zod.object({
 }).optional(),
   "crop": zod.object({
   "aspect": zod.enum(['square', 'portrait', 'story']),
-  "zoom": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemCropOneZoomMax),
+  "zoom": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropOneZoomMin).max(getCreatorWorkspaceResponseOneEditsItemCropOneZoomMax),
   "x": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropOneXMin).max(getCreatorWorkspaceResponseOneEditsItemCropOneXMax),
   "y": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropOneYMin).max(getCreatorWorkspaceResponseOneEditsItemCropOneYMax),
   "rotation": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropOneRotationMin).max(getCreatorWorkspaceResponseOneEditsItemCropOneRotationMax),
@@ -379,7 +380,8 @@ export const saveCreatorWorkspaceBodyEditsItemImageMetadataSizeMax = 15728640;
 
 export const saveCreatorWorkspaceBodyEditsItemImageMetadataContentTypeMax = 120;
 
-export const saveCreatorWorkspaceBodyEditsItemCropOneZoomMax = 3;
+export const saveCreatorWorkspaceBodyEditsItemCropOneZoomMin = 0.001;
+export const saveCreatorWorkspaceBodyEditsItemCropOneZoomMax = 3840;
 
 export const saveCreatorWorkspaceBodyEditsItemCropOneXMin = -50;
 export const saveCreatorWorkspaceBodyEditsItemCropOneXMax = 50;
@@ -455,7 +457,7 @@ export const SaveCreatorWorkspaceBody = zod.object({
 }).optional(),
   "crop": zod.object({
   "aspect": zod.enum(['square', 'portrait', 'story']),
-  "zoom": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemCropOneZoomMax),
+  "zoom": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropOneZoomMin).max(saveCreatorWorkspaceBodyEditsItemCropOneZoomMax),
   "x": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropOneXMin).max(saveCreatorWorkspaceBodyEditsItemCropOneXMax),
   "y": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropOneYMin).max(saveCreatorWorkspaceBodyEditsItemCropOneYMax),
   "rotation": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropOneRotationMin).max(saveCreatorWorkspaceBodyEditsItemCropOneRotationMax),
@@ -525,7 +527,8 @@ export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 1572
 
 export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax = 120;
 
-export const saveCreatorWorkspaceResponseOneEditsItemCropOneZoomMax = 3;
+export const saveCreatorWorkspaceResponseOneEditsItemCropOneZoomMin = 0.001;
+export const saveCreatorWorkspaceResponseOneEditsItemCropOneZoomMax = 3840;
 
 export const saveCreatorWorkspaceResponseOneEditsItemCropOneXMin = -50;
 export const saveCreatorWorkspaceResponseOneEditsItemCropOneXMax = 50;
@@ -601,7 +604,7 @@ export const SaveCreatorWorkspaceResponse = zod.object({
 }).optional(),
   "crop": zod.object({
   "aspect": zod.enum(['square', 'portrait', 'story']),
-  "zoom": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemCropOneZoomMax),
+  "zoom": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropOneZoomMin).max(saveCreatorWorkspaceResponseOneEditsItemCropOneZoomMax),
   "x": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropOneXMin).max(saveCreatorWorkspaceResponseOneEditsItemCropOneXMax),
   "y": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropOneYMin).max(saveCreatorWorkspaceResponseOneEditsItemCropOneYMax),
   "rotation": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropOneRotationMin).max(saveCreatorWorkspaceResponseOneEditsItemCropOneRotationMax),

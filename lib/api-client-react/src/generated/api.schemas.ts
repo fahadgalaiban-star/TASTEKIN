@@ -155,8 +155,8 @@ export type CreatorCrop = ({
 }) & {
   aspect: CreatorCropAspect;
   /**
-     * @minimum 1
-     * @maximum 3
+     * @minimum 0.001
+     * @maximum 3840
      */
   zoom: number;
   /**

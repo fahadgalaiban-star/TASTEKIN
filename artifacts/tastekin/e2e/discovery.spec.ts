@@ -90,6 +90,8 @@ test('persists saves, follow state, collections, and the owner edit entry point'
   await openConsumerProfile(page);
   await page.getByRole('button', { name: 'Follow' }).click();
   await expect(page.getByRole('button', { name: 'Following' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeVisible();
+  await expect(page.getByText(/followers/i)).toHaveCount(0);
   await page.getByRole('button', { name: 'Collections' }).click();
   await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
   await expect(page.locator('.approved-collection')).toHaveCount(2);
@@ -101,6 +103,13 @@ test('persists saves, follow state, collections, and the owner edit entry point'
   await page.getByRole('button', { name: 'Open menu' }).click();
   await page.getByTestId('identity-owner').click();
   await page.getByRole('button', { name: 'View profile' }).click();
+   await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
+   await expect(page.getByRole('button', { name: 'View as visitor' })).toBeVisible();
+   await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
+   await page.getByRole('button', { name: 'View as visitor' }).click();
+   await expect(page.getByRole('button', { name: 'Follow' })).toBeDisabled();
+   await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeDisabled();
+   await page.getByRole('button', { name: 'Exit visitor preview' }).click();
   await page.getByRole('button', { name: 'Edit profile' }).click();
   await expect(page.getByText('Public Edit')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save this edit' })).toBeVisible();

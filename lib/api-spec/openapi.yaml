@@ -346,7 +346,7 @@ components:
           required: [aspect, zoom, x, y, rotation, sourceWidth, sourceHeight, outputWidth, outputHeight]
           properties:
             aspect: { type: string, enum: [square, portrait, story] }
-            zoom: { type: number, minimum: 1, maximum: 3 }
+            zoom: { type: number, minimum: 0.001, maximum: 3840 }
             x: { type: number, minimum: -50, maximum: 50 }
             y: { type: number, minimum: -50, maximum: 50 }
             rotation: { type: number, minimum: -360, maximum: 360 }
