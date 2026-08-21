@@ -7,7 +7,19 @@
  */
 import type { CreatorCropAspect } from './creatorCropAspect';
 
-export interface CreatorCrop {
+export type CreatorCrop = ({
+  aspect?: 'portrait';
+  outputWidth?: 1080;
+  outputHeight?: 1350;
+} | {
+  aspect?: 'square';
+  outputWidth?: 1080;
+  outputHeight?: 1080;
+} | {
+  aspect?: 'story';
+  outputWidth?: 1080;
+  outputHeight?: 1920;
+}) & {
   aspect: CreatorCropAspect;
   /**
      * @minimum 1
@@ -39,4 +51,6 @@ export interface CreatorCrop {
      * @maximum 10000
      */
   sourceHeight: number;
-}
+  outputWidth: number;
+  outputHeight: number;
+};

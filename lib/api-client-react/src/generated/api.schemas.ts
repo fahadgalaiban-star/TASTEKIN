@@ -138,10 +138,21 @@ export const CreatorCropAspect = {
   square: 'square',
   portrait: 'portrait',
   story: 'story',
-  free: 'free',
 } as const;
 
-export interface CreatorCrop {
+export type CreatorCrop = ({
+  aspect?: 'portrait';
+  outputWidth?: 1080;
+  outputHeight?: 1350;
+} | {
+  aspect?: 'square';
+  outputWidth?: 1080;
+  outputHeight?: 1080;
+} | {
+  aspect?: 'story';
+  outputWidth?: 1080;
+  outputHeight?: 1920;
+}) & {
   aspect: CreatorCropAspect;
   /**
      * @minimum 1
@@ -173,6 +184,19 @@ export interface CreatorCrop {
      * @maximum 10000
      */
   sourceHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+};
+
+export interface CreatorOutfitItem {
+  /** @maxLength 100 */
+  type: string;
+  /** @maxLength 160 */
+  brand: string;
+  /** @maxLength 240 */
+  name: string;
+  /** @maxLength 1024 */
+  link: string;
 }
 
 export type CreatorEditCategory = typeof CreatorEditCategory[keyof typeof CreatorEditCategory];
@@ -234,6 +258,9 @@ export interface CreatorEdit {
   previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
   crop?: CreatorCrop;
+  /** @maxItems 20 */
+  outfitItems?: CreatorOutfitItem[];
+  showOutfitDetails?: boolean;
   /** @maxLength 240 */
   location: string;
   /** @maxLength 240 */

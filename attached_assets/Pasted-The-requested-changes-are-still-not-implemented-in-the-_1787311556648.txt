@@ -1,0 +1,167 @@
+The requested changes are still not implemented in the active app.
+
+Evidence from the current running preview:
+
+* Square, Portrait, Story/Reel and Original only change the selected button colour. The actual image canvas does not change its aspect ratio.
+* The dashed “SAFE AREA” rectangle is still visible. Remove it completely.
+* After returning to Compose Edit, the preview becomes a fixed horizontal rectangle and crops the face out.
+* Title, Arabic title, Arabic caption, Category, Location and Alt text are still visible by default.
+* The old “Crop applied. Save this Edit to keep the new image” message is still present.
+* The global bottom navigation still covers crop controls.
+
+Stop patching the existing cropper. Replace this old image flow.
+
+1. REMOVE THE OLD CROPPER UI
+
+Search the active codebase for these exact visible strings:
+
+* “SAFE AREA”
+* “Keep faces and key text inside the inner safe area”
+* “Crop applied. Save this Edit to keep the new image”
+* “Arabic title”
+* “Arabic caption”
+
+Identify the component and route actually used by the running Create Edit page. Delete the old safe-area overlay and old default form from the active route.
+
+Do not modify an unused component or old prototype route.
+
+2. USE THREE SIMPLE INSTAGRAM-STYLE FORMATS
+
+Show only:
+
+* Post Portrait — 4:5 — default — 1080 × 1350
+* Post Square — 1:1 — 1080 × 1080
+* Story / Reel — 9:16 — 1080 × 1920
+
+Remove “Original” from this flow to keep it simple.
+
+When a format is selected, the OUTER image frame itself must immediately change to the selected CSS aspect-ratio.
+
+There must be no second dashed rectangle inside the image. The outside frame is the real crop boundary.
+
+The user only needs to:
+
+* select Post Portrait, Post Square or Story/Reel
+* drag the image
+* pinch or slide to zoom
+* tap Reset if needed
+* tap Done
+
+3. CREATE A REAL CROPPED IMAGE ON DONE
+
+Do not rely on every screen reapplying CSS crop transforms.
+
+When the creator taps Done:
+
+* normalize the uploaded image orientation
+* render the selected crop to an HTML canvas at the exact target dimensions
+* create a final JPEG/WebP Blob
+* upload/save the rendered cropped image
+* keep the original image privately so it can be edited again
+* immediately use the rendered cropped image as the Compose preview
+
+Store:
+
+* original media
+* rendered/cropped media
+* selected format
+* output width
+* output height
+
+Every public surface must use the same rendered cropped image:
+
+* Compose preview
+* saved draft
+* Home feed
+* creator profile
+* Edit detail
+* published output
+
+Do not apply another object-fit: cover, centered crop or fixed landscape container to the rendered image.
+
+This guarantees that the face cannot disappear after leaving the editor.
+
+4. PRESERVE THE SELECTED ASPECT RATIO IN COMPOSE
+
+The Compose Edit preview must use the selected ratio:
+
+* 4:5 selection → 4:5 preview
+* 1:1 selection → square preview
+* 9:16 selection → 9:16 preview
+
+The current fixed horizontal preview is incorrect and must be removed.
+
+5. REPLACE THE DEFAULT FORM
+
+The default Compose Edit screen must show only:
+
+* final image preview
+* Edit crop
+* one optional Caption field accepting Arabic or English
+* Public / Subscribers Only
+* Add details
+* Save draft
+* Preview
+* Publish
+
+Remove these fields from the default screen:
+
+* Title
+* Arabic title
+* Arabic caption
+* Category
+* Location
+* Alt text
+
+Create one collapsed “Add details” section. It must be closed by default.
+
+Inside it, place optional:
+
+* Location
+* Category
+* Collection
+* Add outfit/product details
+
+Outfit/product details must support multiple items:
+
+* Item type
+* Brand/store
+* Product name
+* Product link
+* Add another item
+
+Add a switch:
+
+“Show outfit details under this Edit”
+
+Move Alt text and translation tools into a separate collapsed “Accessibility & advanced” section.
+
+6. FIX MOBILE OVERLAYS
+
+While the image editor or Compose Edit is open:
+
+* hide the global Home/Explore/Add/Saved/You navigation
+* controls must never be covered
+* keep the app’s own Done button visible
+* support iPhone safe areas and 100dvh
+
+7. VERIFY THE ACTIVE BUILD
+
+After changing the files:
+
+* restart/rebuild the active preview
+* confirm the preview is serving the changed component
+* verify that none of the removed strings still appear in the running page
+
+Required test:
+
+1. Upload the supplied seated portrait.
+2. Select Post Portrait 4:5.
+3. Position the image with the face visible.
+4. Tap Done.
+5. The Compose preview must remain 4:5 and show the face.
+6. Save draft and refresh.
+7. Reopen and publish.
+8. The identical rendered crop must appear in the feed, profile and Edit detail.
+
+Do not report completion with a plan or explanation. Make the actual file changes, rebuild the active app and list the changed files and test results.

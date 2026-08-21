@@ -3,3 +3,4 @@
 - [TASTEKIN Phase 1 boundary](tastekin-phase1.md) — consumer discovery ships first; subscriptions, creator tools, and admin moderation follow approval.
 - [TASTEKIN OpenAPI URL fields](tastekin-openapi-url-fields.md) — avoid URI-format validation for private object paths; they are app-relative routes, not absolute URLs.
 - [TASTEKIN crop media lifecycle](tastekin-crop-media-lifecycle.md) — new crop renditions are discardable only until their workspace save begins.
+- [TASTEKIN canonical crop rendering](tastekin-canonical-crop-rendering.md) — public Edit media must display the saved canvas crop, never re-crop the source with CSS.

@@ -341,16 +341,43 @@ components:
             type: string
             pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'
     CreatorCrop:
+      allOf:
+        - type: object
+          required: [aspect, zoom, x, y, rotation, sourceWidth, sourceHeight, outputWidth, outputHeight]
+          properties:
+            aspect: { type: string, enum: [square, portrait, story] }
+            zoom: { type: number, minimum: 1, maximum: 3 }
+            x: { type: number, minimum: -50, maximum: 50 }
+            y: { type: number, minimum: -50, maximum: 50 }
+            rotation: { type: number, minimum: -360, maximum: 360 }
+            sourceWidth: { type: number, format: int32, minimum: 1, maximum: 10000 }
+            sourceHeight: { type: number, format: int32, minimum: 1, maximum: 10000 }
+            outputWidth: { type: number, format: int32 }
+            outputHeight: { type: number, format: int32 }
+        - oneOf:
+            - type: object
+              properties:
+                aspect: { type: string, enum: [portrait] }
+                outputWidth: { type: number, enum: [1080] }
+                outputHeight: { type: number, enum: [1350] }
+            - type: object
+              properties:
+                aspect: { type: string, enum: [square] }
+                outputWidth: { type: number, enum: [1080] }
+                outputHeight: { type: number, enum: [1080] }
+            - type: object
+              properties:
+                aspect: { type: string, enum: [story] }
+                outputWidth: { type: number, enum: [1080] }
+                outputHeight: { type: number, enum: [1920] }
+    CreatorOutfitItem:
       type: object
-      required: [aspect, zoom, x, y, rotation, sourceWidth, sourceHeight]
+      required: [type, brand, name, link]
       properties:
-        aspect: { type: string, enum: [square, portrait, story, free] }
-        zoom: { type: number, minimum: 1, maximum: 3 }
-        x: { type: number, minimum: -50, maximum: 50 }
-        y: { type: number, minimum: -50, maximum: 50 }
-        rotation: { type: number, minimum: -360, maximum: 360 }
-        sourceWidth: { type: number, format: int32, minimum: 1, maximum: 10000 }
-        sourceHeight: { type: number, format: int32, minimum: 1, maximum: 10000 }
+        type: { type: string, maxLength: 100 }
+        brand: { type: string, maxLength: 160 }
+        name: { type: string, maxLength: 240 }
+        link: { type: string, maxLength: 1024 }
     CreatorEdit:
       type: object
       required: [id, category, title, titleAr, caption, captionAr, image, location, locationAr, altText, access, status, collectionIds]
@@ -366,6 +393,11 @@ components:
         previewImage: { type: string, maxLength: 1024 }
         imageMetadata: { $ref: "#/components/schemas/CreatorImageMetadata" }
         crop: { $ref: "#/components/schemas/CreatorCrop" }
+        outfitItems:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/CreatorOutfitItem" }
+        showOutfitDetails: { type: boolean }
         location: { type: string, maxLength: 240 }
         locationAr: { type: string, maxLength: 240 }
         altText: { type: string, maxLength: 500 }

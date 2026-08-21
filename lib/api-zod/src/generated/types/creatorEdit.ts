@@ -10,6 +10,7 @@ import type { CreatorEditAccess } from './creatorEditAccess';
 import type { CreatorEditCategory } from './creatorEditCategory';
 import type { CreatorEditStatus } from './creatorEditStatus';
 import type { CreatorImageMetadata } from './creatorImageMetadata';
+import type { CreatorOutfitItem } from './creatorOutfitItem';
 
 export interface CreatorEdit {
   /**
@@ -37,6 +38,9 @@ export interface CreatorEdit {
   previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
   crop?: CreatorCrop;
+  /** @maxItems 20 */
+  outfitItems?: CreatorOutfitItem[];
+  showOutfitDetails?: boolean;
   /** @maxLength 240 */
   location: string;
   /** @maxLength 240 */

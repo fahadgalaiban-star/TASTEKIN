@@ -13,7 +13,7 @@ type Edit = {
   sourceImage?: string;
   previewImage?: string;
   imageMetadata?: { name: string; size: number; contentType: string };
-  crop?: { aspect: string; zoom: number; x: number; y: number; rotation: number; sourceWidth: number; sourceHeight: number };
+  crop?: { aspect: string; zoom: number; x: number; y: number; rotation: number; sourceWidth: number; sourceHeight: number; outputWidth: number; outputHeight: number };
   location: string;
   locationAr: string;
   altText: string;
@@ -249,18 +249,25 @@ async function creatorPage(browser: Browser, api: PrivateCropApi) {
   return { context, page };
 }
 
-async function prepareCrop(page: Page) {
+type CropFormat = { button: string; aspect: string; width: number; height: number };
+
+const cropFormats: CropFormat[] = [
+  { button: 'Post Portrait', aspect: 'portrait', width: 1080, height: 1350 },
+  { button: 'Post Square', aspect: 'square', width: 1080, height: 1080 },
+  { button: 'Story / Reel', aspect: 'story', width: 1080, height: 1920 },
+];
+
+async function prepareCrop(page: Page, format: CropFormat = cropFormats[0]) {
   await page.getByRole('button', { name: 'New Edit' }).click();
   await page.locator('input[type="file"]').setInputFiles(imagePath);
   await expect(page.locator('[aria-label="Crop image"]')).toBeVisible();
-  await page.getByRole('button', { name: 'Use this crop' }).click();
-  await expect(page.getByRole('heading', { name: 'Compose an Edit' })).toBeVisible();
+  await page.getByRole('button', { name: format.button }).click();
+  await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
 }
 
 async function fillRequiredFields(page: Page, title: string) {
-  await page.getByLabel('Title', { exact: true }).fill(title);
-  await page.getByLabel('Caption', { exact: true }).fill('A crop that should remain safely available.');
-  await page.getByLabel('Alt text', { exact: true }).fill('A safely cropped private image.');
+  await page.getByLabel('Caption (optional)', { exact: true }).fill(title);
 }
 
 async function publish(page: Page, title: string, access: Access) {
@@ -272,27 +279,31 @@ async function publish(page: Page, title: string, access: Access) {
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
 }
 
-test('an authenticated creator keeps all three public crop renditions after publishing and refreshing', async ({ browser }) => {
+test('an authenticated creator persists each exact canonical crop format after publishing and refreshing', async ({ browser }) => {
   const api = new PrivateCropApi();
   const { context, page } = await creatorPage(browser, api);
 
-  await prepareCrop(page);
-  await publish(page, 'Public crop survives refresh', 'public');
+  for (const format of cropFormats) {
+    const title = `${format.aspect} crop survives refresh`;
+    await prepareCrop(page, format);
+    await publish(page, title, 'public');
+    expect(api.workspace.edits.find((edit) => edit.title === title)).toMatchObject({
+      access: 'public',
+      status: 'published',
+      crop: { aspect: format.aspect, outputWidth: format.width, outputHeight: format.height },
+    });
+  }
 
-  expect(api.objectPaths).toHaveLength(3);
+  expect(api.objectPaths).toHaveLength(9);
   expect(api.objectPaths.every((path) => api.uploadedPaths.has(path))).toBe(true);
   expect(api.cleanedPaths).toEqual(new Set());
-  expect(api.workspace.edits.find((edit) => edit.title === 'Public crop survives refresh')).toMatchObject({
-    access: 'public',
-    status: 'published',
-    sourceImage: api.objectPaths[0],
-    image: api.objectPaths[1],
-    previewImage: api.objectPaths[2],
-  });
+  expect(api.workspace.edits.find((edit) => edit.title === 'portrait crop survives refresh')).toMatchObject({ sourceImage: api.objectPaths[0], image: api.objectPaths[1], previewImage: api.objectPaths[2] });
 
   await page.reload();
   await page.getByTestId('nav-add').click();
-  await expect(page.getByText('Public crop survives refresh')).toBeVisible();
+  await expect(page.getByText('portrait crop survives refresh')).toBeVisible();
+  await expect(page.getByText('square crop survives refresh')).toBeVisible();
+  await expect(page.getByText('story crop survives refresh')).toBeVisible();
   expect(api.cleanupRequests).toEqual([]);
   await context.close();
 });
@@ -315,7 +326,7 @@ test('anonymous visitors receive only a locked crop preview and cannot retrieve 
   const visitor = await visitorContext.newPage();
   await api.attach(visitor);
   await visitor.goto('/');
-  await expect(visitor.getByText('Locked crop stays private')).toBeVisible();
+  await expect(visitor.getByRole('button', { name: 'Locked crop stays private' })).toBeVisible();
   const card = visitor.locator('article').filter({ hasText: 'Locked crop stays private' });
   await expect(card.locator('img')).toHaveAttribute('src', `/api/public-media/${locked!.id}/preview`);
 
@@ -332,17 +343,15 @@ test('anonymous visitors receive only a locked crop preview and cannot retrieve 
   await owner.context.close();
 });
 
-test('cancelling after a crop removes its three newly created private renditions', async ({ browser }) => {
+test('cancelling after a crop leaves no remote private renditions to clean up', async ({ browser }) => {
   const api = new PrivateCropApi();
   const { context, page } = await creatorPage(browser, api);
 
   await prepareCrop(page);
   await page.getByLabel('Close editor').click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
-  await expect.poll(() => api.cleanupRequests.length).toBe(1);
-
-  expect(api.cleanupRequests[0]).toEqual(api.objectPaths);
-  expect(api.objectPaths.every((path) => api.cleanedPaths.has(path))).toBe(true);
+  expect(api.objectPaths).toEqual([]);
+  expect(api.cleanupRequests).toEqual([]);
   await context.close();
 });
 
@@ -367,8 +376,8 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   const exiting = await creatorPage(browser, exitApi);
   await prepareCrop(exiting.page);
   await exiting.page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
-  await expect.poll(() => exitApi.cleanupRequests.length).toBeGreaterThanOrEqual(1);
-  expect(exitApi.objectPaths.every((path) => exitApi.cleanedPaths.has(path))).toBe(true);
+  expect(exitApi.objectPaths).toEqual([]);
+  expect(exitApi.cleanupRequests).toEqual([]);
   await exiting.context.close();
 
   const saveApi = new PrivateCropApi();
@@ -378,8 +387,8 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   saveApi.deferNextSave();
   await saving.page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(saving.page.getByText('Saving your creator changes across devices…')).toBeVisible();
-  await saving.page.getByTestId('nav-home').click();
-  await expect(saving.page.getByRole('heading', { name: 'Compose an Edit' })).toBeVisible();
+  await saving.page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await expect(saving.page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
   expect(saveApi.cleanupRequests).toEqual([]);
 
   saveApi.finishDeferredSave();

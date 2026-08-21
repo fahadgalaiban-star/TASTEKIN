@@ -13,5 +13,4 @@ export const CreatorCropAspect = {
   square: 'square',
   portrait: 'portrait',
   story: 'story',
-  free: 'free',
 } as const;

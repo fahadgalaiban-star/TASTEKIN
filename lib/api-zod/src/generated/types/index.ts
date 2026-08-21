@@ -19,6 +19,7 @@ export * from './creatorEditCategory';
 export * from './creatorEditStatus';
 export * from './creatorImageMetadata';
 export * from './creatorMediaCleanupRequest';
+export * from './creatorOutfitItem';
 export * from './creatorProfile';
 export * from './creatorUploadRequest';
 export * from './creatorUploadResponse';
