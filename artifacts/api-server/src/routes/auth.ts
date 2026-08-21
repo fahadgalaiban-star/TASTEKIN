@@ -1,6 +1,9 @@
 import crypto from "crypto";
 import { Router, type IRouter } from "express";
+import { usersTable, db } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import { clearSession, createSession, getSessionId, setSessionCookie, upsertUser } from "../lib/auth";
+import { authorizeFheedCreator, FHEED_DISPLAY_NAME, FHEED_HANDLE, founderMappingConfigured } from "../lib/creator-authorization";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -10,6 +13,20 @@ function hash(value: string) { return crypto.createHash("sha256").update(value).
 function cookie(res: import("express").Response, name: string, value: string) { res.cookie(name, value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 600_000 }); }
 
 router.get("/auth/user", (req, res) => res.json({ user: req.user ?? null }));
+router.get("/me", async (req, res) => {
+  if (!req.user) {
+    res.json({ user: null, role: "consumer", creator: null });
+    return;
+  }
+  const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
+  const authorization = await authorizeFheedCreator(req.user);
+  res.json({
+    user: { id: req.user.id, email: account?.email ?? req.user.email },
+    role: account?.role === "creator" ? "creator" : "consumer",
+    creator: authorization.ok ? { handle: FHEED_HANDLE, displayName: FHEED_DISPLAY_NAME, verified: true, ownsWorkspace: true } : null,
+    founderMappingConfigured: founderMappingConfigured(),
+  });
+});
 router.get("/login", async (req, res) => {
   const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
   const state = crypto.randomBytes(24).toString("base64url"); const verifier = crypto.randomBytes(48).toString("base64url");

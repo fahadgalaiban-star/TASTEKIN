@@ -11,10 +11,10 @@ import {
   deletePrivateMedia,
   getPrivateMediaDownloadURL,
 } from "../lib/private-media-storage";
+import { authorizeFheedCreator } from "../lib/creator-authorization";
 
 const router: IRouter = Router();
 const imageContentType = /^image\/(heic|heif|jpeg|png|webp)$/;
-const configuredOwnerId = process.env.FHEED_OWNER_ID ?? process.env.REPL_OWNER_ID;
 
 async function workspace() {
   const [record] = await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.creatorId, "fheed"));
@@ -23,12 +23,9 @@ async function workspace() {
 
 router.post("/storage/uploads/request-url", async (req, res) => {
   const record = await workspace();
-  if (!req.isAuthenticated()) {
-    res.status(401).json({ error: "Sign in to upload media" });
-    return;
-  }
-  if (!configuredOwnerId || req.user!.id !== configuredOwnerId || (record?.ownerUserId && record.ownerUserId !== configuredOwnerId)) {
-    res.status(403).json({ error: "Only the creator can upload media" });
+  const authorization = await authorizeFheedCreator(req.user);
+  if (!authorization.ok || (record?.ownerUserId && record.ownerUserId !== req.user!.id)) {
+    res.status(authorization.ok ? 403 : authorization.status).json({ error: authorization.ok ? "This creator workspace belongs to another account" : authorization.error });
     return;
   }
 
@@ -40,7 +37,7 @@ router.post("/storage/uploads/request-url", async (req, res) => {
 
   try {
     const upload = await createPrivateMediaUpload();
-    await db.insert(creatorMediaUploads).values({ objectPath: upload.objectPath, creatorId: "fheed", ownerUserId: configuredOwnerId, state: "pending" });
+    await db.insert(creatorMediaUploads).values({ objectPath: upload.objectPath, creatorId: "fheed", ownerUserId: req.user!.id, state: "pending" });
     res.json(
       RequestUploadUrlResponse.parse({
         ...upload,
@@ -55,8 +52,9 @@ router.post("/storage/uploads/request-url", async (req, res) => {
 
 router.post("/storage/uploads/cleanup", async (req, res) => {
   const record = await workspace();
-  if (!req.isAuthenticated() || !configuredOwnerId || req.user!.id !== configuredOwnerId || (record?.ownerUserId && record.ownerUserId !== configuredOwnerId)) {
-    res.status(403).json({ error: "Only the creator can clean up media" });
+  const authorization = await authorizeFheedCreator(req.user);
+  if (!authorization.ok || (record?.ownerUserId && record.ownerUserId !== req.user!.id)) {
+    res.status(authorization.ok ? 403 : authorization.status).json({ error: authorization.ok ? "This creator workspace belongs to another account" : authorization.error });
     return;
   }
   const paths = (req.body as { objectPaths?: unknown }).objectPaths;
@@ -74,8 +72,8 @@ router.post("/storage/uploads/cleanup", async (req, res) => {
     );
     if (paths.some((path) => referencedPaths.has(path))) return "referenced";
     const uploads = await tx.select().from(creatorMediaUploads).where(inArray(creatorMediaUploads.objectPath, paths));
-    if (uploads.length !== paths.length || uploads.some((upload) => upload.ownerUserId !== configuredOwnerId || upload.state === "deleted")) return "unavailable";
-    await tx.update(creatorMediaUploads).set({ state: "deleting", updatedAt: new Date() }).where(and(inArray(creatorMediaUploads.objectPath, paths), eq(creatorMediaUploads.ownerUserId, configuredOwnerId)));
+    if (uploads.length !== paths.length || uploads.some((upload) => upload.ownerUserId !== req.user!.id || upload.state === "deleted")) return "unavailable";
+    await tx.update(creatorMediaUploads).set({ state: "deleting", updatedAt: new Date() }).where(and(inArray(creatorMediaUploads.objectPath, paths), eq(creatorMediaUploads.ownerUserId, req.user!.id)));
     return "ready";
   });
   if (cleanupState === "referenced") {
@@ -106,7 +104,8 @@ router.get("/storage/objects/*path", async (req, res) => {
     const objectPath = `/objects/${path}`;
     const edits = (record?.edits ?? []) as Array<Record<string, unknown>>;
     const edit = edits.find((item) => [item.image, item.sourceImage, item.previewImage].includes(objectPath));
-    const isOwner = Boolean(configuredOwnerId && req.user?.id && req.user.id === configuredOwnerId && (!record?.ownerUserId || record.ownerUserId === configuredOwnerId));
+    const authorization = await authorizeFheedCreator(req.user);
+    const isOwner = Boolean(authorization.ok && (!record?.ownerUserId || record.ownerUserId === req.user?.id));
     if (!edit || !isOwner) {
       res.status(404).json({ error: "Media object not found" });
       return;

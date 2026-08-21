@@ -5,7 +5,7 @@ import type { Request, Response } from "express";
 
 export const SESSION_COOKIE = "sid";
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
-type AuthUser = { id: string; email: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null };
+type AuthUser = { id: string; email: string | null; firstName: string | null; lastName: string | null; profileImageUrl: string | null; role?: string; isVerified?: boolean };
 type Session = { user: AuthUser; accessToken: string; expiresAt: number };
 
 export async function createSession(session: Session) {

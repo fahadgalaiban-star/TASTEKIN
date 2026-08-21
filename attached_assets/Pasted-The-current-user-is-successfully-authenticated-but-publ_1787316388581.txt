@@ -1,0 +1,46 @@
+The current user is successfully authenticated, but publishing fails with:
+
+“Only the verified creator can save media in this workspace.”
+
+The new authenticated account was created as a Consumer and was not linked to the existing verified Fheed creator profile.
+
+Fix the account mapping. Do not disable authorization and do not make every user a creator.
+
+Required implementation:
+
+1. Identify the exact currently authenticated Replit Auth user from the server-side session:
+    * auth subject/user ID
+    * verified email
+2. Link this exact account to the existing seeded creator profile:
+    * handle: fheed
+    * display name: Fheed Alaiban
+3. Update the database so this account has:
+    * role: creator
+    * creator profile ownership
+    * verified creator status: true
+    * permission to upload creator media
+    * permission to create drafts and publish Edits
+4. Preserve all existing Fheed profile data and seeded Edits. Reassign/link the existing profile; do not create a duplicate Fheed profile.
+5. Make the mapping persistent across:
+    * refresh
+    * sign out/sign in
+    * preview restart
+    * deployment
+6. Use a secure server-side founder mapping such as FOUNDER_EMAIL or FOUNDER_AUTH_USER_ID stored in Replit Secrets. Do not hardcode the email in client-side code.
+
+If you cannot safely identify the currently authenticated account, ask me for the exact email before changing anything. Do not guess or promote the newest user blindly.
+
+7. After the mapping, verify:
+
+* /api/me returns role creator.
+* The creator profile belongs to the authenticated user.
+* The media upload authorization succeeds.
+* The rendered crop is saved.
+* Publish creates the Edit.
+* The Edit appears on Fheed’s profile and Home feed.
+* Other newly registered accounts remain Consumers.
+* Other users cannot publish into Fheed’s workspace.
+
+Run the acceptance test using the actual current signed-in account and mobile UI. Do not test only with a temporary test account that is deleted afterward.
+
+Report the exact root cause and confirm that the current signed-in account is now the verified owner of the Fheed creator workspace.

@@ -11,9 +11,9 @@ import {
   FHEED_CREATOR_ID,
   fheedWorkspaceSeed,
 } from "../lib/creator-workspace-seed";
+import { authorizeFheedCreator, claimFheedWorkspace } from "../lib/creator-authorization";
 
 const router: IRouter = Router();
-const configuredOwnerId = process.env.FHEED_OWNER_ID ?? process.env.REPL_OWNER_ID;
 const legacyLockedPreviews: Record<string, string> = {
   "private-hotel": "/tastekin-media/private-hotel-preview.webp",
   "training-week": "/tastekin-media/training-week-preview.webp",
@@ -68,7 +68,8 @@ function serializeWorkspace(workspace: Awaited<ReturnType<typeof getWorkspace>>)
 router.get("/creator-workspace", async (req, res) => {
   try {
     const workspace = await getWorkspace();
-    if (configuredOwnerId && req.user?.id === configuredOwnerId && (!workspace.ownerUserId || workspace.ownerUserId === configuredOwnerId)) {
+    const authorization = await authorizeFheedCreator(req.user);
+    if (authorization.ok && (!workspace.ownerUserId || workspace.ownerUserId === req.user!.id) && await claimFheedWorkspace(req.user!.id)) {
       res.json(GetCreatorWorkspaceResponse.parse(serializeWorkspace(workspace)));
       return;
     }
@@ -99,12 +100,9 @@ router.put("/creator-workspace", async (req, res) => {
     res.status(401).json({ error: "Sign in to update the creator workspace" });
     return;
   }
-  if (!configuredOwnerId) {
-    res.status(503).json({ error: "Fheed creator ownership is not configured" });
-    return;
-  }
-  if (req.user!.id !== configuredOwnerId) {
-    res.status(403).json({ error: "Only Fheed can update this creator workspace" });
+  const authorization = await authorizeFheedCreator(req.user);
+  if (!authorization.ok) {
+    res.status(authorization.status).json({ error: authorization.error });
     return;
   }
   const parsed = SaveCreatorWorkspaceBody.safeParse(req.body);
@@ -119,7 +117,7 @@ router.put("/creator-workspace", async (req, res) => {
 
   try {
     await getWorkspace();
-    const ownerId = configuredOwnerId;
+    const ownerId = req.user!.id;
     const privatePaths = Array.from(new Set(
       (parsed.data.edits as Array<Record<string, unknown>>)
         .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage])
