@@ -1,0 +1,137 @@
+Create a focused “Place Edit” enhancement for TASTEKIN.
+
+Important: Do not modify or regress the working image cropper, authenticated upload, publishing, Edit Profile, Taste Match, Explore, category filters, verification seal, Follow, Subscribe, outfit details, existing edits, or creator data.
+
+1. Make the image optional
+
+Allow creators to publish a place recommendation without uploading an image.
+
+Change the media area text to:
+
+“Add photo (optional)”
+“You can publish this recommendation without a photo.”
+
+Keep the current cropper and image workflow exactly as they are when a photo is selected.
+
+Do not show a blank image frame, empty placeholder, broken image, or artificial background on published no-photo posts.
+
+2. Place information
+
+For the Restaurants, Places, and Travel categories, add these fields inside “Add details”:
+
+* Place name
+* Location
+* Maps link (optional)
+
+The Location field is a readable location such as:
+
+“West Village, New York”
+
+The Maps link field may contain a valid Google Maps or Apple Maps URL.
+
+On the published Edit, display the readable location with a location-pin icon. If a Maps link exists, show an “Open in Maps” button that safely opens the external link.
+
+Do not display a raw Maps URL publicly.
+
+3. TASTEKIN Taste Rating
+
+Add an optional creator rating from 1 to 5 called:
+
+“Your Taste Rating”
+
+Use five instances of the simple TASTEKIN interlocking-link brand symbol as the rating icons.
+
+Design:
+
+* Selected symbols: solid oxblood/burgundy
+* Unselected symbols: thin muted-gray outline
+* Display the numeric result underneath, for example: “4 out of 5”
+* Large enough to tap comfortably on a 390px iPhone screen
+* Elegant, minimal, and consistent with the existing TASTEKIN design
+
+Important:
+
+* Do not use stars, hearts, or checkmarks.
+* Do not use the glossy premium Taste Seal verification badge for ratings.
+* The premium Taste Seal must remain exclusively for verified creator profiles.
+
+4. Creator Review
+
+Directly underneath “Your Taste Rating,” add an optional multiline field:
+
+“Your Review (optional)”
+
+Placeholder:
+
+“Share what you liked, what you ordered, or what made this place worth recommending…”
+
+This is the creator’s personal review, not a public community-review system.
+
+Do not build visitor reviews, aggregate ratings, comments, or review moderation in this task.
+
+5. Publishing validation
+
+A creator may publish:
+
+* A normal photo Edit using the existing workflow, or
+* A no-photo Place Edit.
+
+For a no-photo Place Edit:
+
+* Place name is required.
+* Location is required.
+* At least one of these must be provided:
+    * Taste Rating
+    * Your Review
+
+Show a clear inline validation message if these requirements are not met.
+
+Do not require a photo.
+
+6. Public presentation
+
+For an Edit with a photo, preserve the current image presentation and place the location, rating, and review underneath it.
+
+For an Edit without a photo, render an elegant TASTEKIN place card containing:
+
+* Place name
+* Location pin and readable location
+* Creator’s review, when provided
+* Label: “[Creator name]’s Taste Rating”
+* Five TASTEKIN link rating symbols and the score, such as “4/5”
+* “Open in Maps” button when a valid Maps link exists
+
+The no-photo card must look intentional and premium, not like missing media.
+
+Use the existing warm ivory, oxblood, thin-border, rounded-card TASTEKIN visual system.
+
+7. Data and compatibility
+
+Persist these fields safely:
+
+* placeName
+* locationLabel
+* mapsUrl
+* tasteRating
+* creatorReview
+
+Use a safe additive database migration.
+
+Existing Edits must continue working even when all these new fields are null.
+
+Do not overwrite or modify existing creator profiles, uploaded media, captions, collections, category selections, or seeded content.
+
+8. Test at 390px
+
+Test these exact cases on a 390px-wide iPhone viewport:
+
+1. Publish a restaurant recommendation with no photo, location, 4/5 rating, and a review.
+2. Confirm it appears correctly on Home, Explore, creator profile, and Edit detail.
+3. Confirm no blank image placeholder appears.
+4. Confirm “Open in Maps” works only when a valid URL exists.
+5. Publish another recommendation with a photo and confirm the existing crop/upload flow remains unchanged.
+6. Refresh and confirm all place details, rating, and review persist.
+7. Confirm existing Edit Profile, Taste Match, category filtering, Follow, Subscribe, Taste Seal, and subscriber-only content remain unchanged.
+8. Run the complete existing test suite, typecheck, and production builds.
+
+Do not make unrelated design, navigation, authentication, monetization, or architecture changes.
