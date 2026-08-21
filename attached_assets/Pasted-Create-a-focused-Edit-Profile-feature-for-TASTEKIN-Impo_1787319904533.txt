@@ -1,0 +1,69 @@
+Create a focused Edit Profile feature for TASTEKIN.
+
+Important: Do not modify or regress the working image cropper, upload, authentication, publishing flow, outfit details, feed, or existing creator data.
+
+1. Edit Profile
+    Add an “Edit profile” button when the creator views their own profile.
+
+The Edit Profile screen must allow the creator to update:
+
+* Profile photo with a simple circular 1:1 crop
+* Display name
+* Username
+* Bio
+* City and country
+* Taste categories/interests
+* Date of birth stored privately
+* A separate “Show my age on my profile” toggle, off by default
+
+Save all changes persistently to the authenticated creator’s profile and immediately reflect them on the profile page.
+
+Do not allow users to edit follower numbers or verification status.
+
+2. Follow and Subscribe
+    Keep the Follow button visible to visitors.
+
+Do not display public follower or following counts anywhere. This is an intentional TASTEKIN product decision.
+
+Keep Subscribe visible for eligible creators. Subscription settings and the $19.99 monthly price must not be placed inside Edit Profile; these will belong to a separate Monetization Settings screen later.
+
+3. Create a distinctive TASTEKIN verification seal
+    Replace the current ordinary circular checkmark with a premium branded “Taste Seal.”
+
+Design direction:
+
+* Small sculpted or faceted oxblood/burgundy seal
+* Use the TASTEKIN interlocking-link brand symbol in ivory inside it
+* No blue color
+* No standard checkmark
+* Do not resemble Instagram, X, TikTok, or other verification badges
+* Elegant, minimal, luxury editorial appearance
+* It must remain clear and recognizable at profile-name size
+
+When tapped, show a small explanation:
+“Verified by TASTEKIN — selected for authentic taste and identity.”
+
+Verification remains controlled only by TASTEKIN administrators. Users cannot request or enable it from Edit Profile.
+
+4. Remove “Untitled Edit”
+    Do not show “Untitled Edit” on public profile cards, feeds, or Edit detail pages.
+
+Display rules:
+
+* If a caption exists, show its first line below the image
+* If no caption exists, show the image with no title
+* The creator workspace may internally label it “Photo Edit” with its date, but this internal label must never appear publicly
+
+5. Test
+    Test the complete Edit Profile flow on a 390px-wide iPhone screen:
+
+* Change profile photo
+* Save bio and location
+* Turn public age on and off
+* Confirm changes persist after refresh
+* Confirm visitor profile still shows Follow and Subscribe
+* Confirm follower counts remain hidden
+* Confirm the new Taste Seal displays correctly
+* Confirm crop, upload, and Publish still work exactly as they do now
+
+Do not make unrelated design or architecture changes.
