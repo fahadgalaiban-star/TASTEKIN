@@ -40,10 +40,22 @@ try {
   assert.equal(readyMatch.state, "ready");
   assert.equal(readyMatch.score, 27);
   assert.deepEqual(readyMatch.sharedTastes.map((item) => item.id), ["quiet-luxury", "tailoring", "Fashion"]);
-  assert.equal(readyMatch.explanation, "You both return to Quiet luxury and Tailoring.");
+  assert.equal(readyMatch.explanation, "You both enjoy quiet luxury and tailoring.");
 
   const changedSelection = { categories: ["Restaurants"], tags: ["long-lunches", "coffee-stops"] };
   assert.equal(calculateTasteMatch(changedSelection, fheed, true).score, 0);
+
+  const noura = {
+    categories: ["Restaurants", "Places", "Travel", "Decor"],
+    tasteTags: ["long-lunches", "coffee-stops", "table-setting", "hidden-gems", "architecture", "slow-travel", "calm-interiors"],
+  };
+  const nouraMatch = calculateTasteMatch(
+    { categories: ["Places"], tags: ["slow-travel", "architecture"] },
+    noura,
+    true,
+  );
+  assert.equal(nouraMatch.score, 27);
+  assert.equal(nouraMatch.explanation, "You both enjoy slow travel and architecture.");
 
   console.log("Taste Match deterministic state and weighted-score tests passed.");
 } finally {

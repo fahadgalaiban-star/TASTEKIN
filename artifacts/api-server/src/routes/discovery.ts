@@ -11,13 +11,14 @@ import {
   SaveTastePreferencesResponse,
   UpdateRelationshipBody,
 } from "@workspace/api-zod";
-import { db, userTastePreferences } from "@workspace/db";
+import { creatorWorkspaces, db, userTastePreferences } from "@workspace/db";
 import {
   MIN_TASTE_CATEGORIES,
   MIN_TASTE_TAGS,
   isCompleteTasteProfile,
   tasteCategories,
   tasteCategoryIds,
+  tasteCategoryLabel,
   tasteTagIds,
   tasteTags,
 } from "@workspace/taste-catalog";
@@ -45,7 +46,7 @@ const creators = [
     id: "fheed-alaiban",
     username: "fheed",
     displayName: "Fheed Alaiban",
-    avatar: images.atelier,
+    avatar: "/tastekin-media/fheed-profile.webp",
     categories: ["Fashion", "Travel", "Places", "DailyRoutine"],
     tasteTags: ["quiet-luxury", "tailoring", "neutral-layers", "slow-travel", "coastal-escapes", "city-guides", "morning-rituals"],
     city: "Kuwait City, Kuwait",
@@ -212,7 +213,7 @@ function creatorResponse(creator: Creator, preferences: TasteSelection | null, a
     username: creator.username,
     displayName: creator.displayName,
     avatar: creator.avatar,
-    categories: creator.categories,
+    categories: creator.categories.map((category) => tasteCategoryLabel(category)),
     city: creator.city,
     verified: creator.verified,
     bio: creator.bio,
@@ -353,13 +354,31 @@ router.get("/explore", async (req, res) => {
   const matchesCity = (creator: Creator) =>
     !normalizedCity || creator.city.toLowerCase().includes(normalizedCity);
   const preferences = req.user ? await preferencesForUser(req.user.id) : null;
+  const [fheedWorkspace] = await db
+    .select()
+    .from(creatorWorkspaces)
+    .where(eq(creatorWorkspaces.creatorId, "fheed"));
+  const savedFheedAvatar = fheedWorkspace?.profile
+    && typeof fheedWorkspace.profile === "object"
+    && typeof (fheedWorkspace.profile as { avatar?: unknown }).avatar === "string"
+    ? (fheedWorkspace.profile as { avatar: string }).avatar
+    : null;
+  const fheedAvatar = savedFheedAvatar?.startsWith("/objects/")
+    ? "/api/public-profile-media"
+    : savedFheedAvatar ?? creators.find((creator) => creator.username === "fheed")?.avatar;
+  const viewingOwnFheedProfile = Boolean(req.user && fheedWorkspace?.ownerUserId === req.user.id);
   const sort = params.sort ?? (req.user ? "best" : "new");
   const matchedCreators = creators
     .filter((creator) => creator.verified)
+    .filter((creator) => !viewingOwnFheedProfile || creator.username !== "fheed")
     .filter((creator) => matches(`${creator.displayName} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")} ${creator.city}`))
     .filter(matchesCategory)
     .filter(matchesCity)
-    .map((creator) => ({ ...creatorResponse(creator, preferences?.selection ?? null, Boolean(req.user)), createdAt: creator.createdAt }))
+    .map((creator) => ({
+      ...creatorResponse(creator, preferences?.selection ?? null, Boolean(req.user)),
+      avatar: creator.username === "fheed" ? fheedAvatar : creator.avatar,
+      createdAt: creator.createdAt,
+    }))
     .sort((left, right) => sort === "new"
       ? right.createdAt.localeCompare(left.createdAt)
       : (right.matchScore ?? -1) - (left.matchScore ?? -1) || right.createdAt.localeCompare(left.createdAt))

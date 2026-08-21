@@ -1,0 +1,46 @@
+Make only these four focused Taste Match cleanup fixes.
+
+Important: Do not change the working Taste Match formula, preference saving, cache invalidation, Explore layout, creator profiles, authentication, image upload, publishing, Taste Seal, Follow, Subscribe, or existing data.
+
+1. Hide the authenticated user from their own Explore results
+
+* A signed-in creator must never see their own creator card in Explore.
+* Apply this to Best Match, New, category filters, and search results.
+* Do not calculate or display a self-match score.
+* Other authenticated users must still be able to discover that creator normally.
+
+2. Use the canonical saved creator profile photo
+
+* Explore creator cards must display the same current profile photo shown on the creator’s actual profile.
+* Never use an old seeded image, Edit media image, or fallback demo image when a saved profile photo exists.
+* Confirm Fheed’s current white-sweater profile photo appears to other visitors.
+
+3. Format category labels correctly
+
+* Display human-readable category labels everywhere.
+* Replace DailyRoutine with Daily Routine.
+* Use a centralized display-label mapping rather than changing stored database keys.
+* Check all other category labels for missing spaces.
+
+4. Improve the deterministic match sentence
+
+Replace awkward wording such as:
+
+“You both return to Slow travel and Architecture.”
+
+With:
+
+“You both enjoy slow travel and architecture.”
+
+Keep the sentence deterministic and generated only from the real shared tastes. Apply natural lowercase formatting when tags appear inside a sentence, while keeping title case on the individual taste cards.
+
+Acceptance tests:
+
+* Fheed does not see Fheed in his own Explore results.
+* Alex or another visitor can still see Fheed with his current saved profile photo and match score.
+* Daily Routine displays with the correct spacing.
+* Noura’s 27% Why you match sheet uses the natural sentence.
+* Changing taste preferences still changes the score.
+* All existing regression tests continue to pass.
+
+Do not make any unrelated changes.

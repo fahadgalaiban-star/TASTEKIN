@@ -63,13 +63,13 @@ function explanationFor(shared: SharedTaste[]) {
   }
   if (shared.length === 1) {
     return {
-      explanation: `You both return to ${shared[0].label}.`,
+      explanation: `You both enjoy ${shared[0].label.toLowerCase()}.`,
       explanationAr: `تلتقي اختياراتكما عند ${shared[0].labelAr}.`,
     };
   }
   const names = shared.slice(0, 2);
   return {
-    explanation: `You both return to ${names[0].label} and ${names[1].label}.`,
+    explanation: `You both enjoy ${names[0].label.toLowerCase()} and ${names[1].label.toLowerCase()}.`,
     explanationAr: `تلتقي اختياراتكما عند ${names[0].labelAr} و${names[1].labelAr}.`,
   };
 }

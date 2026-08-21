@@ -8,7 +8,8 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:taste-match": "node ./scripts/test-taste-match.mjs"
+    "test:taste-match": "node ./scripts/test-taste-match.mjs",
+    "test:owner-discovery": "node ./scripts/test-owner-discovery.mjs"
   },
   "dependencies": {
     "@workspace/api-zod": "workspace:*",

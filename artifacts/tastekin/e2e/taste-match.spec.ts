@@ -45,4 +45,17 @@ test('keeps signed-out matching private and filters verified creator discovery',
   const restaurantsBody = await restaurants.json();
   expect(restaurantsBody.creators).toHaveLength(1);
   expect(restaurantsBody.creators[0]).toMatchObject({ username: 'noura.studio' });
+
+  const profile = await request.get(`${apiBaseUrl}/api/creator-profile`);
+  expect(profile.ok()).toBeTruthy();
+  const profileBody = await profile.json();
+  const dailyRoutine = await request.get(`${apiBaseUrl}/api/explore?sort=new&category=DailyRoutine`);
+  expect(dailyRoutine.ok()).toBeTruthy();
+  const dailyRoutineBody = await dailyRoutine.json();
+  const fheed = dailyRoutineBody.creators.find((creator: { username: string }) => creator.username === 'fheed');
+  expect(fheed).toMatchObject({
+    avatar: profileBody.avatar,
+    categories: expect.arrayContaining(['Daily Routine']),
+  });
+  expect(fheed.categories).not.toContain('DailyRoutine');
 });
