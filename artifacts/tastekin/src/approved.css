@@ -69,7 +69,7 @@ button { font:inherit; cursor:pointer; }
 .approved-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; object-position:center; }
 .identity .approved-avatar { width:58px; height:58px; flex-basis:58px; font-size:16px; }
 .approved-profile-head { display:flex; align-items:center; gap:13px; padding-top:18px; }
-.approved-profile-head > div:last-child { min-width:0; }
+.approved-profile-head > .profile-head-copy { display:grid; min-width:0; gap:4px; }
 .approved-name { display:flex; align-items:center; gap:7px; }
 .approved-name h1 { margin:0; font-size:27px; line-height:1.1; letter-spacing:-.05em; }
 .taste-seal { width:29px; height:29px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; }
@@ -78,8 +78,10 @@ button { font:inherit; cursor:pointer; }
 .taste-seal-popover { position:relative; display:flex; align-items:center; gap:8px; margin:10px 0 0 71px; padding:10px 10px 10px 13px; border:1px solid #d7b9a5; border-radius:14px; background:#fffaf4; color:var(--tk-wine); box-shadow:0 8px 22px rgba(38,25,23,.1); font-size:11px; line-height:1.4; }
 .taste-seal-popover p { flex:1; margin:0; font-weight:700; }
 .taste-seal-popover .approved-icon { width:30px; height:30px; flex:0 0 30px; }
-.approved-profile-head span, .approved-profile-head p { color:var(--tk-stone); font-size:12px; }
-.approved-profile-head p { margin:7px 0 0; line-height:1.45; }
+.profile-handle, .profile-location, .profile-bio, .profile-taste-meta { color:var(--tk-stone); font-size:12px; }
+.profile-location { display:inline-flex; align-items:center; gap:5px; }
+.profile-bio { max-width:34rem; margin:13px 0 0; color:#514b45; font-size:13px; line-height:1.52; }
+.profile-taste-meta { margin:7px 0 0; font-size:11px; line-height:1.45; }
 .approved-match { margin:17px 0 13px; padding:10px 13px; border:0; border-radius:999px; background:#dce9e3; color:#2f6f61; font-size:12px; font-weight:800; }
 .approved-actions { display:grid; grid-template-columns:1fr 1.55fr; gap:9px; margin:8px 0 17px; }
 .approved-tabs { display:grid; grid-template-columns:repeat(3,1fr); margin:4px 0 17px; border-bottom:1px solid var(--tk-border); }
@@ -90,17 +92,22 @@ button { font:inherit; cursor:pointer; }
 .profile-edit-filters { margin:0 0 17px; }
 .approved-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .approved-grid-card, .approved-collection { overflow:hidden; padding:0; border:0; border-radius:16px; background:var(--tk-card); color:var(--tk-ink); text-align:start; box-shadow:0 6px 20px rgba(38,25,23,.06); }
-.approved-grid-card img { width:100%; height:auto; display:block; object-fit:cover; background:#ded6cb; }
-.approved-grid-card strong, .approved-collection strong { display:block; padding:10px 11px 12px; font-size:13px; }
-.place-grid-card { aspect-ratio:69 / 100; border:1px solid #ddcfbb; background:#faf3e7; box-shadow:0 8px 22px rgba(75,31,42,.08); }
-.place-grid-preview { height:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:9px; padding:18px; background:radial-gradient(circle at 82% 12%,rgba(255,255,255,.74),transparent 31%),linear-gradient(145deg,#fffaf0,#eee0cc); color:var(--tk-wine); }
+.profile-edits-grid .approved-grid-card { aspect-ratio:4 / 5; display:flex; flex-direction:column; min-width:0; }
+.profile-grid-media { position:relative; display:grid; flex:1 1 auto; min-height:0; place-items:center; overflow:hidden; background:#ded6cb; }
+.profile-grid-media img { width:100%; height:100%; display:block; object-fit:contain; background:#ded6cb; }
+.profile-grid-access { position:absolute; top:8px; inset-inline-start:8px; display:inline-flex; align-items:center; gap:4px; max-width:calc(100% - 16px); padding:5px 7px; border-radius:999px; background:rgba(232,95,66,.94); color:#2e1d1b; font-size:9px; font-weight:800; white-space:nowrap; }
+.profile-grid-caption { display:block; flex:0 0 auto; overflow:hidden; padding:8px 10px 10px; color:var(--tk-ink); font-size:11px; font-weight:800; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+.approved-collection strong { display:block; padding:10px 11px 12px; font-size:13px; }
+.place-grid-card { border:1px solid #ddcfbb; background:#faf3e7; box-shadow:0 8px 22px rgba(75,31,42,.08); }
+.place-grid-preview { height:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:6px; padding:14px; background:radial-gradient(circle at 82% 12%,rgba(255,255,255,.74),transparent 31%),linear-gradient(145deg,#fffaf0,#eee0cc); color:var(--tk-wine); }
 .place-grid-eyebrow { color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
-.place-grid-preview strong { padding:0; color:var(--tk-ink); font-size:17px; line-height:1.1; letter-spacing:-.035em; }
+.place-grid-preview strong { padding:0; color:var(--tk-ink); font-size:16px; line-height:1.1; letter-spacing:-.035em; }
 .place-grid-location { display:inline-flex; align-items:center; gap:5px; color:var(--tk-stone); font-size:11px; line-height:1.35; }
 .place-grid-preview .taste-rating { gap:4px; }
-.place-grid-preview .taste-rating svg { width:17px; height:17px; }
-.place-grid-preview .taste-rating-label { font-size:11px; }
-.place-grid-preview p { display:-webkit-box; margin:1px 0 0; overflow:hidden; color:#514b45; font-size:11px; line-height:1.45; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+.place-grid-preview .taste-rating svg { width:14px; height:14px; }
+.place-grid-preview .taste-rating-label { font-size:10px; }
+.place-grid-preview p { display:-webkit-box; margin:1px 0 0; overflow:hidden; color:#514b45; font-size:10px; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+.profile-edits-empty { grid-column:1 / -1; padding:24px 14px; border:1px dashed #d4cabf; border-radius:16px; color:#746d65; font-size:12px; line-height:1.5; text-align:center; }
 .approved-collection img { width:100%; height:145px; display:block; object-fit:cover; }
 .approved-collection span { display:block; padding:0 11px 12px; color:var(--tk-coral); font-size:11px; font-weight:700; }
 .approved-collection-hero { width:100%; height:218px; display:block; border-radius:20px; object-fit:cover; }

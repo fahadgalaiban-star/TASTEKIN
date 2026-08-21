@@ -1,0 +1,134 @@
+Create a focused Creator Profile polish and dynamic profile category system for TASTEKIN.
+
+Important: This task is limited to the Creator Profile UI and its existing category filtering behavior.
+
+Do not modify or regress:
+
+* Image cropper
+* Profile photo cropper
+* Upload or publishing
+* Authentication or creator ownership
+* Edit Profile saving
+* Taste Match calculations
+* Place recommendations
+* Location links
+* Taste Rating and reviews
+* Outfit details
+* Follow or Subscribe
+* Verification Taste Seal
+* Existing creator profiles, Edits, Collections, or stored data
+
+Do not build private messages, Insights, payments, or new monetization features in this task.
+
+1. Polish the Creator Profile header
+
+Create a clean, compact, luxury editorial profile layout optimized for a 390px-wide iPhone screen.
+
+Owner view must show:
+
+* Circular profile photo
+* Display name
+* Existing TASTEKIN Taste Seal beside the name
+* Username
+* Location
+* Bio when available
+* Public age only when the creator enabled it
+* Taste Match or “Tune your taste” entry
+* “Edit profile” button
+* “View as visitor” button
+
+Visitor view must keep:
+
+* Follow
+* Subscribe · $19.99 / month for eligible creators
+* Taste Match
+* No public follower or following counts
+
+Keep the existing Taste Seal exactly as it is. Do not redesign or replace it.
+
+2. Dynamic profile categories
+
+The category filters on a creator’s profile must be unique to that creator’s published content.
+
+Rules:
+
+* “All” is always the first filter.
+* Build the remaining filters from the distinct categories of that creator’s published Edits.
+* Show a category only when the creator has at least one published Edit in it.
+* Never show an empty category.
+* A category must appear automatically after the creator publishes their first Edit in that category.
+* If the creator removes their final published Edit from a category, that category must disappear.
+* Clicking a category must filter only that creator’s profile grid.
+* Drafts must never create public profile categories.
+* Subscribers-only Edits may count as published content, but visitors must continue seeing them in their existing locked state.
+* Do not use the creator’s personal Taste Match interests as public content filters unless they have actually published content in those categories.
+* Use the existing curated TASTEKIN category taxonomy and display labels.
+* Do not allow arbitrary free-text main category names.
+* Existing free-form Collection names and tags must remain unchanged.
+* Preserve the category order consistently. Use the existing curated category order where possible.
+* Category chips must scroll horizontally on mobile without cutting labels or widening the page.
+
+Examples:
+
+* A fashion and travel creator could show: All, Fashion & Outfits, Travel, Places.
+* A food creator could show: All, Restaurants, Recipes.
+* A fitness creator could show: All, Health & Fitness, Daily Routine.
+* A decor creator could show: All, Decor, Places.
+
+These are examples only. Do not hard-code the same sections for every creator.
+
+3. Profile content grid
+
+* Use a strict two-column mobile grid.
+* Every tile must use the same 4:5 outer card proportion.
+* Photo Edits and no-photo Place recommendations must align at equal width and consistent height.
+* Never stretch, squeeze, or distort photos.
+* Use the already-saved crop and focal position.
+* Do not add blank image placeholders to no-photo Place cards.
+* If a caption exists, display only its first line below the image.
+* If there is no caption, show no artificial title.
+* Never display “Untitled Edit.”
+* Keep Place name, location, Taste Rating, and short review readable on no-photo Place cards.
+* Keep the existing locked presentation for Subscribers Only content.
+* Maintain comfortable spacing and prevent horizontal overflow at 390px.
+
+4. Collections and About
+
+Keep the existing tabs:
+
+* Edits
+* Collections
+* About
+
+Do not turn Collections into Instagram-style Story circles.
+
+Collections should retain TASTEKIN’s editorial identity. If there are no Collections, show a simple intentional empty state. Do not display empty placeholders.
+
+5. Data and navigation safety
+
+* Use the existing profile, Edit, category, Collection, and media data.
+* Do not create duplicate creator profiles.
+* Do not overwrite or reseed existing creator data.
+* Do not change API contracts unless absolutely required for the existing category filtering behavior.
+* Owner and visitor views must use the same underlying creator data.
+* Refreshing the page must preserve the correct profile and filters.
+
+6. Required testing
+
+Test at 390px width:
+
+* Owner profile layout
+* Visitor profile layout
+* Follow and Subscribe remain visible to visitors
+* Public follower and following counts remain hidden
+* Taste Seal remains correct and tappable
+* “All” shows every published Edit
+* Each category filter shows only matching published Edits
+* Categories with no published content remain hidden
+* A newly published category appears after refresh
+* Draft categories do not appear publicly
+* Photo and no-photo cards align in the two-column 4:5 grid
+* Subscribers-only cards remain locked for non-subscribers
+* Existing crop, upload, Publish, Edit Profile, Place recommendation, map link, Taste Rating, and review flows still pass
+
+Do not make unrelated design, database, navigation, or architecture changes. Complete and test this task in Power mode without requesting Design mode.

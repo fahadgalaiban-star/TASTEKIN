@@ -514,6 +514,14 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
 
 test('a no-photo restaurant recommendation validates, persists, and displays without media', async ({ browser }) => {
   const api = new PrivateCropApi();
+  api.workspace.edits.push({
+    ...existingEdit,
+    id: 'draft-book-category',
+    category: 'Books',
+    title: 'Draft reading list',
+    caption: 'A draft that must not create a public profile category.',
+    status: 'draft',
+  });
   const { context, page } = await creatorPage(browser, api);
 
   await page.getByRole('button', { name: 'New Edit' }).click();
@@ -550,13 +558,32 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByTestId('nav-explore').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await page.getByTestId('fheed-profile-mini').click();
+  await expect(page.getByTestId('profile-category-All')).toBeVisible();
+  await expect(page.getByTestId('profile-category-Fashion')).toBeVisible();
+  await expect(page.getByTestId('profile-category-Restaurants')).toBeVisible();
+  await expect(page.getByTestId('profile-category-Books')).toHaveCount(0);
   const profilePlaceCard = page.locator('.place-grid-card');
   await expect(profilePlaceCard).toContainText('Alba Table');
   await expect(profilePlaceCard).toContainText('Kuwait City, Kuwait');
   await expect(profilePlaceCard).toContainText('A quiet lunch I would return to for the bread and the light.');
   await expect(profilePlaceCard.locator('img')).toHaveCount(0);
+  const profileGrid = page.getByTestId('profile-edits-grid');
+  const cardDimensions = await profileGrid.locator('.approved-grid-card').evaluateAll((cards) => cards.slice(0, 2).map((card) => {
+    const { width, height } = card.getBoundingClientRect();
+    return { width, height };
+  }));
+  expect(cardDimensions).toHaveLength(2);
+  for (const card of cardDimensions) {
+    expect(card.height / card.width).toBeCloseTo(1.25, 1);
+  }
+  expect(cardDimensions[0].height).toBeCloseTo(cardDimensions[1].height, 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 
   await page.reload();
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await expect(page.getByTestId('profile-category-Restaurants')).toBeVisible();
+  await expect(page.getByTestId('profile-category-Books')).toHaveCount(0);
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await context.close();

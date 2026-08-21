@@ -391,7 +391,7 @@ function TastekinApp() {
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : t('Your account', 'حسابك')} title={owner ? t('Your profile', 'ملفك الشخصي') : t('Alex Morgan', 'أليكس مورغان')}><div className="approved-panel identity"><Avatar profile={creatorProfile} /><div><strong>{owner ? creatorProfile.displayName : t('Alex Morgan', 'أليكس مورغان')}</strong><span>{owner ? `${creatorProfile.city}, ${creatorProfile.country}` : '@alexmorgan'}</span></div></div><div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div><button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => go('profile')}>{t('View profile', 'عرض الملف')}</button>}</SimpleScreen>}
       {screen === 'profile' && <Profile ar={ar} owner={owner && selectedCreatorUsername === 'fheed'} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (!owner) { setFollowing(!following); write('following-fheed', !following); } }} onSubscribe={() => { if (!owner) go('subscribe'); }} onEditProfile={openProfileEditor} onEdit={openEdit} onCollections={() => { if (selectedCreatorUsername === 'fheed') go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
-    {screen === 'collections' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p><div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div></SimpleScreen>}
+     {screen === 'collections' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={published.filter((item) => selectedCollection.editIds.includes(item.id))} canView={owner || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
     {screen === 'about' && <SimpleScreen kicker={t('About Fheed', 'عن فهيد')} title={t('Fheed Alaiban', 'فهيد العيبان')}><p>{t('Kuwait City, Kuwait. I share Fashion & Outfits, places worth returning to, quiet travel notes, and daily routines that make everyday life feel better.', 'مدينة الكويت، الكويت. أشارك أزياء وإطلالات مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وروتيناً يومياً يجعل الحياة أفضل.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{t('Fashion & Outfits · Travel · Health & Fitness · Places · Restaurants', 'أزياء وإطلالات · سفر · صحة ولياقة · أماكن · مطاعم')}</p></div><button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button></SimpleScreen>}
     {screen === 'edit' && <EditDetail edit={selectedEdit} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} />}
@@ -580,6 +580,7 @@ function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
 function SimpleScreen({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className="approved-title">{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr || edit.placeName || edit.title).split(/\r?\n/, 1)[0].trim(); }
+function profileCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr).split(/\r?\n/, 1)[0].trim(); }
 function TasteRating({ rating, ar, id }: { rating?: number | null; ar: boolean; id?: string }) {
   if (!rating) return null;
   return <span className="taste-rating-wrap" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating" aria-hidden="true">{[1, 2, 3, 4, 5].map((value) => <Link2 key={value} size={15} className={value <= rating ? 'active' : ''} />)}</span><span className="taste-rating-label" aria-label={ar ? `تقييم ذوق فهيد ${rating} من 5` : `Fheed's Taste Rating ${rating} out of 5`}>{ar ? `تقييم ذوق فهيد · ${rating}/5` : `Fheed’s Taste Rating · ${rating}/5`}</span></span>;
@@ -607,18 +608,35 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
   const ownerView = owner && !visitorPreview;
   const [sealOpen, setSealOpen] = useState(false);
   const [editCategory, setEditCategory] = useState<Category>('All');
-  const profileCategoryItems = useMemo(() => categories.filter((item) => item.id === 'All' || edits.some((edit) => edit.category === item.id)), [edits]);
-  const profileFilteredEdits = useMemo(() => editCategory === 'All' ? edits : edits.filter((edit) => edit.category === editCategory), [editCategory, edits]);
+  const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
+  const profileCategoryItems = useMemo(() => categories.filter((item) => item.id === 'All' || publishedEdits.some((edit) => edit.category === item.id)), [publishedEdits]);
+  const profileFilteredEdits = useMemo(() => editCategory === 'All' ? publishedEdits : publishedEdits.filter((edit) => edit.category === editCategory), [editCategory, publishedEdits]);
   useEffect(() => {
     if (!profileCategoryItems.some((item) => item.id === editCategory)) setEditCategory('All');
   }, [editCategory, profileCategoryItems]);
-  const locationAndInterests = [`${profile.city}, ${profile.country}`, profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · '), profile.age ? (ar ? `العمر ${profile.age}` : `Age ${profile.age}`) : ''].filter(Boolean).join(' · ');
-  
+
+  const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
+  const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
+  const publicAge = profile.age ? (ar ? `العمر ${profile.age}` : `Age ${profile.age}`) : '';
   const { data: matchData } = useGetTasteMatch(profile.username);
   const score = matchData?.match?.score;
 
-  return <section><div className="approved-profile-head"><Avatar profile={profile} /><div><div className="approved-name"><h1>{profile.displayName}</h1>{profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}</div><span><bdi dir="ltr">@{profile.username}</bdi></span><p>{locationAndInterests}</p></div></div>{sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
-  
+  return <section className="creator-profile">
+    <div className="approved-profile-head">
+      <Avatar profile={profile} />
+      <div className="profile-head-copy">
+        <div className="approved-name">
+          <h1>{profile.displayName}</h1>
+          {profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
+        </div>
+        <span className="profile-handle"><bdi dir="ltr">@{profile.username}</bdi></span>
+        {profileLocation && <span className="profile-location"><MapPin size={13} />{profileLocation}</span>}
+      </div>
+    </div>
+    {profile.bio && <p className="profile-bio">{profile.bio}</p>}
+    {(tasteSummary || publicAge) && <p className="profile-taste-meta">{[tasteSummary, publicAge].filter(Boolean).join(' · ')}</p>}
+    {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
+
   {!ownerView ? (
     <Drawer.Root>
       <Drawer.Trigger asChild>
@@ -676,7 +694,33 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
      </button>
    )}
 
-   <div className="approved-actions">{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button" onClick={onViewAsVisitor}>{ar ? 'عرض كزائر' : 'View as visitor'}</button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button><button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button></>}</div>{visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}<div className="approved-tabs"><button className="active" onClick={() => setEditCategory('All')}>{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>{profileCategoryItems.length > 2 && <CategoryChips ar={ar} active={editCategory} onSelect={setEditCategory} items={profileCategoryItems} testIdPrefix="profile-category" ariaLabel={ar ? 'فلاتر تعديلات المبدع' : 'Creator edit categories'} className="profile-edit-filters" />}<div className="approved-grid">{profileFilteredEdits.slice(0, 6).map((edit) => { const caption = publicCaptionLine(edit, ar); const location = placeLocation(edit, ar); return <button className={`approved-grid-card ${edit.image ? '' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>{edit.image ? <img style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} src={imageSrc(edit.image)} alt={edit.altText} /> : <div className="place-grid-preview"><span className="place-grid-eyebrow">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><strong>{edit.placeName || caption}</strong>{location && <span className="place-grid-location"><MapPin size={14} />{location}</span>}<TasteRating rating={edit.tasteRating} ar={ar} />{edit.creatorReview && <p>{edit.creatorReview.split(/\r?\n/, 1)[0]}</p>}</div>}{caption && edit.image && <strong>{caption}</strong>}</button>; })}</div></section>;
+    <div className="approved-actions">{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button" onClick={onViewAsVisitor}>{ar ? 'عرض كزائر' : 'View as visitor'}</button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button><button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button></>}</div>
+    {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
+    <div className="approved-tabs"><button className="active" onClick={() => setEditCategory('All')}>{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
+    {profileCategoryItems.length > 1 && <CategoryChips ar={ar} active={editCategory} onSelect={setEditCategory} items={profileCategoryItems} testIdPrefix="profile-category" ariaLabel={ar ? 'فلاتر تعديلات المبدع' : 'Creator edit categories'} className="profile-edit-filters" />}
+    <div className="approved-grid profile-edits-grid" data-testid="profile-edits-grid">
+      {profileFilteredEdits.map((edit) => {
+        const caption = profileCaptionLine(edit, ar);
+        const location = placeLocation(edit, ar);
+        return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
+          {edit.image ? <>
+            <span className="profile-grid-media">
+              <img src={imageSrc(edit.image)} alt={edit.altText} />
+              {edit.access === 'locked' && <span className="profile-grid-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}
+            </span>
+            {caption && <span className="profile-grid-caption">{caption}</span>}
+          </> : <span className="place-grid-preview">
+            <span className="place-grid-eyebrow">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>
+            <strong>{edit.placeName || publicCaptionLine(edit, ar)}</strong>
+            {location && <span className="place-grid-location"><MapPin size={14} />{location}</span>}
+            <TasteRating rating={edit.tasteRating} ar={ar} />
+            {edit.creatorReview && <p>{edit.creatorReview.split(/\r?\n/, 1)[0]}</p>}
+          </span>}
+        </button>;
+      })}
+      {!profileFilteredEdits.length && <div className="profile-edits-empty">{ar ? 'لا توجد تعديلات منشورة في هذه الفئة بعد.' : 'No published Edits in this category yet.'}</div>}
+    </div>
+  </section>;
 }
 function CreatorDashboard({ ar, edits, collections, busy, onNew, onEdit, onArchive, onUnarchive, onCollections }: { ar: boolean; edits: CreatorEdit[]; collections: CreatorCollection[]; busy: boolean; onNew: () => void; onEdit: (edit: CreatorEdit) => void; onArchive: (id: string) => void; onUnarchive: (id: string) => void; onCollections: () => void }) { const t = (en: string, arabic: string) => ar ? arabic : en; const groups: [EditStatus, string, string][] = [['draft', 'Drafts', 'مسودات'], ['published', 'Published', 'منشور'], ['archived', 'Archived', 'مؤرشف']]; return <section className="creator-workspace"><span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span><div className="workspace-head"><div><h1 className="approved-title">{t('Good afternoon, Fheed.', 'مساء الخير، فهيد.')}</h1><p>{t('Shape the next thing people save.', 'اصنع ما سيحفظه الناس لاحقاً.')}</p></div><button className="approved-button primary" onClick={onNew} disabled={busy}><Plus size={16} /> {t('New Edit', 'تعديل جديد')}</button></div><div className="creator-stats"><Stat value={edits.filter((item) => item.status === 'published').length} label={t('Published', 'منشور')} /><Stat value={edits.filter((item) => item.status === 'draft').length} label={t('Drafts', 'مسودات')} /><Stat value={collections.length} label={t('Collections', 'مجموعات')} /></div><button className="workspace-collection-link" onClick={onCollections} disabled={busy}><span><FileText size={17} /><strong>{t('Manage collections', 'إدارة المجموعات')}</strong></span><ChevronRight size={17} /></button>{groups.map(([status, en, arabic]) => <div className="workspace-section" key={status}><div className="workspace-section-head"><h2>{ar ? arabic : en}</h2><span>{edits.filter((item) => item.status === status).length}</span></div>{edits.filter((item) => item.status === status).map((item) => <div className="workspace-edit" key={item.id}>{item.image ? <img src={imageSrc(item.image)} alt={item.altText} /> : <div className="workspace-place-thumb"><MapPin size={17} /></div>}<div><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public', 'عام')} · {placeLocation(item, ar)}</span></div><div className="workspace-edit-actions">{status === 'archived' ? <button onClick={() => onUnarchive(item.id)} disabled={busy}>{t('Restore', 'استعادة')}</button> : <><button onClick={() => onEdit(item)} aria-label={t('Edit', 'تعديل')} disabled={busy}><Pencil size={15} /></button><button onClick={() => onArchive(item.id)} aria-label={t('Archive', 'أرشفة')} disabled={busy}><Archive size={15} /></button></>}</div></div>)}{!edits.some((item) => item.status === status) && <Empty text={t('Nothing here yet.', 'لا يوجد شيء هنا after.')} />}</div>)}</section>; }
 function Stat({ value, label }: { value: number; label: string }) { return <div><strong>{value}</strong><span>{label}</span></div>; }
