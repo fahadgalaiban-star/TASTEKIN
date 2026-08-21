@@ -69,7 +69,9 @@ router.get("/creator-workspace", async (req, res) => {
   try {
     const workspace = await getWorkspace();
     const authorization = await authorizeFheedCreator(req.user);
-    if (authorization.ok && (!workspace.ownerUserId || workspace.ownerUserId === req.user!.id) && await claimFheedWorkspace(req.user!.id)) {
+    const claim = authorization.ok ? await claimFheedWorkspace(req.user!.id) : null;
+    if (authorization.ok && claim?.ok) {
+      if (claim.transferred) req.log.info("Transferred Fheed workspace ownership to configured founder");
       res.json(GetCreatorWorkspaceResponse.parse(serializeWorkspace(workspace)));
       return;
     }
@@ -117,6 +119,12 @@ router.put("/creator-workspace", async (req, res) => {
 
   try {
     await getWorkspace();
+    const claim = await claimFheedWorkspace(req.user!.id);
+    if (!claim.ok) {
+      res.status(409).json({ error: "Creator workspace ownership changed. Reload before saving." });
+      return;
+    }
+    if (claim.transferred) req.log.info("Transferred Fheed workspace ownership to configured founder");
     const ownerId = req.user!.id;
     const privatePaths = Array.from(new Set(
       (parsed.data.edits as Array<Record<string, unknown>>)

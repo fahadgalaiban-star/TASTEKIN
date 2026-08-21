@@ -18,11 +18,11 @@ router.get("/me", async (req, res) => {
     res.json({ user: null, role: "consumer", creator: null });
     return;
   }
-  const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
   const authorization = await authorizeFheedCreator(req.user);
+  const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
   res.json({
     user: { id: req.user.id, email: account?.email ?? req.user.email },
-    role: account?.role === "creator" ? "creator" : "consumer",
+    role: authorization.ok ? "creator" : "consumer",
     creator: authorization.ok ? { handle: FHEED_HANDLE, displayName: FHEED_DISPLAY_NAME, verified: true, ownsWorkspace: true } : null,
     founderMappingConfigured: founderMappingConfigured(),
   });

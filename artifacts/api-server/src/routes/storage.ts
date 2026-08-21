@@ -11,7 +11,7 @@ import {
   deletePrivateMedia,
   getPrivateMediaDownloadURL,
 } from "../lib/private-media-storage";
-import { authorizeFheedCreator } from "../lib/creator-authorization";
+import { authorizeFheedCreator, claimFheedWorkspace } from "../lib/creator-authorization";
 
 const router: IRouter = Router();
 const imageContentType = /^image\/(heic|heif|jpeg|png|webp)$/;
@@ -22,9 +22,10 @@ async function workspace() {
 }
 
 router.post("/storage/uploads/request-url", async (req, res) => {
-  const record = await workspace();
   const authorization = await authorizeFheedCreator(req.user);
-  if (!authorization.ok || (record?.ownerUserId && record.ownerUserId !== req.user!.id)) {
+  const claim = authorization.ok ? await claimFheedWorkspace(req.user!.id) : null;
+  const record = await workspace();
+  if (!authorization.ok || !claim?.ok || (record?.ownerUserId && record.ownerUserId !== req.user!.id)) {
     res.status(authorization.ok ? 403 : authorization.status).json({ error: authorization.ok ? "This creator workspace belongs to another account" : authorization.error });
     return;
   }
@@ -51,9 +52,10 @@ router.post("/storage/uploads/request-url", async (req, res) => {
 });
 
 router.post("/storage/uploads/cleanup", async (req, res) => {
-  const record = await workspace();
   const authorization = await authorizeFheedCreator(req.user);
-  if (!authorization.ok || (record?.ownerUserId && record.ownerUserId !== req.user!.id)) {
+  const claim = authorization.ok ? await claimFheedWorkspace(req.user!.id) : null;
+  const record = await workspace();
+  if (!authorization.ok || !claim?.ok || (record?.ownerUserId && record.ownerUserId !== req.user!.id)) {
     res.status(authorization.ok ? 403 : authorization.status).json({ error: authorization.ok ? "This creator workspace belongs to another account" : authorization.error });
     return;
   }
@@ -100,12 +102,13 @@ router.get("/storage/objects/*path", async (req, res) => {
   const path = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
 
   try {
+    const authorization = await authorizeFheedCreator(req.user);
+    const claim = authorization.ok ? await claimFheedWorkspace(req.user!.id) : null;
     const record = await workspace();
     const objectPath = `/objects/${path}`;
     const edits = (record?.edits ?? []) as Array<Record<string, unknown>>;
     const edit = edits.find((item) => [item.image, item.sourceImage, item.previewImage].includes(objectPath));
-    const authorization = await authorizeFheedCreator(req.user);
-    const isOwner = Boolean(authorization.ok && (!record?.ownerUserId || record.ownerUserId === req.user?.id));
+    const isOwner = Boolean(authorization.ok && claim?.ok && (!record?.ownerUserId || record.ownerUserId === req.user?.id));
     if (!edit || !isOwner) {
       res.status(404).json({ error: "Media object not found" });
       return;
