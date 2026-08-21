@@ -520,6 +520,7 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByText('Add details', { exact: true }).click();
   await page.getByLabel('Category').selectOption('Restaurants');
   await expect(page.getByTestId('place-edit-fields')).toBeVisible();
+  await expect(page.getByLabel('Location', { exact: true })).toHaveCount(0);
   await page.getByLabel('Place name').fill('Alba Table');
   await page.getByLabel('Readable location').fill('Kuwait City, Kuwait');
   await page.getByLabel('Your review (optional)').fill('A quiet lunch I would return to for the bread and the light.');
@@ -541,6 +542,7 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await expect(homeCard.getByRole('link', { name: 'Open in Maps' })).toHaveAttribute('href', 'https://maps.apple.com/?q=Alba+Table');
 
   await homeCard.locator('.place-card-main').click();
+  await expect(page.getByRole('heading', { name: 'Alba Table' })).toHaveCount(1);
   await expect(page.getByText('A quiet lunch I would return to for the bread and the light.')).toBeVisible();
   await expect(page.locator('.approved-detail-art')).toHaveCount(0);
   await expect(page.locator('.place-detail-panel')).toBeVisible();
@@ -548,8 +550,11 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByTestId('nav-explore').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await page.getByTestId('fheed-profile-mini').click();
-  await expect(page.locator('.place-grid-card')).toContainText('Alba Table');
-  await expect(page.locator('.place-grid-card img')).toHaveCount(0);
+  const profilePlaceCard = page.locator('.place-grid-card');
+  await expect(profilePlaceCard).toContainText('Alba Table');
+  await expect(profilePlaceCard).toContainText('Kuwait City, Kuwait');
+  await expect(profilePlaceCard).toContainText('A quiet lunch I would return to for the bread and the light.');
+  await expect(profilePlaceCard.locator('img')).toHaveCount(0);
 
   await page.reload();
   await page.getByTestId('nav-home').click();
