@@ -5,6 +5,7 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreatorCrop } from './creatorCrop';
 import type { CreatorEditAccess } from './creatorEditAccess';
 import type { CreatorEditCategory } from './creatorEditCategory';
 import type { CreatorEditStatus } from './creatorEditStatus';
@@ -30,7 +31,12 @@ export interface CreatorEdit {
      * @maxLength 1024
      */
   image: string;
+  /** @maxLength 1024 */
+  sourceImage?: string;
+  /** @maxLength 1024 */
+  previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
+  crop?: CreatorCrop;
   /** @maxLength 240 */
   location: string;
   /** @maxLength 240 */

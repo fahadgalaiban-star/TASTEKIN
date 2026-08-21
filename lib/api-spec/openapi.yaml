@@ -196,6 +196,24 @@ paths:
           description: Invalid image metadata
         "403":
           description: Creator owner preview required
+  /storage/uploads/cleanup:
+    post:
+      operationId: cleanupCreatorMedia
+      tags: [storage]
+      summary: Remove newly uploaded private creator-media renditions after a failed save
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatorMediaCleanupRequest"
+      responses:
+        "204":
+          description: Media cleanup completed
+        "400":
+          description: Invalid private media paths
+        "403":
+          description: Creator owner preview required
 components:
   schemas:
     HealthStatus:
@@ -309,8 +327,30 @@ components:
       required: [name, size, contentType]
       properties:
         name: { type: string, minLength: 1, maxLength: 255 }
-        size: { type: number, format: int32, minimum: 1, maximum: 8388608 }
+        size: { type: number, format: int32, minimum: 1, maximum: 15728640 }
         contentType: { type: string, minLength: 1, maxLength: 120 }
+    CreatorMediaCleanupRequest:
+      type: object
+      required: [objectPaths]
+      properties:
+        objectPaths:
+          type: array
+          minItems: 1
+          maxItems: 3
+          items:
+            type: string
+            pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'
+    CreatorCrop:
+      type: object
+      required: [aspect, zoom, x, y, rotation, sourceWidth, sourceHeight]
+      properties:
+        aspect: { type: string, enum: [square, portrait, story, free] }
+        zoom: { type: number, minimum: 1, maximum: 3 }
+        x: { type: number, minimum: -50, maximum: 50 }
+        y: { type: number, minimum: -50, maximum: 50 }
+        rotation: { type: number, minimum: -360, maximum: 360 }
+        sourceWidth: { type: number, format: int32, minimum: 1, maximum: 10000 }
+        sourceHeight: { type: number, format: int32, minimum: 1, maximum: 10000 }
     CreatorEdit:
       type: object
       required: [id, category, title, titleAr, caption, captionAr, image, location, locationAr, altText, access, status, collectionIds]
@@ -322,7 +362,10 @@ components:
         caption: { type: string, maxLength: 2000 }
         captionAr: { type: string, maxLength: 2000 }
         image: { type: string, minLength: 1, maxLength: 1024 }
+        sourceImage: { type: string, maxLength: 1024 }
+        previewImage: { type: string, maxLength: 1024 }
         imageMetadata: { $ref: "#/components/schemas/CreatorImageMetadata" }
+        crop: { $ref: "#/components/schemas/CreatorCrop" }
         location: { type: string, maxLength: 240 }
         locationAr: { type: string, maxLength: 240 }
         altText: { type: string, maxLength: 500 }

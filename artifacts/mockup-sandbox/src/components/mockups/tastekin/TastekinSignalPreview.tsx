@@ -48,7 +48,7 @@ const edits: Edit[] = [
     title: "Private hotel weekend",
     subtitle: "The stay, the packing list, and where I ate.",
     note: "The best room is the one that lets the morning arrive slowly. I kept this itinerary deliberately small.",
-    image: "/__mockup/images/tastekin/media/private-hotel-source.webp",
+    image: "/__mockup/images/tastekin/media/private-hotel-preview.webp",
     preview: "/__mockup/images/tastekin/media/private-hotel-preview.webp",
     locked: true,
   },

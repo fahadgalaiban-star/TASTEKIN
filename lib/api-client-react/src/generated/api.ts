@@ -21,6 +21,7 @@ import type {
 
 import type {
   Creator,
+  CreatorMediaCleanupRequest,
   CreatorProfile,
   CreatorUploadRequest,
   CreatorUploadResponse,
@@ -797,5 +798,76 @@ export const useRequestUploadUrl = <TError = ErrorType<void>,
         TContext
       > => {
       return useMutation(getRequestUploadUrlMutationOptions(options));
+    }
+
+export const getCleanupCreatorMediaUrl = () => {
+
+
+
+
+  return `/api/storage/uploads/cleanup`
+}
+
+/**
+ * @summary Remove newly uploaded private creator-media renditions after a failed save
+ */
+export const cleanupCreatorMedia = async (creatorMediaCleanupRequest: CreatorMediaCleanupRequest, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getCleanupCreatorMediaUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(creatorMediaCleanupRequest)
+  }
+);}
+
+
+
+
+
+export const getCleanupCreatorMediaMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cleanupCreatorMedia>>, TError,{data: BodyType<CreatorMediaCleanupRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof cleanupCreatorMedia>>, TError,{data: BodyType<CreatorMediaCleanupRequest>}, TContext> => {
+
+const mutationKey = ['cleanupCreatorMedia'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof cleanupCreatorMedia>>, {data: BodyType<CreatorMediaCleanupRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  cleanupCreatorMedia(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CleanupCreatorMediaMutationResult = NonNullable<Awaited<ReturnType<typeof cleanupCreatorMedia>>>
+    export type CleanupCreatorMediaMutationBody = BodyType<CreatorMediaCleanupRequest>
+    export type CleanupCreatorMediaMutationError = ErrorType<void>
+
+    /**
+ * @summary Remove newly uploaded private creator-media renditions after a failed save
+ */
+export const useCleanupCreatorMedia = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof cleanupCreatorMedia>>, TError,{data: BodyType<CreatorMediaCleanupRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof cleanupCreatorMedia>>,
+        TError,
+        {data: BodyType<CreatorMediaCleanupRequest>},
+        TContext
+      > => {
+      return useMutation(getCleanupCreatorMediaMutationOptions(options));
     }
 

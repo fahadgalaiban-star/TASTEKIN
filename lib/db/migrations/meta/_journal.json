@@ -8,6 +8,13 @@
       "when": 1773962530000,
       "tag": "0000_shared_creator_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1787274276000,
+      "tag": "0001_creator_media_uploads",
+      "breakpoints": true
     }
   ]
 }

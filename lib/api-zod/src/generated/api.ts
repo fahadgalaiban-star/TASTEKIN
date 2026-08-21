@@ -215,11 +215,30 @@ export const getCreatorWorkspaceResponseOneEditsItemCaptionArMax = 2000;
 
 export const getCreatorWorkspaceResponseOneEditsItemImageMax = 1024;
 
+export const getCreatorWorkspaceResponseOneEditsItemSourceImageMax = 1024;
+
+export const getCreatorWorkspaceResponseOneEditsItemPreviewImageMax = 1024;
+
 export const getCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax = 255;
 
-export const getCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 8388608;
+export const getCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 15728640;
 
 export const getCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax = 120;
+
+export const getCreatorWorkspaceResponseOneEditsItemCropZoomMax = 3;
+
+export const getCreatorWorkspaceResponseOneEditsItemCropXMin = -50;
+export const getCreatorWorkspaceResponseOneEditsItemCropXMax = 50;
+
+export const getCreatorWorkspaceResponseOneEditsItemCropYMin = -50;
+export const getCreatorWorkspaceResponseOneEditsItemCropYMax = 50;
+
+export const getCreatorWorkspaceResponseOneEditsItemCropRotationMin = -360;
+export const getCreatorWorkspaceResponseOneEditsItemCropRotationMax = 360;
+
+export const getCreatorWorkspaceResponseOneEditsItemCropSourceWidthMax = 10000;
+
+export const getCreatorWorkspaceResponseOneEditsItemCropSourceHeightMax = 10000;
 
 export const getCreatorWorkspaceResponseOneEditsItemLocationMax = 240;
 
@@ -263,10 +282,21 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "caption": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionMax),
   "captionAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionArMax),
   "image": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMax),
+  "sourceImage": zod.string().max(getCreatorWorkspaceResponseOneEditsItemSourceImageMax).optional(),
+  "previewImage": zod.string().max(getCreatorWorkspaceResponseOneEditsItemPreviewImageMax).optional(),
   "imageMetadata": zod.object({
   "name": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax),
   "size": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax),
   "contentType": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax)
+}).optional(),
+  "crop": zod.object({
+  "aspect": zod.enum(['square', 'portrait', 'story', 'free']),
+  "zoom": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemCropZoomMax),
+  "x": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropXMin).max(getCreatorWorkspaceResponseOneEditsItemCropXMax),
+  "y": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropYMin).max(getCreatorWorkspaceResponseOneEditsItemCropYMax),
+  "rotation": zod.number().min(getCreatorWorkspaceResponseOneEditsItemCropRotationMin).max(getCreatorWorkspaceResponseOneEditsItemCropRotationMax),
+  "sourceWidth": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemCropSourceWidthMax),
+  "sourceHeight": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemCropSourceHeightMax)
 }).optional(),
   "location": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationMax),
   "locationAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationArMax),
@@ -308,11 +338,30 @@ export const saveCreatorWorkspaceBodyEditsItemCaptionArMax = 2000;
 
 export const saveCreatorWorkspaceBodyEditsItemImageMax = 1024;
 
+export const saveCreatorWorkspaceBodyEditsItemSourceImageMax = 1024;
+
+export const saveCreatorWorkspaceBodyEditsItemPreviewImageMax = 1024;
+
 export const saveCreatorWorkspaceBodyEditsItemImageMetadataNameMax = 255;
 
-export const saveCreatorWorkspaceBodyEditsItemImageMetadataSizeMax = 8388608;
+export const saveCreatorWorkspaceBodyEditsItemImageMetadataSizeMax = 15728640;
 
 export const saveCreatorWorkspaceBodyEditsItemImageMetadataContentTypeMax = 120;
+
+export const saveCreatorWorkspaceBodyEditsItemCropZoomMax = 3;
+
+export const saveCreatorWorkspaceBodyEditsItemCropXMin = -50;
+export const saveCreatorWorkspaceBodyEditsItemCropXMax = 50;
+
+export const saveCreatorWorkspaceBodyEditsItemCropYMin = -50;
+export const saveCreatorWorkspaceBodyEditsItemCropYMax = 50;
+
+export const saveCreatorWorkspaceBodyEditsItemCropRotationMin = -360;
+export const saveCreatorWorkspaceBodyEditsItemCropRotationMax = 360;
+
+export const saveCreatorWorkspaceBodyEditsItemCropSourceWidthMax = 10000;
+
+export const saveCreatorWorkspaceBodyEditsItemCropSourceHeightMax = 10000;
 
 export const saveCreatorWorkspaceBodyEditsItemLocationMax = 240;
 
@@ -356,10 +405,21 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "caption": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionMax),
   "captionAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionArMax),
   "image": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMax),
+  "sourceImage": zod.string().max(saveCreatorWorkspaceBodyEditsItemSourceImageMax).optional(),
+  "previewImage": zod.string().max(saveCreatorWorkspaceBodyEditsItemPreviewImageMax).optional(),
   "imageMetadata": zod.object({
   "name": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMetadataNameMax),
   "size": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMetadataSizeMax),
   "contentType": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMetadataContentTypeMax)
+}).optional(),
+  "crop": zod.object({
+  "aspect": zod.enum(['square', 'portrait', 'story', 'free']),
+  "zoom": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemCropZoomMax),
+  "x": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropXMin).max(saveCreatorWorkspaceBodyEditsItemCropXMax),
+  "y": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropYMin).max(saveCreatorWorkspaceBodyEditsItemCropYMax),
+  "rotation": zod.number().min(saveCreatorWorkspaceBodyEditsItemCropRotationMin).max(saveCreatorWorkspaceBodyEditsItemCropRotationMax),
+  "sourceWidth": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemCropSourceWidthMax),
+  "sourceHeight": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemCropSourceHeightMax)
 }).optional(),
   "location": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationMax),
   "locationAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationArMax),
@@ -393,11 +453,30 @@ export const saveCreatorWorkspaceResponseOneEditsItemCaptionArMax = 2000;
 
 export const saveCreatorWorkspaceResponseOneEditsItemImageMax = 1024;
 
+export const saveCreatorWorkspaceResponseOneEditsItemSourceImageMax = 1024;
+
+export const saveCreatorWorkspaceResponseOneEditsItemPreviewImageMax = 1024;
+
 export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax = 255;
 
-export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 8388608;
+export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax = 15728640;
 
 export const saveCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax = 120;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCropZoomMax = 3;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCropXMin = -50;
+export const saveCreatorWorkspaceResponseOneEditsItemCropXMax = 50;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCropYMin = -50;
+export const saveCreatorWorkspaceResponseOneEditsItemCropYMax = 50;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCropRotationMin = -360;
+export const saveCreatorWorkspaceResponseOneEditsItemCropRotationMax = 360;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCropSourceWidthMax = 10000;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCropSourceHeightMax = 10000;
 
 export const saveCreatorWorkspaceResponseOneEditsItemLocationMax = 240;
 
@@ -441,10 +520,21 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "caption": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionMax),
   "captionAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionArMax),
   "image": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMax),
+  "sourceImage": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemSourceImageMax).optional(),
+  "previewImage": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemPreviewImageMax).optional(),
   "imageMetadata": zod.object({
   "name": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMetadataNameMax),
   "size": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMetadataSizeMax),
   "contentType": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMetadataContentTypeMax)
+}).optional(),
+  "crop": zod.object({
+  "aspect": zod.enum(['square', 'portrait', 'story', 'free']),
+  "zoom": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemCropZoomMax),
+  "x": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropXMin).max(saveCreatorWorkspaceResponseOneEditsItemCropXMax),
+  "y": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropYMin).max(saveCreatorWorkspaceResponseOneEditsItemCropYMax),
+  "rotation": zod.number().min(saveCreatorWorkspaceResponseOneEditsItemCropRotationMin).max(saveCreatorWorkspaceResponseOneEditsItemCropRotationMax),
+  "sourceWidth": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemCropSourceWidthMax),
+  "sourceHeight": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemCropSourceHeightMax)
 }).optional(),
   "location": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationMax),
   "locationAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationArMax),
@@ -476,7 +566,7 @@ export const SaveCreatorWorkspaceResponse = zod.object({
  */
 export const requestUploadUrlBodyOneNameMax = 255;
 
-export const requestUploadUrlBodyOneSizeMax = 8388608;
+export const requestUploadUrlBodyOneSizeMax = 15728640;
 
 export const requestUploadUrlBodyOneContentTypeMax = 120;
 
@@ -491,7 +581,7 @@ export const RequestUploadUrlBody = zod.object({
 export const requestUploadUrlResponseObjectPathRegExp = new RegExp('^/objects');
 export const requestUploadUrlResponseMetadataNameMax = 255;
 
-export const requestUploadUrlResponseMetadataSizeMax = 8388608;
+export const requestUploadUrlResponseMetadataSizeMax = 15728640;
 
 export const requestUploadUrlResponseMetadataContentTypeMax = 120;
 
@@ -506,5 +596,20 @@ export const RequestUploadUrlResponse = zod.object({
   "contentType": zod.string().min(1).max(requestUploadUrlResponseMetadataContentTypeMax)
 })
 })
+
+
+/**
+ * @summary Remove newly uploaded private creator-media renditions after a failed save
+ */
+export const cleanupCreatorMediaBodyObjectPathsItemRegExp = new RegExp('^/objects/uploads/[0-9a-fA-F-]{36}$');
+export const cleanupCreatorMediaBodyObjectPathsMax = 3;
+
+
+
+export const CleanupCreatorMediaBody = zod.object({
+  "objectPaths": zod.array(zod.string().regex(cleanupCreatorMediaBodyObjectPathsItemRegExp)).min(1).max(cleanupCreatorMediaBodyObjectPathsMax)
+})
+
+export const CleanupCreatorMediaResponse = zod.void()
 
 

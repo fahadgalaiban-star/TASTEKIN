@@ -21,7 +21,7 @@ function splitObjectPath(path: string) {
 
 async function signedObjectURL(
   fullPath: string,
-  method: "GET" | "PUT",
+  method: "GET" | "PUT" | "DELETE",
 ) {
   const { bucketName, objectName } = splitObjectPath(fullPath);
   const response = await fetch(
@@ -66,4 +66,16 @@ export async function getPrivateMediaDownloadURL(objectPath: string) {
   }
   const objectName = objectPath.slice("/objects/".length);
   return signedObjectURL(`${privateObjectDirectory()}/${objectName}`, "GET");
+}
+
+export async function deletePrivateMedia(objectPath: string) {
+  if (!/^\/objects\/uploads\/[0-9a-fA-F-]{36}$/.test(objectPath)) {
+    throw new Error("Invalid private object path");
+  }
+  const objectName = objectPath.slice("/objects/".length);
+  const signedURL = await signedObjectURL(`${privateObjectDirectory()}/${objectName}`, "DELETE");
+  const response = await fetch(signedURL, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Unable to delete private media (${response.status})`);
+  }
 }

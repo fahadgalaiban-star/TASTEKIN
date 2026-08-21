@@ -112,7 +112,7 @@ export interface CreatorImageMetadata {
   name: string;
   /**
      * @minimum 1
-     * @maximum 8388608
+     * @maximum 15728640
      */
   size: number;
   /**
@@ -120,6 +120,59 @@ export interface CreatorImageMetadata {
      * @maxLength 120
      */
   contentType: string;
+}
+
+export interface CreatorMediaCleanupRequest {
+  /**
+     * @minItems 1
+     * @maxItems 3
+     * @items.pattern ^/objects/uploads/[0-9a-fA-F-]{36}$
+     */
+  objectPaths: string[];
+}
+
+export type CreatorCropAspect = typeof CreatorCropAspect[keyof typeof CreatorCropAspect];
+
+
+export const CreatorCropAspect = {
+  square: 'square',
+  portrait: 'portrait',
+  story: 'story',
+  free: 'free',
+} as const;
+
+export interface CreatorCrop {
+  aspect: CreatorCropAspect;
+  /**
+     * @minimum 1
+     * @maximum 3
+     */
+  zoom: number;
+  /**
+     * @minimum -50
+     * @maximum 50
+     */
+  x: number;
+  /**
+     * @minimum -50
+     * @maximum 50
+     */
+  y: number;
+  /**
+     * @minimum -360
+     * @maximum 360
+     */
+  rotation: number;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  sourceWidth: number;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  sourceHeight: number;
 }
 
 export type CreatorEditCategory = typeof CreatorEditCategory[keyof typeof CreatorEditCategory];
@@ -175,7 +228,12 @@ export interface CreatorEdit {
      * @maxLength 1024
      */
   image: string;
+  /** @maxLength 1024 */
+  sourceImage?: string;
+  /** @maxLength 1024 */
+  previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
+  crop?: CreatorCrop;
   /** @maxLength 240 */
   location: string;
   /** @maxLength 240 */

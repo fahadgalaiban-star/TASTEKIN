@@ -14,7 +14,7 @@ export interface CreatorImageMetadata {
   name: string;
   /**
      * @minimum 1
-     * @maximum 8388608
+     * @maximum 15728640
      */
   size: number;
   /**
