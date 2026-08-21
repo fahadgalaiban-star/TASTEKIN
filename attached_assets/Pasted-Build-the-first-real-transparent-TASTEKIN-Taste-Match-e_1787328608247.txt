@@ -1,0 +1,143 @@
+Build the first real, transparent TASTEKIN Taste Match experience.
+
+Important scope protection:
+
+Do not modify or regress the working authentication, Edit Profile, profile-photo crop, Taste Seal asset, upload, publishing, outfit details, visibility controls, feed rendering, Follow, Subscribe, or existing creator data.
+
+Do not add AI services, external APIs, payments, or unrelated architecture changes.
+
+1. Reuse the existing taste data
+
+Inspect and reuse the existing taste-profile, category, and taste-match database structures wherever possible. Do not create duplicate tables or parallel profile systems.
+
+Use these existing top-level categories:
+
+* Fashion & Outfits
+* Travel
+* Places
+* Restaurants
+* Daily Routine
+* Personal Care
+* Health & Fitness
+* Decor
+* Books
+* Vlogs
+
+Add a curated set of more specific taste tags under these categories, including examples such as:
+
+* Quiet luxury
+* Understated fashion
+* Tailored style
+* Independent brands
+* Boutique hotels
+* Walkable cities
+* Local cafés
+* Hidden places
+* Short city breaks
+* Modern interiors
+* Affordable decor
+* Home styling
+* Quick recipes
+* Strength training
+* Mobility
+* Wellness routines
+* Editorial photography
+* Street photography
+* Travel photography
+
+2. Create “Tune your taste”
+
+Create a mobile-first “Tune your taste” screen accessible from:
+
+* The settings/sliders menu
+* Tapping the Taste Match pill on the user’s own profile
+
+Allow authenticated users to:
+
+* Select and deselect top-level categories
+* Select specific taste tags
+* Save their taste profile
+* Return later and update it
+
+Persist selections securely to the authenticated user.
+
+The user’s private taste selections must not expose date of birth, email, identity documents, or other private profile information.
+
+3. Calculate a real Taste Match
+
+Replace every hard-coded or random “92% Taste Match” value with a deterministic server-side calculation between the authenticated viewer and the viewed creator.
+
+For this first version use a transparent weighted-overlap calculation:
+
+* 35% category overlap
+* 65% specific taste-tag overlap
+
+Calculate each overlap from the shared selections divided by the combined unique selections. Round the final result to a whole percentage.
+
+Requirements:
+
+* No random scores
+* No hard-coded score for Fheed
+* The score must change when the viewer updates their taste
+* The result must persist correctly after refresh
+* Calculate or validate the score server-side
+* Use existing caching only if it is safely invalidated whenever either taste profile changes
+* If the viewer has not completed enough preferences, show “Build your taste profile” instead of a fake percentage
+
+4. Explain the match
+
+When a visitor taps a creator’s Taste Match pill, open an elegant mobile bottom sheet titled:
+
+“Why you match”
+
+Show:
+
+* The real percentage
+* Up to three strongest shared tastes
+* A short sentence generated from deterministic templates, not AI
+
+Example:
+
+“You both prefer quiet luxury, walkable cities and boutique hotels.”
+
+Include a “Tune my taste” action for the viewer.
+
+Do not expose internal calculation details or private information.
+
+5. Improve Explore around taste
+
+On the Explore screen:
+
+* Show verified and eligible creators with their real Taste Match score
+* Add two simple sorting options: “Best Match” and “New”
+* Default authenticated users to “Best Match”
+* Display one or two shared-taste reasons on each creator card
+* Do not show follower or following counts
+* Do not rank creators by follower count
+* Do not change the existing TASTEKIN visual identity
+
+6. Seed and fallback behavior
+
+Update seed/demo taste profiles so different creators produce meaningfully different match scores.
+
+Do not overwrite Fheed’s real profile edits, profile photo, published Edits, collections, verification status, or authenticated ownership mapping.
+
+For signed-out visitors, do not invent a personal match. Show “Sign in to discover your Taste Match.”
+
+7. Mobile acceptance testing
+
+Test at 390px iPhone width:
+
+* Complete and save a taste profile
+* Open Fheed’s profile and confirm a calculated match appears
+* Tap the match and confirm “Why you match” shows real shared tastes
+* Change preferences and confirm the percentage and reasons change
+* Refresh and confirm the selections and new score persist
+* Confirm Explore “Best Match” sorting works
+* Confirm signed-out visitors do not receive a fake score
+* Confirm Edit Profile, photo crop, upload, Publish, Taste Seal, Follow and Subscribe continue to work
+* Confirm follower counts remain hidden
+
+Add focused automated regression tests for the deterministic match calculation and preference-update invalidation.
+
+Do not make unrelated product, design, billing, or architecture changes.
