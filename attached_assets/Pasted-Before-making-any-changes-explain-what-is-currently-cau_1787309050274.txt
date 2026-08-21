@@ -1,0 +1,157 @@
+Before making any changes, explain what is currently causing the crop to reset — which file/component and why. Do not start fixing until this root cause is identified and explained.
+
+Fix the Create Edit image flow properly. This is a recurring functional bug, not a visual adjustment.
+
+1. FIX THE CROP PERSISTENCE BUG
+
+The crop selected in "Frame your Edit" is not being preserved.
+
+Current failure:
+
+* I select an aspect ratio.
+* I reposition and zoom the image so the face is visible.
+* The cropper looks correct.
+* After I tap Done/Apply and return to Compose Edit, the image is cropped again from the center and the face disappears.
+* The published image may also use a different crop.
+
+Required implementation:
+
+* Save the exact crop state for every image:
+    * aspect ratio
+    * crop X position
+    * crop Y position
+    * zoom/scale
+    * rotation if supported
+* Tapping Done in the crop editor must immediately commit the crop and update the Compose Edit preview.
+* Do not require a second "Save this Edit to keep the new image" step.
+* Use the same saved crop data and the same image renderer in:
+    * crop editor
+    * Compose Edit preview
+    * Home feed
+    * creator profile grid
+    * Edit detail page
+    * published post
+* Do not fall back to object-fit: cover with object-position: center after leaving the cropper.
+* Saving a draft, refreshing the page, reopening the Edit and publishing it must preserve exactly the same crop.
+* The Compose Edit preview must match the final published result pixel-for-pixel.
+
+Do not mark this task complete until the following test passes:
+
+1. Upload a vertical full-body portrait.
+2. Choose 4:5.
+3. Zoom and reposition the image so the face is clearly visible.
+4. Tap Done.
+5. Confirm the face is still visible in Compose Edit.
+6. Save and refresh.
+7. Reopen the Edit.
+8. Publish it.
+9. Confirm the crop remains identical in the feed, profile and Edit detail page.
+
+10. USE SIMPLE INSTAGRAM-STYLE IMAGE SIZES
+
+Only show these clear image options:
+
+* Square — 1:1 — 1080 × 1080
+* Portrait — 4:5 — 1080 × 1350
+* Story / Reel — 9:16 — 1080 × 1920
+* Original — keep the original aspect ratio without forced cropping
+
+Default normal photo posts to Portrait 4:5.
+
+Cropping must be simple:
+
+* drag to reposition
+* pinch or slider to zoom
+* Reset
+* Done
+
+Remove unnecessary technical text and the large safe-area overlay. A subtle grid or face-safe guide is enough.
+
+3. SIMPLIFY THE CREATE EDIT PAGE
+
+The current form has too many visible fields:
+
+* Title
+* Arabic title
+* Caption
+* Arabic caption
+* Category
+* Location
+* Alt text
+* Visibility
+
+This makes uploading one photo feel complicated.
+
+The default Create Edit screen should contain only:
+
+* Selected image
+* Edit crop button
+* One optional Caption field that accepts Arabic or English
+* Public / Subscribers Only
+* Publish button
+* "Add details" expandable section
+
+Remove separate Title, Arabic Title, Caption and Arabic Caption fields from the default view. Do not force creators to enter the same information twice in different languages.
+
+Only the image and visibility selection are required. Caption and all other information are optional.
+
+4. ADD OPTIONAL OUTFIT DETAILS
+
+Under the image, add a collapsed section:
+
+"Add outfit or product details"
+
+The creator can open or close it whenever they want.
+
+Inside it, allow multiple optional item rows:
+
+* Item type: Shirt, Trousers, Shoes, Jacket, Watch, etc.
+* Brand or store
+* Product name
+* Product link
+
+Example:
+
+* Shirt — Zegna
+* Trousers — Loro Piana
+* Shoes — Maison Margiela
+
+Include a switch:
+
+"Show these details under my Edit"
+
+* ON: display the outfit/product details underneath the published image.
+* OFF: do not display them.
+* Empty fields must never appear on the published Edit.
+
+Add an "Add another item" button so the creator can describe several pieces separately.
+
+5. MOVE SECONDARY FIELDS INTO COLLAPSED SECTIONS
+
+Inside "Add details", include optional:
+
+* Location
+* Category
+* Collection
+* Product/place tags
+
+Inside a separate collapsed "Accessibility & advanced" section, include:
+
+* Alt text
+* Translation options
+* Other technical settings
+
+These sections must be closed by default.
+
+6. FIX THE MOBILE LAYOUT
+
+* Hide the global bottom navigation while the crop editor is open.
+* The bottom navigation must not cover Zoom, Reset, Rotate, Done or Publish controls.
+* Use mobile safe-area insets and 100dvh.
+* Keep Done visible inside the crop editor.
+* Keep Publish visible at the bottom of Compose Edit without covering form content.
+* Test at 390 × 844 on iPhone Safari/PWA.
+
+Important: Do not only modify the UI or add another message saying "Crop applied." Fix the underlying saved crop data and use it consistently everywhere the image is displayed.
+
+After implementing, list exactly which files were changed and confirm the 10-step test above passes before saying this is done.
