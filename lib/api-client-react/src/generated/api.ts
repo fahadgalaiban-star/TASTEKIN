@@ -35,7 +35,11 @@ import type {
   HealthStatus,
   ListCreatorsParams,
   Relationship,
-  RelationshipInput
+  RelationshipInput,
+  TasteCatalog,
+  TasteMatchResponse,
+  TastePreferences,
+  TastePreferencesInput
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -435,6 +439,308 @@ export function useExplore<TData = Awaited<ReturnType<typeof explore>>, TError =
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getExploreQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetTasteCatalogUrl = () => {
+
+
+
+
+  return `/api/taste-catalog`
+}
+
+/**
+ * @summary Get the approved taste categories and tags
+ */
+export const getTasteCatalog = async ( options?: Parameters<typeof customFetch>[1]): Promise<TasteCatalog> => {
+
+  return customFetch<TasteCatalog>(getGetTasteCatalogUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTasteCatalogQueryKey = () => {
+    return [
+    `/api/taste-catalog`
+    ] as const;
+    }
+
+
+export const getGetTasteCatalogQueryOptions = <TData = Awaited<ReturnType<typeof getTasteCatalog>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTasteCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTasteCatalogQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTasteCatalog>>> = ({ signal }) => getTasteCatalog({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTasteCatalog>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTasteCatalogQueryResult = NonNullable<Awaited<ReturnType<typeof getTasteCatalog>>>
+export type GetTasteCatalogQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Get the approved taste categories and tags
+ */
+
+export function useGetTasteCatalog<TData = Awaited<ReturnType<typeof getTasteCatalog>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTasteCatalog>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTasteCatalogQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetTastePreferencesUrl = () => {
+
+
+
+
+  return `/api/taste-preferences`
+}
+
+/**
+ * @summary Get the authenticated user's private taste preferences
+ */
+export const getTastePreferences = async ( options?: Parameters<typeof customFetch>[1]): Promise<TastePreferences> => {
+
+  return customFetch<TastePreferences>(getGetTastePreferencesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTastePreferencesQueryKey = () => {
+    return [
+    `/api/taste-preferences`
+    ] as const;
+    }
+
+
+export const getGetTastePreferencesQueryOptions = <TData = Awaited<ReturnType<typeof getTastePreferences>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTastePreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTastePreferencesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTastePreferences>>> = ({ signal }) => getTastePreferences({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTastePreferences>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTastePreferencesQueryResult = NonNullable<Awaited<ReturnType<typeof getTastePreferences>>>
+export type GetTastePreferencesQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get the authenticated user's private taste preferences
+ */
+
+export function useGetTastePreferences<TData = Awaited<ReturnType<typeof getTastePreferences>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTastePreferences>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTastePreferencesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getSaveTastePreferencesUrl = () => {
+
+
+
+
+  return `/api/taste-preferences`
+}
+
+/**
+ * @summary Save the authenticated user's private taste preferences
+ */
+export const saveTastePreferences = async (tastePreferencesInput: TastePreferencesInput, options?: Parameters<typeof customFetch>[1]): Promise<TastePreferences> => {
+
+  return customFetch<TastePreferences>(getSaveTastePreferencesUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(tastePreferencesInput)
+  }
+);}
+
+
+
+
+
+export const getSaveTastePreferencesMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTastePreferences>>, TError,{data: BodyType<TastePreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof saveTastePreferences>>, TError,{data: BodyType<TastePreferencesInput>}, TContext> => {
+
+const mutationKey = ['saveTastePreferences'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof saveTastePreferences>>, {data: BodyType<TastePreferencesInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  saveTastePreferences(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SaveTastePreferencesMutationResult = NonNullable<Awaited<ReturnType<typeof saveTastePreferences>>>
+    export type SaveTastePreferencesMutationBody = BodyType<TastePreferencesInput>
+    export type SaveTastePreferencesMutationError = ErrorType<void>
+
+    /**
+ * @summary Save the authenticated user's private taste preferences
+ */
+export const useSaveTastePreferences = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof saveTastePreferences>>, TError,{data: BodyType<TastePreferencesInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof saveTastePreferences>>,
+        TError,
+        {data: BodyType<TastePreferencesInput>},
+        TContext
+      > => {
+      return useMutation(getSaveTastePreferencesMutationOptions(options));
+    }
+
+export const getGetTasteMatchUrl = (username: string,) => {
+
+
+
+
+  return `/api/taste-match/${username}`
+}
+
+/**
+ * @summary Get a public-safe transparent taste match for a creator
+ */
+export const getTasteMatch = async (username: string, options?: Parameters<typeof customFetch>[1]): Promise<TasteMatchResponse> => {
+
+  return customFetch<TasteMatchResponse>(getGetTasteMatchUrl(username),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetTasteMatchQueryKey = (username: string,) => {
+    return [
+    `/api/taste-match/${username}`
+    ] as const;
+    }
+
+
+export const getGetTasteMatchQueryOptions = <TData = Awaited<ReturnType<typeof getTasteMatch>>, TError = ErrorType<void>>(username: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTasteMatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetTasteMatchQueryKey(username);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getTasteMatch>>> = ({ signal }) => getTasteMatch(username, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: username !== null && username !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getTasteMatch>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetTasteMatchQueryResult = NonNullable<Awaited<ReturnType<typeof getTasteMatch>>>
+export type GetTasteMatchQueryError = ErrorType<void>
+
+
+/**
+ * @summary Get a public-safe transparent taste match for a creator
+ */
+
+export function useGetTasteMatch<TData = Awaited<ReturnType<typeof getTasteMatch>>, TError = ErrorType<void>>(
+ username: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getTasteMatch>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetTasteMatchQueryOptions(username,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -18,6 +18,8 @@ tags:
     description: Shared creator publishing workspace
   - name: creator-profile
     description: Creator identity and public profile presentation
+  - name: taste-match
+    description: Private taste preferences and transparent creator matching
   - name: storage
     description: Protected creator media storage
 paths:
@@ -103,6 +105,9 @@ paths:
         - in: query
           name: city
           schema: { type: string }
+        - in: query
+          name: sort
+          schema: { type: string, enum: [best, new] }
       responses:
         "200":
           description: Grouped discovery results
@@ -110,6 +115,72 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ExploreResults"
+  /taste-catalog:
+    get:
+      operationId: getTasteCatalog
+      tags: [taste-match]
+      summary: Get the approved taste categories and tags
+      responses:
+        "200":
+          description: Taste catalog
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TasteCatalog"
+  /taste-preferences:
+    get:
+      operationId: getTastePreferences
+      tags: [taste-match]
+      summary: Get the authenticated user's private taste preferences
+      responses:
+        "200":
+          description: Private taste preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TastePreferences"
+        "401":
+          description: Authentication required
+    put:
+      operationId: saveTastePreferences
+      tags: [taste-match]
+      summary: Save the authenticated user's private taste preferences
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TastePreferencesInput"
+      responses:
+        "200":
+          description: Saved private taste preferences
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TastePreferences"
+        "400":
+          description: Invalid taste preferences
+        "401":
+          description: Authentication required
+  /taste-match/{username}:
+    get:
+      operationId: getTasteMatch
+      tags: [taste-match]
+      summary: Get a public-safe transparent taste match for a creator
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Taste match state
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TasteMatchResponse"
+        "404":
+          description: Creator not found
   /edits/{id}:
     get:
       operationId: getEdit
@@ -270,9 +341,16 @@ components:
           type: array
           items: { type: string }
         city: { type: string }
-        matchScore: { type: number, format: int32 }
+        matchScore: { type: ["number", "null"], format: int32 }
         verified: { type: boolean }
         bio: { type: string }
+        matchState: { type: string, enum: [ready, incomplete, signed_out] }
+        sharedTastes:
+          type: array
+          items: { $ref: "#/components/schemas/SharedTaste" }
+        matchReasons:
+          type: array
+          items: { type: string }
     CreatorProfile:
       allOf:
         - $ref: "#/components/schemas/Creator"
@@ -326,8 +404,10 @@ components:
         updatedAt: { type: string }
     ExploreResults:
       type: object
-      required: [creators, edits, collections, places, products]
+      required: [authenticated, sort, creators, edits, collections, places, products]
       properties:
+        authenticated: { type: boolean }
+        sort: { type: string, enum: [best, new] }
         creators:
           type: array
           items: { $ref: "#/components/schemas/Creator" }
@@ -343,6 +423,90 @@ components:
         products:
           type: array
           items: { type: string }
+    TasteCategory:
+      type: object
+      required: [id, label, labelAr]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        labelAr: { type: string }
+    TasteTag:
+      type: object
+      required: [id, categoryId, label, labelAr]
+      properties:
+        id: { type: string }
+        categoryId: { type: string }
+        label: { type: string }
+        labelAr: { type: string }
+    TasteCatalog:
+      type: object
+      required: [categories, tags, minCategories, minTags]
+      properties:
+        categories:
+          type: array
+          items: { $ref: "#/components/schemas/TasteCategory" }
+        tags:
+          type: array
+          items: { $ref: "#/components/schemas/TasteTag" }
+        minCategories: { type: number, minimum: 1 }
+        minTags: { type: number, minimum: 1 }
+    TastePreferencesInput:
+      type: object
+      required: [categories, tags]
+      properties:
+        categories:
+          type: array
+          maxItems: 10
+          items: { type: string }
+        tags:
+          type: array
+          maxItems: 30
+          items: { type: string }
+    TastePreferences:
+      allOf:
+        - $ref: "#/components/schemas/TastePreferencesInput"
+        - type: object
+          required: [complete, updatedAt]
+          properties:
+            complete: { type: boolean }
+            updatedAt: { type: string, format: date-time }
+    SharedTaste:
+      type: object
+      required: [id, label, labelAr, type]
+      properties:
+        id: { type: string }
+        label: { type: string }
+        labelAr: { type: string }
+        type: { type: string, enum: [category, tag] }
+    TasteMatch:
+      type: object
+      required: [state, score, sharedTastes, explanation, explanationAr]
+      properties:
+        state: { type: string, enum: [ready, incomplete, signed_out] }
+        score: { type: ["number", "null"], minimum: 0, maximum: 100 }
+        sharedTastes:
+          type: array
+          maxItems: 3
+          items: { $ref: "#/components/schemas/SharedTaste" }
+        explanation: { type: string }
+        explanationAr: { type: string }
+    TasteMatchResponse:
+      type: object
+      required: [authenticated, creator, preferences, match]
+      properties:
+        authenticated: { type: boolean }
+        creator: { $ref: "#/components/schemas/Creator" }
+        preferences:
+          type: ["object", "null"]
+          properties:
+            categories:
+              type: array
+              items: { type: string }
+            tags:
+              type: array
+              items: { type: string }
+            complete: { type: boolean }
+        match: { $ref: "#/components/schemas/TasteMatch" }
     RelationshipInput:
       type: object
       required: [type, targetId, active]

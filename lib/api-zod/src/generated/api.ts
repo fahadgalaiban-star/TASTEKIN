@@ -54,9 +54,17 @@ export const ListCreatorsResponseItem = zod.object({
   "avatar": zod.string().optional(),
   "categories": zod.array(zod.string()),
   "city": zod.string(),
-  "matchScore": zod.number(),
+  "matchScore": zod.number().nullable(),
   "verified": zod.boolean(),
-  "bio": zod.string().optional()
+  "bio": zod.string().optional(),
+  "matchState": zod.enum(['ready', 'incomplete', 'signed_out']).optional(),
+  "sharedTastes": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "type": zod.enum(['category', 'tag'])
+})).optional(),
+  "matchReasons": zod.array(zod.string()).optional()
 })
 export const ListCreatorsResponse = zod.array(ListCreatorsResponseItem)
 
@@ -72,9 +80,17 @@ export const GetCreatorResponse = zod.object({
   "avatar": zod.string().optional(),
   "categories": zod.array(zod.string()),
   "city": zod.string(),
-  "matchScore": zod.number(),
+  "matchScore": zod.number().nullable(),
   "verified": zod.boolean(),
-  "bio": zod.string().optional()
+  "bio": zod.string().optional(),
+  "matchState": zod.enum(['ready', 'incomplete', 'signed_out']).optional(),
+  "sharedTastes": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "type": zod.enum(['category', 'tag'])
+})).optional(),
+  "matchReasons": zod.array(zod.string()).optional()
 }).and(zod.object({
   "editCount": zod.number(),
   "collectionCount": zod.number(),
@@ -113,10 +129,13 @@ export const GetCreatorResponse = zod.object({
 export const ExploreQueryParams = zod.object({
   "q": zod.coerce.string().optional(),
   "category": zod.coerce.string().optional(),
-  "city": zod.coerce.string().optional()
+  "city": zod.coerce.string().optional(),
+  "sort": zod.enum(['best', 'new']).optional()
 })
 
 export const ExploreResponse = zod.object({
+  "authenticated": zod.boolean(),
+  "sort": zod.enum(['best', 'new']),
   "creators": zod.array(zod.object({
   "id": zod.string(),
   "username": zod.string(),
@@ -124,9 +143,17 @@ export const ExploreResponse = zod.object({
   "avatar": zod.string().optional(),
   "categories": zod.array(zod.string()),
   "city": zod.string(),
-  "matchScore": zod.number(),
+  "matchScore": zod.number().nullable(),
   "verified": zod.boolean(),
-  "bio": zod.string().optional()
+  "bio": zod.string().optional(),
+  "matchState": zod.enum(['ready', 'incomplete', 'signed_out']).optional(),
+  "sharedTastes": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "type": zod.enum(['category', 'tag'])
+})).optional(),
+  "matchReasons": zod.array(zod.string()).optional()
 })),
   "edits": zod.array(zod.object({
   "id": zod.string(),
@@ -158,6 +185,132 @@ export const ExploreResponse = zod.object({
 })),
   "places": zod.array(zod.string()),
   "products": zod.array(zod.string())
+})
+
+
+/**
+ * @summary Get the approved taste categories and tags
+ */
+
+
+
+
+export const GetTasteCatalogResponse = zod.object({
+  "categories": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string()
+})),
+  "tags": zod.array(zod.object({
+  "id": zod.string(),
+  "categoryId": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string()
+})),
+  "minCategories": zod.number().min(1),
+  "minTags": zod.number().min(1)
+})
+
+
+/**
+ * @summary Get the authenticated user's private taste preferences
+ */
+export const getTastePreferencesResponseOneCategoriesMax = 10;
+
+export const getTastePreferencesResponseOneTagsMax = 30;
+
+
+
+export const GetTastePreferencesResponse = zod.object({
+  "categories": zod.array(zod.string()).max(getTastePreferencesResponseOneCategoriesMax),
+  "tags": zod.array(zod.string()).max(getTastePreferencesResponseOneTagsMax)
+}).and(zod.object({
+  "complete": zod.boolean(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Save the authenticated user's private taste preferences
+ */
+export const saveTastePreferencesBodyCategoriesMax = 10;
+
+export const saveTastePreferencesBodyTagsMax = 30;
+
+
+
+export const SaveTastePreferencesBody = zod.object({
+  "categories": zod.array(zod.string()).max(saveTastePreferencesBodyCategoriesMax),
+  "tags": zod.array(zod.string()).max(saveTastePreferencesBodyTagsMax)
+})
+
+export const saveTastePreferencesResponseOneCategoriesMax = 10;
+
+export const saveTastePreferencesResponseOneTagsMax = 30;
+
+
+
+export const SaveTastePreferencesResponse = zod.object({
+  "categories": zod.array(zod.string()).max(saveTastePreferencesResponseOneCategoriesMax),
+  "tags": zod.array(zod.string()).max(saveTastePreferencesResponseOneTagsMax)
+}).and(zod.object({
+  "complete": zod.boolean(),
+  "updatedAt": zod.coerce.date()
+}))
+
+
+/**
+ * @summary Get a public-safe transparent taste match for a creator
+ */
+export const GetTasteMatchParams = zod.object({
+  "username": zod.coerce.string()
+})
+
+export const getTasteMatchResponseMatchScoreMin = 0;
+export const getTasteMatchResponseMatchScoreMax = 100;
+
+export const getTasteMatchResponseMatchSharedTastesMax = 3;
+
+
+
+export const GetTasteMatchResponse = zod.object({
+  "authenticated": zod.boolean(),
+  "creator": zod.object({
+  "id": zod.string(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "avatar": zod.string().optional(),
+  "categories": zod.array(zod.string()),
+  "city": zod.string(),
+  "matchScore": zod.number().nullable(),
+  "verified": zod.boolean(),
+  "bio": zod.string().optional(),
+  "matchState": zod.enum(['ready', 'incomplete', 'signed_out']).optional(),
+  "sharedTastes": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "type": zod.enum(['category', 'tag'])
+})).optional(),
+  "matchReasons": zod.array(zod.string()).optional()
+}),
+  "preferences": zod.object({
+  "categories": zod.array(zod.string()).optional(),
+  "tags": zod.array(zod.string()).optional(),
+  "complete": zod.boolean().optional()
+}).nullable(),
+  "match": zod.object({
+  "state": zod.enum(['ready', 'incomplete', 'signed_out']),
+  "score": zod.number().min(getTasteMatchResponseMatchScoreMin).max(getTasteMatchResponseMatchScoreMax).nullable(),
+  "sharedTastes": zod.array(zod.object({
+  "id": zod.string(),
+  "label": zod.string(),
+  "labelAr": zod.string(),
+  "type": zod.enum(['category', 'tag'])
+})).max(getTasteMatchResponseMatchSharedTastesMax),
+  "explanation": zod.string(),
+  "explanationAr": zod.string()
+})
 })
 
 

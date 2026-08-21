@@ -8,8 +8,11 @@
 import type { Collection } from './collection';
 import type { Creator } from './creator';
 import type { Edit } from './edit';
+import type { ExploreResultsSort } from './exploreResultsSort';
 
 export interface ExploreResults {
+  authenticated: boolean;
+  sort: ExploreResultsSort;
   creators: Creator[];
   edits: Edit[];
   collections: Collection[];

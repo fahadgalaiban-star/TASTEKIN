@@ -5,9 +5,11 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { ExploreSort } from './exploreSort';
 
 export type ExploreParams = {
 q?: string;
 category?: string;
 city?: string;
+sort?: ExploreSort;
 };

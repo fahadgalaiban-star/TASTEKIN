@@ -5,6 +5,8 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { CreatorMatchState } from './creatorMatchState';
+import type { SharedTaste } from './sharedTaste';
 
 export interface Creator {
   id: string;
@@ -13,7 +15,11 @@ export interface Creator {
   avatar?: string;
   categories: string[];
   city: string;
-  matchScore: number;
+  /** @nullable */
+  matchScore: number | null;
   verified: boolean;
   bio?: string;
+  matchState?: CreatorMatchState;
+  sharedTastes?: SharedTaste[];
+  matchReasons?: string[];
 }

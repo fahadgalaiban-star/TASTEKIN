@@ -1,9 +1,29 @@
-import { Router, type IRouter } from "express";
 import {
   ExploreQueryParams,
+  GetCreatorResponse,
+  GetTasteCatalogResponse,
+  GetTasteMatchParams,
+  GetTasteMatchResponse,
+  GetTastePreferencesResponse,
   ListCreatorsQueryParams,
+  ListCreatorsResponse,
+  SaveTastePreferencesBody,
+  SaveTastePreferencesResponse,
   UpdateRelationshipBody,
 } from "@workspace/api-zod";
+import { db, userTastePreferences } from "@workspace/db";
+import {
+  MIN_TASTE_CATEGORIES,
+  MIN_TASTE_TAGS,
+  isCompleteTasteProfile,
+  tasteCategories,
+  tasteCategoryIds,
+  tasteTagIds,
+  tasteTags,
+} from "@workspace/taste-catalog";
+import { eq } from "drizzle-orm";
+import { Router, type IRouter } from "express";
+import { calculateTasteMatch, tasteReasons, type CreatorTasteProfile, type TasteSelection } from "../lib/taste-match";
 
 const router: IRouter = Router();
 
@@ -26,33 +46,36 @@ const creators = [
     username: "fheed",
     displayName: "Fheed Alaiban",
     avatar: images.atelier,
-    categories: ["Style", "Travel", "Rituals"],
+    categories: ["Fashion", "Travel", "Places", "DailyRoutine"],
+    tasteTags: ["quiet-luxury", "tailoring", "neutral-layers", "slow-travel", "coastal-escapes", "city-guides", "morning-rituals"],
     city: "Kuwait City, Kuwait",
-    matchScore: 94,
     verified: true,
     bio: "A considered edit of what I wear, where I go, and what stays.",
+    createdAt: "2026-08-20T08:00:00.000Z",
   },
   {
     id: "noura-studio",
     username: "noura.studio",
     displayName: "Noura Studio",
     avatar: images.cafe,
-    categories: ["Food", "Places", "Design"],
+    categories: ["Restaurants", "Places", "Travel", "Decor"],
+    tasteTags: ["long-lunches", "coffee-stops", "table-setting", "hidden-gems", "architecture", "slow-travel", "calm-interiors"],
     city: "Jeddah, SA",
-    matchScore: 86,
     verified: true,
     bio: "Small tables, beautiful ingredients, and places worth the detour.",
+    createdAt: "2026-08-19T08:00:00.000Z",
   },
   {
     id: "omar-moves",
     username: "omarmoves",
     displayName: "Omar Moves",
     avatar: images.movement,
-    categories: ["Fitness", "Wellness", "Travel"],
+    categories: ["HealthFitness", "DailyRoutine", "Travel"],
+    tasteTags: ["strength-training", "recovery", "wellbeing", "weekly-reset", "slow-travel"],
     city: "Dubai, UAE",
-    matchScore: 79,
     verified: false,
     bio: "Movement rituals for a life lived outside the routine.",
+    createdAt: "2026-08-18T08:00:00.000Z",
   },
 ];
 
@@ -159,60 +182,192 @@ const publicEdit = <T extends (typeof edits)[number]>(edit: T) =>
     ? { ...edit, image: "", altText: "Subscribers only edit preview" }
     : edit;
 
+type Creator = (typeof creators)[number];
+
+function serializePreferences(selection: TasteSelection, updatedAt: Date) {
+  return {
+    categories: selection.categories,
+    tags: selection.tags,
+    complete: isCompleteTasteProfile(selection.categories, selection.tags),
+    updatedAt,
+  };
+}
+
+async function preferencesForUser(userId: string): Promise<{ selection: TasteSelection; updatedAt: Date } | null> {
+  const [preferences] = await db.select().from(userTastePreferences).where(eq(userTastePreferences.userId, userId));
+  if (!preferences) return null;
+  return {
+    selection: {
+      categories: preferences.categories.filter((item) => tasteCategoryIds.includes(item as never)),
+      tags: preferences.tags.filter((item) => tasteTagIds.includes(item as never)),
+    },
+    updatedAt: preferences.updatedAt,
+  };
+}
+
+function creatorResponse(creator: Creator, preferences: TasteSelection | null, authenticated: boolean) {
+  const match = calculateTasteMatch(preferences, creator satisfies CreatorTasteProfile, authenticated);
+  return {
+    id: creator.id,
+    username: creator.username,
+    displayName: creator.displayName,
+    avatar: creator.avatar,
+    categories: creator.categories,
+    city: creator.city,
+    verified: creator.verified,
+    bio: creator.bio,
+    matchScore: match.score,
+    matchState: match.state,
+    sharedTastes: match.sharedTastes,
+    matchReasons: tasteReasons(match),
+  };
+}
+
+function preferencesFromRequest(value: unknown): TasteSelection | null {
+  const parsed = SaveTastePreferencesBody.safeParse(value);
+  if (!parsed.success) return null;
+  const categories = Array.from(new Set(parsed.data.categories));
+  const tags = Array.from(new Set(parsed.data.tags));
+  if (
+    categories.some((item) => !tasteCategoryIds.includes(item as never))
+    || tags.some((item) => !tasteTagIds.includes(item as never))
+  ) return null;
+  return { categories, tags };
+}
+
 router.get("/feed", (_req, res) => res.json(edits.map(publicEdit)));
 
-router.get("/creators", (req, res) => {
+router.get("/taste-catalog", (_req, res) => {
+  res.json(GetTasteCatalogResponse.parse({
+    categories: tasteCategories.map((category) => ({ id: category.id, label: category.en, labelAr: category.ar })),
+    tags: tasteTags.map((tag) => ({ id: tag.id, categoryId: tag.category, label: tag.en, labelAr: tag.ar })),
+    minCategories: MIN_TASTE_CATEGORIES,
+    minTags: MIN_TASTE_TAGS,
+  }));
+});
+
+router.get("/taste-preferences", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Sign in to view your private taste preferences" });
+    return;
+  }
+  const preferences = await preferencesForUser(req.user!.id);
+  res.json(GetTastePreferencesResponse.parse(
+    serializePreferences(preferences?.selection ?? { categories: [], tags: [] }, preferences?.updatedAt ?? new Date()),
+  ));
+});
+
+router.put("/taste-preferences", async (req, res): Promise<void> => {
+  if (!req.isAuthenticated()) {
+    res.status(401).json({ error: "Sign in to save your taste preferences" });
+    return;
+  }
+  const preferences = preferencesFromRequest(req.body);
+  if (!preferences) {
+    res.status(400).json({ error: "Choose only approved taste categories and tags" });
+    return;
+  }
+  const now = new Date();
+  const [saved] = await db
+    .insert(userTastePreferences)
+    .values({ userId: req.user!.id, ...preferences, updatedAt: now })
+    .onConflictDoUpdate({
+      target: userTastePreferences.userId,
+      set: { ...preferences, updatedAt: now },
+    })
+    .returning();
+  res.json(SaveTastePreferencesResponse.parse(serializePreferences(preferences, saved.updatedAt)));
+});
+
+router.get("/creators", async (req, res) => {
   const parsed = ListCreatorsQueryParams.safeParse(req.query);
   const params = parsed.success ? parsed.data : {};
   const query = params.q?.toLowerCase();
+  const preferences = req.user ? await preferencesForUser(req.user.id) : null;
   const result = creators.filter((creator) => {
     const matchesQuery =
       !query ||
-      `${creator.displayName} ${creator.username} ${creator.city} ${creator.categories.join(" ")}`
+       `${creator.displayName} ${creator.username} ${creator.city} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")}`
         .toLowerCase()
         .includes(query);
     const matchesCategory =
       !params.category || creator.categories.includes(params.category);
     const matchesCity = !params.city || creator.city.includes(params.city);
     return matchesQuery && matchesCategory && matchesCity;
-  });
-  res.json(result);
+  }).map((creator) => creatorResponse(creator, preferences?.selection ?? null, Boolean(req.user)));
+  res.json(ListCreatorsResponse.parse(result));
 });
 
-router.get("/creators/:username", (req, res) => {
+router.get("/creators/:username", async (req, res) => {
   const creator = creators.find((item) => item.username === req.params.username);
   if (!creator) {
     res.status(404).json({ error: "Creator not found" });
     return;
   }
-  res.json({
-    ...creator,
+  const preferences = req.user ? await preferencesForUser(req.user.id) : null;
+  const summary = creatorResponse(creator, preferences?.selection ?? null, Boolean(req.user));
+  res.json(GetCreatorResponse.parse({
+    ...summary,
     editCount: edits.filter((edit) => edit.creatorUsername === creator.username).length,
     collectionCount: collections.filter(
       (collection) => collection.creatorUsername === creator.username,
     ).length,
-    reasons: [
-      "You both save understated, everyday style",
-      "Your taste overlaps in Kuwait City and travel",
-      "You reach for warm neutrals and considered objects",
-    ],
+    reasons: summary.matchState === "ready" ? summary.matchReasons : [calculateTasteMatch(preferences?.selection ?? null, creator, Boolean(req.user)).explanation],
     edits: edits.filter((edit) => edit.creatorUsername === creator.username).map(publicEdit),
     collections: collections.filter(
       (collection) => collection.creatorUsername === creator.username,
     ),
-  });
+  }));
 });
 
-router.get("/explore", (req, res) => {
+router.get("/taste-match/:username", async (req, res): Promise<void> => {
+  const parsed = GetTasteMatchParams.safeParse(req.params);
+  const creator = parsed.success ? creators.find((item) => item.username === parsed.data.username) : undefined;
+  if (!creator) {
+    res.status(404).json({ error: "Creator not found" });
+    return;
+  }
+  const preferences = req.user ? await preferencesForUser(req.user.id) : null;
+  const selection = preferences?.selection ?? null;
+  res.json(GetTasteMatchResponse.parse({
+    authenticated: Boolean(req.user),
+    creator: creatorResponse(creator, selection, Boolean(req.user)),
+    preferences: selection ? {
+      categories: selection.categories,
+      tags: selection.tags,
+      complete: isCompleteTasteProfile(selection.categories, selection.tags),
+    } : null,
+    match: calculateTasteMatch(selection, creator, Boolean(req.user)),
+  }));
+});
+
+router.get("/explore", async (req, res) => {
   const parsed = ExploreQueryParams.safeParse(req.query);
   const params = parsed.success ? parsed.data : {};
   const term = params.q?.toLowerCase();
   const matches = (value: string) =>
     !term || value.toLowerCase().includes(term);
+  const matchesCategory = (creator: Creator) =>
+    !params.category || creator.categories.includes(params.category);
+  const normalizedCity = params.city?.trim().toLowerCase();
+  const matchesCity = (creator: Creator) =>
+    !normalizedCity || creator.city.toLowerCase().includes(normalizedCity);
+  const preferences = req.user ? await preferencesForUser(req.user.id) : null;
+  const sort = params.sort ?? (req.user ? "best" : "new");
+  const matchedCreators = creators
+    .filter((creator) => creator.verified)
+    .filter((creator) => matches(`${creator.displayName} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")} ${creator.city}`))
+    .filter(matchesCategory)
+    .filter(matchesCity)
+    .map((creator) => ({ ...creatorResponse(creator, preferences?.selection ?? null, Boolean(req.user)), createdAt: creator.createdAt }))
+    .sort((left, right) => sort === "new"
+      ? right.createdAt.localeCompare(left.createdAt)
+      : (right.matchScore ?? -1) - (left.matchScore ?? -1) || right.createdAt.localeCompare(left.createdAt))
+    .map(({ createdAt: _createdAt, ...creator }) => creator);
   res.json({
-    creators: creators.filter((creator) =>
-      matches(`${creator.displayName} ${creator.categories.join(" ")} ${creator.city}`),
-    ),
+    authenticated: Boolean(req.user),
+    sort,
+    creators: matchedCreators,
      edits: edits.filter((edit) => matches(`${edit.title} ${edit.caption} ${edit.tags.join(" ")}`)).map(publicEdit),
     collections: collections.filter((collection) =>
       matches(`${collection.title} ${collection.description}`),

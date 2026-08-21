@@ -9,6 +9,30 @@ export interface HealthStatus {
   status: string;
 }
 
+export type CreatorMatchState = typeof CreatorMatchState[keyof typeof CreatorMatchState];
+
+
+export const CreatorMatchState = {
+  ready: 'ready',
+  incomplete: 'incomplete',
+  signed_out: 'signed_out',
+} as const;
+
+export type SharedTasteType = typeof SharedTasteType[keyof typeof SharedTasteType];
+
+
+export const SharedTasteType = {
+  category: 'category',
+  tag: 'tag',
+} as const;
+
+export interface SharedTaste {
+  id: string;
+  label: string;
+  labelAr: string;
+  type: SharedTasteType;
+}
+
 export interface Creator {
   id: string;
   username: string;
@@ -16,9 +40,13 @@ export interface Creator {
   avatar?: string;
   categories: string[];
   city: string;
-  matchScore: number;
+  /** @nullable */
+  matchScore: number | null;
   verified: boolean;
   bio?: string;
+  matchState?: CreatorMatchState;
+  sharedTastes?: SharedTaste[];
+  matchReasons?: string[];
 }
 
 export type EditAccess = typeof EditAccess[keyof typeof EditAccess];
@@ -76,12 +104,96 @@ export type CreatorProfile = Creator & {
   collections: Collection[];
 };
 
+export type ExploreResultsSort = typeof ExploreResultsSort[keyof typeof ExploreResultsSort];
+
+
+export const ExploreResultsSort = {
+  best: 'best',
+  new: 'new',
+} as const;
+
 export interface ExploreResults {
+  authenticated: boolean;
+  sort: ExploreResultsSort;
   creators: Creator[];
   edits: Edit[];
   collections: Collection[];
   places: string[];
   products: string[];
+}
+
+export interface TasteCategory {
+  id: string;
+  label: string;
+  labelAr: string;
+}
+
+export interface TasteTag {
+  id: string;
+  categoryId: string;
+  label: string;
+  labelAr: string;
+}
+
+export interface TasteCatalog {
+  categories: TasteCategory[];
+  tags: TasteTag[];
+  /** @minimum 1 */
+  minCategories: number;
+  /** @minimum 1 */
+  minTags: number;
+}
+
+export interface TastePreferencesInput {
+  /** @maxItems 10 */
+  categories: string[];
+  /** @maxItems 30 */
+  tags: string[];
+}
+
+export type TastePreferences = TastePreferencesInput & {
+  complete: boolean;
+  updatedAt: string;
+};
+
+export type TasteMatchState = typeof TasteMatchState[keyof typeof TasteMatchState];
+
+
+export const TasteMatchState = {
+  ready: 'ready',
+  incomplete: 'incomplete',
+  signed_out: 'signed_out',
+} as const;
+
+export interface TasteMatch {
+  state: TasteMatchState;
+  /**
+     * @minimum 0
+     * @maximum 100
+     * @nullable
+     */
+  score: number | null;
+  /** @maxItems 3 */
+  sharedTastes: SharedTaste[];
+  explanation: string;
+  explanationAr: string;
+}
+
+/**
+ * @nullable
+ */
+export type TasteMatchResponsePreferences = {
+  categories?: string[];
+  tags?: string[];
+  complete?: boolean;
+} | null;
+
+export interface TasteMatchResponse {
+  authenticated: boolean;
+  creator: Creator;
+  /** @nullable */
+  preferences: TasteMatchResponsePreferences;
+  match: TasteMatch;
 }
 
 export type RelationshipInputType = typeof RelationshipInputType[keyof typeof RelationshipInputType];
@@ -436,5 +548,14 @@ export type ExploreParams = {
 q?: string;
 category?: string;
 city?: string;
+sort?: ExploreSort;
 };
+
+export type ExploreSort = typeof ExploreSort[keyof typeof ExploreSort];
+
+
+export const ExploreSort = {
+  best: 'best',
+  new: 'new',
+} as const;
 
