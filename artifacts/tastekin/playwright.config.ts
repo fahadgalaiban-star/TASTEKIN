@@ -12,6 +12,13 @@ export default defineConfig({
     viewport: { width: 390, height: 844 },
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
+    ...(process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE
+      ? {
+          launchOptions: {
+            executablePath: process.env.REPLIT_PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+          },
+        }
+      : {}),
   },
   webServer: process.env.TASTEKIN_BASE_URL
     ? undefined

@@ -106,7 +106,7 @@ test('persists saves, follow state, collections, and the owner edit entry point'
   await expect(page.getByRole('button', { name: 'Save this edit' })).toBeVisible();
 });
 
-test('unlocks a subscriber-only edit without exposing it to visitors first', async ({ page }) => {
+test('keeps a subscriber-only edit on its locked preview until media access is authorized', async ({ page }) => {
   await switchToConsumer(page);
   await page.getByTestId('nav-home').click();
   await page.getByTestId('edit-title-private-hotel').click();
@@ -122,7 +122,8 @@ test('unlocks a subscriber-only edit without exposing it to visitors first', asy
 
   await page.getByTestId('nav-home').click();
   await page.getByTestId('edit-title-private-hotel').click();
-  await expect(page.locator('.approved-detail-art')).not.toHaveClass(/locked/);
-  await expect(page.getByText('This edit is for subscribers')).toHaveCount(0);
-  await expect(page.getByRole('button', { name: 'Save this edit' })).toBeVisible();
+  await expect(page.locator('.approved-detail-art')).toHaveClass(/locked/);
+  await expect(page.getByText('This edit is for subscribers')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Subscription pending confirmation' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save this edit' })).toHaveCount(0);
 });
