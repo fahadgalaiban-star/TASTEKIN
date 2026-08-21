@@ -370,7 +370,7 @@ components:
               items: { $ref: "#/components/schemas/Collection" }
     Edit:
       type: object
-      required: [id, creatorUsername, creatorName, title, caption, contentType, access, image, tags, saved]
+      required: [id, creatorUsername, creatorName, title, caption, contentType, access, tags, saved]
       properties:
         id: { type: string }
         creatorUsername: { type: string }
@@ -384,6 +384,11 @@ components:
         image: { type: string }
         altText: { type: string }
         location: { type: string }
+        placeName: { type: string }
+        locationLabel: { type: string }
+        mapsUrl: { type: string }
+        tasteRating: { type: number, format: int32 }
+        creatorReview: { type: string }
         tags:
           type: array
           items: { type: string }
@@ -618,7 +623,7 @@ components:
         link: { type: string, maxLength: 1024 }
     CreatorEdit:
       type: object
-      required: [id, category, title, titleAr, caption, captionAr, image, location, locationAr, altText, access, status, collectionIds]
+      required: [id, category, title, titleAr, caption, captionAr, location, locationAr, altText, access, status, collectionIds]
       properties:
         id: { type: string, minLength: 1, maxLength: 120 }
         category: { type: string, enum: [Fashion, Travel, Places, Restaurants, DailyRoutine, PersonalCare, HealthFitness, Decor, Books, Vlogs] }
@@ -639,6 +644,11 @@ components:
         location: { type: string, maxLength: 240 }
         locationAr: { type: string, maxLength: 240 }
         altText: { type: string, maxLength: 500 }
+        placeName: { type: ["string", "null"], maxLength: 160 }
+        locationLabel: { type: ["string", "null"], maxLength: 320 }
+        mapsUrl: { type: ["string", "null"], maxLength: 1024 }
+        tasteRating: { type: ["number", "null"], format: int32, minimum: 1, maximum: 5 }
+        creatorReview: { type: ["string", "null"], maxLength: 2000 }
         access: { type: string, enum: [public, locked] }
         status: { type: string, enum: [draft, published, archived] }
         collectionIds:

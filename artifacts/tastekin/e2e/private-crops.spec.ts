@@ -9,7 +9,7 @@ type Edit = {
   titleAr: string;
   caption: string;
   captionAr: string;
-  image: string;
+  image?: string;
   sourceImage?: string;
   previewImage?: string;
   imageMetadata?: { name: string; size: number; contentType: string };
@@ -155,7 +155,7 @@ class PrivateCropApi {
       edits: this.workspace.edits
         .filter((edit) => edit.status === 'published')
         .map((edit) => {
-          if (edit.access === 'locked') {
+          if (edit.access === 'locked' && edit.image) {
             return {
               ...edit,
               image: `/api/public-media/${edit.id}/preview`,
@@ -163,7 +163,7 @@ class PrivateCropApi {
               sourceImage: undefined,
             };
           }
-          return edit.image.startsWith('/objects/')
+          return edit.image?.startsWith('/objects/')
             ? { ...edit, image: `/api/public-media/${edit.id}` }
             : edit;
         }),
@@ -510,4 +510,99 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   await expect(saving.page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
   expect(saveApi.objectPaths.every((path) => saveApi.cleanedPaths.has(path))).toBe(false);
   await saving.context.close();
+});
+
+test('a no-photo restaurant recommendation validates, persists, and displays without media', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+
+  await page.getByRole('button', { name: 'New Edit' }).click();
+  await page.getByText('Add details', { exact: true }).click();
+  await page.getByLabel('Category').selectOption('Restaurants');
+  await expect(page.getByTestId('place-edit-fields')).toBeVisible();
+  await page.getByLabel('Place name').fill('Alba Table');
+  await page.getByLabel('Readable location').fill('Kuwait City, Kuwait');
+  await page.getByLabel('Your review (optional)').fill('A quiet lunch I would return to for the bread and the light.');
+  await page.getByRole('button', { name: '4 out of 5' }).click();
+  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://maps.apple.com/?q=Alba+Table');
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+
+  const saved = api.workspace.edits.find((edit) => edit.placeName === 'Alba Table');
+  expect(saved).toMatchObject({ category: 'Restaurants', locationLabel: 'Kuwait City, Kuwait', tasteRating: 4 });
+  expect(saved).not.toHaveProperty('image');
+
+  await page.getByTestId('nav-home').click();
+  const homeCard = page.getByTestId(`edit-card-${saved!.id}`);
+  await expect(homeCard).toBeVisible();
+  await expect(homeCard.locator('img')).toHaveCount(0);
+  await expect(homeCard.getByTestId(`taste-rating-${saved!.id}`)).toBeVisible();
+  await expect(homeCard.getByText('Fheed’s Taste Rating · 4/5')).toBeVisible();
+  await expect(homeCard.getByRole('link', { name: 'Open in Maps' })).toHaveAttribute('href', 'https://maps.apple.com/?q=Alba+Table');
+
+  await homeCard.locator('.place-card-main').click();
+  await expect(page.getByText('A quiet lunch I would return to for the bread and the light.')).toBeVisible();
+  await expect(page.locator('.approved-detail-art')).toHaveCount(0);
+  await expect(page.locator('.place-detail-panel')).toBeVisible();
+
+  await page.getByTestId('nav-explore').click();
+  await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
+  await page.getByTestId('fheed-profile-mini').click();
+  await expect(page.locator('.place-grid-card')).toContainText('Alba Table');
+  await expect(page.locator('.place-grid-card img')).toHaveCount(0);
+
+  await page.reload();
+  await page.getByTestId('nav-home').click();
+  await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
+  await context.close();
+});
+
+test('a no-photo place edit blocks missing requirements and invalid map links', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+
+  await page.getByRole('button', { name: 'New Edit' }).click();
+  await page.getByText('Add details', { exact: true }).click();
+  await page.getByLabel('Category').selectOption('Places');
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Add the place name');
+
+  await page.getByLabel('Place name').fill('A small gallery');
+  await page.getByLabel('Readable location').fill('Sharq, Kuwait');
+  await page.getByLabel('Your review (optional)').fill('A considered stop on a bright afternoon.');
+  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://example.com/not-maps');
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('valid Google Maps or Apple Maps link');
+  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://maps.apple.com/?q=A+small+gallery');
+  await page.getByRole('button', { name: 'Subscribers Only', exact: true }).click();
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('must be public');
+  expect(api.objectPaths).toEqual([]);
+  await context.close();
+});
+
+test('a photo-based place edit retains the crop upload flow and renders its map details', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+
+  await prepareCrop(page);
+  await page.getByText('Add details', { exact: true }).click();
+  await page.getByLabel('Category').selectOption('Travel');
+  await page.getByLabel('Place name').fill('Harbor House');
+  await page.getByLabel('Readable location').fill('The Aegean Coast');
+  await page.getByRole('button', { name: '5 out of 5' }).click();
+  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://www.google.com/maps/search/?api=1&query=Harbor+House');
+  await publish(page, 'A photo-backed place recommendation', 'public');
+
+  const saved = api.workspace.edits.find((edit) => edit.placeName === 'Harbor House');
+  expect(saved?.image).toMatch(/^\/objects\/uploads\//);
+  expect(saved?.crop).toMatchObject({ aspect: 'portrait', outputWidth: 1080, outputHeight: 1350 });
+  expect(api.objectPaths).toHaveLength(3);
+
+  await page.getByTestId('nav-home').click();
+  const card = page.getByTestId(`edit-card-${saved!.id}`);
+  await expect(card.locator('img')).toHaveCount(1);
+  await expect(card.getByText('Harbor House')).toBeVisible();
+  await expect(card.getByRole('link', { name: 'Open in Maps' })).toHaveAttribute('href', 'https://www.google.com/maps/search/?api=1&query=Harbor+House');
+  await context.close();
 });

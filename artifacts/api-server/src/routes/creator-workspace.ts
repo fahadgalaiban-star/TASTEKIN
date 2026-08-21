@@ -23,6 +23,76 @@ const legacyLockedPreviews: Record<string, string> = {
 };
 const privateObjectPath = /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/;
 
+/** Categories that accept place detail fields (placeName, locationLabel, mapsUrl, tasteRating, creatorReview) */
+const PLACE_CATEGORIES = new Set(["Restaurants", "Places", "Travel"]);
+
+/** Valid HTTPS Google Maps or Apple Maps URL */
+const MAPS_URL_PATTERN = /^https:\/\/(www\.)?(google\.com\/maps|maps\.google\.com|maps\.app\.goo\.gl|apple\.com\/maps|maps\.apple\.com)\//;
+
+type EditRecord = Record<string, unknown>;
+
+function validatePlaceFields(edit: EditRecord): string | null {
+  const category = typeof edit.category === "string" ? edit.category : "";
+  const hasImage = typeof edit.image === "string" && edit.image.length > 0;
+  const isPublished = edit.status === "published";
+
+  // Place fields are only accepted for place-like categories
+  const hasPlaceFields =
+    (edit.placeName != null && edit.placeName !== "") ||
+    (edit.locationLabel != null && edit.locationLabel !== "") ||
+    edit.mapsUrl != null ||
+    edit.tasteRating != null ||
+    (edit.creatorReview != null && edit.creatorReview !== "");
+
+  if (hasPlaceFields && !PLACE_CATEGORIES.has(category)) {
+    return `Place details (placeName, locationLabel, mapsUrl, tasteRating, creatorReview) are only accepted for Restaurants, Places, or Travel edits`;
+  }
+
+  // Validate mapsUrl when supplied
+  if (edit.mapsUrl != null) {
+    if (typeof edit.mapsUrl !== "string" || !MAPS_URL_PATTERN.test(edit.mapsUrl)) {
+      return "mapsUrl must be a valid HTTPS Google Maps or Apple Maps URL";
+    }
+  }
+
+  // Validate tasteRating is integer 1–5 when supplied
+  if (edit.tasteRating != null) {
+    const rating = edit.tasteRating;
+    if (typeof rating !== "number" || !Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return "tasteRating must be an integer between 1 and 5";
+    }
+  }
+
+  // No-photo rules
+  if (!hasImage) {
+    // Published no-photo edits are only allowed for place categories
+    if (isPublished && !PLACE_CATEGORIES.has(category)) {
+      return "A photo is required to publish this edit";
+    }
+    if (isPublished && edit.access === "locked") {
+      return "Photo-free place edits must be public because subscriber-only edits require protected preview media";
+    }
+    // Published no-photo place edits require placeName, locationLabel, and at least rating or review
+    if (isPublished && PLACE_CATEGORIES.has(category)) {
+      const placeName = typeof edit.placeName === "string" ? edit.placeName.trim() : "";
+      const locationLabel = typeof edit.locationLabel === "string" ? edit.locationLabel.trim() : "";
+      if (!placeName) {
+        return "A place name is required to publish a photo-free place edit";
+      }
+      if (!locationLabel) {
+        return "A location label is required to publish a photo-free place edit";
+      }
+      const hasRating = typeof edit.tasteRating === "number" && Number.isInteger(edit.tasteRating);
+      const hasReview = typeof edit.creatorReview === "string" && edit.creatorReview.trim().length > 0;
+      if (!hasRating && !hasReview) {
+        return "A rating or review is required to publish a photo-free place edit";
+      }
+    }
+  }
+
+  return null;
+}
+
 function defaultProfile(): CreatorProfileRecord {
   return { ...fheedWorkspaceSeed.profile, interests: [...fheedWorkspaceSeed.profile.interests] };
 }
@@ -214,14 +284,29 @@ router.get("/creator-workspace", async (req, res) => {
     }
     const edits = (workspace.edits as Array<Record<string, unknown>>)
       .map(normalizeLegacyLockedEdit)
-      .filter((edit) => edit.status === "published" && (edit.access === "public" || (edit.access === "locked" && (typeof edit.previewImage === "string" || typeof edit.id === "string" && Boolean(legacyLockedPreviews[edit.id])))))
+      .filter((edit) => {
+        if (edit.status !== "published") return false;
+        if (edit.access === "public") return true;
+        if (edit.access === "locked") {
+          return typeof edit.previewImage === "string" || (typeof edit.id === "string" && Boolean(legacyLockedPreviews[edit.id]));
+        }
+        return false;
+      })
       .map((edit): Record<string, unknown> => {
         if (edit.access === "locked") {
           const previewImage = typeof edit.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? `/api/public-media/${edit.id}/preview` : typeof edit.id === "string" ? legacyLockedPreviews[edit.id] : undefined;
           return { ...edit, image: previewImage, sourceImage: undefined, previewImage };
         }
-        const publicEdit = { ...edit, sourceImage: undefined, previewImage: undefined };
-        return typeof edit.image === "string" && edit.image.startsWith("/objects/") ? { ...publicEdit, image: `/api/public-media/${edit.id}` } : publicEdit;
+        // Public edit: strip private fields, rewrite object URLs
+        const publicEdit: Record<string, unknown> = {
+          ...edit,
+          sourceImage: undefined,
+          previewImage: undefined,
+        };
+        if (typeof edit.image === "string" && edit.image.startsWith("/objects/")) {
+          publicEdit.image = `/api/public-media/${edit.id}`;
+        }
+        return publicEdit;
       });
     const publishedIds = new Set(edits.map((edit) => edit.id));
     const collections = (workspace.collections as Array<Record<string, unknown>>)
@@ -252,6 +337,15 @@ router.put("/creator-workspace", async (req, res) => {
   if (parsed.data.expectedRevision === undefined) {
     res.status(400).json({ error: "Workspace revision is required" });
     return;
+  }
+
+  // Validate place fields and no-photo rules for each edit
+  for (const edit of parsed.data.edits as EditRecord[]) {
+    const placeError = validatePlaceFields(edit);
+    if (placeError) {
+      res.status(400).json({ error: placeError });
+      return;
+    }
   }
 
   try {

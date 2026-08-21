@@ -31,7 +31,7 @@ export interface CreatorEdit {
      * @minLength 1
      * @maxLength 1024
      */
-  image: string;
+  image?: string;
   /** @maxLength 1024 */
   sourceImage?: string;
   /** @maxLength 1024 */
@@ -47,6 +47,32 @@ export interface CreatorEdit {
   locationAr: string;
   /** @maxLength 500 */
   altText: string;
+  /**
+     * @maxLength 160
+     * @nullable
+     */
+  placeName?: string | null;
+  /**
+     * @maxLength 320
+     * @nullable
+     */
+  locationLabel?: string | null;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  mapsUrl?: string | null;
+  /**
+     * @minimum 1
+     * @maximum 5
+     * @nullable
+     */
+  tasteRating?: number | null;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  creatorReview?: string | null;
   access: CreatorEditAccess;
   status: CreatorEditStatus;
   /**

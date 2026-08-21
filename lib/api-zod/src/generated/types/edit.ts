@@ -17,9 +17,14 @@ export interface Edit {
   caption: string;
   contentType: string;
   access: EditAccess;
-  image: string;
+  image?: string;
   altText?: string;
   location?: string;
+  placeName?: string;
+  locationLabel?: string;
+  mapsUrl?: string;
+  tasteRating?: number;
+  creatorReview?: string;
   tags: string[];
   saved: boolean;
   sponsored?: boolean;

@@ -30,9 +30,14 @@ export const GetFeedResponseItem = zod.object({
   "caption": zod.string(),
   "contentType": zod.string(),
   "access": zod.enum(['public', 'subscribers']),
-  "image": zod.string(),
+  "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
+  "placeName": zod.string().optional(),
+  "locationLabel": zod.string().optional(),
+  "mapsUrl": zod.string().optional(),
+  "tasteRating": zod.number().optional(),
+  "creatorReview": zod.string().optional(),
   "tags": zod.array(zod.string()),
   "saved": zod.boolean(),
   "sponsored": zod.boolean().optional(),
@@ -105,9 +110,14 @@ export const GetCreatorResponse = zod.object({
   "caption": zod.string(),
   "contentType": zod.string(),
   "access": zod.enum(['public', 'subscribers']),
-  "image": zod.string(),
+  "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
+  "placeName": zod.string().optional(),
+  "locationLabel": zod.string().optional(),
+  "mapsUrl": zod.string().optional(),
+  "tasteRating": zod.number().optional(),
+  "creatorReview": zod.string().optional(),
   "tags": zod.array(zod.string()),
   "saved": zod.boolean(),
   "sponsored": zod.boolean().optional(),
@@ -165,9 +175,14 @@ export const ExploreResponse = zod.object({
   "caption": zod.string(),
   "contentType": zod.string(),
   "access": zod.enum(['public', 'subscribers']),
-  "image": zod.string(),
+  "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
+  "placeName": zod.string().optional(),
+  "locationLabel": zod.string().optional(),
+  "mapsUrl": zod.string().optional(),
+  "tasteRating": zod.number().optional(),
+  "creatorReview": zod.string().optional(),
   "tags": zod.array(zod.string()),
   "saved": zod.boolean(),
   "sponsored": zod.boolean().optional(),
@@ -328,9 +343,14 @@ export const GetEditResponse = zod.object({
   "caption": zod.string(),
   "contentType": zod.string(),
   "access": zod.enum(['public', 'subscribers']),
-  "image": zod.string(),
+  "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
+  "placeName": zod.string().optional(),
+  "locationLabel": zod.string().optional(),
+  "mapsUrl": zod.string().optional(),
+  "tasteRating": zod.number().optional(),
+  "creatorReview": zod.string().optional(),
   "tags": zod.array(zod.string()),
   "saved": zod.boolean(),
   "sponsored": zod.boolean().optional(),
@@ -410,6 +430,16 @@ export const getCreatorWorkspaceResponseOneEditsItemLocationArMax = 240;
 
 export const getCreatorWorkspaceResponseOneEditsItemAltTextMax = 500;
 
+export const getCreatorWorkspaceResponseOneEditsItemPlaceNameMax = 160;
+
+export const getCreatorWorkspaceResponseOneEditsItemLocationLabelMax = 320;
+
+export const getCreatorWorkspaceResponseOneEditsItemMapsUrlMax = 1024;
+
+export const getCreatorWorkspaceResponseOneEditsItemTasteRatingMax = 5;
+
+export const getCreatorWorkspaceResponseOneEditsItemCreatorReviewMax = 2000;
+
 export const getCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax = 120;
 
 export const getCreatorWorkspaceResponseOneEditsItemCollectionIdsMax = 30;
@@ -445,7 +475,7 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "titleAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemTitleArMax),
   "caption": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionMax),
   "captionAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionArMax),
-  "image": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMax),
+  "image": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMax).optional(),
   "sourceImage": zod.string().max(getCreatorWorkspaceResponseOneEditsItemSourceImageMax).optional(),
   "previewImage": zod.string().max(getCreatorWorkspaceResponseOneEditsItemPreviewImageMax).optional(),
   "imageMetadata": zod.object({
@@ -486,6 +516,11 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "location": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationMax),
   "locationAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationArMax),
   "altText": zod.string().max(getCreatorWorkspaceResponseOneEditsItemAltTextMax),
+  "placeName": zod.string().max(getCreatorWorkspaceResponseOneEditsItemPlaceNameMax).nullish(),
+  "locationLabel": zod.string().max(getCreatorWorkspaceResponseOneEditsItemLocationLabelMax).nullish(),
+  "mapsUrl": zod.string().max(getCreatorWorkspaceResponseOneEditsItemMapsUrlMax).nullish(),
+  "tasteRating": zod.number().min(1).max(getCreatorWorkspaceResponseOneEditsItemTasteRatingMax).nullish(),
+  "creatorReview": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCreatorReviewMax).nullish(),
   "access": zod.enum(['public', 'locked']),
   "status": zod.enum(['draft', 'published', 'archived']),
   "collectionIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax)).max(getCreatorWorkspaceResponseOneEditsItemCollectionIdsMax)
@@ -565,6 +600,16 @@ export const saveCreatorWorkspaceBodyEditsItemLocationArMax = 240;
 
 export const saveCreatorWorkspaceBodyEditsItemAltTextMax = 500;
 
+export const saveCreatorWorkspaceBodyEditsItemPlaceNameMax = 160;
+
+export const saveCreatorWorkspaceBodyEditsItemLocationLabelMax = 320;
+
+export const saveCreatorWorkspaceBodyEditsItemMapsUrlMax = 1024;
+
+export const saveCreatorWorkspaceBodyEditsItemTasteRatingMax = 5;
+
+export const saveCreatorWorkspaceBodyEditsItemCreatorReviewMax = 2000;
+
 export const saveCreatorWorkspaceBodyEditsItemCollectionIdsItemMax = 120;
 
 export const saveCreatorWorkspaceBodyEditsItemCollectionIdsMax = 30;
@@ -600,7 +645,7 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "titleAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemTitleArMax),
   "caption": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionMax),
   "captionAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionArMax),
-  "image": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMax),
+  "image": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMax).optional(),
   "sourceImage": zod.string().max(saveCreatorWorkspaceBodyEditsItemSourceImageMax).optional(),
   "previewImage": zod.string().max(saveCreatorWorkspaceBodyEditsItemPreviewImageMax).optional(),
   "imageMetadata": zod.object({
@@ -641,6 +686,11 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "location": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationMax),
   "locationAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationArMax),
   "altText": zod.string().max(saveCreatorWorkspaceBodyEditsItemAltTextMax),
+  "placeName": zod.string().max(saveCreatorWorkspaceBodyEditsItemPlaceNameMax).nullish(),
+  "locationLabel": zod.string().max(saveCreatorWorkspaceBodyEditsItemLocationLabelMax).nullish(),
+  "mapsUrl": zod.string().max(saveCreatorWorkspaceBodyEditsItemMapsUrlMax).nullish(),
+  "tasteRating": zod.number().min(1).max(saveCreatorWorkspaceBodyEditsItemTasteRatingMax).nullish(),
+  "creatorReview": zod.string().max(saveCreatorWorkspaceBodyEditsItemCreatorReviewMax).nullish(),
   "access": zod.enum(['public', 'locked']),
   "status": zod.enum(['draft', 'published', 'archived']),
   "collectionIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemCollectionIdsItemMax)).max(saveCreatorWorkspaceBodyEditsItemCollectionIdsMax)
@@ -712,6 +762,16 @@ export const saveCreatorWorkspaceResponseOneEditsItemLocationArMax = 240;
 
 export const saveCreatorWorkspaceResponseOneEditsItemAltTextMax = 500;
 
+export const saveCreatorWorkspaceResponseOneEditsItemPlaceNameMax = 160;
+
+export const saveCreatorWorkspaceResponseOneEditsItemLocationLabelMax = 320;
+
+export const saveCreatorWorkspaceResponseOneEditsItemMapsUrlMax = 1024;
+
+export const saveCreatorWorkspaceResponseOneEditsItemTasteRatingMax = 5;
+
+export const saveCreatorWorkspaceResponseOneEditsItemCreatorReviewMax = 2000;
+
 export const saveCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax = 120;
 
 export const saveCreatorWorkspaceResponseOneEditsItemCollectionIdsMax = 30;
@@ -747,7 +807,7 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "titleAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemTitleArMax),
   "caption": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionMax),
   "captionAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionArMax),
-  "image": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMax),
+  "image": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMax).optional(),
   "sourceImage": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemSourceImageMax).optional(),
   "previewImage": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemPreviewImageMax).optional(),
   "imageMetadata": zod.object({
@@ -788,6 +848,11 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "location": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationMax),
   "locationAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationArMax),
   "altText": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemAltTextMax),
+  "placeName": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemPlaceNameMax).nullish(),
+  "locationLabel": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemLocationLabelMax).nullish(),
+  "mapsUrl": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemMapsUrlMax).nullish(),
+  "tasteRating": zod.number().min(1).max(saveCreatorWorkspaceResponseOneEditsItemTasteRatingMax).nullish(),
+  "creatorReview": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCreatorReviewMax).nullish(),
   "access": zod.enum(['public', 'locked']),
   "status": zod.enum(['draft', 'published', 'archived']),
   "collectionIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemCollectionIdsItemMax)).max(saveCreatorWorkspaceResponseOneEditsItemCollectionIdsMax)
