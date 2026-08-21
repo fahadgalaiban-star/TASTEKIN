@@ -580,7 +580,10 @@ function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
 function SimpleScreen({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className="approved-title">{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr || edit.placeName || edit.title).split(/\r?\n/, 1)[0].trim(); }
-function profileCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr).split(/\r?\n/, 1)[0].trim(); }
+function profileCaptionLine(edit: CreatorEdit, ar: boolean) {
+  const caption = ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr;
+  return caption ? caption.split(/\r?\n/, 1)[0].trim() : '';
+}
 function TasteRating({ rating, ar, id }: { rating?: number | null; ar: boolean; id?: string }) {
   if (!rating) return null;
   return <span className="taste-rating-wrap" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating" aria-hidden="true">{[1, 2, 3, 4, 5].map((value) => <Link2 key={value} size={15} className={value <= rating ? 'active' : ''} />)}</span><span className="taste-rating-label" aria-label={ar ? `تقييم ذوق فهيد ${rating} من 5` : `Fheed's Taste Rating ${rating} out of 5`}>{ar ? `تقييم ذوق فهيد · ${rating}/5` : `Fheed’s Taste Rating · ${rating}/5`}</span></span>;
@@ -614,6 +617,9 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
   useEffect(() => {
     if (!profileCategoryItems.some((item) => item.id === editCategory)) setEditCategory('All');
   }, [editCategory, profileCategoryItems]);
+  useEffect(() => {
+    setEditCategory('All');
+  }, [profile.username]);
 
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
@@ -698,7 +704,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     <div className="approved-tabs"><button className="active" onClick={() => setEditCategory('All')}>{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
     {profileCategoryItems.length > 1 && <CategoryChips ar={ar} active={editCategory} onSelect={setEditCategory} items={profileCategoryItems} testIdPrefix="profile-category" ariaLabel={ar ? 'فلاتر تعديلات المبدع' : 'Creator edit categories'} className="profile-edit-filters" />}
-    <div className="approved-grid profile-edits-grid" data-testid="profile-edits-grid">
+    <div className="approved-grid profile-edits-grid" data-testid="profile-edits-grid" data-active-category={editCategory}>
       {profileFilteredEdits.map((edit) => {
         const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
@@ -718,7 +724,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
           </span>}
         </button>;
       })}
-      {!profileFilteredEdits.length && <div className="profile-edits-empty">{ar ? 'لا توجد تعديلات منشورة في هذه الفئة بعد.' : 'No published Edits in this category yet.'}</div>}
+      {!profileFilteredEdits.length && <div className="profile-edits-empty">{publishedEdits.length === 0 ? (ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.') : (ar ? 'لا توجد تعديلات منشورة في هذه الفئة بعد.' : 'No published Edits in this category yet.')}</div>}
     </div>
   </section>;
 }

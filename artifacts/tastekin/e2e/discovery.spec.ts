@@ -144,6 +144,99 @@ test('keeps Home, Explore, and creator filter state isolated at mobile width', a
   expect(filtersScrollHorizontally).toBe(true);
 });
 
+test('keeps profile media edge-to-edge and resets the selected category for another creator', async ({ page }) => {
+  await page.route('**/api/explore**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: false,
+        sort: 'new',
+        creators: [
+          {
+            id: 'fheed-alaiban',
+            username: 'fheed',
+            displayName: 'Fheed Alaiban',
+            avatar: '/tastekin-media/fheed-profile.webp',
+            categories: ['Fashion', 'Travel', 'Places'],
+            matchScore: null,
+            matchReasons: [],
+          },
+          {
+            id: 'noura-studio',
+            username: 'noura.studio',
+            displayName: 'Noura Studio',
+            avatar: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=600&q=85',
+            categories: ['Restaurants', 'Places', 'Travel', 'Decor'],
+            matchScore: null,
+            matchReasons: [],
+          },
+        ],
+        edits: [],
+      }),
+    });
+  });
+  await switchToConsumer(page);
+  await openConsumerProfile(page);
+
+  const profileGrid = page.getByTestId('profile-edits-grid');
+  await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
+
+  for (const category of ['Fashion', 'Travel', 'Places', 'Restaurants'] as const) {
+    await page.getByTestId(`profile-category-${category}`).click();
+    await expect(page.getByTestId(`profile-category-${category}`)).toHaveClass(/active/);
+    await expect(profileGrid.locator('.approved-grid-card')).not.toHaveCount(0);
+  }
+
+  await page.getByTestId('profile-category-All').click();
+  const photoCards = profileGrid.locator('.photo-grid-card');
+  await expect(photoCards).not.toHaveCount(0);
+  const mediaLayout = await photoCards.evaluateAll((cards) => cards.map((card) => {
+    const media = card.querySelector<HTMLElement>('.profile-grid-media')!;
+    const image = card.querySelector<HTMLImageElement>('img')!;
+    const cardBox = card.getBoundingClientRect();
+    const mediaBox = media.getBoundingClientRect();
+    const imageBox = image.getBoundingClientRect();
+    return {
+      cardRatio: cardBox.height / cardBox.width,
+      mediaWidth: mediaBox.width,
+      mediaHeight: mediaBox.height,
+      imageWidth: imageBox.width,
+      imageHeight: imageBox.height,
+      objectFit: getComputedStyle(image).objectFit,
+      captions: Array.from(card.querySelectorAll<HTMLElement>('.profile-grid-caption')).map((caption) => {
+        const captionBox = caption.getBoundingClientRect();
+        const styles = getComputedStyle(caption);
+        return {
+          withinCard: captionBox.left >= cardBox.left && captionBox.right <= cardBox.right && captionBox.bottom <= cardBox.bottom,
+          oneLineEllipsis: styles.whiteSpace === 'nowrap' && styles.overflow === 'hidden' && styles.textOverflow === 'ellipsis',
+          truncated: caption.scrollWidth > caption.clientWidth,
+        };
+      }),
+      locked: card.textContent?.includes('Subscribers only') ?? false,
+    };
+  }));
+  expect(mediaLayout.some((item) => item.locked)).toBe(true);
+  for (const item of mediaLayout) {
+    expect(item.cardRatio).toBeCloseTo(1.25, 1);
+    expect(item.objectFit).toBe('cover');
+    expect(item.imageWidth).toBeCloseTo(item.mediaWidth, 1);
+    expect(item.imageHeight).toBeCloseTo(item.mediaHeight, 1);
+    expect(item.captions.every((caption) => caption.withinCard && caption.oneLineEllipsis)).toBe(true);
+  }
+  expect(mediaLayout.some((item) => item.captions.some((caption) => caption.truncated))).toBe(true);
+
+  await page.getByTestId('profile-category-Restaurants').click();
+  await expect(profileGrid).toHaveAttribute('data-active-category', 'Restaurants');
+  await page.getByTestId('nav-explore').click();
+  await page.getByRole('button', { name: 'New' }).click();
+  await page.getByTestId('creator-noura.studio').click();
+  await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
+  await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
+  await expect(page.getByTestId('profile-category-All')).toHaveCount(0);
+  await expect(page.getByText('No published Edits yet.')).toBeVisible();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+});
+
 test('keeps locked profile edits protected for visitor and owner preview', async ({ page }) => {
   const lockedEdit = () => page.locator('.approved-grid-card').filter({ hasText: 'The stay, the packing list, and where I ate.' });
 

@@ -1,0 +1,55 @@
+Fix only the remaining Creator Profile grid rendering regressions shown in the latest 390px mobile screenshots.
+
+Do not redesign the profile and do not change any backend, database, cropper, upload, authentication, publishing, Place Edit, Taste Rating, Taste Match, Follow, Subscribe, or Taste Seal behavior.
+
+1. Remove photo letterboxing
+
+Several profile photo tiles still show large beige/empty bands around the image.
+
+For every normal and Subscribers Only photo tile:
+
+* The saved cropped image must fill the intended media frame completely.
+* Do not render uploaded photos with object-fit: contain.
+* Do not add beige padding, empty bands, or an inner image rectangle.
+* Use the existing saved crop and focal position.
+* Never distort or stretch the image.
+* Clip any overflow cleanly inside the rounded card.
+* The result shown in the profile grid must match the creator’s saved crop preview.
+* Apply the same canonical cropped-media rendering path consistently to public, owner, visitor, and locked profile cards.
+* The blurred Subscribers Only image must also fill its complete media frame.
+
+Do not modify the working crop editor or regenerate existing crops. This is a display/rendering correction only.
+
+2. Fix card and caption layout
+
+* Preserve the strict two-column grid.
+* Keep consistent 4:5 card dimensions and equal gaps.
+* Photo and no-photo Place cards must remain aligned.
+* If a caption exists, show only one line.
+* Prevent text from extending outside the card.
+* Use a clean ellipsis when the first line is too long.
+* Ensure caption containers use the available width correctly on a 390px screen.
+* If no caption exists, do not add an empty footer or artificial title.
+
+3. Reset category filter between profiles
+
+* Whenever the user opens a different creator profile, reset the selected category filter to “All.”
+* If the previously selected category does not exist on the newly opened profile, it must never remain active.
+* If a creator has no published Edits, show: “No published Edits yet.”
+* Only use “No published Edits in this category yet.” when the creator has published Edits and the user intentionally selected a valid category that currently has no visible results.
+* Never show category chips that have no published content.
+
+4. Required 390px tests
+
+Test:
+
+* Fheed profile in All, Fashion & Outfits, Travel, Places, and Restaurants.
+* Normal portrait and landscape source photos.
+* Subscribers Only blurred cards.
+* Long one-line captions with ellipsis.
+* No-photo Place card.
+* Navigate from a selected Fheed category directly to Noura Studio and confirm the filter resets to All.
+* Confirm there is no horizontal page overflow.
+* Confirm existing crop, upload, Publish, Place Edit, Taste Rating, Follow, Subscribe, and visitor preview behavior remains unchanged.
+
+Complete this focused correction in Power mode. Do not request Design mode and do not make unrelated changes.

@@ -6,3 +6,4 @@
 - [TASTEKIN canonical crop rendering](tastekin-canonical-crop-rendering.md) — public Edit media must display the saved canvas crop, never re-crop the source with CSS.
 - [TASTEKIN creator profiles](tastekin-creator-profiles.md) — creator identity belongs with its workspace; birth dates stay private and verification remains platform-controlled.
 - [TASTEKIN migration baseline](tastekin-migration-baseline.md) — verify generated migrations against existing SQL history; absent snapshots can produce a full-schema duplicate.
+- [TASTEKIN browser E2E discovery fixtures](tastekin-browser-e2e-discovery-fixtures.md) — stub creator results only in tests that need profiles beyond Fheed’s offline fallback.
