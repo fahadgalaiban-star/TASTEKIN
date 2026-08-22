@@ -1,0 +1,153 @@
+Build the next focused TASTEKIN feature: finalize the approved profile layout and add real Likes, Comments, Saves, Messaging, and Insights.
+
+IMPORTANT:
+The attached profile image is the approved visual specification, not loose inspiration. Match its hierarchy, spacing, proportions, and premium editorial feeling as closely as possible on a 390px-wide iPhone.
+
+Do not modify or regress the working cropper, saved crop data, upload, authentication, publishing, subscriber-only content, outfit details, Place Edits, Maps links, Taste Rating, reviews, Taste Match, Tune Your Taste, Follow, Subscribe, Taste Seal, RTL, or existing user/content data.
+
+1. Approved profile layout
+
+Rebuild the creator profile to follow the attached reference:
+
+Top bar:
+- Back button
+- Centered TASTEKIN logo
+- Inbox/messages icon with an unread indicator
+- Settings icon
+
+Profile header:
+- Profile photo
+- Display name
+- TASTEKIN Taste Seal
+- Username
+- Location
+- Bio
+- Taste Match badge
+
+Owner actions:
+- Edit profile
+- Insights
+- Compact eye button for “View as visitor”
+
+Visitor actions:
+- Follow
+- Subscribe · $19.99 / month for eligible creators
+- Message
+
+Never show public follower or following counts.
+
+Add a “Featured collections” row below the profile actions:
+- Show up to 3 featured collections
+- Creator can choose which collections are featured
+- Use cover images with readable titles
+- Subscriber-only collections must retain a clear locked treatment
+
+Below that:
+- Edits
+- Collections
+- About
+
+Category filters must be dynamic for each creator. Only show categories relevant to that creator’s interests or published content. Do not give every profile the same fixed categories.
+
+Use a clean two-column profile grid:
+- Consistent column width and gaps
+- Preserve each saved crop and aspect ratio
+- No distortion, empty bands, or accidental face cropping
+- Photo-free Place Edits must appear as refined editorial text cards aligned with photo cards
+- Subscriber-only cards remain blurred and clearly locked
+- Use the first caption line only; never show “Untitled Edit”
+
+Do not copy Instagram branding. Keep TASTEKIN’s ivory, oxblood, and luxury editorial identity.
+
+2. Likes
+
+On every public Edit detail page:
+- Add a Like button using an elegant TASTEKIN-style icon
+- Signed-in users can like and unlike
+- Store the state persistently per authenticated user
+- Show the public total number of likes
+- Prevent duplicate likes
+- Guests who tap Like must be asked to sign in
+
+Do not place large interaction controls over the profile-grid images. The full interactions belong on the Edit detail page. A small compact like count may appear in the card footer only if it remains visually clean.
+
+3. Comments
+
+Add a Comments section to every accessible Edit detail page:
+- Signed-in users can add comments
+- Persist comments in the production database
+- Show profile photo, display name, comment, and time
+- Users may delete their own comments
+- The Edit owner may moderate/delete comments on their own Edit
+- No nested replies are needed in this version
+- Guests must sign in before commenting
+
+Never expose comments or protected content from a subscriber-only Edit to a user who is not subscribed.
+
+4. Saves
+
+Add a bookmark/save button to Edit detail pages:
+- Save and unsave persistently per authenticated user
+- Saved status remains after refresh and sign-in
+- Saved Edits appear in the existing Saved tab
+- Save totals remain private and must not be displayed publicly
+- Guests must sign in before saving
+
+5. Real private messaging
+
+Complete the messaging feature and make it visible:
+
+- Inbox icon in the top profile header, matching the attached reference
+- Unread indicator when messages exist
+- “Message” button on visitor profiles
+- Users cannot message themselves
+- Conversation list with avatar, display name, last message, time, and unread state
+- One-to-one conversation screen
+- Text messages persist in the production database
+- Optimistic sending with clear loading and failure states
+- Mark messages as read when the conversation opens
+- Protect all messaging APIs so users can only access conversations they belong to
+- Support English, Arabic, RTL, and mobile keyboard/safe-area behavior
+
+Do not create demo-only or localStorage messaging.
+
+6. Insights
+
+The owner “Insights” button must work.
+
+Show real available metrics only:
+- Profile views
+- Edit views
+- Likes
+- Comments
+- Saves
+- Performance by Edit
+
+Do not invent or seed fake analytics numbers. If a metric has no data, display zero or a clear empty state.
+
+7. Testing and acceptance
+
+Test everything at 390×844 with two authenticated accounts: one creator and one visitor.
+
+Confirm:
+- Profile visually follows the attached approved reference
+- Owner and visitor buttons are correct
+- Featured collections work
+- Dynamic category filters work
+- Like/unlike persists after refresh
+- Comment creation and deletion permissions work
+- Save/unsave persists and appears in Saved
+- Inbox and private conversations work between two real accounts
+- Message-to-self is blocked
+- Insights opens and uses real data
+- Subscriber-only content and comments do not leak
+- Saved photo crops display correctly
+- Photo-free Place cards remain aligned
+- No horizontal overflow
+- Arabic and RTL remain correct
+- Existing publishing and profile editing still work
+
+Run typecheck, production builds, and the full browser/API test suite.
+
+Do not make unrelated architecture or design changes.
+Do not republish until all tests pass.
