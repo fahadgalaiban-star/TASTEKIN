@@ -214,6 +214,215 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Relationship"
+  /edits/{editId}/engagement:
+    get:
+      operationId: getEditEngagement
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/EditId"
+      responses:
+        "200":
+          description: Current engagement totals and viewer state
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditEngagement" }
+        "403": { description: The Edit is not available to this viewer }
+        "404": { description: Edit not found }
+  /edits/{editId}/like:
+    put:
+      operationId: updateEditLike
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/EditId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditEngagementInput" }
+      responses:
+        "200":
+          description: Updated engagement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditEngagement" }
+        "401": { description: Authentication required }
+        "403": { description: The Edit is not available to this viewer }
+  /edits/{editId}/save:
+    put:
+      operationId: updateEditSave
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/EditId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditEngagementInput" }
+      responses:
+        "200":
+          description: Updated engagement
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditEngagement" }
+        "401": { description: Authentication required }
+        "403": { description: The Edit is not available to this viewer }
+  /edits/{editId}/comments:
+    get:
+      operationId: listEditComments
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/EditId"
+      responses:
+        "200":
+          description: Public comments for an Edit
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EditComment" }
+        "403": { description: The Edit is not available to this viewer }
+    post:
+      operationId: createEditComment
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/EditId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditCommentInput" }
+      responses:
+        "201":
+          description: Created comment
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditComment" }
+        "401": { description: Authentication required }
+        "403": { description: The Edit is not available to this viewer }
+  /edits/{editId}/comments/{commentId}:
+    delete:
+      operationId: deleteEditComment
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/EditId"
+        - in: path
+          name: commentId
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 100 }
+      responses:
+        "204": { description: Comment deleted }
+        "401": { description: Authentication required }
+        "403": { description: Not allowed to delete this comment }
+        "404": { description: Comment not found }
+  /me/saved-edits:
+    get:
+      operationId: listSavedEdits
+      tags: [relationships]
+      responses:
+        "200":
+          description: Saved Edit IDs for the signed-in viewer
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: string }
+        "401": { description: Authentication required }
+  /creators/{username}/views:
+    post:
+      operationId: recordCreatorView
+      tags: [relationships]
+      parameters:
+        - in: path
+          name: username
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreatorViewInput" }
+      responses:
+        "201":
+          description: View recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/RecordedView" }
+        "404": { description: Creator or Edit not found }
+  /conversations:
+    get:
+      operationId: listConversations
+      tags: [relationships]
+      responses:
+        "200":
+          description: Viewer conversations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ConversationPreview" }
+        "401": { description: Authentication required }
+    post:
+      operationId: createConversation
+      tags: [relationships]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConversationInput" }
+      responses:
+        "201":
+          description: Created or existing conversation
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "401": { description: Authentication required }
+        "403": { description: Cannot message yourself }
+        "409": { description: Creator messaging is not yet available }
+  /conversations/{conversationId}:
+    get:
+      operationId: getConversation
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      responses:
+        "200":
+          description: Conversation and messages
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Conversation" }
+        "401": { description: Authentication required }
+        "403": { description: Not a participant }
+  /conversations/{conversationId}/messages:
+    post:
+      operationId: createConversationMessage
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/ConversationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ConversationMessageInput" }
+      responses:
+        "201":
+          description: Sent message
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConversationMessage" }
+        "401": { description: Authentication required }
+        "403": { description: Not a participant }
+  /creator-insights:
+    get:
+      operationId: getCreatorInsights
+      tags: [creator-workspace]
+      responses:
+        "200":
+          description: Persisted creator analytics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreatorInsights" }
+        "401": { description: Authentication required }
+        "403": { description: Creator ownership required }
   /creator-workspace:
     get:
       operationId: getCreatorWorkspace
@@ -321,7 +530,119 @@ paths:
         "403":
           description: Creator owner preview required
 components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      in: cookie
+      name: sid
+  parameters:
+    EditId:
+      in: path
+      name: editId
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 120 }
+    ConversationId:
+      in: path
+      name: conversationId
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
   schemas:
+    EditEngagementInput:
+      type: object
+      required: [active]
+      properties:
+        active: { type: boolean }
+    EditEngagement:
+      type: object
+      required: [editId, likeCount, commentCount, liked, saved]
+      properties:
+        editId: { type: string }
+        likeCount: { type: number, minimum: 0 }
+        commentCount: { type: number, minimum: 0 }
+        liked: { type: boolean }
+        saved: { type: boolean }
+    EditCommentInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 800 }
+    EditComment:
+      type: object
+      required: [id, editId, body, authorName, createdAt, canDelete]
+      properties:
+        id: { type: string }
+        editId: { type: string }
+        body: { type: string }
+        authorName: { type: string }
+        createdAt: { type: string, format: date-time }
+        canDelete: { type: boolean }
+    CreatorViewInput:
+      type: object
+      properties:
+        editId: { type: ["string", "null"], maxLength: 120 }
+    RecordedView:
+      type: object
+      required: [recorded]
+      properties:
+        recorded: { type: boolean }
+    ConversationInput:
+      type: object
+      required: [creatorUsername]
+      properties:
+        creatorUsername: { type: string, minLength: 1, maxLength: 80 }
+    ConversationMessageInput:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1, maxLength: 2000 }
+    ConversationMessage:
+      type: object
+      required: [id, senderUserId, body, createdAt, readAt]
+      properties:
+        id: { type: string }
+        senderUserId: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        readAt: { type: ["string", "null"], format: date-time }
+    ConversationPreview:
+      type: object
+      required: [id, participantName, participantAvatar, lastMessage, lastMessageAt, unreadCount]
+      properties:
+        id: { type: string }
+        participantName: { type: string }
+        participantAvatar: { type: ["string", "null"] }
+        lastMessage: { type: ["string", "null"] }
+        lastMessageAt: { type: ["string", "null"], format: date-time }
+        unreadCount: { type: number, minimum: 0 }
+    Conversation:
+      allOf:
+        - $ref: "#/components/schemas/ConversationPreview"
+        - type: object
+          required: [messages]
+          properties:
+            messages:
+              type: array
+              items: { $ref: "#/components/schemas/ConversationMessage" }
+    CreatorInsightItem:
+      type: object
+      required: [editId, likes, saves, comments, views]
+      properties:
+        editId: { type: string }
+        likes: { type: number, minimum: 0 }
+        saves: { type: number, minimum: 0 }
+        comments: { type: number, minimum: 0 }
+        views: { type: number, minimum: 0 }
+    CreatorInsights:
+      type: object
+      required: [profileViews, totalLikes, totalSaves, totalComments, edits]
+      properties:
+        profileViews: { type: number, minimum: 0 }
+        totalLikes: { type: number, minimum: 0 }
+        totalSaves: { type: number, minimum: 0 }
+        totalComments: { type: number, minimum: 0 }
+        edits:
+          type: array
+          items: { $ref: "#/components/schemas/CreatorInsightItem" }
     HealthStatus:
       type: object
       properties:

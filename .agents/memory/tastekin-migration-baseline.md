@@ -7,4 +7,4 @@ When adding a new table, inspect any generated migration before applying it. If 
 
 **Why:** Applying that output after the existing migration history would fail on tables that already exist, even though the intended change is only additive.
 
-**How to apply:** Keep the migration limited to the new schema delta, preserve the journal sequence, then use the normal development schema push and the publish-time schema flow.
+**How to apply:** Keep the migration limited to the new schema delta, add every hand-authored migration to the Drizzle journal in sequence (otherwise `drizzle-kit migrate` ignores it), then use the normal development schema push and the publish-time schema flow.

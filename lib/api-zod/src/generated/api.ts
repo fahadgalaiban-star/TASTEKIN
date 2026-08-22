@@ -373,6 +373,296 @@ export const UpdateRelationshipResponse = zod.object({
 }))
 
 
+export const getEditEngagementPathEditIdMax = 120;
+
+
+
+export const GetEditEngagementParams = zod.object({
+  "editId": zod.coerce.string().min(1).max(getEditEngagementPathEditIdMax)
+})
+
+export const getEditEngagementResponseLikeCountMin = 0;
+
+export const getEditEngagementResponseCommentCountMin = 0;
+
+
+
+export const GetEditEngagementResponse = zod.object({
+  "editId": zod.string(),
+  "likeCount": zod.number().min(getEditEngagementResponseLikeCountMin),
+  "commentCount": zod.number().min(getEditEngagementResponseCommentCountMin),
+  "liked": zod.boolean(),
+  "saved": zod.boolean()
+})
+
+
+export const updateEditLikePathEditIdMax = 120;
+
+
+
+export const UpdateEditLikeParams = zod.object({
+  "editId": zod.coerce.string().min(1).max(updateEditLikePathEditIdMax)
+})
+
+export const UpdateEditLikeBody = zod.object({
+  "active": zod.boolean()
+})
+
+export const updateEditLikeResponseLikeCountMin = 0;
+
+export const updateEditLikeResponseCommentCountMin = 0;
+
+
+
+export const UpdateEditLikeResponse = zod.object({
+  "editId": zod.string(),
+  "likeCount": zod.number().min(updateEditLikeResponseLikeCountMin),
+  "commentCount": zod.number().min(updateEditLikeResponseCommentCountMin),
+  "liked": zod.boolean(),
+  "saved": zod.boolean()
+})
+
+
+export const updateEditSavePathEditIdMax = 120;
+
+
+
+export const UpdateEditSaveParams = zod.object({
+  "editId": zod.coerce.string().min(1).max(updateEditSavePathEditIdMax)
+})
+
+export const UpdateEditSaveBody = zod.object({
+  "active": zod.boolean()
+})
+
+export const updateEditSaveResponseLikeCountMin = 0;
+
+export const updateEditSaveResponseCommentCountMin = 0;
+
+
+
+export const UpdateEditSaveResponse = zod.object({
+  "editId": zod.string(),
+  "likeCount": zod.number().min(updateEditSaveResponseLikeCountMin),
+  "commentCount": zod.number().min(updateEditSaveResponseCommentCountMin),
+  "liked": zod.boolean(),
+  "saved": zod.boolean()
+})
+
+
+export const listEditCommentsPathEditIdMax = 120;
+
+
+
+export const ListEditCommentsParams = zod.object({
+  "editId": zod.coerce.string().min(1).max(listEditCommentsPathEditIdMax)
+})
+
+export const ListEditCommentsResponseItem = zod.object({
+  "id": zod.string(),
+  "editId": zod.string(),
+  "body": zod.string(),
+  "authorName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "canDelete": zod.boolean()
+})
+export const ListEditCommentsResponse = zod.array(ListEditCommentsResponseItem)
+
+
+export const createEditCommentPathEditIdMax = 120;
+
+
+
+export const CreateEditCommentParams = zod.object({
+  "editId": zod.coerce.string().min(1).max(createEditCommentPathEditIdMax)
+})
+
+export const createEditCommentBodyBodyMax = 800;
+
+
+
+export const CreateEditCommentBody = zod.object({
+  "body": zod.string().min(1).max(createEditCommentBodyBodyMax)
+})
+
+export const CreateEditCommentResponse = zod.object({
+  "id": zod.string(),
+  "editId": zod.string(),
+  "body": zod.string(),
+  "authorName": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "canDelete": zod.boolean()
+})
+
+
+export const deleteEditCommentPathEditIdMax = 120;
+
+export const deleteEditCommentPathCommentIdMax = 100;
+
+
+
+export const DeleteEditCommentParams = zod.object({
+  "editId": zod.coerce.string().min(1).max(deleteEditCommentPathEditIdMax),
+  "commentId": zod.coerce.string().min(1).max(deleteEditCommentPathCommentIdMax)
+})
+
+export const DeleteEditCommentResponse = zod.void()
+
+
+export const ListSavedEditsResponseItem = zod.string()
+export const ListSavedEditsResponse = zod.array(ListSavedEditsResponseItem)
+
+
+export const RecordCreatorViewParams = zod.object({
+  "username": zod.coerce.string()
+})
+
+export const recordCreatorViewBodyEditIdMax = 120;
+
+
+
+export const RecordCreatorViewBody = zod.object({
+  "editId": zod.string().max(recordCreatorViewBodyEditIdMax).nullish()
+})
+
+export const RecordCreatorViewResponse = zod.object({
+  "recorded": zod.boolean()
+})
+
+
+export const listConversationsResponseUnreadCountMin = 0;
+
+
+
+export const ListConversationsResponseItem = zod.object({
+  "id": zod.string(),
+  "participantName": zod.string(),
+  "participantAvatar": zod.string().nullable(),
+  "lastMessage": zod.string().nullable(),
+  "lastMessageAt": zod.coerce.date().nullable(),
+  "unreadCount": zod.number().min(listConversationsResponseUnreadCountMin)
+})
+export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
+
+
+export const createConversationBodyCreatorUsernameMax = 80;
+
+
+
+export const CreateConversationBody = zod.object({
+  "creatorUsername": zod.string().min(1).max(createConversationBodyCreatorUsernameMax)
+})
+
+export const createConversationResponseOneUnreadCountMin = 0;
+
+
+
+export const CreateConversationResponse = zod.object({
+  "id": zod.string(),
+  "participantName": zod.string(),
+  "participantAvatar": zod.string().nullable(),
+  "lastMessage": zod.string().nullable(),
+  "lastMessageAt": zod.coerce.date().nullable(),
+  "unreadCount": zod.number().min(createConversationResponseOneUnreadCountMin)
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.string(),
+  "senderUserId": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "readAt": zod.coerce.date().nullable()
+}))
+}))
+
+
+export const getConversationPathConversationIdMax = 100;
+
+
+
+export const GetConversationParams = zod.object({
+  "conversationId": zod.coerce.string().min(1).max(getConversationPathConversationIdMax)
+})
+
+export const getConversationResponseOneUnreadCountMin = 0;
+
+
+
+export const GetConversationResponse = zod.object({
+  "id": zod.string(),
+  "participantName": zod.string(),
+  "participantAvatar": zod.string().nullable(),
+  "lastMessage": zod.string().nullable(),
+  "lastMessageAt": zod.coerce.date().nullable(),
+  "unreadCount": zod.number().min(getConversationResponseOneUnreadCountMin)
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.string(),
+  "senderUserId": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "readAt": zod.coerce.date().nullable()
+}))
+}))
+
+
+export const createConversationMessagePathConversationIdMax = 100;
+
+
+
+export const CreateConversationMessageParams = zod.object({
+  "conversationId": zod.coerce.string().min(1).max(createConversationMessagePathConversationIdMax)
+})
+
+export const createConversationMessageBodyBodyMax = 2000;
+
+
+
+export const CreateConversationMessageBody = zod.object({
+  "body": zod.string().min(1).max(createConversationMessageBodyBodyMax)
+})
+
+export const CreateConversationMessageResponse = zod.object({
+  "id": zod.string(),
+  "senderUserId": zod.string(),
+  "body": zod.string(),
+  "createdAt": zod.coerce.date(),
+  "readAt": zod.coerce.date().nullable()
+})
+
+
+export const getCreatorInsightsResponseProfileViewsMin = 0;
+
+export const getCreatorInsightsResponseTotalLikesMin = 0;
+
+export const getCreatorInsightsResponseTotalSavesMin = 0;
+
+export const getCreatorInsightsResponseTotalCommentsMin = 0;
+
+export const getCreatorInsightsResponseEditsItemLikesMin = 0;
+
+export const getCreatorInsightsResponseEditsItemSavesMin = 0;
+
+export const getCreatorInsightsResponseEditsItemCommentsMin = 0;
+
+export const getCreatorInsightsResponseEditsItemViewsMin = 0;
+
+
+
+export const GetCreatorInsightsResponse = zod.object({
+  "profileViews": zod.number().min(getCreatorInsightsResponseProfileViewsMin),
+  "totalLikes": zod.number().min(getCreatorInsightsResponseTotalLikesMin),
+  "totalSaves": zod.number().min(getCreatorInsightsResponseTotalSavesMin),
+  "totalComments": zod.number().min(getCreatorInsightsResponseTotalCommentsMin),
+  "edits": zod.array(zod.object({
+  "editId": zod.string(),
+  "likes": zod.number().min(getCreatorInsightsResponseEditsItemLikesMin),
+  "saves": zod.number().min(getCreatorInsightsResponseEditsItemSavesMin),
+  "comments": zod.number().min(getCreatorInsightsResponseEditsItemCommentsMin),
+  "views": zod.number().min(getCreatorInsightsResponseEditsItemViewsMin)
+}))
+})
+
+
 /**
  * @summary Get Fheed's shared creator workspace
  */

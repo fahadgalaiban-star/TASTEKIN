@@ -36,6 +36,13 @@
       "when": 1787400000000,
       "tag": "0004_place_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787520000000,
+      "tag": "0005_engagement_and_messages",
+      "breakpoints": true
     }
   ]
 }

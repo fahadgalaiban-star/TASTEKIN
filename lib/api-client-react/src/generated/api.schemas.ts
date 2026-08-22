@@ -5,6 +5,115 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export interface EditEngagementInput {
+  active: boolean;
+}
+
+export interface EditEngagement {
+  editId: string;
+  /** @minimum 0 */
+  likeCount: number;
+  /** @minimum 0 */
+  commentCount: number;
+  liked: boolean;
+  saved: boolean;
+}
+
+export interface EditCommentInput {
+  /**
+     * @minLength 1
+     * @maxLength 800
+     */
+  body: string;
+}
+
+export interface EditComment {
+  id: string;
+  editId: string;
+  body: string;
+  authorName: string;
+  createdAt: string;
+  canDelete: boolean;
+}
+
+export interface CreatorViewInput {
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  editId?: string | null;
+}
+
+export interface RecordedView {
+  recorded: boolean;
+}
+
+export interface ConversationInput {
+  /**
+     * @minLength 1
+     * @maxLength 80
+     */
+  creatorUsername: string;
+}
+
+export interface ConversationMessageInput {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  body: string;
+}
+
+export interface ConversationMessage {
+  id: string;
+  senderUserId: string;
+  body: string;
+  createdAt: string;
+  /** @nullable */
+  readAt: string | null;
+}
+
+export interface ConversationPreview {
+  id: string;
+  participantName: string;
+  /** @nullable */
+  participantAvatar: string | null;
+  /** @nullable */
+  lastMessage: string | null;
+  /** @nullable */
+  lastMessageAt: string | null;
+  /** @minimum 0 */
+  unreadCount: number;
+}
+
+export type Conversation = ConversationPreview & {
+  messages: ConversationMessage[];
+};
+
+export interface CreatorInsightItem {
+  editId: string;
+  /** @minimum 0 */
+  likes: number;
+  /** @minimum 0 */
+  saves: number;
+  /** @minimum 0 */
+  comments: number;
+  /** @minimum 0 */
+  views: number;
+}
+
+export interface CreatorInsights {
+  /** @minimum 0 */
+  profileViews: number;
+  /** @minimum 0 */
+  totalLikes: number;
+  /** @minimum 0 */
+  totalSaves: number;
+  /** @minimum 0 */
+  totalComments: number;
+  edits: CreatorInsightItem[];
+}
+
 export interface HealthStatus {
   status: string;
 }

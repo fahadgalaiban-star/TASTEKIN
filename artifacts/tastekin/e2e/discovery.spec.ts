@@ -28,6 +28,7 @@ async function openConsumerProfile(page: Page) {
 }
 
 test.beforeEach(async ({ page }) => {
+  const savedEditIds = new Set<string>();
   await page.addInitScript(() => {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('tastekin:')) localStorage.removeItem(key);
@@ -42,6 +43,19 @@ test.beforeEach(async ({ page }) => {
         role: 'creator',
         creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
       }),
+    });
+  });
+  await page.route('**/api/me/saved-edits', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify([...savedEditIds]) });
+  });
+  await page.route('**/api/edits/**/save', async (route) => {
+    const editId = new URL(route.request().url()).pathname.split('/')[3];
+    const body = route.request().postDataJSON() as { active?: boolean };
+    if (body.active) savedEditIds.add(editId);
+    else savedEditIds.delete(editId);
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ editId, likeCount: 0, commentCount: 0, liked: false, saved: body.active === true }),
     });
   });
   await page.goto('/');
@@ -242,6 +256,7 @@ test('keeps profile media edge-to-edge and resets the selected category for anot
   await page.getByRole('button', { name: 'New' }).click();
   await page.getByTestId('creator-noura.studio').click();
   await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Message' })).toHaveCount(0);
   await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
   await expect(page.getByTestId('profile-category-All')).toHaveCount(0);
   await expect(page.getByText('No published Edits yet.')).toBeVisible();
@@ -301,6 +316,7 @@ test('persists saves, follow state, collections, and the owner profile entry poi
   await page.getByTestId('identity-owner').click();
   await page.getByRole('button', { name: 'View profile' }).click();
    await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
+   await expect(page.getByRole('button', { name: 'Open inbox' })).toBeVisible();
    await expect(page.getByRole('button', { name: 'View as visitor' })).toBeVisible();
    await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
    await page.getByRole('button', { name: 'View as visitor' }).click();

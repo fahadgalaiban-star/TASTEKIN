@@ -4,9 +4,9 @@ import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, us
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel } from '@workspace/taste-catalog';
 import {
-  Archive, ArrowLeft, Bookmark, Check, ChevronRight, CircleUserRound, Eye, FileText,
+  Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, CircleUserRound, Eye, FileText, Heart, Inbox, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, Pencil, Plus, PlusCircle, Search, Settings2,
-  ShieldCheck, Upload, UserRound, X, ZoomIn, ZoomOut,
+  Send, ShieldCheck, Upload, UserRound, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import './approved.css';
@@ -22,7 +22,7 @@ export default function App() {
 }
 
 type Language = 'en' | 'ar';
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste';
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -49,6 +49,12 @@ type CreatorEdit = {
 type CreatorCollection = { id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; editIds: string[] };
 type EditForm = Omit<CreatorEdit, 'id' | 'status'>;
 type CollectionForm = Omit<CreatorCollection, 'id'>;
+type EditEngagement = { editId: string; likeCount: number; commentCount: number; liked: boolean; saved: boolean };
+type EditComment = { id: string; editId: string; body: string; authorName: string; createdAt: string; canDelete: boolean };
+type ConversationMessage = { id: string; senderUserId: string; body: string; createdAt: string; readAt: string | null };
+type ConversationPreview = { id: string; participantName: string; participantAvatar: string | null; lastMessage: string | null; lastMessageAt: string | null; unreadCount: number };
+type Conversation = ConversationPreview & { messages: ConversationMessage[] };
+type CreatorInsights = { profileViews: number; totalLikes: number; totalSaves: number; totalComments: number; edits: Array<{ editId: string; likes: number; saves: number; comments: number; views: number }> };
 
 const categories: { id: Category; en: string; ar: string }[] = [
   { id: 'All', en: 'All', ar: 'الكل' }, { id: 'Fashion', en: 'Fashion & Outfits', ar: 'أزياء وإطلالات' },
@@ -206,6 +212,7 @@ function TastekinApp() {
   const [exploreCategory, setExploreCategory] = useState<Category>('All');
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
   const [saved, setSaved] = useState<string[]>(() => read('saved-edits', []));
+  const savedHydrationVersion = useRef(0);
   const [following, setFollowing] = useState(() => read('following-fheed', false));
   const [subscribed, setSubscribed] = useState(() => read('subscribed-fheed', false));
   const [menuOpen, setMenuOpen] = useState(false);
@@ -225,6 +232,7 @@ function TastekinApp() {
   const [selectedEditId, setSelectedEditId] = useState('quiet-tailoring');
   const [selectedCollectionId, setSelectedCollectionId] = useState('quiet-luxury');
   const [selectedCreatorUsername, setSelectedCreatorUsername] = useState('fheed');
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EditForm>(blankEdit);
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
@@ -268,6 +276,19 @@ function TastekinApp() {
     }
   };
   useEffect(() => { void loadProfile(); }, [session.revision]);
+  useEffect(() => {
+    const hydrationVersion = ++savedHydrationVersion.current;
+    if (session.status !== 'authenticated') {
+      setSaved([]);
+      return;
+    }
+    void fetch('/api/me/saved-edits', { credentials: 'include', cache: 'no-store' })
+      .then(async (response) => response.ok ? response.json() as Promise<string[]> : [])
+      .then((ids) => {
+        if (savedHydrationVersion.current === hydrationVersion) setSaved(Array.isArray(ids) ? ids : []);
+      })
+      .catch(() => undefined);
+  }, [session.status, session.revision]);
   const persistWorkspace = async (edits: CreatorEdit[], collections: CreatorCollection[], cleanupPaths = pendingMediaPaths) => {
     setCreatorEdits(edits); setCreatorCollections(collections); setWorkspaceState('syncing'); setWorkspaceError('');
     pendingMediaIsDiscardable.current = false;
@@ -355,7 +376,21 @@ function TastekinApp() {
     if (next !== 'profile' && next !== 'profileEdit') setVisitorPreview(false);
     setScreen(next); setMenuOpen(false);
   };
-  const toggleSaved = (id: string) => { const next = saved.includes(id) ? saved.filter((item) => item !== id) : [...saved, id]; setSaved(next); write('saved-edits', next); };
+  const toggleSaved = async (id: string) => {
+    if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; }
+    const wasSaved = saved.includes(id);
+    const next = wasSaved ? saved.filter((item) => item !== id) : [...saved, id];
+    savedHydrationVersion.current += 1;
+    setSaved(next);
+    try {
+      const response = await fetch(`/api/edits/${encodeURIComponent(id)}/save`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !wasSaved }),
+      });
+      if (!response.ok) throw new Error('Could not update your saved Edits.');
+    } catch {
+      setSaved(saved);
+    }
+  };
   const saveFeaturedCollections = (next: string[]) => {
     const normalized = Array.from(new Set(next)).filter((id) => creatorCollections.some((collection) => collection.id === id)).slice(0, 3);
     setFeaturedCollectionIds(normalized); write('featured-collection-ids', normalized);
@@ -372,6 +407,19 @@ function TastekinApp() {
     saveFeaturedCollections(next);
   };
   const openEdit = (item: CreatorEdit) => { setSelectedEditId(item.id); go('edit'); };
+  const startMessage = async () => {
+    if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; }
+    try {
+      const response = await fetch('/api/conversations', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ creatorUsername: 'fheed' }),
+      });
+      if (!response.ok) throw new Error();
+      const conversation = await response.json() as Conversation;
+      setActiveConversationId(conversation.id); go('conversation');
+    } catch {
+      go('inbox');
+    }
+  };
   const openProfileEditor = () => {
     discardPendingProfilePhoto();
     setProfileForm({ ...creatorProfile, interests: [...creatorProfile.interests] });
@@ -466,7 +514,10 @@ function TastekinApp() {
   };
   const abandonComposer = () => go('add');
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); setMenuOpen(false); };
-  const goBack = () => { if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; } go(screen === 'edit' || screen === 'profileEdit' ? 'profile' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : 'home'); };
+  const goBack = () => {
+    if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
+    go(screen === 'edit' || screen === 'profileEdit' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : 'home');
+  };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
     <header className="approved-topbar">{!['home', 'you', 'add'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><button className="approved-icon" onClick={() => setMenuOpen(true)} aria-label={t('Open menu', 'فتح القائمة')}><Settings2 size={19} /></button></header>
@@ -482,12 +533,16 @@ function TastekinApp() {
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} published={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onEdit={openCollectionManager} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); openCollectionManager(); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{published.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore Fheed’s edits and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف تعديلات فهيد واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : t('Your account', 'حسابك')} title={owner ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')}><div className="approved-panel identity"><Avatar profile={creatorProfile} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? `${creatorProfile.city}, ${creatorProfile.country}` : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div><div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div><button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => go('profile')}>{t('View profile', 'عرض الملف')}</button>}</SimpleScreen>}
-    {screen === 'profile' && <Profile ar={ar} owner={owner && !profileVisitorMode && selectedCreatorUsername === 'fheed'} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={selectedCreatorUsername === 'fheed' ? featuredCollections : []} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (publicProfileViewer) { setFollowing(!following); write('following-fheed', !following); } }} onSubscribe={() => { if (publicProfileViewer) go('subscribe'); }} onEditProfile={openProfileEditor} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (selectedCreatorUsername === 'fheed') go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
+    {screen === 'profile' && <Profile ar={ar} owner={owner && !profileVisitorMode && selectedCreatorUsername === 'fheed'} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={selectedCreatorUsername === 'fheed' ? featuredCollections : []} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (publicProfileViewer) { setFollowing(!following); write('following-fheed', !following); } }} onSubscribe={() => { if (publicProfileViewer) go('subscribe'); }} onEditProfile={openProfileEditor} onMessage={selectedCreatorUsername === 'fheed' ? startMessage : undefined} onInbox={() => go('inbox')} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (selectedCreatorUsername === 'fheed') go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'collections' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={published.filter((item) => selectedCollection.editIds.includes(item.id))} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
     {screen === 'about' && <SimpleScreen kicker={t('About Fheed', 'عن فهيد')} title={t('Fheed Alaiban', 'فهيد العيبان')}><p>{t('Kuwait City, Kuwait. I share Fashion & Outfits, places worth returning to, quiet travel notes, and daily routines that make everyday life feel better.', 'مدينة الكويت، الكويت. أشارك أزياء وإطلالات مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وروتيناً يومياً يجعل الحياة أفضل.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{t('Fashion & Outfits · Travel · Health & Fitness · Places · Restaurants', 'أزياء وإطلالات · سفر · صحة ولياقة · أماكن · مطاعم')}</p></div><button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button></SimpleScreen>}
-    {screen === 'edit' && <EditDetail edit={selectedEdit} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} />}
+    {screen === 'edit' && <EditDetail edit={selectedEdit} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} />}
+    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} />}
+    {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
+    {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} />}
+    {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
      {screen === 'subscribe' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={subscribed ? t('You’re subscribed', 'اشتراكك نشط') : t('Subscribe to Fheed', 'اشترك في فهيد')}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <button className="approved-button primary wide" onClick={() => { setSubscribed(!subscribed); write('subscribed-fheed', !subscribed); }}><Price ar={ar} /></button>}</SimpleScreen>}
    </main>{screen !== 'composer' && screen !== 'creatorPreview' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
     {menuOpen && <div className="approved-menu" data-testid="identity-language-menu"><div className="approved-menu-head"><h2>{t('Account & language', 'الحساب واللغة')}</h2><button className="approved-icon" onClick={() => setMenuOpen(false)}><X size={19} /></button></div><span className="approved-kicker">{t('Profile view', 'عرض الملف')}</span><div className="approved-segment"><button data-testid="identity-owner" className={owner && !profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(false); owner ? go('you') : window.location.assign('/api/login?returnTo=/'); }}><ShieldCheck size={14} /> {t('Fheed · Owner', 'فهيد · المالك')}</button><button data-testid="identity-consumer" className={profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(true); go('you'); }}><CircleUserRound size={14} /> {t('View as visitor', 'عرض كزائر')}</button></div><button data-testid="menu-tune-taste" className="approved-button wide" onClick={() => go('tune-taste')}><Settings2 size={16} /> {t('Tune your taste', 'ضبط ذوقك')}</button><span className="approved-kicker">{t('Interface language', 'لغة الواجهة')}</span><div className="approved-segment"><button data-testid="language-en" className={!ar ? 'selected' : ''} onClick={() => { setLanguage('en'); write('interface-language', 'en'); }}>English</button><button data-testid="language-ar" className={ar ? 'selected' : ''} onClick={() => { setLanguage('ar'); write('interface-language', 'ar'); }}>العربية</button></div></div>}
@@ -705,8 +760,183 @@ function EditCard({ edit, ar, saved, onSave, onOpen }: { edit: CreatorEdit; ar: 
   if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
   return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><button className="approved-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
-function EditDetail({ edit, ar, subscribed, saved, onSave, onSubscribe }: { edit: CreatorEdit; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void }) { const locked = edit.access === 'locked'; const caption = publicCaptionLine(edit, ar); const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption; const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name); return <SimpleScreen kicker={locked ? (ar ? 'للمشتركين فقط' : 'Subscribers only') : (ar ? 'تعديل عام' : 'Public Edit')} title={detailTitle}>{edit.image && <div className={`approved-detail-art ${locked ? 'locked' : ''}`} style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} />{locked && <div><LockKeyhole size={26} />{caption && <strong>{caption}</strong>}</div>}</div>}{isPlaceCategory(edit.category) && caption && caption !== detailTitle && <p className="edit-detail-caption">{caption}</p>}{!edit.image && <div className={`place-detail-panel ${locked ? 'locked' : ''}`}>{locked && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} showName={false} /></div>}{!edit.placeName && (edit.location || edit.locationAr) && <div className="approved-location"><MapPin size={14} />{placeLocation(edit, ar)}</div>}{locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>{isPlaceCategory(edit.category) && edit.image && <PlaceDetails edit={edit} ar={ar} showName={false} />}{edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}<button className={`approved-button wide ${saved ? 'primary' : ''}`} onClick={onSave}>{saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'احفظ هذا التعديل' : 'Save this edit')}</button></>}</SimpleScreen>; }
-function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onEdit, onOpenCollection, onCollections, onAbout, onMatch }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void }) {
+function EditDetail({ edit, ar, subscribed, saved, onSave, onSubscribe }: { edit: CreatorEdit; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void }) {
+  const locked = edit.access === 'locked';
+  const caption = publicCaptionLine(edit, ar);
+  const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption;
+  const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
+  return <SimpleScreen kicker={locked ? (ar ? 'للمشتركين فقط' : 'Subscribers only') : (ar ? 'تعديل عام' : 'Public Edit')} title={detailTitle}>
+    {edit.image && <div className={`approved-detail-art ${locked ? 'locked' : ''}`} style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} />{locked && <div><LockKeyhole size={26} />{caption && <strong>{caption}</strong>}</div>}</div>}
+    {isPlaceCategory(edit.category) && caption && caption !== detailTitle && <p className="edit-detail-caption">{caption}</p>}
+    {!edit.image && <div className={`place-detail-panel ${locked ? 'locked' : ''}`}>{locked && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} showName={false} /></div>}
+    {!edit.placeName && (edit.location || edit.locationAr) && <div className="approved-location"><MapPin size={14} />{placeLocation(edit, ar)}</div>}
+    {locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>
+      {isPlaceCategory(edit.category) && edit.image && <PlaceDetails edit={edit} ar={ar} showName={false} />}
+      {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
+      <EditEngagementPanel editId={edit.id} ar={ar} saved={saved} onSave={onSave} />
+      <button className={`approved-button wide ${saved ? 'primary' : ''}`} onClick={onSave}>{saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'احفظ هذا التعديل' : 'Save this edit')}</button>
+    </>}
+  </SimpleScreen>;
+}
+
+function EditEngagementPanel({ editId, ar, saved, onSave }: { editId: string; ar: boolean; saved: boolean; onSave: () => void }) {
+  const session = useTasteSession();
+  const [engagement, setEngagement] = useState<EditEngagement>({ editId, likeCount: 0, commentCount: 0, liked: false, saved });
+  const [comments, setComments] = useState<EditComment[]>([]);
+  const [comment, setComment] = useState('');
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const [liking, setLiking] = useState(false);
+  const signIn = () => window.location.assign('/api/login?returnTo=/');
+  const load = useCallback(async () => {
+    try {
+      const [engagementResponse, commentsResponse] = await Promise.all([
+        fetch(`/api/edits/${encodeURIComponent(editId)}/engagement`, { credentials: 'include', cache: 'no-store' }),
+        fetch(`/api/edits/${encodeURIComponent(editId)}/comments`, { credentials: 'include', cache: 'no-store' }),
+      ]);
+      if (engagementResponse.ok) setEngagement(await engagementResponse.json() as EditEngagement);
+      if (commentsResponse.ok) setComments(await commentsResponse.json() as EditComment[]);
+    } catch { setError(ar ? 'تعذر تحميل التفاعل.' : 'Could not load engagement.'); }
+  }, [ar, editId]);
+  useEffect(() => { void load(); void fetch('/api/creators/fheed/views', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId }) }); }, [editId, load]);
+  useEffect(() => setEngagement((current) => ({ ...current, saved })), [saved]);
+  const changeLike = async () => {
+    if (session.status !== 'authenticated') { signIn(); return; }
+    if (liking) return;
+    const prior = engagement;
+    setLiking(true);
+    setEngagement({ ...prior, liked: !prior.liked, likeCount: Math.max(0, prior.likeCount + (prior.liked ? -1 : 1)) });
+    try {
+      const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/like`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !prior.liked }) });
+      if (!response.ok) throw new Error();
+      setEngagement(await response.json() as EditEngagement);
+    } catch { setEngagement(prior); setError(ar ? 'تعذر تحديث الإعجاب.' : 'Could not update your like.'); } finally { setLiking(false); }
+  };
+  const submitComment = async () => {
+    if (session.status !== 'authenticated') { signIn(); return; }
+    if (!comment.trim()) return;
+    setSending(true); setError('');
+    try {
+      const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: comment.trim() }) });
+      if (!response.ok) throw new Error();
+      const created = await response.json() as EditComment;
+      setComments((current) => [...current, created]); setComment(''); setEngagement((current) => ({ ...current, commentCount: current.commentCount + 1 }));
+    } catch { setError(ar ? 'تعذر إرسال تعليقك.' : 'Could not post your comment.'); } finally { setSending(false); }
+  };
+  const removeComment = async (commentId: string) => {
+    const removed = comments.find((item) => item.id === commentId);
+    if (!removed) return;
+    setComments((current) => current.filter((item) => item.id !== commentId));
+    try {
+      const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/comments/${encodeURIComponent(commentId)}`, { method: 'DELETE', credentials: 'include' });
+      if (!response.ok) throw new Error();
+      setEngagement((current) => ({ ...current, commentCount: Math.max(0, current.commentCount - 1) }));
+    } catch { setComments((current) => [...current, removed]); setError(ar ? 'تعذر حذف التعليق.' : 'Could not delete this comment.'); }
+  };
+  return <section className="edit-engagement" aria-label={ar ? 'تفاعل التعديل' : 'Edit engagement'}>
+    <div className="edit-reactions">
+      <button className={engagement.liked ? 'active' : ''} onClick={() => void changeLike()} aria-pressed={engagement.liked} disabled={liking}><Heart size={18} fill={engagement.liked ? 'currentColor' : 'none'} /> {engagement.likeCount}</button>
+      <span><MessageCircle size={18} /> {engagement.commentCount}</span>
+      <button className={saved ? 'active' : ''} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {ar ? 'حفظ' : 'Save'}</button>
+    </div>
+    <div className="comment-composer">
+      <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
+      <button className="approved-icon" onClick={() => void submitComment()} disabled={sending} aria-label={ar ? 'إرسال تعليق' : 'Post comment'}><Send size={17} /></button>
+    </div>
+    {error && <div className="engagement-error" role="alert">{error}</div>}
+    <div className="comment-list">{comments.map((item) => <article key={item.id}><div><strong>{item.authorName}</strong><time>{new Date(item.createdAt).toLocaleDateString()}</time></div><p>{item.body}</p>{item.canDelete && <button onClick={() => void removeComment(item.id)}>{ar ? 'حذف' : 'Delete'}</button>}</article>)}</div>
+  </section>;
+}
+
+function InboxScreen({ ar, activeConversationId, onOpen }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void }) {
+  const session = useTasteSession();
+  const [conversations, setConversations] = useState<ConversationPreview[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const load = useCallback(async () => {
+    if (session.status !== 'authenticated') { setState('ready'); return; }
+    try {
+      const response = await fetch('/api/conversations', { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error();
+      setConversations(await response.json() as ConversationPreview[]); setState('ready');
+    } catch { setState('error'); }
+  }, [session.status]);
+  useEffect(() => { void load(); }, [load, activeConversationId]);
+  if (session.status !== 'authenticated') return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}><div className="workspace-notice">{ar ? 'سجّل الدخول لرؤية رسائلك.' : 'Sign in to view your messages.'}<button onClick={() => window.location.assign('/api/login?returnTo=/')}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button></div></SimpleScreen>;
+  return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}>
+    {state === 'loading' && <Empty text={ar ? 'جارٍ تحميل رسائلك…' : 'Loading your messages…'} />}
+    {state === 'error' && <div className="workspace-notice">{ar ? 'تعذر تحميل الرسائل.' : 'Could not load your messages.'}<button onClick={() => void load()}>{ar ? 'حاول مجدداً' : 'Try again'}</button></div>}
+    {state === 'ready' && !conversations.length && <Empty text={ar ? 'لا توجد محادثات بعد. ابدأ من ملف المبدع.' : 'No conversations yet. Start from a creator profile.'} />}
+    <div className="inbox-list">{conversations.map((item) => <button key={item.id} className="inbox-row" onClick={() => onOpen(item.id)}>
+      <span className="inbox-avatar">{item.participantAvatar ? <img src={item.participantAvatar} alt="" /> : <Inbox size={19} />}</span>
+      <span><strong>{item.participantName}</strong><small>{item.lastMessage || (ar ? 'ابدأ المحادثة' : 'Start the conversation')}</small></span>
+      {item.unreadCount > 0 && <b>{item.unreadCount}</b>}
+    </button>)}</div>
+  </SimpleScreen>;
+}
+
+function ConversationScreen({ ar, conversationId }: { ar: boolean; conversationId: string }) {
+  const session = useTasteSession();
+  const [conversation, setConversation] = useState<Conversation | null>(null);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}`, { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error();
+      setConversation(await response.json() as Conversation); setError('');
+    } catch { setError(ar ? 'تعذر تحميل المحادثة.' : 'Could not load this conversation.'); }
+  }, [ar, conversationId]);
+  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight }); }, [conversation?.messages.length]);
+  const send = async () => {
+    if (!message.trim() || !session.user) return;
+    const body = message.trim();
+    const pending: ConversationMessage = { id: `pending-${Date.now()}`, senderUserId: session.user.id, body, createdAt: new Date().toISOString(), readAt: null };
+    setMessage(''); setSending(true); setError('');
+    setConversation((current) => current ? { ...current, messages: [...current.messages, pending] } : current);
+    try {
+      const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) });
+      if (!response.ok) throw new Error();
+      const sent = await response.json() as ConversationMessage;
+      setConversation((current) => current ? { ...current, messages: current.messages.map((item) => item.id === pending.id ? sent : item) } : current);
+    } catch {
+      setConversation((current) => current ? { ...current, messages: current.messages.filter((item) => item.id !== pending.id) } : current);
+      setError(ar ? 'لم يتم إرسال الرسالة. حاول مجدداً.' : 'Message was not sent. Try again.');
+    } finally { setSending(false); }
+  };
+  return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={conversation?.participantName || (ar ? 'محادثة' : 'Conversation')}>
+    <div className="conversation-thread" ref={scrollRef}>{conversation?.messages.map((item) => <div key={item.id} className={item.senderUserId === session.user?.id ? 'mine' : 'theirs'}><p>{item.body}</p><time>{new Date(item.createdAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</time></div>)}</div>
+    {error && <div className="engagement-error" role="alert">{error}</div>}
+    <div className="message-composer"><textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder={ar ? 'اكتب رسالة…' : 'Write a message…'} maxLength={2000} /><button className="approved-button primary" onClick={() => void send()} disabled={sending || !message.trim()}><Send size={17} />{ar ? 'إرسال' : 'Send'}</button></div>
+  </SimpleScreen>;
+}
+
+function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
+  const [insights, setInsights] = useState<CreatorInsights | null>(null);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const load = useCallback(async () => {
+    setState('loading');
+    try {
+      const response = await fetch('/api/creator-insights', { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error();
+      setInsights(await response.json() as CreatorInsights); setState('ready');
+    } catch { setState('error'); }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const titles = new Map(edits.map((edit) => [edit.id, ar ? edit.titleAr || edit.title : edit.title || edit.titleAr]));
+  return <SimpleScreen kicker={ar ? 'أدوات المبدع' : 'Creator tools'} title={ar ? 'الإحصاءات' : 'Insights'}>
+    {state === 'loading' && <Empty text={ar ? 'جارٍ تحميل البيانات الفعلية…' : 'Loading real activity…'} />}
+    {state === 'error' && <div className="workspace-notice">{ar ? 'الإحصاءات متاحة لمالك حساب المبدع فقط.' : 'Insights are available only to the creator owner.'}<button onClick={() => void load()}>{ar ? 'حاول مجدداً' : 'Try again'}</button></div>}
+    {state === 'ready' && insights && <>
+      <div className="insights-stats"><Stat value={insights.profileViews} label={ar ? 'زيارات الملف' : 'Profile views'} /><Stat value={insights.totalLikes} label={ar ? 'الإعجابات' : 'Likes'} /><Stat value={insights.totalSaves} label={ar ? 'الحفظ' : 'Saves'} /><Stat value={insights.totalComments} label={ar ? 'التعليقات' : 'Comments'} /></div>
+      {!insights.profileViews && !insights.totalLikes && !insights.totalSaves && !insights.totalComments && <Empty text={ar ? 'لا توجد بيانات بعد. ستظهر التفاعلات الحقيقية هنا عند حدوثها.' : 'No activity yet. Real views and engagement will appear here as they happen.'} />}
+      <div className="insight-edit-list">{insights.edits.map((item) => <article key={item.editId}><strong>{titles.get(item.editId) || item.editId}</strong><span>{item.views} {ar ? 'مشاهدة' : 'views'} · {item.likes} {ar ? 'إعجاب' : 'likes'} · {item.saves} {ar ? 'حفظ' : 'saves'} · {item.comments} {ar ? 'تعليق' : 'comments'}</span></article>)}</div>
+    </>}
+  </SimpleScreen>;
+}
+function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onMessage, onInbox, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onMessage?: () => void; onInbox: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void }) {
   const session = useTasteSession();
   const ownerView = owner && !visitorPreview;
   const [sealOpen, setSealOpen] = useState(false);
@@ -720,6 +950,10 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
   useEffect(() => {
     setEditCategory('All');
   }, [profile.username]);
+  useEffect(() => {
+    if (profile.username !== 'fheed' || ownerView) return;
+    void fetch('/api/creators/fheed/views', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId: null }) });
+  }, [ownerView, profile.username]);
 
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
@@ -803,7 +1037,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
    )}
 
     {(tasteSummary || publicAge) && <p className="profile-taste-meta">{[tasteSummary, publicAge].filter(Boolean).join(' · ')}</p>}
-    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : ''}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="profile-visitor-button" type="button" onClick={onViewAsVisitor} aria-label={ar ? 'عرض كزائر' : 'View as visitor'} title={ar ? 'عرض كزائر' : 'View as visitor'}><Eye size={19} /></button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button><button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button></>}</div>
+    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="profile-visitor-button" type="button" onClick={onInbox} aria-label={ar ? 'صندوق الوارد' : 'Open inbox'} title={ar ? 'الرسائل' : 'Messages'}><Inbox size={18} /></button><button className="profile-visitor-button" type="button" onClick={onInsights} aria-label={ar ? 'تحليلات المبدع' : 'Creator analytics'} title={ar ? 'الإحصاءات' : 'Insights'}><BarChart3 size={18} /></button><button className="profile-visitor-button" type="button" onClick={onViewAsVisitor} aria-label={ar ? 'عرض كزائر' : 'View as visitor'} title={ar ? 'عرض كزائر' : 'View as visitor'}><Eye size={19} /></button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button><button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button>{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2>

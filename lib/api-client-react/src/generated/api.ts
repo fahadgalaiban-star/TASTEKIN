@@ -20,20 +20,32 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  Conversation,
+  ConversationInput,
+  ConversationMessage,
+  ConversationMessageInput,
+  ConversationPreview,
   Creator,
+  CreatorInsights,
   CreatorMediaCleanupRequest,
   CreatorProfile,
   CreatorProfileInput,
   CreatorProfileSettings,
   CreatorUploadRequest,
   CreatorUploadResponse,
+  CreatorViewInput,
   CreatorWorkspace,
   CreatorWorkspaceInput,
   Edit,
+  EditComment,
+  EditCommentInput,
+  EditEngagement,
+  EditEngagementInput,
   ExploreParams,
   ExploreResults,
   HealthStatus,
   ListCreatorsParams,
+  RecordedView,
   Relationship,
   RelationshipInput,
   TasteCatalog,
@@ -888,6 +900,894 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
       > => {
       return useMutation(getUpdateRelationshipMutationOptions(options));
     }
+
+export const getGetEditEngagementUrl = (editId: string,) => {
+
+
+
+
+  return `/api/edits/${editId}/engagement`
+}
+
+export const getEditEngagement = async (editId: string, options?: Parameters<typeof customFetch>[1]): Promise<EditEngagement> => {
+
+  return customFetch<EditEngagement>(getGetEditEngagementUrl(editId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEditEngagementQueryKey = (editId: string,) => {
+    return [
+    `/api/edits/${editId}/engagement`
+    ] as const;
+    }
+
+
+export const getGetEditEngagementQueryOptions = <TData = Awaited<ReturnType<typeof getEditEngagement>>, TError = ErrorType<void>>(editId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEditEngagement>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEditEngagementQueryKey(editId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEditEngagement>>> = ({ signal }) => getEditEngagement(editId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: editId !== null && editId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEditEngagement>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEditEngagementQueryResult = NonNullable<Awaited<ReturnType<typeof getEditEngagement>>>
+export type GetEditEngagementQueryError = ErrorType<void>
+
+
+
+export function useGetEditEngagement<TData = Awaited<ReturnType<typeof getEditEngagement>>, TError = ErrorType<void>>(
+ editId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEditEngagement>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEditEngagementQueryOptions(editId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateEditLikeUrl = (editId: string,) => {
+
+
+
+
+  return `/api/edits/${editId}/like`
+}
+
+export const updateEditLike = async (editId: string,
+    editEngagementInput: EditEngagementInput, options?: Parameters<typeof customFetch>[1]): Promise<EditEngagement> => {
+
+  return customFetch<EditEngagement>(getUpdateEditLikeUrl(editId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(editEngagementInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateEditLikeMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEditLike>>, TError,{editId: string;data: BodyType<EditEngagementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateEditLike>>, TError,{editId: string;data: BodyType<EditEngagementInput>}, TContext> => {
+
+const mutationKey = ['updateEditLike'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEditLike>>, {editId: string;data: BodyType<EditEngagementInput>}> = (props) => {
+          const {editId,data} = props ?? {};
+
+          return  updateEditLike(editId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateEditLikeMutationResult = NonNullable<Awaited<ReturnType<typeof updateEditLike>>>
+    export type UpdateEditLikeMutationBody = BodyType<EditEngagementInput>
+    export type UpdateEditLikeMutationError = ErrorType<void>
+
+    export const useUpdateEditLike = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEditLike>>, TError,{editId: string;data: BodyType<EditEngagementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateEditLike>>,
+        TError,
+        {editId: string;data: BodyType<EditEngagementInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateEditLikeMutationOptions(options));
+    }
+
+export const getUpdateEditSaveUrl = (editId: string,) => {
+
+
+
+
+  return `/api/edits/${editId}/save`
+}
+
+export const updateEditSave = async (editId: string,
+    editEngagementInput: EditEngagementInput, options?: Parameters<typeof customFetch>[1]): Promise<EditEngagement> => {
+
+  return customFetch<EditEngagement>(getUpdateEditSaveUrl(editId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(editEngagementInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateEditSaveMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEditSave>>, TError,{editId: string;data: BodyType<EditEngagementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateEditSave>>, TError,{editId: string;data: BodyType<EditEngagementInput>}, TContext> => {
+
+const mutationKey = ['updateEditSave'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateEditSave>>, {editId: string;data: BodyType<EditEngagementInput>}> = (props) => {
+          const {editId,data} = props ?? {};
+
+          return  updateEditSave(editId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateEditSaveMutationResult = NonNullable<Awaited<ReturnType<typeof updateEditSave>>>
+    export type UpdateEditSaveMutationBody = BodyType<EditEngagementInput>
+    export type UpdateEditSaveMutationError = ErrorType<void>
+
+    export const useUpdateEditSave = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateEditSave>>, TError,{editId: string;data: BodyType<EditEngagementInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateEditSave>>,
+        TError,
+        {editId: string;data: BodyType<EditEngagementInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateEditSaveMutationOptions(options));
+    }
+
+export const getListEditCommentsUrl = (editId: string,) => {
+
+
+
+
+  return `/api/edits/${editId}/comments`
+}
+
+export const listEditComments = async (editId: string, options?: Parameters<typeof customFetch>[1]): Promise<EditComment[]> => {
+
+  return customFetch<EditComment[]>(getListEditCommentsUrl(editId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEditCommentsQueryKey = (editId: string,) => {
+    return [
+    `/api/edits/${editId}/comments`
+    ] as const;
+    }
+
+
+export const getListEditCommentsQueryOptions = <TData = Awaited<ReturnType<typeof listEditComments>>, TError = ErrorType<void>>(editId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEditComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEditCommentsQueryKey(editId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEditComments>>> = ({ signal }) => listEditComments(editId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: editId !== null && editId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEditComments>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEditCommentsQueryResult = NonNullable<Awaited<ReturnType<typeof listEditComments>>>
+export type ListEditCommentsQueryError = ErrorType<void>
+
+
+
+export function useListEditComments<TData = Awaited<ReturnType<typeof listEditComments>>, TError = ErrorType<void>>(
+ editId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEditComments>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEditCommentsQueryOptions(editId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateEditCommentUrl = (editId: string,) => {
+
+
+
+
+  return `/api/edits/${editId}/comments`
+}
+
+export const createEditComment = async (editId: string,
+    editCommentInput: EditCommentInput, options?: Parameters<typeof customFetch>[1]): Promise<EditComment> => {
+
+  return customFetch<EditComment>(getCreateEditCommentUrl(editId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(editCommentInput)
+  }
+);}
+
+
+
+
+
+export const getCreateEditCommentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEditComment>>, TError,{editId: string;data: BodyType<EditCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEditComment>>, TError,{editId: string;data: BodyType<EditCommentInput>}, TContext> => {
+
+const mutationKey = ['createEditComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEditComment>>, {editId: string;data: BodyType<EditCommentInput>}> = (props) => {
+          const {editId,data} = props ?? {};
+
+          return  createEditComment(editId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEditCommentMutationResult = NonNullable<Awaited<ReturnType<typeof createEditComment>>>
+    export type CreateEditCommentMutationBody = BodyType<EditCommentInput>
+    export type CreateEditCommentMutationError = ErrorType<void>
+
+    export const useCreateEditComment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEditComment>>, TError,{editId: string;data: BodyType<EditCommentInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEditComment>>,
+        TError,
+        {editId: string;data: BodyType<EditCommentInput>},
+        TContext
+      > => {
+      return useMutation(getCreateEditCommentMutationOptions(options));
+    }
+
+export const getDeleteEditCommentUrl = (editId: string,
+    commentId: string,) => {
+
+
+
+
+  return `/api/edits/${editId}/comments/${commentId}`
+}
+
+export const deleteEditComment = async (editId: string,
+    commentId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteEditCommentUrl(editId,commentId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteEditCommentMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEditComment>>, TError,{editId: string;commentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteEditComment>>, TError,{editId: string;commentId: string}, TContext> => {
+
+const mutationKey = ['deleteEditComment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteEditComment>>, {editId: string;commentId: string}> = (props) => {
+          const {editId,commentId} = props ?? {};
+
+          return  deleteEditComment(editId,commentId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteEditCommentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteEditComment>>>
+
+    export type DeleteEditCommentMutationError = ErrorType<void>
+
+    export const useDeleteEditComment = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteEditComment>>, TError,{editId: string;commentId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteEditComment>>,
+        TError,
+        {editId: string;commentId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteEditCommentMutationOptions(options));
+    }
+
+export const getListSavedEditsUrl = () => {
+
+
+
+
+  return `/api/me/saved-edits`
+}
+
+export const listSavedEdits = async ( options?: Parameters<typeof customFetch>[1]): Promise<string[]> => {
+
+  return customFetch<string[]>(getListSavedEditsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSavedEditsQueryKey = () => {
+    return [
+    `/api/me/saved-edits`
+    ] as const;
+    }
+
+
+export const getListSavedEditsQueryOptions = <TData = Awaited<ReturnType<typeof listSavedEdits>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedEdits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSavedEditsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSavedEdits>>> = ({ signal }) => listSavedEdits({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSavedEdits>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSavedEditsQueryResult = NonNullable<Awaited<ReturnType<typeof listSavedEdits>>>
+export type ListSavedEditsQueryError = ErrorType<void>
+
+
+
+export function useListSavedEdits<TData = Awaited<ReturnType<typeof listSavedEdits>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedEdits>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSavedEditsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRecordCreatorViewUrl = (username: string,) => {
+
+
+
+
+  return `/api/creators/${username}/views`
+}
+
+export const recordCreatorView = async (username: string,
+    creatorViewInput: CreatorViewInput, options?: Parameters<typeof customFetch>[1]): Promise<RecordedView> => {
+
+  return customFetch<RecordedView>(getRecordCreatorViewUrl(username),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(creatorViewInput)
+  }
+);}
+
+
+
+
+
+export const getRecordCreatorViewMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordCreatorView>>, TError,{username: string;data: BodyType<CreatorViewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof recordCreatorView>>, TError,{username: string;data: BodyType<CreatorViewInput>}, TContext> => {
+
+const mutationKey = ['recordCreatorView'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof recordCreatorView>>, {username: string;data: BodyType<CreatorViewInput>}> = (props) => {
+          const {username,data} = props ?? {};
+
+          return  recordCreatorView(username,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RecordCreatorViewMutationResult = NonNullable<Awaited<ReturnType<typeof recordCreatorView>>>
+    export type RecordCreatorViewMutationBody = BodyType<CreatorViewInput>
+    export type RecordCreatorViewMutationError = ErrorType<void>
+
+    export const useRecordCreatorView = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof recordCreatorView>>, TError,{username: string;data: BodyType<CreatorViewInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof recordCreatorView>>,
+        TError,
+        {username: string;data: BodyType<CreatorViewInput>},
+        TContext
+      > => {
+      return useMutation(getRecordCreatorViewMutationOptions(options));
+    }
+
+export const getListConversationsUrl = () => {
+
+
+
+
+  return `/api/conversations`
+}
+
+export const listConversations = async ( options?: Parameters<typeof customFetch>[1]): Promise<ConversationPreview[]> => {
+
+  return customFetch<ConversationPreview[]>(getListConversationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListConversationsQueryKey = () => {
+    return [
+    `/api/conversations`
+    ] as const;
+    }
+
+
+export const getListConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listConversations>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListConversationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listConversations>>> = ({ signal }) => listConversations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listConversations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof listConversations>>>
+export type ListConversationsQueryError = ErrorType<void>
+
+
+
+export function useListConversations<TData = Awaited<ReturnType<typeof listConversations>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListConversationsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateConversationUrl = () => {
+
+
+
+
+  return `/api/conversations`
+}
+
+export const createConversation = async (conversationInput: ConversationInput, options?: Parameters<typeof customFetch>[1]): Promise<Conversation> => {
+
+  return customFetch<Conversation>(getCreateConversationUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(conversationInput)
+  }
+);}
+
+
+
+
+
+export const getCreateConversationMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversation>>, TError,{data: BodyType<ConversationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createConversation>>, TError,{data: BodyType<ConversationInput>}, TContext> => {
+
+const mutationKey = ['createConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConversation>>, {data: BodyType<ConversationInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createConversation(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateConversationMutationResult = NonNullable<Awaited<ReturnType<typeof createConversation>>>
+    export type CreateConversationMutationBody = BodyType<ConversationInput>
+    export type CreateConversationMutationError = ErrorType<void>
+
+    export const useCreateConversation = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversation>>, TError,{data: BodyType<ConversationInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createConversation>>,
+        TError,
+        {data: BodyType<ConversationInput>},
+        TContext
+      > => {
+      return useMutation(getCreateConversationMutationOptions(options));
+    }
+
+export const getGetConversationUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}`
+}
+
+export const getConversation = async (conversationId: string, options?: Parameters<typeof customFetch>[1]): Promise<Conversation> => {
+
+  return customFetch<Conversation>(getGetConversationUrl(conversationId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetConversationQueryKey = (conversationId: string,) => {
+    return [
+    `/api/conversations/${conversationId}`
+    ] as const;
+    }
+
+
+export const getGetConversationQueryOptions = <TData = Awaited<ReturnType<typeof getConversation>>, TError = ErrorType<void>>(conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetConversationQueryKey(conversationId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getConversation>>> = ({ signal }) => getConversation(conversationId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: conversationId !== null && conversationId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getConversation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetConversationQueryResult = NonNullable<Awaited<ReturnType<typeof getConversation>>>
+export type GetConversationQueryError = ErrorType<void>
+
+
+
+export function useGetConversation<TData = Awaited<ReturnType<typeof getConversation>>, TError = ErrorType<void>>(
+ conversationId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetConversationQueryOptions(conversationId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateConversationMessageUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/conversations/${conversationId}/messages`
+}
+
+export const createConversationMessage = async (conversationId: string,
+    conversationMessageInput: ConversationMessageInput, options?: Parameters<typeof customFetch>[1]): Promise<ConversationMessage> => {
+
+  return customFetch<ConversationMessage>(getCreateConversationMessageUrl(conversationId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(conversationMessageInput)
+  }
+);}
+
+
+
+
+
+export const getCreateConversationMessageMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversationMessage>>, TError,{conversationId: string;data: BodyType<ConversationMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createConversationMessage>>, TError,{conversationId: string;data: BodyType<ConversationMessageInput>}, TContext> => {
+
+const mutationKey = ['createConversationMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createConversationMessage>>, {conversationId: string;data: BodyType<ConversationMessageInput>}> = (props) => {
+          const {conversationId,data} = props ?? {};
+
+          return  createConversationMessage(conversationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateConversationMessageMutationResult = NonNullable<Awaited<ReturnType<typeof createConversationMessage>>>
+    export type CreateConversationMessageMutationBody = BodyType<ConversationMessageInput>
+    export type CreateConversationMessageMutationError = ErrorType<void>
+
+    export const useCreateConversationMessage = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createConversationMessage>>, TError,{conversationId: string;data: BodyType<ConversationMessageInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createConversationMessage>>,
+        TError,
+        {conversationId: string;data: BodyType<ConversationMessageInput>},
+        TContext
+      > => {
+      return useMutation(getCreateConversationMessageMutationOptions(options));
+    }
+
+export const getGetCreatorInsightsUrl = () => {
+
+
+
+
+  return `/api/creator-insights`
+}
+
+export const getCreatorInsights = async ( options?: Parameters<typeof customFetch>[1]): Promise<CreatorInsights> => {
+
+  return customFetch<CreatorInsights>(getGetCreatorInsightsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCreatorInsightsQueryKey = () => {
+    return [
+    `/api/creator-insights`
+    ] as const;
+    }
+
+
+export const getGetCreatorInsightsQueryOptions = <TData = Awaited<ReturnType<typeof getCreatorInsights>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorInsights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCreatorInsightsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCreatorInsights>>> = ({ signal }) => getCreatorInsights({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCreatorInsights>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCreatorInsightsQueryResult = NonNullable<Awaited<ReturnType<typeof getCreatorInsights>>>
+export type GetCreatorInsightsQueryError = ErrorType<void>
+
+
+
+export function useGetCreatorInsights<TData = Awaited<ReturnType<typeof getCreatorInsights>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCreatorInsights>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCreatorInsightsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetCreatorWorkspaceUrl = () => {
 
