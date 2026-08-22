@@ -8,6 +8,39 @@ test.beforeEach(async ({ page }) => {
       if (key.startsWith('tastekin:')) localStorage.removeItem(key);
     }
   });
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+      body: JSON.stringify({
+        user: { id: 'fheed-founder', email: 'founder@tastekin.test' },
+        role: 'creator',
+        creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
+      }),
+    });
+  });
+  await page.route('**/api/taste-catalog', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        categories: [{ id: 'Fashion', label: 'Fashion & Outfits', labelAr: 'أزياء وإطلالات' }],
+        tags: [{ id: 'quiet-luxury', categoryId: 'Fashion', label: 'Quiet luxury', labelAr: 'فخامة هادئة' }],
+        minCategories: 1,
+        minTags: 1,
+      }),
+    });
+  });
+  await page.route('**/api/taste-preferences', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        categories: ['Fashion'],
+        tags: ['quiet-luxury'],
+        complete: true,
+        updatedAt: '2026-08-22T00:00:00.000Z',
+      }),
+    });
+  });
   await page.goto('/');
 });
 

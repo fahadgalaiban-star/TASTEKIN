@@ -27,6 +27,7 @@ import { Router, type IRouter } from "express";
 import { calculateTasteMatch, tasteReasons, type CreatorTasteProfile, type TasteSelection } from "../lib/taste-match";
 
 const router: IRouter = Router();
+function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }
 
 const images = {
   atelier:
@@ -248,6 +249,7 @@ router.get("/taste-catalog", (_req, res) => {
 });
 
 router.get("/taste-preferences", async (req, res): Promise<void> => {
+  noStoreSessionResponse(res);
   if (!req.isAuthenticated()) {
     res.status(401).json({ error: "Sign in to view your private taste preferences" });
     return;
@@ -322,6 +324,7 @@ router.get("/creators/:username", async (req, res) => {
 });
 
 router.get("/taste-match/:username", async (req, res): Promise<void> => {
+  noStoreSessionResponse(res);
   const parsed = GetTasteMatchParams.safeParse(req.params);
   const creator = parsed.success ? creators.find((item) => item.username === parsed.data.username) : undefined;
   if (!creator) {
@@ -343,6 +346,7 @@ router.get("/taste-match/:username", async (req, res): Promise<void> => {
 });
 
 router.get("/explore", async (req, res) => {
+  noStoreSessionResponse(res);
   const parsed = ExploreQueryParams.safeParse(req.query);
   const params = parsed.success ? parsed.data : {};
   const term = params.q?.toLowerCase();

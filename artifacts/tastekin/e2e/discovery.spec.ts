@@ -17,7 +17,7 @@ const categoryIds = [
 async function switchToConsumer(page: Page) {
   await page.getByRole('button', { name: 'Open menu' }).click();
   await page.getByTestId('identity-consumer').click();
-  await expect(page.getByRole('heading', { name: 'Alex Morgan' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
 }
 
 async function openConsumerProfile(page: Page) {
@@ -32,6 +32,17 @@ test.beforeEach(async ({ page }) => {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('tastekin:')) localStorage.removeItem(key);
     }
+  });
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+      body: JSON.stringify({
+        user: { id: 'fheed-founder', email: 'founder@tastekin.test' },
+        role: 'creator',
+        creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
+      }),
+    });
   });
   await page.goto('/');
 });

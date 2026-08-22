@@ -11,9 +11,11 @@ function origin(req: import("express").Request) { return `${req.header("x-forwar
 function safeReturnTo(value: unknown) { return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/"; }
 function hash(value: string) { return crypto.createHash("sha256").update(value).digest("base64url"); }
 function cookie(res: import("express").Response, name: string, value: string) { res.cookie(name, value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 600_000 }); }
+function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }
 
-router.get("/auth/user", (req, res) => res.json({ user: req.user ?? null }));
+router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
 router.get("/me", async (req, res) => {
+  noStoreSessionResponse(res);
   if (!req.user) {
     res.json({ user: null, role: "consumer", creator: null });
     return;

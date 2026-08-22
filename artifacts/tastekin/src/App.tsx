@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTastePreferencesQueryKey } from '@workspace/api-client-react';
+import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel } from '@workspace/taste-catalog';
 import {
@@ -22,7 +22,6 @@ export default function App() {
 }
 
 type Language = 'en' | 'ar';
-type Role = 'owner' | 'consumer';
 type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
@@ -129,22 +128,80 @@ const blankCollection = (): CollectionForm => ({ title: '', titleAr: '', descrip
 
 function Price({ ar, withVerb = true }: { ar: boolean; withVerb?: boolean }) { return ar ? <>{withVerb && 'اشترك · '}<bdi dir="ltr">19.99</bdi> دولار شهريًا</> : <>{withVerb && 'Subscribe · '}$19.99 / month</>; }
 
-function useTasteSession() {
-  const [status, setStatus] = useState<'loading' | 'authenticated' | 'signed-out'>('loading');
-  useEffect(() => {
-    let active = true;
-    void fetch('/api/me')
-      .then(async (response) => response.ok ? response.json() as Promise<{ user: { id: string } | null }> : { user: null })
-      .then((session) => { if (active) setStatus(session.user ? 'authenticated' : 'signed-out'); })
-      .catch(() => { if (active) setStatus('signed-out'); });
-    return () => { active = false; };
+type TasteSessionSnapshot = {
+  status: 'loading' | 'authenticated' | 'signed-out';
+  user: { id: string; email: string | null } | null;
+  role: 'creator' | 'consumer';
+  creator: { handle: string; displayName: string; verified: boolean; ownsWorkspace: boolean } | null;
+  revision: number;
+};
+type TasteSession = TasteSessionSnapshot & { refresh: () => Promise<void> };
+
+const TasteSessionContext = createContext<TasteSession | null>(null);
+
+function useTasteSessionController(): TasteSession {
+  const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
+    status: 'loading', user: null, role: 'consumer', creator: null, revision: 0,
+  });
+  const refresh = useCallback(async () => {
+    try {
+      const response = await fetch('/api/me', {
+        credentials: 'include',
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
+      const payload = response.ok
+        ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'>
+        : { user: null, role: 'consumer' as const, creator: null };
+      setSnapshot((current) => {
+        const next = {
+          status: payload.user ? 'authenticated' as const : 'signed-out' as const,
+          user: payload.user,
+          role: payload.role === 'creator' ? 'creator' as const : 'consumer' as const,
+          creator: payload.creator ?? null,
+        };
+        const unchanged = current.status === next.status
+          && current.user?.id === next.user?.id
+          && current.user?.email === next.user?.email
+          && current.role === next.role
+          && current.creator?.ownsWorkspace === next.creator?.ownsWorkspace
+          && current.creator?.handle === next.creator?.handle;
+        return unchanged ? current : { ...next, revision: current.revision + 1 };
+      });
+    } catch {
+      // A transient Safari/network failure must never downgrade a known valid session to guest state.
+      setSnapshot((current) => current.status === 'authenticated'
+        ? current
+        : current.status === 'signed-out'
+          ? current
+          : { ...current, status: 'signed-out', revision: current.revision + 1 });
+    }
   }, []);
-  return status;
+  useEffect(() => {
+    const revalidate = () => { void refresh(); };
+    const onVisibilityChange = () => { if (document.visibilityState === 'visible') revalidate(); };
+    window.addEventListener('pageshow', revalidate);
+    window.addEventListener('focus', revalidate);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('pageshow', revalidate);
+      window.removeEventListener('focus', revalidate);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [refresh]);
+  return { ...snapshot, refresh };
+}
+
+function useTasteSession() {
+  const session = useContext(TasteSessionContext);
+  if (!session) throw new Error('Taste session is unavailable outside the TASTEKIN app.');
+  return session;
 }
 
 function TastekinApp() {
+  const session = useTasteSessionController();
+  const queryClient = useQueryClient();
   const [language, setLanguage] = useState<Language>(() => new URLSearchParams(location.search).get('lang') === 'ar' ? 'ar' : read('interface-language', 'en'));
-  const [role, setRole] = useState<Role>(() => read('demo-role', 'owner'));
   const [screen, setScreen] = useState<Screen>('home');
   const [exploreCategory, setExploreCategory] = useState<Category>('All');
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
@@ -153,6 +210,7 @@ function TastekinApp() {
   const [subscribed, setSubscribed] = useState(() => read('subscribed-fheed', false));
   const [menuOpen, setMenuOpen] = useState(false);
   const [visitorPreview, setVisitorPreview] = useState(false);
+  const [profileVisitorMode, setProfileVisitorMode] = useState(false);
   const [creatorEdits, setCreatorEdits] = useState<CreatorEdit[]>(seedEdits);
   const [creatorCollections, setCreatorCollections] = useState<CreatorCollection[]>(seedCollections);
   const [featuredCollectionIds, setFeaturedCollectionIds] = useState<string[]>(() => read('featured-collection-ids', seedCollections.slice(0, 3).map((collection) => collection.id)));
@@ -198,7 +256,7 @@ function TastekinApp() {
       setWorkspaceState('error'); setWorkspaceError('Your shared creator workspace could not be loaded. Check your connection and try again.');
     }
   };
-  useEffect(() => { void loadWorkspace(); }, []);
+  useEffect(() => { void loadWorkspace(); }, [session.revision]);
   const loadProfile = async () => {
     try {
       const response = await fetch('/api/creator-profile');
@@ -209,7 +267,7 @@ function TastekinApp() {
       // Discovery remains usable while a profile refresh is temporarily unavailable.
     }
   };
-  useEffect(() => { void loadProfile(); }, []);
+  useEffect(() => { void loadProfile(); }, [session.revision]);
   const persistWorkspace = async (edits: CreatorEdit[], collections: CreatorCollection[], cleanupPaths = pendingMediaPaths) => {
     setCreatorEdits(edits); setCreatorCollections(collections); setWorkspaceState('syncing'); setWorkspaceError('');
     pendingMediaIsDiscardable.current = false;
@@ -252,7 +310,19 @@ function TastekinApp() {
     URL.revokeObjectURL(pendingProfilePhoto.url);
     setPendingProfilePhoto(null);
   };
-  const ar = language === 'ar'; const owner = role === 'owner'; const t = (en: string, arabic: string) => ar ? arabic : en;
+  const ar = language === 'ar';
+  const owner = session.status === 'authenticated' && session.creator?.ownsWorkspace === true;
+  const publicProfileViewer = !owner || profileVisitorMode;
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  useEffect(() => {
+    localStorage.removeItem('tastekin:demo-role');
+    queryClient.removeQueries({ queryKey: ['/api/explore'] });
+    queryClient.removeQueries({ queryKey: getGetTastePreferencesQueryKey() });
+    queryClient.removeQueries({
+      predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('/api/taste-match/'),
+    });
+  }, [queryClient, session.revision]);
+  useEffect(() => { void session.refresh(); }, [screen, session.refresh]);
   useEffect(() => {
     document.documentElement.dir = ar ? 'rtl' : 'ltr';
     document.documentElement.lang = ar ? 'ar' : 'en';
@@ -398,7 +468,7 @@ function TastekinApp() {
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); setMenuOpen(false); };
   const goBack = () => { if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; } go(screen === 'edit' || screen === 'profileEdit' ? 'profile' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : 'home'); };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
-  return <div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
+  return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
     <header className="approved-topbar">{!['home', 'you', 'add'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><button className="approved-icon" onClick={() => setMenuOpen(true)} aria-label={t('Open menu', 'فتح القائمة')}><Settings2 size={19} /></button></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
@@ -406,22 +476,22 @@ function TastekinApp() {
     {screen === 'home' && <><section className="approved-hero"><span className="approved-kicker">{t('Taste-led discovery', 'اكتشاف مبني على الذوق')}</span><h1>{t('Follow the taste, not the numbers.', 'اتبع الذوق، لا الأرقام.')}</h1><p>{t('A considered feed of people, places, and daily routines shaped by what you actually like.', 'تغذية منتقاة من الأشخاص وأماكنهم وروتينهم اليومي، تتشكل بحسب ما تحبه فعلاً.')}</p></section><HomeFeedTabs ar={ar} active={homeFeedTab} onSelect={setHomeFeedTab} /><div className="approved-feed">{homeFeed.map((item) => <EditCard key={item.id} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}</div></>}
     {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} />}
-    {screen === 'add' && (owner ? <CreatorDashboard ar={ar} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Publishing belongs to a verified creator profile. Switch to Fheed owner preview to create and manage edits.', 'النشر متاح لملف المبدع الموثق. انتقل إلى وضع مالك فهيد لإنشاء وإدارة التعديلات.')}</p><div className="approved-panel"><h3>{t('Visitor preview', 'معاينة الزائر')}</h3><p>{t('You can still follow, save, and subscribe to the demo creator experience.', 'ما زال بإمكانك المتابعة والحفظ والاشتراك في تجربة المبدع.')}</p></div></SimpleScreen>)}
+    {screen === 'add' && (owner ? <CreatorDashboard ar={ar} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Publishing belongs to the verified creator account.', 'النشر متاح لحساب المبدع الموثق.')}</p><div className="approved-panel"><h3>{t('Your account', 'حسابك')}</h3><p>{t('You can still follow, save, subscribe, and discover creators.', 'ما زال بإمكانك المتابعة والحفظ والاشتراك واكتشاف المبدعين.')}</p></div></SimpleScreen>)}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => { void commitEdit('draft').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} published={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onEdit={openCollectionManager} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); openCollectionManager(); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{published.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore Fheed’s edits and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف تعديلات فهيد واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
-    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : t('Your account', 'حسابك')} title={owner ? t('Your profile', 'ملفك الشخصي') : t('Alex Morgan', 'أليكس مورغان')}><div className="approved-panel identity"><Avatar profile={creatorProfile} /><div><strong>{owner ? creatorProfile.displayName : t('Alex Morgan', 'أليكس مورغان')}</strong><span>{owner ? `${creatorProfile.city}, ${creatorProfile.country}` : '@alexmorgan'}</span></div></div><div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div><button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => go('profile')}>{t('View profile', 'عرض الملف')}</button>}</SimpleScreen>}
-      {screen === 'profile' && <Profile ar={ar} owner={owner && selectedCreatorUsername === 'fheed'} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={selectedCreatorUsername === 'fheed' ? featuredCollections : []} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (!owner) { setFollowing(!following); write('following-fheed', !following); } }} onSubscribe={() => { if (!owner) go('subscribe'); }} onEditProfile={openProfileEditor} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (selectedCreatorUsername === 'fheed') go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
+    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : t('Your account', 'حسابك')} title={owner ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')}><div className="approved-panel identity"><Avatar profile={creatorProfile} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? `${creatorProfile.city}, ${creatorProfile.country}` : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div><div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div><button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => go('profile')}>{t('View profile', 'عرض الملف')}</button>}</SimpleScreen>}
+    {screen === 'profile' && <Profile ar={ar} owner={owner && !profileVisitorMode && selectedCreatorUsername === 'fheed'} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={selectedCreatorUsername === 'fheed' ? featuredCollections : []} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (publicProfileViewer) { setFollowing(!following); write('following-fheed', !following); } }} onSubscribe={() => { if (publicProfileViewer) go('subscribe'); }} onEditProfile={openProfileEditor} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (selectedCreatorUsername === 'fheed') go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'collections' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
-    {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={published.filter((item) => selectedCollection.editIds.includes(item.id))} canView={owner || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
+     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={published.filter((item) => selectedCollection.editIds.includes(item.id))} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
     {screen === 'about' && <SimpleScreen kicker={t('About Fheed', 'عن فهيد')} title={t('Fheed Alaiban', 'فهيد العيبان')}><p>{t('Kuwait City, Kuwait. I share Fashion & Outfits, places worth returning to, quiet travel notes, and daily routines that make everyday life feel better.', 'مدينة الكويت، الكويت. أشارك أزياء وإطلالات مدروسة، وأماكن تستحق العودة إليها، وملاحظات سفر هادئة، وروتيناً يومياً يجعل الحياة أفضل.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{t('Fashion & Outfits · Travel · Health & Fitness · Places · Restaurants', 'أزياء وإطلالات · سفر · صحة ولياقة · أماكن · مطاعم')}</p></div><button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button></SimpleScreen>}
     {screen === 'edit' && <EditDetail edit={selectedEdit} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} />}
-    {screen === 'subscribe' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={subscribed ? t('You’re subscribed', 'اشتراكك نشط') : t('Subscribe to Fheed', 'اشترك في فهيد')}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{!owner && <button className="approved-button primary wide" onClick={() => { setSubscribed(!subscribed); write('subscribed-fheed', !subscribed); }}><Price ar={ar} /></button>}</SimpleScreen>}
-  </main>{screen !== 'composer' && screen !== 'creatorPreview' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
-   {menuOpen && <div className="approved-menu" data-testid="identity-language-menu"><div className="approved-menu-head"><h2>{t('Preview identity & language', 'هوية ولغة المعاينة')}</h2><button className="approved-icon" onClick={() => setMenuOpen(false)}><X size={19} /></button></div><span className="approved-kicker">{t('Demo identity', 'هوية العرض')}</span><div className="approved-segment"><button data-testid="identity-owner" className={owner ? 'selected' : ''} onClick={() => { setRole('owner'); setSelectedCreatorUsername('fheed'); write('demo-role', 'owner'); go('you'); }}><ShieldCheck size={14} /> {t('Fheed · Owner', 'فهيد · المالك')}</button><button data-testid="identity-consumer" className={!owner ? 'selected' : ''} onClick={() => { setRole('consumer'); write('demo-role', 'consumer'); go('you'); }}><CircleUserRound size={14} /> {t('Alex · Visitor', 'أليكس · زائر')}</button></div><button data-testid="menu-tune-taste" className="approved-button wide" onClick={() => go('tune-taste')}><Settings2 size={16} /> {t('Tune your taste', 'ضبط ذوقك')}</button><span className="approved-kicker">{t('Interface language', 'لغة الواجهة')}</span><div className="approved-segment"><button data-testid="language-en" className={!ar ? 'selected' : ''} onClick={() => { setLanguage('en'); write('interface-language', 'en'); }}>English</button><button data-testid="language-ar" className={ar ? 'selected' : ''} onClick={() => { setLanguage('ar'); write('interface-language', 'ar'); }}>العربية</button></div></div>}
-  </div>;
+     {screen === 'subscribe' && <SimpleScreen kicker={t('Fheed Alaiban', 'فهيد العيبان')} title={subscribed ? t('You’re subscribed', 'اشتراكك نشط') : t('Subscribe to Fheed', 'اشترك في فهيد')}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <button className="approved-button primary wide" onClick={() => { setSubscribed(!subscribed); write('subscribed-fheed', !subscribed); }}><Price ar={ar} /></button>}</SimpleScreen>}
+   </main>{screen !== 'composer' && screen !== 'creatorPreview' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
+    {menuOpen && <div className="approved-menu" data-testid="identity-language-menu"><div className="approved-menu-head"><h2>{t('Account & language', 'الحساب واللغة')}</h2><button className="approved-icon" onClick={() => setMenuOpen(false)}><X size={19} /></button></div><span className="approved-kicker">{t('Profile view', 'عرض الملف')}</span><div className="approved-segment"><button data-testid="identity-owner" className={owner && !profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(false); owner ? go('you') : window.location.assign('/api/login?returnTo=/'); }}><ShieldCheck size={14} /> {t('Fheed · Owner', 'فهيد · المالك')}</button><button data-testid="identity-consumer" className={profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(true); go('you'); }}><CircleUserRound size={14} /> {t('View as visitor', 'عرض كزائر')}</button></div><button data-testid="menu-tune-taste" className="approved-button wide" onClick={() => go('tune-taste')}><Settings2 size={16} /> {t('Tune your taste', 'ضبط ذوقك')}</button><span className="approved-kicker">{t('Interface language', 'لغة الواجهة')}</span><div className="approved-segment"><button data-testid="language-en" className={!ar ? 'selected' : ''} onClick={() => { setLanguage('en'); write('interface-language', 'en'); }}>English</button><button data-testid="language-ar" className={ar ? 'selected' : ''} onClick={() => { setLanguage('ar'); write('interface-language', 'ar'); }}>العربية</button></div></div>}
+   </div></TasteSessionContext.Provider>;
 }
 
 function HomeFeedTabs({ ar, active, onSelect }: { ar: boolean; active: HomeFeedTab; onSelect: (tab: HomeFeedTab) => void }) {
@@ -438,7 +508,12 @@ function CategoryChips({ ar, active, onSelect, items = categories, testIdPrefix 
 function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorProfile; src?: string }) { return <div className="approved-avatar"><img src={src || profile.avatar} alt={profile.displayName} /></div>; }
 function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, onOpenProfile, onOpenEdit }: { ar: boolean; category: Category; setCategory: (c: Category) => void; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
-  const { data, isLoading } = useExplore({ sort, category: category === 'All' ? undefined : category });
+  const session = useTasteSession();
+  const exploreParams = { sort, category: category === 'All' ? undefined : category };
+  const { data, isLoading } = useExplore(exploreParams, {
+    query: { queryKey: getExploreQueryKey(exploreParams), enabled: session.status !== 'loading', refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
+    request: { credentials: 'include', cache: 'no-store' },
+  });
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const creatorResults = Array.isArray(data?.creators) ? data.creators : [{
     id: 'fheed-alaiban',
@@ -471,7 +546,7 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
 
       {isLoading && <div className="approved-empty">{t('Loading...', 'جارٍ التحميل...')}</div>}
       
-      {data?.authenticated === false && sort === 'best' && (
+      {session.status === 'signed-out' && sort === 'best' && (
          <div className="workspace-notice">
             {t('Sign in to see personalized Best Matches.', 'سجل الدخول لرؤية أفضل التطابقات المخصصة لك.')}
             <button onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Sign in', 'تسجيل الدخول')}</button>
@@ -512,7 +587,8 @@ function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
   const { data: catalog, isLoading: catalogLoading } = useGetTasteCatalog();
   const session = useTasteSession();
   const { data: prefs, isLoading: prefsLoading, error: prefsError } = useGetTastePreferences({
-    query: { retry: false, queryKey: getGetTastePreferencesQueryKey(), enabled: session === 'authenticated' },
+    query: { retry: false, queryKey: getGetTastePreferencesQueryKey(), enabled: session.status === 'authenticated', refetchOnMount: 'always', staleTime: 0 },
+    request: { credentials: 'include', cache: 'no-store' },
   });
   const savePrefs = useSaveTastePreferences();
   const queryClient = useQueryClient();
@@ -549,7 +625,7 @@ function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
     });
   };
 
-  if (session === 'signed-out' || prefsError) {
+  if (session.status === 'signed-out' || prefsError) {
     return (
       <SimpleScreen kicker={ar ? 'تطابق الذوق' : 'Taste Match'} title={ar ? 'ضبط ذوقك' : 'Tune your taste'}>
         <div className="workspace-notice" role="alert">
@@ -561,7 +637,7 @@ function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
     );
   }
 
-  if (catalogLoading || session === 'loading' || prefsLoading) {
+  if (catalogLoading || session.status === 'loading' || prefsLoading) {
     return <SimpleScreen kicker={ar ? 'تطابق الذوق' : 'Taste Match'} title={ar ? 'ضبط ذوقك' : 'Tune your taste'}><div className="approved-empty">{ar ? 'جارٍ التحميل...' : 'Loading...'}</div></SimpleScreen>;
   }
 
@@ -631,6 +707,7 @@ function EditCard({ edit, ar, saved, onSave, onOpen }: { edit: CreatorEdit; ar: 
 }
 function EditDetail({ edit, ar, subscribed, saved, onSave, onSubscribe }: { edit: CreatorEdit; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void }) { const locked = edit.access === 'locked'; const caption = publicCaptionLine(edit, ar); const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption; const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name); return <SimpleScreen kicker={locked ? (ar ? 'للمشتركين فقط' : 'Subscribers only') : (ar ? 'تعديل عام' : 'Public Edit')} title={detailTitle}>{edit.image && <div className={`approved-detail-art ${locked ? 'locked' : ''}`} style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} />{locked && <div><LockKeyhole size={26} />{caption && <strong>{caption}</strong>}</div>}</div>}{isPlaceCategory(edit.category) && caption && caption !== detailTitle && <p className="edit-detail-caption">{caption}</p>}{!edit.image && <div className={`place-detail-panel ${locked ? 'locked' : ''}`}>{locked && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} showName={false} /></div>}{!edit.placeName && (edit.location || edit.locationAr) && <div className="approved-location"><MapPin size={14} />{placeLocation(edit, ar)}</div>}{locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>{isPlaceCategory(edit.category) && edit.image && <PlaceDetails edit={edit} ar={ar} showName={false} />}{edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}<button className={`approved-button wide ${saved ? 'primary' : ''}`} onClick={onSave}>{saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'احفظ هذا التعديل' : 'Save this edit')}</button></>}</SimpleScreen>; }
 function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onEdit, onOpenCollection, onCollections, onAbout, onMatch }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void }) {
+  const session = useTasteSession();
   const ownerView = owner && !visitorPreview;
   const [sealOpen, setSealOpen] = useState(false);
   const [editCategory, setEditCategory] = useState<Category>('All');
@@ -647,7 +724,10 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
   const publicAge = profile.age ? (ar ? `العمر ${profile.age}` : `Age ${profile.age}`) : '';
-  const { data: matchData } = useGetTasteMatch(profile.username);
+  const { data: matchData } = useGetTasteMatch(profile.username, {
+    query: { queryKey: getGetTasteMatchQueryKey(profile.username), enabled: session.status !== 'loading', refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
+    request: { credentials: 'include', cache: 'no-store' },
+  });
   const score = matchData?.match?.score;
 
   return <section className="creator-profile">

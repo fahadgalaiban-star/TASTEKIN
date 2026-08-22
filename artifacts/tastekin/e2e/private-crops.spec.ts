@@ -183,6 +183,19 @@ class PrivateCropApi {
     const url = new URL(request.url());
     const owner = this.isOwner(route);
 
+    if (url.pathname === '/api/me') {
+      await route.fulfill({
+        json: owner
+          ? {
+            user: { id: 'fheed-owner', email: 'founder@tastekin.test' },
+            role: 'creator',
+            creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
+          }
+          : { user: null, role: 'consumer', creator: null },
+      });
+      return;
+    }
+
     if (url.pathname === '/api/creator-workspace') {
       if (request.method() === 'GET') {
         await route.fulfill({ json: owner ? this.workspace : this.publicWorkspace() });
