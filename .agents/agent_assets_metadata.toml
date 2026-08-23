@@ -1,0 +1,16 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "-gHuyj-1T4ZdRcIn27Y2v"
+uri = "file://TASTEKIN-complete-export-20260823T015559Z-3f23.zip"
+type = "unspecified"
+title = "TASTEKIN complete project export"
+description = "Fresh verified ZIP export of the complete TASTEKIN project. SHA-256: e552887388d443b249ea884b1f7c5771f7148c77effa77cf18589a25a8ba0c0d"
+logical_id = "a5f2c66a-2f2f-4355-8e68-5eaa61aa258f"
+content_hash = "sha256:e552887388d443b249ea884b1f7c5771f7148c77effa77cf18589a25a8ba0c0d"
+size = 44576675
+mtime_ms = 1787450170517
+storage_uri = "gcs://replit-rams-assets-pike/rams/assets/repl:02cd68ae-6e5a-402c-bdfd-4c024d7d05fe/a5f2c66a-2f2f-4355-8e68-5eaa61aa258f/fb1f8870-0d09-41fe-8b5b-bb82ee3ca04a"
+storage_version_token = "1787450177953194"
+content_type = "application/octet-stream"
