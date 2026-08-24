@@ -22,17 +22,16 @@ router.get("/me", async (req, res) => {
   }
   const authorization = await ensureCreatorAccount(req.user);
   const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
-  const creator = authorization.ok ? {
-    id: authorization.workspace.creatorId,
-    handle: authorization.workspace.profile.username,
-    displayName: authorization.workspace.profile.displayName,
-    verified: authorization.verified,
-    ownsWorkspace: true,
-  } : null;
   res.json({
     user: { id: req.user.id, email: account?.email ?? req.user.email },
-    role: creator ? "creator" : "consumer",
-    creator,
+    role: authorization.ok ? "creator" : "consumer",
+    creator: authorization.ok ? {
+      id: authorization.workspace.creatorId,
+      handle: authorization.workspace.profile.username,
+      displayName: authorization.workspace.profile.displayName,
+      verified: authorization.verified,
+      ownsWorkspace: true,
+    } : null,
     founderMappingConfigured: founderMappingConfigured(),
   });
 });

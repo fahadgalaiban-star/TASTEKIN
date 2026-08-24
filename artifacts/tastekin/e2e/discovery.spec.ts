@@ -417,7 +417,7 @@ test('keeps owner controls compact and persists featured collection choices', as
   await expect(visitorPreview).toBeVisible();
   const previewBox = await visitorPreview.boundingBox();
   expect(previewBox?.width).toBeLessThanOrEqual(52);
-  await expect(page.getByRole('button', { name: 'Insights' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Insights' })).toBeVisible();
 
   const featuredCards = page.locator('[data-testid^="featured-collection-"]');
   await expect(featuredCards).toHaveCount(2);

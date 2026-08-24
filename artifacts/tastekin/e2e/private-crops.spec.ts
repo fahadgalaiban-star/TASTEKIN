@@ -189,7 +189,7 @@ class PrivateCropApi {
           ? {
             user: { id: 'fheed-owner', email: 'founder@tastekin.test' },
             role: 'creator',
-            creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
+            creator: { id: 'fheed', handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
           }
           : { user: null, role: 'consumer', creator: null },
       });
@@ -294,14 +294,14 @@ class PrivateCropApi {
       return;
     }
 
-    const previewMatch = url.pathname.match(/^\/api\/public-media\/fheed\/([^/]+)\/preview$/);
+    const previewMatch = url.pathname.match(/^\/api\/public-media\/[^/]+\/([^/]+)\/preview$/);
     if (previewMatch) {
       const edit = this.workspace.edits.find((item) => item.id === previewMatch[1]);
       await this.image(route, edit?.access === 'locked' && Boolean(edit.previewImage) ? 200 : 404);
       return;
     }
 
-    const publicMatch = url.pathname.match(/^\/api\/public-media\/fheed\/([^/]+)$/);
+    const publicMatch = url.pathname.match(/^\/api\/public-media\/[^/]+\/([^/]+)$/);
     if (publicMatch) {
       const edit = this.workspace.edits.find((item) => item.id === publicMatch[1]);
       await this.image(route, edit?.access === 'public' && edit.status === 'published' ? 200 : 404);
