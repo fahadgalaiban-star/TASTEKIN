@@ -3,7 +3,7 @@ import { Router, type IRouter } from "express";
 import { usersTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { clearSession, createSession, getSessionId, setSessionCookie, upsertUser } from "../lib/auth";
-import { authorizeFheedCreator, FHEED_DISPLAY_NAME, FHEED_HANDLE, founderMappingConfigured } from "../lib/creator-authorization";
+import { ensureCreatorAccount, founderMappingConfigured } from "../lib/creator-account";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -20,12 +20,19 @@ router.get("/me", async (req, res) => {
     res.json({ user: null, role: "consumer", creator: null });
     return;
   }
-  const authorization = await authorizeFheedCreator(req.user);
+  const authorization = await ensureCreatorAccount(req.user);
   const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
+  const creator = authorization.ok ? {
+    id: authorization.workspace.creatorId,
+    handle: authorization.workspace.profile.username,
+    displayName: authorization.workspace.profile.displayName,
+    verified: authorization.verified,
+    ownsWorkspace: true,
+  } : null;
   res.json({
     user: { id: req.user.id, email: account?.email ?? req.user.email },
-    role: authorization.ok ? "creator" : "consumer",
-    creator: authorization.ok ? { handle: FHEED_HANDLE, displayName: FHEED_DISPLAY_NAME, verified: true, ownsWorkspace: true } : null,
+    role: creator ? "creator" : "consumer",
+    creator,
     founderMappingConfigured: founderMappingConfigured(),
   });
 });

@@ -41,8 +41,7 @@ import {
 import { and, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { Router, type IRouter, type Request, type Response } from "express";
 
-import { FHEED_CREATOR_ID, fheedWorkspaceSeed } from "../lib/creator-workspace-seed";
-import { authorizeFheedCreator } from "../lib/creator-authorization";
+import { creatorByUsername, requireCreator } from "../lib/creator-account";
 
 const router: IRouter = Router();
 
@@ -58,25 +57,11 @@ function requireUser(req: Request, res: Response) {
   return null;
 }
 
-async function getWorkspace() {
-  let [workspace] = await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.creatorId, FHEED_CREATOR_ID));
-  if (!workspace) {
-    await db.insert(creatorWorkspaces).values({
-      creatorId: FHEED_CREATOR_ID,
-      edits: Array.from(fheedWorkspaceSeed.edits) as unknown[],
-      collections: Array.from(fheedWorkspaceSeed.collections) as unknown[],
-      profile: { ...fheedWorkspaceSeed.profile, interests: [...fheedWorkspaceSeed.profile.interests] },
-    }).onConflictDoNothing();
-    [workspace] = await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.creatorId, FHEED_CREATOR_ID));
-  }
-  if (!workspace) throw new Error("Creator workspace could not be initialized");
-  return workspace;
-}
-
 async function getEditContext(editId: string, userId?: string) {
-  const workspace = await getWorkspace();
-  const edit = (workspace.edits as WorkspaceEdit[]).find((item) => item && item.id === editId);
-  if (!edit) return null;
+  const workspaces = await db.select().from(creatorWorkspaces);
+  const workspace = workspaces.find((candidate) => (candidate.edits as WorkspaceEdit[]).some((item) => item && item.id === editId));
+  if (!workspace) return null;
+  const edit = (workspace.edits as WorkspaceEdit[]).find((item) => item && item.id === editId)!;
   const owner = Boolean(userId && workspace.ownerUserId === userId);
   const publicEdit = edit.status === "published" && edit.access === "public";
   return { workspace, edit, owner, canRead: owner || publicEdit };
@@ -227,26 +212,31 @@ router.get("/me/saved-edits", async (req, res): Promise<void> => {
 router.post("/creators/:username/views", async (req, res): Promise<void> => {
   const params = RecordCreatorViewParams.safeParse(req.params);
   const body = RecordCreatorViewBody.safeParse(req.body);
-  if (!params.success || !body.success || params.data.username.toLowerCase() !== FHEED_CREATOR_ID) { res.status(404).json({ error: "Creator not found" }); return; }
+  if (!params.success || !body.success) { res.status(404).json({ error: "Creator not found" }); return; }
+  const workspace = await creatorByUsername(params.data.username);
+  if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
   const user = req.user;
   if (!user) { res.status(201).json(RecordCreatorViewResponse.parse({ recorded: false })); return; }
-  const workspace = await getWorkspace();
-  const context = body.data.editId ? await getEditContext(body.data.editId, user.id) : { canRead: true, owner: workspace.ownerUserId === user.id };
-  if (!context || !context.canRead) { res.status(404).json({ error: "Edit not found" }); return; }
-  if (context.owner) { res.status(201).json(RecordCreatorViewResponse.parse({ recorded: false })); return; }
+  let owner = workspace.ownerUserId === user.id;
+  if (body.data.editId) {
+    const context = await getEditContext(body.data.editId, user.id);
+    if (!context || !context.canRead || context.workspace.creatorId !== workspace.creatorId) { res.status(404).json({ error: "Edit not found" }); return; }
+    owner = context.owner;
+  }
+  if (owner) { res.status(201).json(RecordCreatorViewResponse.parse({ recorded: false })); return; }
   const viewedSince = new Date(Date.now() - 12 * 60 * 60 * 1000);
   const existingConditions = [
-    eq(creatorViewEvents.creatorId, FHEED_CREATOR_ID),
+    eq(creatorViewEvents.creatorId, workspace.creatorId),
     eq(creatorViewEvents.viewerUserId, user.id),
     gt(creatorViewEvents.createdAt, viewedSince),
     body.data.editId ? eq(creatorViewEvents.editId, body.data.editId) : isNull(creatorViewEvents.editId),
   ];
-  const dedupeKey = `${FHEED_CREATOR_ID}:${user.id}:${body.data.editId ?? "profile"}`;
+  const dedupeKey = `${workspace.creatorId}:${user.id}:${body.data.editId ?? "profile"}`;
   const recorded = await db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${dedupeKey}))`);
     const [existing] = await tx.select({ id: creatorViewEvents.id }).from(creatorViewEvents).where(and(...existingConditions)).limit(1);
     if (existing) return false;
-    await tx.insert(creatorViewEvents).values({ creatorId: FHEED_CREATOR_ID, editId: body.data.editId ?? null, viewerUserId: user.id });
+    await tx.insert(creatorViewEvents).values({ creatorId: workspace.creatorId, editId: body.data.editId ?? null, viewerUserId: user.id });
     return true;
   });
   res.status(201).json(RecordCreatorViewResponse.parse({ recorded }));
@@ -265,9 +255,12 @@ router.post("/conversations", async (req, res): Promise<void> => {
   const user = requireUser(req, res);
   if (!user) return;
   const body = CreateConversationBody.safeParse(req.body);
-  if (!body.success || body.data.creatorUsername.toLowerCase() !== FHEED_CREATOR_ID) { res.status(404).json({ error: "Creator not found" }); return; }
-  const workspace = await getWorkspace();
+  if (!body.success) { res.status(404).json({ error: "Creator not found" }); return; }
+  const workspace = await creatorByUsername(body.data.creatorUsername);
+  if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
   if (!workspace.ownerUserId) { res.status(409).json({ error: "Creator messaging is not available yet" }); return; }
+  const [creatorAccount] = await db.select({ isVerified: usersTable.isVerified }).from(usersTable).where(eq(usersTable.id, workspace.ownerUserId)).limit(1);
+  if (!creatorAccount?.isVerified) { res.status(403).json({ error: "Private messages are available only on verified creator profiles" }); return; }
   if (workspace.ownerUserId === user.id) { res.status(403).json({ error: "You cannot message yourself" }); return; }
   const [participantA, participantB] = [user.id, workspace.ownerUserId].sort();
   await db.insert(conversations).values({ participantA, participantB }).onConflictDoNothing();
@@ -309,9 +302,9 @@ router.get("/creator-insights", async (req, res): Promise<void> => {
   privateResponse(res);
   const user = requireUser(req, res);
   if (!user) return;
-  const authorization = await authorizeFheedCreator(user);
+  const authorization = await requireCreator(user);
   if (!authorization.ok) { res.status(authorization.status).json({ error: authorization.error }); return; }
-  const workspace = await getWorkspace();
+  const workspace = authorization.workspace;
   if (workspace.ownerUserId && workspace.ownerUserId !== user.id) { res.status(403).json({ error: "Creator ownership is required" }); return; }
   const editIds = (workspace.edits as WorkspaceEdit[]).filter((edit) => edit.status === "published" && typeof edit.id === "string").map((edit) => edit.id as string);
   const countFor = async (table: typeof editLikes | typeof editSaves | typeof editComments, editId?: string) => {
@@ -320,7 +313,7 @@ router.get("/creator-insights", async (req, res): Promise<void> => {
     return Number(row?.count ?? 0);
   };
   const [profileViews, totalLikes, totalSaves, totalComments] = await Promise.all([
-    db.select({ count: sql<number>`count(*)::int` }).from(creatorViewEvents).where(and(eq(creatorViewEvents.creatorId, FHEED_CREATOR_ID), isNull(creatorViewEvents.editId))),
+    db.select({ count: sql<number>`count(*)::int` }).from(creatorViewEvents).where(and(eq(creatorViewEvents.creatorId, workspace.creatorId), isNull(creatorViewEvents.editId))),
     countFor(editLikes), countFor(editSaves), countFor(editComments),
   ]);
   const edits = await Promise.all(editIds.map(async (editId) => {
