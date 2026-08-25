@@ -103,6 +103,16 @@ const seedCollections: CreatorCollection[] = [
 
 const read = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(`tastekin:${key}`) || '') as T; } catch { return fallback; } };
 const write = (key: string, value: unknown) => localStorage.setItem(`tastekin:${key}`, JSON.stringify(value));
+async function describeFailedResponse(response: Response) {
+  let detail = '';
+  try {
+    const payload = await response.json();
+    detail = (payload && (payload.error || payload.message)) || JSON.stringify(payload);
+  } catch {
+    try { detail = await response.text(); } catch { /* no readable body */ }
+  }
+  return `HTTP ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`;
+}
 const imageSrc = (image?: string) => image?.startsWith('/objects/') ? `/api/storage${image}` : image || '';
 const cropAspectRatio = (_aspect?: CropAspect, crop?: CropMetadata) => crop?.outputWidth && crop?.outputHeight ? `${crop.outputWidth} / ${crop.outputHeight}` : _aspect === 'square' ? '1 / 1' : _aspect === 'story' ? '9 / 16' : '4 / 5';
 const placeCategories = new Set<CreatorEdit['category']>(['Restaurants', 'Places', 'Travel']);
@@ -459,9 +469,11 @@ function TastekinApp() {
       const response = await fetch(`/api/edits/${encodeURIComponent(id)}/save`, {
         method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !wasSaved }),
       });
-      if (!response.ok) throw new Error('Could not update your saved Edits.');
-    } catch {
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+    } catch (err) {
       setSaved(saved);
+      const detail = err instanceof Error ? err.message : String(err);
+      window.alert(`${ar ? 'تعذر تحديث الحفظ' : 'Could not update saved'}: ${detail}`);
     }
   };
   const saveFeaturedCollections = (next: string[]) => {
@@ -891,9 +903,15 @@ function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { e
     setEngagement({ ...prior, liked: !prior.liked, likeCount: Math.max(0, prior.likeCount + (prior.liked ? -1 : 1)) });
     try {
       const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/like`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !prior.liked }) });
-      if (!response.ok) throw new Error();
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
       setEngagement(await response.json() as EditEngagement);
-    } catch { setEngagement(prior); setError(ar ? 'تعذر تحديث الإعجاب.' : 'Could not update your like.'); } finally { setLiking(false); }
+    } catch (err) {
+      setEngagement(prior);
+      const detail = err instanceof Error ? err.message : String(err);
+      const message = `${ar ? 'تعذر تحديث الإعجاب' : 'Could not update your like'}: ${detail}`;
+      setError(message);
+      window.alert(message);
+    } finally { setLiking(false); }
   };
   const submitComment = async () => {
     if (session.status !== 'authenticated') { signIn(); return; }
@@ -901,11 +919,7 @@ function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { e
     setSending(true); setError('');
     try {
       const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: comment.trim() }) });
-      if (!response.ok) {
-        let detail = '';
-        try { const payload = await response.json(); detail = (payload && (payload.error || payload.message)) || JSON.stringify(payload); } catch { try { detail = await response.text(); } catch { /* no readable body */ } }
-        throw new Error(`HTTP ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`);
-      }
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
       const created = await response.json() as EditComment;
       setComments((current) => [...current, created]); setComment(''); setEngagement((current) => ({ ...current, commentCount: current.commentCount + 1 }));
     } catch (err) {
