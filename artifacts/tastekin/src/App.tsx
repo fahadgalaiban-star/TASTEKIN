@@ -901,10 +901,19 @@ function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { e
     setSending(true); setError('');
     try {
       const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: comment.trim() }) });
-      if (!response.ok) throw new Error();
+      if (!response.ok) {
+        let detail = '';
+        try { const payload = await response.json(); detail = (payload && (payload.error || payload.message)) || JSON.stringify(payload); } catch { try { detail = await response.text(); } catch { /* no readable body */ } }
+        throw new Error(`HTTP ${response.status} ${response.statusText}${detail ? ` — ${detail}` : ''}`);
+      }
       const created = await response.json() as EditComment;
       setComments((current) => [...current, created]); setComment(''); setEngagement((current) => ({ ...current, commentCount: current.commentCount + 1 }));
-    } catch { setError(ar ? 'تعذر إرسال تعليقك.' : 'Could not post your comment.'); } finally { setSending(false); }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const message = `${ar ? 'تعذر إرسال تعليقك' : 'Could not post your comment'}: ${detail}`;
+      setError(message);
+      window.alert(message);
+    } finally { setSending(false); }
   };
   const removeComment = async (commentId: string) => {
     const removed = comments.find((item) => item.id === commentId);
