@@ -273,12 +273,14 @@ button { font:inherit; cursor:pointer; }
 .edit-reactions button, .edit-reactions span { min-height:36px; display:inline-flex; align-items:center; gap:5px; padding:0 9px; border:0; border-radius:999px; background:#f0eae2; color:#71675f; font-size:11px; font-weight:800; }
 .edit-reactions button.active { background:#f6dfdc; color:var(--tk-coral); }
 .edit-reactions button.save-pill.active { background:#f7ecec; color:var(--tk-wine); }
+.edit-reactions button.share-pill { color:var(--tk-wine); }
 .edit-reactions span { background:transparent; padding-inline:5px; }
 .comment-composer, .message-composer { display:flex; align-items:center; gap:7px; }
 .comment-composer input { min-width:0; flex:1; min-height:42px; padding:0 12px; border:1px solid var(--tk-border); border-radius:999px; outline:none; background:var(--tk-card); color:var(--tk-ink); font:inherit; font-size:12px; }
 .comment-composer input:focus { border-color:var(--tk-wine); box-shadow:0 0 0 3px rgba(75,31,42,.08); }
 .comment-composer .approved-icon { width:42px; height:42px; flex:0 0 42px; background:var(--tk-wine); color:#fff; }
 .engagement-error { padding:8px 10px; border-radius:10px; background:#fff0e6; color:#8b3d1c; font-size:11px; font-weight:700; }
+.share-notice { padding:8px 10px; border-radius:10px; background:#f7ecec; color:var(--tk-wine); font-size:11px; font-weight:700; word-break:break-word; }
 .comment-list { display:grid; gap:11px; }
 .comment-list article { position:relative; padding-bottom:10px; border-bottom:1px solid #ebe4db; }
 .comment-list article:last-child { padding-bottom:0; border-bottom:0; }

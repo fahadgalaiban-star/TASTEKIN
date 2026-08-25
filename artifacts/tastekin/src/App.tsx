@@ -6,7 +6,7 @@ import { tasteCategoryLabel } from '@workspace/taste-catalog';
 import {
   Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, CircleUserRound, Eye, FileText, Heart, Inbox, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, ShieldCheck, Upload, UserRound, X, ZoomIn, ZoomOut,
+  Send, Share2, ShieldCheck, Upload, UserRound, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import './approved.css';
@@ -459,6 +459,24 @@ function TastekinApp() {
     if (next !== 'profile' && next !== 'profileEdit') setVisitorPreview(false);
     setScreen(next); setMenuOpen(false);
   };
+  const pendingSharedPost = useRef<{ username: string; editId: string } | null>(null);
+  useEffect(() => {
+    const match = window.location.pathname.match(/^\/posts\/([^/]+)\/([^/]+)\/?$/);
+    if (!match) return;
+    const username = decodeURIComponent(match[1]);
+    const editId = decodeURIComponent(match[2]);
+    pendingSharedPost.current = { username, editId };
+    setSelectedCreatorUsername(username);
+  }, []);
+  useEffect(() => {
+    const pending = pendingSharedPost.current;
+    if (!pending || pending.username !== selectedCreatorUsername) return;
+    const pool = pending.username === session.creator?.handle ? creatorEdits : publicCreatorEdits;
+    if (!pool.some((item) => item.id === pending.editId)) return;
+    pendingSharedPost.current = null;
+    setSelectedEditId(pending.editId);
+    go('edit');
+  }, [selectedCreatorUsername, creatorEdits, publicCreatorEdits, session.creator?.handle]);
   const toggleSaved = async (id: string) => {
     if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; }
     const wasSaved = saved.includes(id);
@@ -868,13 +886,13 @@ function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSu
     {locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>
       {isPlaceCategory(edit.category) && edit.image && <PlaceDetails edit={edit} ar={ar} showName={false} />}
       {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
-      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} ar={ar} saved={saved} onSave={onSave} />
+      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} onSave={onSave} />
       <button className={`approved-button wide ${saved ? 'primary' : ''}`} onClick={onSave}>{saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'احفظ هذا التعديل' : 'Save this edit')}</button>
     </>}
   </SimpleScreen>;
 }
 
-function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { editId: string; creatorUsername: string; ar: boolean; saved: boolean; onSave: () => void }) {
+function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, onSave }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; onSave: () => void }) {
   const session = useTasteSession();
   const [engagement, setEngagement] = useState<EditEngagement>({ editId, likeCount: 0, commentCount: 0, liked: false, saved });
   const [comments, setComments] = useState<EditComment[]>([]);
@@ -939,18 +957,38 @@ function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { e
       setEngagement((current) => ({ ...current, commentCount: Math.max(0, current.commentCount - 1) }));
     } catch { setComments((current) => [...current, removed]); setError(ar ? 'تعذر حذف التعليق.' : 'Could not delete this comment.'); }
   };
+  const [shareNotice, setShareNotice] = useState('');
+  const shareNoticeTimeout = useRef<number | null>(null);
+  useEffect(() => () => { if (shareNoticeTimeout.current) window.clearTimeout(shareNoticeTimeout.current); }, []);
+  const sharePost = async () => {
+    const shareUrl = `${window.location.origin}/posts/${encodeURIComponent(creatorUsername)}/${encodeURIComponent(editId)}`;
+    const shareData = { title: creatorUsername ? `${creatorUsername} · TASTEKIN` : 'TASTEKIN', text: shareCaption || '', url: shareUrl };
+    if (navigator.share) {
+      try { await navigator.share(shareData); return; }
+      catch (err) { if (err instanceof Error && err.name === 'AbortError') return; }
+    }
+    if (shareNoticeTimeout.current) { window.clearTimeout(shareNoticeTimeout.current); shareNoticeTimeout.current = null; }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setShareNotice(ar ? 'تم نسخ الرابط' : 'Link copied');
+      shareNoticeTimeout.current = window.setTimeout(() => setShareNotice(''), 2500);
+    } catch {
+      setShareNotice(`${ar ? 'انسخ هذا الرابط' : 'Copy this link'}: ${shareUrl}`);
+    }
+  };
   return <section className="edit-engagement" aria-label={ar ? 'تفاعل التعديل' : 'Edit engagement'}>
-    <div style={{ padding: '4px 2px', color: '#b23b3b', fontSize: 10, fontWeight: 800, letterSpacing: '.02em' }}>DIAG-BUILD-2026-08-25-C — if you don't see this exact line, the live site has not rebuilt yet</div>
     <div className="edit-reactions">
       <button className={engagement.liked ? 'active' : ''} onClick={() => void changeLike()} aria-pressed={engagement.liked} disabled={liking}><Heart size={18} fill={engagement.liked ? 'currentColor' : 'none'} /> {engagement.likeCount}</button>
       <span><MessageCircle size={18} /> {engagement.commentCount}</span>
       <button className={`save-pill ${saved ? 'active' : ''}`} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {ar ? 'حفظ' : 'Save'}</button>
+      <button className="share-pill" onClick={() => void sharePost()} aria-label={ar ? 'مشاركة هذا التعديل' : 'Share this edit'}><Share2 size={18} /></button>
     </div>
     <div className="comment-composer">
       <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
       <button className="approved-icon" onClick={() => void submitComment()} disabled={sending} aria-label={ar ? 'إرسال تعليق' : 'Post comment'}><Send size={17} /></button>
     </div>
     {error && <div className="engagement-error" role="alert">{error}</div>}
+    {shareNotice && <div className="share-notice" role="status">{shareNotice}</div>}
     <div className="comment-list">{comments.map((item) => <article key={item.id}><div><strong>{item.authorName}</strong><time>{new Date(item.createdAt).toLocaleDateString()}</time></div><p>{item.body}</p>{item.canDelete && <button onClick={() => void removeComment(item.id)}>{ar ? 'حذف' : 'Delete'}</button>}</article>)}</div>
   </section>;
 }
