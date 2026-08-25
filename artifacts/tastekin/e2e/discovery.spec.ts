@@ -27,6 +27,22 @@ async function openConsumerProfile(page: Page) {
   await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
 }
 
+const quietTailoringFeed = {
+  id: 'quiet-tailoring',
+  category: 'Fashion',
+  title: 'Quiet tailoring',
+  titleAr: 'أناقة هادئة',
+  caption: 'A soft-structured look for a long city day.',
+  captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.',
+  image: '/tastekin-media/quiet-tailoring.webp',
+  location: 'Mayfair, London',
+  locationAr: 'مايفير، لندن',
+  altText: 'Tailoring.',
+  access: 'public',
+  status: 'published',
+  collectionIds: [],
+};
+
 test.beforeEach(async ({ page }) => {
   const savedEditIds = new Set<string>();
   await page.addInitScript(() => {
@@ -41,7 +57,7 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify({
         user: { id: 'fheed-founder', email: 'founder@tastekin.test' },
         role: 'creator',
-        creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
+        creator: { id: 'fheed', handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
       }),
     });
   });
@@ -57,6 +73,12 @@ test.beforeEach(async ({ page }) => {
       contentType: 'application/json',
       body: JSON.stringify({ editId, likeCount: 0, commentCount: 0, liked: false, saved: body.active === true }),
     });
+  });
+  await page.route('**/api/relationships/follow/**', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ following: false }) });
+  });
+  await page.route('**/api/relationships', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ active: true }) });
   });
   await page.goto('/');
 });
@@ -84,7 +106,7 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(page.getByRole('button', { name: 'Best Match' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New' })).toBeVisible();
   await page.getByTestId('nav-add').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   await page.getByTestId('nav-saved').click();
   await expect(page.getByRole('heading', { name: 'Saved' })).toBeVisible();
   await page.getByTestId('nav-you').click();
@@ -113,6 +135,22 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
 });
 
 test('filters each creator profile independently of Home and Explore', async ({ page }) => {
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          creatorUsername: 'fheed',
+          creatorName: 'Fheed Alaiban',
+          creatorVerified: true,
+          creatorAvatar: '/tastekin-media/fheed-profile.webp',
+          following: true,
+          edit: quietTailoringFeed,
+        }],
+      }),
+    });
+  });
+  await page.reload();
   await switchToConsumer(page);
   await openConsumerProfile(page);
 
@@ -288,13 +326,29 @@ test('keeps locked profile edits protected for visitor and owner preview', async
 });
 
 test('persists saves, follow state, collections, and the owner profile entry point', async ({ page }) => {
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          creatorUsername: 'fheed',
+          creatorName: 'Fheed Alaiban',
+          creatorVerified: true,
+          creatorAvatar: '/tastekin-media/fheed-profile.webp',
+          following: false,
+          edit: quietTailoringFeed,
+        }],
+      }),
+    });
+  });
+  await page.reload();
   await page.getByTestId('edit-title-quiet-tailoring').click();
   await page.getByRole('button', { name: 'Save this edit' }).click();
   await expect(page.getByRole('main').getByRole('button', { name: 'Saved' })).toBeVisible();
   await page.getByTestId('nav-saved').click();
   await expect(page.getByTestId('edit-card-quiet-tailoring')).toBeVisible();
   await page.getByTestId('save-quiet-tailoring').click();
-  await expect(page.getByText('Nothing saved yet. Explore Fheed’s edits and keep what speaks to you.')).toBeVisible();
+  await expect(page.getByText('Nothing saved yet. Explore creators and keep what speaks to you.')).toBeVisible();
 
   await switchToConsumer(page);
   await openConsumerProfile(page);
@@ -330,6 +384,7 @@ test('persists saves, follow state, collections, and the owner profile entry poi
 });
 
 test('keeps owner controls compact and persists featured collection choices', async ({ page }) => {
+  let featuredIds = ['quiet-luxury', 'coastal-edit'];
   await page.route('**/api/creator-workspace', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -347,6 +402,12 @@ test('keeps owner controls compact and persists featured collection choices', as
       }),
     });
   });
+  await page.route('**/api/creator-featured-collections', async (route) => {
+    if (route.request().method() === 'PUT') {
+      featuredIds = route.request().postDataJSON().collectionIds;
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ collectionIds: featuredIds }) });
+  });
   await page.reload();
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
@@ -356,7 +417,7 @@ test('keeps owner controls compact and persists featured collection choices', as
   await expect(visitorPreview).toBeVisible();
   const previewBox = await visitorPreview.boundingBox();
   expect(previewBox?.width).toBeLessThanOrEqual(52);
-  await expect(page.getByRole('button', { name: 'Insights' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Insights' })).toBeVisible();
 
   const featuredCards = page.locator('[data-testid^="featured-collection-"]');
   await expect(featuredCards).toHaveCount(2);
@@ -375,9 +436,7 @@ test('keeps owner controls compact and persists featured collection choices', as
   await expect(page.getByTestId('featured-collection-quiet-luxury')).toHaveCount(0);
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 
-  const persistedFeaturedIds = await page.evaluate(() => localStorage.getItem('tastekin:featured-collection-ids'));
-  expect(persistedFeaturedIds).toBe(JSON.stringify(['coastal-edit']));
-  await page.addInitScript((value) => localStorage.setItem('tastekin:featured-collection-ids', value), persistedFeaturedIds);
+  expect(featuredIds).toEqual(['coastal-edit']);
   await page.reload();
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
@@ -395,14 +454,8 @@ test('keeps a subscriber-only edit on its locked preview until media access is a
   await expect(page.getByRole('button', { name: /Subscribe/ })).toBeVisible();
 
   await page.getByRole('button', { name: /Subscribe/ }).click();
-  await expect(page.getByRole('heading', { name: 'Subscribe to Fheed' })).toBeVisible();
-  await page.getByRole('button', { name: /Subscribe/ }).click();
-  await expect(page.getByRole('heading', { name: 'You’re subscribed' })).toBeVisible();
-
-  await page.getByTestId('nav-home').click();
-  await page.getByTestId('edit-title-private-hotel').click();
-  await expect(page.locator('.approved-detail-art')).toHaveClass(/locked/);
-  await expect(page.getByText('This edit is for subscribers')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Subscription pending confirmation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Subscribe to Fheed Alaiban' })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Subscribe/ })).toBeDisabled();
+  await expect(page.getByText('No payment or access is being simulated.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save this edit' })).toHaveCount(0);
 });

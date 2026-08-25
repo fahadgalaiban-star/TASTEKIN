@@ -5,6 +5,7 @@ import discoveryRouter from "./discovery";
 import creatorWorkspaceRouter from "./creator-workspace";
 import engagementRouter from "./engagement";
 import storageRouter from "./storage";
+import verificationRouter from "./verification";
 
 const router: IRouter = Router();
 
@@ -14,5 +15,6 @@ router.use(discoveryRouter);
 router.use(creatorWorkspaceRouter);
 router.use(engagementRouter);
 router.use(storageRouter);
+router.use(verificationRouter);
 
 export default router;
