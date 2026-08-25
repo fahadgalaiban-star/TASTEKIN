@@ -926,6 +926,7 @@ function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { e
     } catch { setComments((current) => [...current, removed]); setError(ar ? 'تعذر حذف التعليق.' : 'Could not delete this comment.'); }
   };
   return <section className="edit-engagement" aria-label={ar ? 'تفاعل التعديل' : 'Edit engagement'}>
+    <div style={{ padding: '4px 2px', color: '#b23b3b', fontSize: 10, fontWeight: 800, letterSpacing: '.02em' }}>DIAG-BUILD-2026-08-25-C — if you don't see this exact line, the live site has not rebuilt yet</div>
     <div className="edit-reactions">
       <button className={engagement.liked ? 'active' : ''} onClick={() => void changeLike()} aria-pressed={engagement.liked} disabled={liking}><Heart size={18} fill={engagement.liked ? 'currentColor' : 'none'} /> {engagement.likeCount}</button>
       <span><MessageCircle size={18} /> {engagement.commentCount}</span>
