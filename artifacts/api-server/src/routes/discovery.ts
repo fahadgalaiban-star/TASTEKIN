@@ -11,7 +11,7 @@ import {
   SaveTastePreferencesResponse,
   UpdateRelationshipBody,
 } from "@workspace/api-zod";
-import { creatorWorkspaces, db, userTastePreferences } from "@workspace/db";
+import { creatorFollows, creatorWorkspaces, db, usersTable, userTastePreferences } from "@workspace/db";
 import {
   MIN_TASTE_CATEGORIES,
   MIN_TASTE_TAGS,
@@ -22,9 +22,10 @@ import {
   tasteTagIds,
   tasteTags,
 } from "@workspace/taste-catalog";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { calculateTasteMatch, tasteReasons, type CreatorTasteProfile, type TasteSelection } from "../lib/taste-match";
+import { creatorByUsername } from "../lib/creator-account";
 
 const router: IRouter = Router();
 function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }
@@ -186,6 +187,41 @@ const publicEdit = <T extends (typeof edits)[number]>(edit: T) =>
 
 type Creator = (typeof creators)[number];
 
+async function allCreators(): Promise<Creator[]> {
+  const rows = await db.select({ workspace: creatorWorkspaces, verified: usersTable.isVerified })
+    .from(creatorWorkspaces)
+    .leftJoin(usersTable, eq(creatorWorkspaces.ownerUserId, usersTable.id));
+  const persisted = rows.map(({ workspace, verified }) => {
+    const profile = workspace.profile;
+    const city = [profile.city, profile.country].filter(Boolean).join(", ");
+    const publishedEditCategories = Array.isArray(workspace.edits)
+      ? workspace.edits.flatMap((edit) => {
+        if (!edit || typeof edit !== "object") return [];
+        const value = edit as { category?: unknown; status?: unknown };
+        return value.status === "published" && typeof value.category === "string" && tasteCategoryIds.includes(value.category as never)
+          ? [value.category]
+          : [];
+      })
+      : [];
+    return {
+      id: workspace.creatorId,
+      username: profile.username,
+      displayName: profile.displayName,
+      avatar: profile.avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
+      categories: Array.from(new Set([...profile.interests, ...publishedEditCategories])),
+      tasteTags: [],
+      city,
+      verified: Boolean(verified),
+      bio: profile.bio,
+      createdAt: workspace.createdAt.toISOString(),
+    };
+  });
+  const byUsername = new Map<string, Creator>();
+  creators.forEach((creator) => byUsername.set(creator.username.toLowerCase(), creator));
+  persisted.forEach((creator) => byUsername.set(creator.username.toLowerCase(), creator));
+  return Array.from(byUsername.values());
+}
+
 function serializePreferences(selection: TasteSelection, updatedAt: Date) {
   return {
     categories: selection.categories,
@@ -287,7 +323,8 @@ router.get("/creators", async (req, res) => {
   const params = parsed.success ? parsed.data : {};
   const query = params.q?.toLowerCase();
   const preferences = req.user ? await preferencesForUser(req.user.id) : null;
-  const result = creators.filter((creator) => {
+  const availableCreators = await allCreators();
+  const result = availableCreators.filter((creator) => {
     const matchesQuery =
       !query ||
        `${creator.displayName} ${creator.username} ${creator.city} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")}`
@@ -302,7 +339,7 @@ router.get("/creators", async (req, res) => {
 });
 
 router.get("/creators/:username", async (req, res) => {
-  const creator = creators.find((item) => item.username === req.params.username);
+  const creator = (await allCreators()).find((item) => item.username === req.params.username);
   if (!creator) {
     res.status(404).json({ error: "Creator not found" });
     return;
@@ -326,7 +363,7 @@ router.get("/creators/:username", async (req, res) => {
 router.get("/taste-match/:username", async (req, res): Promise<void> => {
   noStoreSessionResponse(res);
   const parsed = GetTasteMatchParams.safeParse(req.params);
-  const creator = parsed.success ? creators.find((item) => item.username === parsed.data.username) : undefined;
+  const creator = parsed.success ? (await allCreators()).find((item) => item.username === parsed.data.username) : undefined;
   if (!creator) {
     res.status(404).json({ error: "Creator not found" });
     return;
@@ -358,29 +395,20 @@ router.get("/explore", async (req, res) => {
   const matchesCity = (creator: Creator) =>
     !normalizedCity || creator.city.toLowerCase().includes(normalizedCity);
   const preferences = req.user ? await preferencesForUser(req.user.id) : null;
-  const [fheedWorkspace] = await db
-    .select()
-    .from(creatorWorkspaces)
-    .where(eq(creatorWorkspaces.creatorId, "fheed"));
-  const savedFheedAvatar = fheedWorkspace?.profile
-    && typeof fheedWorkspace.profile === "object"
-    && typeof (fheedWorkspace.profile as { avatar?: unknown }).avatar === "string"
-    ? (fheedWorkspace.profile as { avatar: string }).avatar
-    : null;
-  const fheedAvatar = savedFheedAvatar?.startsWith("/objects/")
-    ? "/api/public-profile-media"
-    : savedFheedAvatar ?? creators.find((creator) => creator.username === "fheed")?.avatar;
-  const viewingOwnFheedProfile = Boolean(req.user && fheedWorkspace?.ownerUserId === req.user.id);
+  const [ownWorkspace] = req.user
+    ? await db.select({ creatorId: creatorWorkspaces.creatorId }).from(creatorWorkspaces)
+      .where(eq(creatorWorkspaces.ownerUserId, req.user.id)).limit(1)
+    : [];
   const sort = params.sort ?? (req.user ? "best" : "new");
-  const matchedCreators = creators
-    .filter((creator) => creator.verified)
-    .filter((creator) => !viewingOwnFheedProfile || creator.username !== "fheed")
+  const availableCreators = await allCreators();
+  const matchedCreators = availableCreators
+    .filter((creator) => creator.id !== ownWorkspace?.creatorId)
     .filter((creator) => matches(`${creator.displayName} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")} ${creator.city}`))
     .filter(matchesCategory)
     .filter(matchesCity)
     .map((creator) => ({
       ...creatorResponse(creator, preferences?.selection ?? null, Boolean(req.user)),
-      avatar: creator.username === "fheed" ? fheedAvatar : creator.avatar,
+      avatar: creator.avatar,
       createdAt: creator.createdAt,
     }))
     .sort((left, right) => sort === "new"
@@ -409,11 +437,30 @@ router.get("/edits/:id", (req, res) => {
   res.json(publicEdit(edit));
 });
 
-router.post("/relationships", (req, res) => {
+router.get("/relationships/follow/:targetId", async (req, res) => {
+  noStoreSessionResponse(res);
+  if (!req.user) { res.json({ type: "follow", targetId: req.params.targetId, active: false, updatedAt: new Date(0).toISOString() }); return; }
+  const creator = await creatorByUsername(req.params.targetId);
+  if (!creator) { res.status(404).json({ error: "Creator not found" }); return; }
+  const [follow] = await db.select().from(creatorFollows).where(and(eq(creatorFollows.followerUserId, req.user.id), eq(creatorFollows.creatorId, creator.creatorId)));
+  res.json({ type: "follow", targetId: req.params.targetId, active: follow?.creatorId === creator.creatorId, updatedAt: (follow?.createdAt ?? new Date(0)).toISOString() });
+});
+
+router.post("/relationships", async (req, res) => {
   const parsed = UpdateRelationshipBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid relationship" });
     return;
+  }
+  if (!req.user) { res.status(401).json({ error: "Sign in to update relationships" }); return; }
+  if (parsed.data.type !== "follow") { res.status(400).json({ error: "This relationship is managed by its dedicated endpoint" }); return; }
+  const creator = await creatorByUsername(parsed.data.targetId);
+  if (!creator) { res.status(404).json({ error: "Creator not found" }); return; }
+  if (creator.ownerUserId === req.user.id) { res.status(403).json({ error: "You cannot follow yourself" }); return; }
+  if (parsed.data.active) {
+    await db.insert(creatorFollows).values({ followerUserId: req.user.id, creatorId: creator.creatorId }).onConflictDoNothing();
+  } else {
+    await db.delete(creatorFollows).where(and(eq(creatorFollows.followerUserId, req.user.id), eq(creatorFollows.creatorId, creator.creatorId)));
   }
   res.json({ ...parsed.data, updatedAt: new Date().toISOString() });
 });

@@ -1,4 +1,4 @@
-import { index, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { index, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -67,6 +67,38 @@ export const creatorViewEvents = pgTable("creator_view_events", {
 }, (table) => [
   index("creator_view_events_creator_created_idx").on(table.creatorId, table.createdAt),
   index("creator_view_events_edit_id_idx").on(table.editId),
+]);
+
+/**
+ * Following is deliberately normalized and private. TASTEKIN uses it to shape
+ * discovery, but never exposes follower/following totals as social proof.
+ */
+export const creatorFollows = pgTable("creator_follows", {
+  followerUserId: text("follower_user_id").notNull(),
+  creatorId: text("creator_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.followerUserId, table.creatorId] }),
+  index("creator_follows_creator_id_idx").on(table.creatorId),
+]);
+
+/**
+ * A member may maintain one verification application. Approval never happens
+ * from the public profile: only a configured TASTEKIN administrator can change
+ * the status and the user's verification flag.
+ */
+export const verificationApplications = pgTable("verification_applications", {
+  userId: text("user_id").primaryKey(),
+  statement: text("statement").notNull(),
+  evidenceLinks: jsonb("evidence_links").notNull().default([]),
+  status: text("status").notNull().default("pending"),
+  reviewNote: text("review_note"),
+  reviewedByUserId: text("reviewed_by_user_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+}, (table) => [
+  index("verification_applications_status_created_idx").on(table.status, table.createdAt),
 ]);
 
 export const insertEditCommentSchema = createInsertSchema(editComments).omit({ id: true, createdAt: true, updatedAt: true });

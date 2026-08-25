@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 
 export type CreatorProfileRecord = {
   displayName: string;
@@ -22,7 +22,10 @@ export const creatorWorkspaces = pgTable("creator_workspaces", {
   revision: integer("revision").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => [
+  uniqueIndex("creator_workspaces_owner_user_id_unique").on(table.ownerUserId),
+  index("creator_workspaces_updated_at_idx").on(table.updatedAt),
+]);
 
 export const creatorMediaUploads = pgTable("creator_media_uploads", {
   objectPath: text("object_path").primaryKey(),
@@ -32,5 +35,14 @@ export const creatorMediaUploads = pgTable("creator_media_uploads", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const creatorFeaturedCollections = pgTable("creator_featured_collections", {
+  creatorId: text("creator_id").notNull(),
+  collectionId: text("collection_id").notNull(),
+  position: integer("position").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.creatorId, table.collectionId] }),
+  uniqueIndex("creator_featured_collections_position_unique").on(table.creatorId, table.position),
+]);
 
 export type CreatorWorkspaceRecord = typeof creatorWorkspaces.$inferSelect;

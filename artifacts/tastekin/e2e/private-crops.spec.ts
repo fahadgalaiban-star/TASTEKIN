@@ -158,13 +158,13 @@ class PrivateCropApi {
           if (edit.access === 'locked' && edit.image) {
             return {
               ...edit,
-              image: `/api/public-media/${edit.id}/preview`,
-              previewImage: `/api/public-media/${edit.id}/preview`,
+              image: `/api/public-media/fheed/${edit.id}/preview`,
+              previewImage: `/api/public-media/fheed/${edit.id}/preview`,
               sourceImage: undefined,
             };
           }
           return edit.image?.startsWith('/objects/')
-            ? { ...edit, image: `/api/public-media/${edit.id}` }
+            ? { ...edit, image: `/api/public-media/fheed/${edit.id}` }
             : edit;
         }),
     };
@@ -189,7 +189,7 @@ class PrivateCropApi {
           ? {
             user: { id: 'fheed-owner', email: 'founder@tastekin.test' },
             role: 'creator',
-            creator: { handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
+            creator: { id: 'fheed', handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
           }
           : { user: null, role: 'consumer', creator: null },
       });
@@ -244,7 +244,7 @@ class PrivateCropApi {
           ...this.profile,
           ...payload,
           avatarObjectPath,
-          avatar: avatarObjectPath ? '/api/public-profile-media' : this.profile.avatar,
+          avatar: avatarObjectPath ? '/api/public-profile-media/fheed' : this.profile.avatar,
           age: payload.showAge && payload.dateOfBirth ? 30 : null,
           revision: this.workspace.revision,
         };
@@ -289,19 +289,19 @@ class PrivateCropApi {
       return;
     }
 
-    if (url.pathname === '/api/public-profile-media') {
+    if (url.pathname === '/api/public-profile-media/fheed') {
       await this.image(route, this.profile.avatarObjectPath && !this.cleanedPaths.has(this.profile.avatarObjectPath) ? 200 : 404);
       return;
     }
 
-    const previewMatch = url.pathname.match(/^\/api\/public-media\/([^/]+)\/preview$/);
+    const previewMatch = url.pathname.match(/^\/api\/public-media\/[^/]+\/([^/]+)\/preview$/);
     if (previewMatch) {
       const edit = this.workspace.edits.find((item) => item.id === previewMatch[1]);
       await this.image(route, edit?.access === 'locked' && Boolean(edit.previewImage) ? 200 : 404);
       return;
     }
 
-    const publicMatch = url.pathname.match(/^\/api\/public-media\/([^/]+)$/);
+    const publicMatch = url.pathname.match(/^\/api\/public-media\/[^/]+\/([^/]+)$/);
     if (publicMatch) {
       const edit = this.workspace.edits.find((item) => item.id === publicMatch[1]);
       await this.image(route, edit?.access === 'public' && edit.status === 'published' ? 200 : 404);
@@ -319,7 +319,7 @@ async function creatorPage(browser: Browser, api: PrivateCropApi) {
   await api.attach(page);
   await page.goto('/');
   await page.getByTestId('nav-add').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   return { context, page };
 }
 
@@ -350,7 +350,7 @@ async function publish(page: Page, title: string, access: Access) {
     await page.getByRole('button', { name: 'Subscribers Only' }).click();
   }
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
 }
 
 test('an authenticated creator persists each exact canonical crop format after publishing and refreshing', async ({ browser }) => {
@@ -402,10 +402,10 @@ test('anonymous visitors receive only a locked crop preview and cannot retrieve 
   await visitor.goto('/');
   await expect(visitor.getByRole('button', { name: 'Locked crop stays private' })).toBeVisible();
   const card = visitor.locator('article').filter({ hasText: 'Locked crop stays private' });
-  await expect(card.locator('img')).toHaveAttribute('src', `/api/public-media/${locked!.id}/preview`);
+  await expect(card.locator('img')).toHaveAttribute('src', `/api/public-media/fheed/${locked!.id}/preview`);
 
   const [preview, source, crop] = await visitor.evaluate(async ({ id, sourceImage, image }) => Promise.all([
-    fetch(`/api/public-media/${id}/preview`).then((response) => response.status),
+    fetch(`/api/public-media/fheed/${id}/preview`).then((response) => response.status),
     fetch(`/api/storage${sourceImage}`).then((response) => response.status),
     fetch(`/api/storage${image}`).then((response) => response.status),
   ]), { id: locked!.id, sourceImage: locked!.sourceImage, image: locked!.image });
@@ -423,7 +423,7 @@ test('cancelling after a crop leaves no remote private renditions to clean up', 
 
   await prepareCrop(page);
   await page.getByLabel('Close editor').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   expect(api.objectPaths).toEqual([]);
   expect(api.cleanupRequests).toEqual([]);
   await context.close();
@@ -520,7 +520,7 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   expect(saveApi.cleanupRequests).toEqual([]);
 
   saveApi.finishDeferredSave();
-  await expect(saving.page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+  await expect(saving.page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   expect(saveApi.objectPaths.every((path) => saveApi.cleanedPaths.has(path))).toBe(false);
   await saving.context.close();
 });
@@ -548,7 +548,7 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByRole('button', { name: '4 out of 5' }).click();
   await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://maps.apple.com/?q=Alba+Table');
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
 
   const saved = api.workspace.edits.find((edit) => edit.placeName === 'Alba Table');
   expect(saved).toMatchObject({ category: 'Restaurants', locationLabel: 'Kuwait City, Kuwait', tasteRating: 4 });
@@ -559,7 +559,7 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await expect(homeCard).toBeVisible();
   await expect(homeCard.locator('img')).toHaveCount(0);
   await expect(homeCard.getByTestId(`taste-rating-${saved!.id}`)).toBeVisible();
-  await expect(homeCard.getByText('Fheed’s Taste Rating · 4/5')).toBeVisible();
+  await expect(homeCard.getByText('TASTEKIN Taste Rating · 4/5')).toBeVisible();
   await expect(homeCard.getByRole('link', { name: 'Open in Maps' })).toHaveAttribute('href', 'https://maps.apple.com/?q=Alba+Table');
 
   await homeCard.locator('.place-card-main').click();
