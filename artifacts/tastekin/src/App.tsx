@@ -920,7 +920,7 @@ function EditEngagementPanel({ editId, creatorUsername, ar, saved, onSave }: { e
     <div className="edit-reactions">
       <button className={engagement.liked ? 'active' : ''} onClick={() => void changeLike()} aria-pressed={engagement.liked} disabled={liking}><Heart size={18} fill={engagement.liked ? 'currentColor' : 'none'} /> {engagement.likeCount}</button>
       <span><MessageCircle size={18} /> {engagement.commentCount}</span>
-      <button className={saved ? 'active' : ''} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {ar ? 'حفظ' : 'Save'}</button>
+      <button className={`save-pill ${saved ? 'active' : ''}`} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {ar ? 'حفظ' : 'Save'}</button>
     </div>
     <div className="comment-composer">
       <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />

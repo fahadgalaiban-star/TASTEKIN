@@ -272,6 +272,7 @@ button { font:inherit; cursor:pointer; }
 .edit-reactions { display:flex; align-items:center; gap:6px; }
 .edit-reactions button, .edit-reactions span { min-height:36px; display:inline-flex; align-items:center; gap:5px; padding:0 9px; border:0; border-radius:999px; background:#f0eae2; color:#71675f; font-size:11px; font-weight:800; }
 .edit-reactions button.active { background:#f6dfdc; color:var(--tk-coral); }
+.edit-reactions button.save-pill.active { background:#f7ecec; color:var(--tk-wine); }
 .edit-reactions span { background:transparent; padding-inline:5px; }
 .comment-composer, .message-composer { display:flex; align-items:center; gap:7px; }
 .comment-composer input { min-width:0; flex:1; min-height:42px; padding:0 12px; border:1px solid var(--tk-border); border-radius:999px; outline:none; background:var(--tk-card); color:var(--tk-ink); font:inherit; font-size:12px; }
