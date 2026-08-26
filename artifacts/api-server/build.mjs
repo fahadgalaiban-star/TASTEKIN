@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,6 +11,14 @@ globalThis.require = createRequire(import.meta.url);
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 
+function commitHash() {
+  try {
+    return execSync("git rev-parse --short HEAD", { cwd: artifactDir }).toString().trim();
+  } catch {
+    return "unknown";
+  }
+}
+
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
@@ -20,6 +29,9 @@ async function buildAll() {
     bundle: true,
     format: "esm",
     outdir: distDir,
+    define: {
+      __COMMIT_HASH__: JSON.stringify(commitHash()),
+    },
     outExtension: { ".js": ".mjs" },
     logLevel: "info",
     // Some packages may not be bundleable, so we externalize them, we can add more here as needed.
