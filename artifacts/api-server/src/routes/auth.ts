@@ -4,6 +4,7 @@ import { usersTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { clearSession, createSession, getSessionId, setSessionCookie, upsertUser } from "../lib/auth";
 import { ensureCreatorAccount, founderMappingConfigured, isTastekinAdmin } from "../lib/creator-account";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -20,6 +21,27 @@ router.get("/me", async (req, res) => {
     res.json({ user: null, role: "consumer", creator: null });
     return;
   }
+  // TEMPORARY DEBUG — admin-detection investigation. Server logs only,
+  // never sent to the client. Remove this whole block once resolved.
+  {
+    const founderEmailEnvRaw = process.env.FOUNDER_EMAIL ?? null;
+    const founderIdEnvRaw = process.env.FOUNDER_AUTH_USER_ID ?? null;
+    const reqUserEmailNormalized = req.user.email?.trim().toLowerCase() ?? null;
+    const founderEmailEnvNormalized = founderEmailEnvRaw?.trim().toLowerCase() ?? null;
+    logger.info({
+      tag: "ADMIN-DEBUG",
+      reqUserId: req.user.id,
+      reqUserEmailRaw: req.user.email,
+      reqUserEmailNormalized,
+      founderEmailEnvRaw,
+      founderEmailEnvNormalized,
+      founderIdEnvRaw,
+      founderIdEnvIsSet: Boolean(founderIdEnvRaw?.trim()),
+      emailComparisonResult: Boolean(founderEmailEnvNormalized && reqUserEmailNormalized === founderEmailEnvNormalized),
+      isTastekinAdminResult: isTastekinAdmin(req.user),
+    }, "ADMIN-DEBUG /api/me admin detection check");
+  }
+  // END TEMPORARY DEBUG
   const authorization = await ensureCreatorAccount(req.user);
   const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
   res.json({
