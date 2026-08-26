@@ -22,7 +22,7 @@ export default function App() {
 }
 
 type Language = 'en' | 'ar';
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights';
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -150,6 +150,7 @@ type TasteSessionSnapshot = {
   user: { id: string; email: string | null } | null;
   role: 'creator' | 'consumer';
   creator: { id?: string; handle: string; displayName: string; verified: boolean; ownsWorkspace: boolean } | null;
+  isAdmin: boolean;
   revision: number;
 };
 type TasteSession = TasteSessionSnapshot & { refresh: () => Promise<void> };
@@ -158,7 +159,7 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
-    status: 'loading', user: null, role: 'consumer', creator: null, revision: 0,
+    status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false, revision: 0,
   });
   const refresh = useCallback(async () => {
     try {
@@ -169,20 +170,22 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'>
-        : { user: null, role: 'consumer' as const, creator: null };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false };
       setSnapshot((current) => {
         const next = {
           status: payload.user ? 'authenticated' as const : 'signed-out' as const,
           user: payload.user,
           role: payload.role === 'creator' ? 'creator' as const : 'consumer' as const,
           creator: payload.creator ?? null,
+          isAdmin: Boolean(payload.isAdmin),
         };
         const unchanged = current.status === next.status
           && current.user?.id === next.user?.id
           && current.user?.email === next.user?.email
           && current.role === next.role
           && current.creator?.ownsWorkspace === next.creator?.ownsWorkspace
-          && current.creator?.handle === next.creator?.handle;
+          && current.creator?.handle === next.creator?.handle
+          && current.isAdmin === next.isAdmin;
         return unchanged ? current : { ...next, revision: current.revision + 1 };
       });
     } catch {
@@ -652,9 +655,10 @@ function TastekinApp() {
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} />}
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
+    {screen === 'adminVerification' && <AdminVerificationScreen ar={ar} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
    </main>{screen !== 'composer' && screen !== 'creatorPreview' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
-    {menuOpen && <div className="approved-menu" data-testid="identity-language-menu"><div className="approved-menu-head"><h2>{t('Account & language', 'الحساب واللغة')}</h2><button className="approved-icon" onClick={() => setMenuOpen(false)}><X size={19} /></button></div><span className="approved-kicker">{t('Profile view', 'عرض الملف')}</span><div className="approved-segment"><button data-testid="identity-owner" className={owner && !profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(false); owner ? go('you') : window.location.assign('/api/login?returnTo=/'); }}><ShieldCheck size={14} /> {owner ? `${session.creator?.displayName} · ${t('Owner', 'المالك')}` : t('Sign in', 'تسجيل الدخول')}</button><button data-testid="identity-consumer" className={profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(true); go('you'); }}><CircleUserRound size={14} /> {t('View as visitor', 'عرض كزائر')}</button></div><button data-testid="menu-tune-taste" className="approved-button wide" onClick={() => go('tune-taste')}><Settings2 size={16} /> {t('Tune your taste', 'ضبط ذوقك')}</button><span className="approved-kicker">{t('Interface language', 'لغة الواجهة')}</span><div className="approved-segment"><button data-testid="language-en" className={!ar ? 'selected' : ''} onClick={() => { setLanguage('en'); write('interface-language', 'en'); }}>English</button><button data-testid="language-ar" className={ar ? 'selected' : ''} onClick={() => { setLanguage('ar'); write('interface-language', 'ar'); }}>العربية</button></div></div>}
+    {menuOpen && <div className="approved-menu" data-testid="identity-language-menu"><div className="approved-menu-head"><h2>{t('Account & language', 'الحساب واللغة')}</h2><button className="approved-icon" onClick={() => setMenuOpen(false)}><X size={19} /></button></div><span className="approved-kicker">{t('Profile view', 'عرض الملف')}</span><div className="approved-segment"><button data-testid="identity-owner" className={owner && !profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(false); owner ? go('you') : window.location.assign('/api/login?returnTo=/'); }}><ShieldCheck size={14} /> {owner ? `${session.creator?.displayName} · ${t('Owner', 'المالك')}` : t('Sign in', 'تسجيل الدخول')}</button><button data-testid="identity-consumer" className={profileVisitorMode ? 'selected' : ''} onClick={() => { setProfileVisitorMode(true); go('you'); }}><CircleUserRound size={14} /> {t('View as visitor', 'عرض كزائر')}</button></div><button data-testid="menu-tune-taste" className="approved-button wide" onClick={() => go('tune-taste')}><Settings2 size={16} /> {t('Tune your taste', 'ضبط ذوقك')}</button>{session.isAdmin && <button data-testid="menu-admin-verification" className="approved-button wide" onClick={() => go('adminVerification')}><ShieldCheck size={16} /> {t('Verification review', 'مراجعة التوثيق')}</button>}<span className="approved-kicker">{t('Interface language', 'لغة الواجهة')}</span><div className="approved-segment"><button data-testid="language-en" className={!ar ? 'selected' : ''} onClick={() => { setLanguage('en'); write('interface-language', 'en'); }}>English</button><button data-testid="language-ar" className={ar ? 'selected' : ''} onClick={() => { setLanguage('ar'); write('interface-language', 'ar'); }}>العربية</button></div></div>}
    </div></TasteSessionContext.Provider>;
 }
 
@@ -1081,6 +1085,93 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
     </>}
   </SimpleScreen>;
 }
+
+type AdminApplicationRow = {
+  creatorId: string;
+  profile: { displayName: string; username: string; avatar: string; interests: string[] };
+  applicationStatement: string | null;
+  applicationLinks: unknown;
+  applicationCreatedAt: string | null;
+};
+
+function AdminVerificationScreen({ ar }: { ar: boolean }) {
+  const [applications, setApplications] = useState<AdminApplicationRow[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | null>(null);
+  const [acting, setActing] = useState(false);
+  const [actionError, setActionError] = useState('');
+  const load = useCallback(async () => {
+    setState('loading'); setError('');
+    try {
+      const response = await fetch('/api/admin/creators?status=pending', { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json() as { creators: AdminApplicationRow[] };
+      setApplications(payload.creators); setState('ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err)); setState('error');
+    }
+  }, []);
+  useEffect(() => { void load(); }, [load]);
+  const selected = applications.find((item) => item.creatorId === selectedId) || null;
+  const act = async (row: AdminApplicationRow, status: 'approved' | 'rejected') => {
+    setActing(true); setActionError('');
+    try {
+      const response = await fetch(`/api/admin/creators/${encodeURIComponent(row.creatorId)}/verification`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      setApplications((current) => current.filter((item) => item.creatorId !== row.creatorId));
+      setSelectedId(null); setConfirmAction(null);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message); window.alert(message);
+    } finally { setActing(false); }
+  };
+  const appliedAs = (row: AdminApplicationRow) => (row.profile.interests || []).map((id) => displayCategory(id, ar ? 'ar' : 'en'));
+  const links = (row: AdminApplicationRow) => Array.isArray(row.applicationLinks) ? row.applicationLinks.filter((item): item is string => typeof item === 'string') : [];
+  if (selected) {
+    const tags = appliedAs(selected);
+    return <SimpleScreen kicker={ar ? 'إدارة تيستكن' : 'TASTEKIN admin'} title={selected.profile.displayName || selected.profile.username}>
+      <div className="admin-app-detail">
+        <span className="feed-creator-avatar">{selected.profile.avatar ? <img src={imageSrc(selected.profile.avatar)} alt="" /> : (selected.profile.displayName || '?').slice(0, 1)}</span>
+        <div><strong>{selected.profile.displayName}</strong><small>@{selected.profile.username}</small></div>
+      </div>
+      {tags.length > 0 && <div className="admin-tags">{tags.map((label) => <span key={label} className="admin-tag">{label}</span>)}</div>}
+      <p className="profile-taste-meta">{ar ? 'تاريخ التقديم' : 'Submitted'}: {selected.applicationCreatedAt ? new Date(selected.applicationCreatedAt).toLocaleDateString() : '—'}</p>
+      <div className="approved-panel"><h3>{ar ? 'البيان' : 'Statement'}</h3><p>{selected.applicationStatement}</p></div>
+      {links(selected).length > 0 && <div className="approved-panel"><h3>{ar ? 'روابط داعمة' : 'Evidence links'}</h3>{links(selected).map((link) => <a key={link} href={link} target="_blank" rel="noreferrer">{link}</a>)}</div>}
+      {actionError && <div className="engagement-error" role="alert">{actionError}</div>}
+      {confirmAction ? <div className="approved-panel admin-confirm">
+        <p>{confirmAction === 'approved' ? (ar ? 'تأكيد الموافقة على هذا الطلب؟' : 'Confirm approving this application?') : (ar ? 'تأكيد رفض هذا الطلب؟' : 'Confirm rejecting this application?')}</p>
+        <div className="admin-confirm-actions">
+          <button className="approved-button" onClick={() => setConfirmAction(null)} disabled={acting}>{ar ? 'إلغاء' : 'Cancel'}</button>
+          <button className="approved-button primary" onClick={() => void act(selected, confirmAction)} disabled={acting}>{acting ? (ar ? 'جارٍ التنفيذ…' : 'Working…') : (ar ? 'تأكيد' : 'Confirm')}</button>
+        </div>
+      </div> : <div className="admin-detail-actions">
+        <button className="approved-button" onClick={() => setSelectedId(null)}>{ar ? 'رجوع' : 'Back'}</button>
+        <button className="approved-button" onClick={() => setConfirmAction('rejected')}>{ar ? 'رفض' : 'Reject'}</button>
+        <button className="approved-button primary" onClick={() => setConfirmAction('approved')}>{ar ? 'موافقة' : 'Approve'}</button>
+      </div>}
+    </SimpleScreen>;
+  }
+  return <SimpleScreen kicker={ar ? 'إدارة تيستكن' : 'TASTEKIN admin'} title={ar ? 'طلبات التوثيق المعلّقة' : 'Pending verification applications'}>
+    {state === 'loading' && <Empty text={ar ? 'جارٍ التحميل…' : 'Loading…'} />}
+    {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
+    {state === 'ready' && !applications.length && <Empty text={ar ? 'لا توجد طلبات معلّقة حالياً.' : 'No pending applications right now.'} />}
+    {state === 'ready' && applications.length > 0 && <div className="admin-app-list">{applications.map((row) => <button key={row.creatorId} className="admin-app-row" onClick={() => setSelectedId(row.creatorId)}>
+      <span className="feed-creator-avatar">{row.profile.avatar ? <img src={imageSrc(row.profile.avatar)} alt="" /> : (row.profile.displayName || '?').slice(0, 1)}</span>
+      <span className="admin-app-row-copy">
+        <strong>{row.profile.displayName || row.profile.username}</strong>
+        <small>@{row.profile.username} · {appliedAs(row).slice(0, 2).join(', ') || (ar ? 'بدون فئة' : 'No category')}</small>
+        <small>{row.applicationCreatedAt ? new Date(row.applicationCreatedAt).toLocaleDateString() : ''}</small>
+      </span>
+      <ChevronRight size={16} />
+    </button>)}</div>}
+  </SimpleScreen>;
+}
+
 function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void }) {
   const session = useTasteSession();
   const ownerView = owner && !visitorPreview;
