@@ -24,7 +24,7 @@ export default function App() {
 }
 
 type Language = 'en' | 'ar';
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification';
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'settings';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -629,7 +629,7 @@ function TastekinApp() {
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); setMenuOpen(false); };
   const goBack = () => {
     if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
-    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : 'home');
+    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'settings' ? 'you' : 'home');
   };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
@@ -645,8 +645,9 @@ function TastekinApp() {
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} published={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onEdit={openCollectionManager} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); openCollectionManager(); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
-    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : t('Your account', 'حسابك')} title={owner ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')}><div className="approved-panel identity"><Avatar profile={creatorProfile} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div><div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div><button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}{session.status === 'authenticated' && <button className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified && selectedCreatorUsername === 'fheed' ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (viewingOwnProfile) go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
+    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : t('Your account', 'حسابك')} title={owner ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')}><div className="approved-panel identity"><Avatar profile={creatorProfile} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div><div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div><button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
+    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => setVisitorPreview(true)} onExitVisitor={() => setVisitorPreview(false)} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (viewingOwnProfile) go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} />}
      {screen === 'collections' && <SimpleScreen kicker={creatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
@@ -678,8 +679,14 @@ function CategoryChips({ ar, active, onSelect, items = categories, testIdPrefix 
 function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorProfile; src?: string }) { return <div className="approved-avatar"><img src={src || profile.avatar} alt={profile.displayName} /></div>; }
 function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, onOpenProfile, onOpenEdit }: { ar: boolean; category: Category; setCategory: (c: Category) => void; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
+  const [query, setQuery] = useState('');
+  const [debouncedQuery, setDebouncedQuery] = useState('');
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedQuery(query.trim()), 300);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
   const session = useTasteSession();
-  const exploreParams = { sort, category: category === 'All' ? undefined : category };
+  const exploreParams = { sort, category: category === 'All' ? undefined : category, q: debouncedQuery || undefined };
   const { data, isLoading } = useExplore(exploreParams, {
     query: { queryKey: getExploreQueryKey(exploreParams), enabled: session.status !== 'loading', refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
     request: { credentials: 'include', cache: 'no-store' },
@@ -694,6 +701,10 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
     matchScore: null,
     matchReasons: [],
   }];
+  const searchTerm = debouncedQuery.toLowerCase();
+  const visibleEdits = searchTerm
+    ? edits.filter((item) => `${item.title} ${item.titleAr} ${item.caption} ${item.captionAr} ${item.placeName || ''} ${item.location} ${item.locationAr}`.toLowerCase().includes(searchTerm))
+    : edits;
 
   return (
     <section>
@@ -701,11 +712,11 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
       <div className="workspace-head" style={{ alignItems: 'center', marginBottom: 12 }}>
         <h1 className="approved-title">{t('Find your next taste.', 'اكتشف ذوقك القادم.')}</h1>
       </div>
-      
-      <div className="approved-search">
+
+      <label className="approved-search">
         <Search size={18} />
-        <span>{t('Search creators, places, and edits', 'ابحث عن المبدعين والأماكن والتعديلات')}</span>
-      </div>
+        <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={t('Search creators, places, and edits', 'ابحث عن المبدعين والأماكن والتعديلات')} aria-label={t('Search', 'بحث')} />
+      </label>
 
       <div className="approved-segment">
         <button className={sort === 'best' ? 'selected' : ''} onClick={() => setSort('best')}>{t('Best Match', 'أفضل تطابق')}</button>
@@ -745,10 +756,11 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
            </div>
         ))}
 
-        {edits.map(item => (
+        {visibleEdits.map(item => (
           <EditCard key={item.id} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => onOpenEdit(item)} />
         ))}
       </div>
+      {searchTerm && !creatorResults.length && !visibleEdits.length && !isLoading && <Empty text={t('No results for this search.', 'لا توجد نتائج لهذا البحث.')} />}
     </section>
   );
 }
@@ -1085,6 +1097,45 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
       {!insights.profileViews && !insights.totalLikes && !insights.totalSaves && !insights.totalComments && <Empty text={ar ? 'لا توجد بيانات بعد. ستظهر التفاعلات الحقيقية هنا عند حدوثها.' : 'No activity yet. Real views and engagement will appear here as they happen.'} />}
       <div className="insight-edit-list">{insights.edits.map((item) => <article key={item.editId}><strong>{titles.get(item.editId) || item.editId}</strong><span>{item.views} {ar ? 'مشاهدة' : 'views'} · {item.likes} {ar ? 'إعجاب' : 'likes'} · {item.saves} {ar ? 'حفظ' : 'saves'} · {item.comments} {ar ? 'تعليق' : 'comments'}</span></article>)}</div>
     </>}
+  </SimpleScreen>;
+}
+
+function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [pushNotifications, setPushNotifications] = useState(() => read('notify-push', true));
+  const [emailUpdates, setEmailUpdates] = useState(() => read('notify-email', true));
+  const togglePush = () => { const next = !pushNotifications; setPushNotifications(next); write('notify-push', next); };
+  const toggleEmail = () => { const next = !emailUpdates; setEmailUpdates(next); write('notify-email', next); };
+  return <SimpleScreen kicker={t('Account', 'الحساب')} title={t('Settings', 'الإعدادات')}>
+    <div className="settings-section">
+      <h3>{t('Account', 'الحساب')}</h3>
+      <div className="settings-row"><span>{t('Name', 'الاسم')}</span><strong>{creatorProfile.displayName || (ar ? 'غير محدد' : 'Not set')}</strong></div>
+      <div className="settings-row"><span>{t('Email', 'البريد الإلكتروني')}</span><strong>{session.user?.email || (ar ? 'غير متاح' : 'Not available')}</strong></div>
+      <div className="settings-row"><span>{t('Password', 'كلمة المرور')}</span><strong>{t('Managed by your sign-in provider', 'تُدار عبر مزود تسجيل الدخول')}</strong></div>
+    </div>
+    <div className="settings-section">
+      <h3>{t('Subscription', 'الاشتراك')}</h3>
+      <div className="settings-row"><span>{t('Status', 'الحالة')}</span><strong>{subscribed ? t('Subscribed', 'مشترك') : t('No active subscription', 'لا يوجد اشتراك نشط')}</strong></div>
+      <p className="settings-note">{t('Secure billing will open here once Stripe entitlements are connected. No payment or access is being simulated.', 'ستتاح إدارة الفوترة هنا بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p>
+    </div>
+    <div className="settings-section">
+      <h3>{t('Notifications', 'الإشعارات')}</h3>
+      <label className="settings-toggle"><span>{t('Push notifications', 'إشعارات فورية')}</span><input type="checkbox" checked={pushNotifications} onChange={togglePush} /></label>
+      <label className="settings-toggle"><span>{t('Email updates', 'تحديثات البريد الإلكتروني')}</span><input type="checkbox" checked={emailUpdates} onChange={toggleEmail} /></label>
+    </div>
+    {owner && <div className="settings-section">
+      <h3>{t('Creator info', 'معلومات المبدع')}</h3>
+      <div className="settings-row"><span>{t('Verification', 'التوثيق')}</span><strong>{creatorProfile.verified ? t('Verified', 'موثّق') : t('Not verified', 'غير موثّق')}</strong></div>
+      {!creatorProfile.verified && <button className="approved-button wide" onClick={onApplyVerification}>{t('Apply for the Taste Seal', 'قدّم للحصول على ختم الذوق')}</button>}
+      <p className="settings-note">{t('Content locking is set per Edit in the composer (Public or Subscribers only) when you create or edit it.', 'يتم تحديد قفل المحتوى لكل تعديل من داخل محرر النشر (عام أو للمشتركين فقط) عند إنشائه أو تعديله.')}</p>
+    </div>}
+    <div className="settings-section">
+      <h3>{t('Help & Support', 'المساعدة والدعم')}</h3>
+      <p className="settings-note">{t('Questions or issues? Reach us anytime.', 'لديك سؤال أو مشكلة؟ تواصل معنا في أي وقت.')}</p>
+      <a className="approved-button wide" href="mailto:support@tastekin.app">{t('Contact support', 'تواصل مع الدعم')}</a>
+    </div>
+    {session.status === 'authenticated' && <button className="approved-button wide danger" onClick={() => window.location.assign('/api/logout')}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
   </SimpleScreen>;
 }
 
