@@ -1,3 +1,4 @@
+import path from "path";
 import express, { type Express } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -5,6 +6,8 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/auth-middleware";
+
+declare const __dirname: string;
 
 const app: Express = express();
 
@@ -55,5 +58,14 @@ try {
 
 // If a routes/index exists, mount it; otherwise router above is minimal.
 app.use("/api", router);
+
+// Serve the built frontend (artifacts/tastekin/dist/public) and fall back to
+// its index.html for any non-API route, so this single process serves the
+// whole app in production (Replit Autoscale expects one process per deployment).
+const publicDir = path.resolve(__dirname, "../../tastekin/dist/public");
+app.use(express.static(publicDir));
+app.get(/^(?!\/api\/).*/, (_req, res) => {
+  res.sendFile(path.join(publicDir, "index.html"));
+});
 
 export default app;
