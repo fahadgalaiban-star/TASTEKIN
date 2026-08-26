@@ -13,6 +13,7 @@ button { font:inherit; cursor:pointer; }
 .approved-spacer { width:44px; }
 .approved-icon { width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:50%; background:transparent; color:var(--tk-ink); }
 .approved-icon:hover { background:#ece6dc; }
+.approved-icon.settings-icon { color:var(--tk-wine); }
 .approved-kicker { display:block; margin:18px 0 8px; color:var(--tk-wine); font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .approved-hero { padding:22px 0 14px; }
 .approved-hero h1 { max-width:350px; margin:0; font-size:31px; line-height:1.1; letter-spacing:-.055em; }
