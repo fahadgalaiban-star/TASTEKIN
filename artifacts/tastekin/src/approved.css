@@ -312,6 +312,18 @@ button { font:inherit; cursor:pointer; }
 .insight-edit-list article { display:grid; gap:4px; padding:12px; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); }
 .insight-edit-list strong { font-size:12px; }
 .insight-edit-list span { color:var(--tk-stone); font-size:10px; line-height:1.45; }
+.admin-app-list { display:grid; gap:8px; margin-top:13px; }
+.admin-app-row { width:100%; min-height:64px; display:flex; align-items:center; gap:10px; padding:9px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); color:var(--tk-ink); text-align:start; }
+.admin-app-row-copy { min-width:0; flex:1; display:grid; gap:2px; }
+.admin-app-row-copy strong { overflow:hidden; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.admin-app-row-copy small { overflow:hidden; color:var(--tk-stone); font-size:10px; text-overflow:ellipsis; white-space:nowrap; }
+.admin-app-detail { display:flex; align-items:center; gap:12px; margin:4px 0 13px; }
+.admin-app-detail strong { display:block; font-size:15px; }
+.admin-app-detail small { color:var(--tk-stone); font-size:12px; }
+.admin-tags { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 11px; }
+.admin-tag { padding:5px 10px; border-radius:999px; background:#e9e1d7; color:var(--tk-wine); font-size:10px; font-weight:800; }
+.admin-detail-actions, .admin-confirm-actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; margin-top:8px; }
+.admin-confirm-actions { grid-template-columns:1fr 1fr; }
 .manager-list { display:grid; gap:7px; margin:14px 0 18px; }
 .manager-form { padding:15px; border:1px solid var(--tk-border); border-radius:19px; background:rgba(255,255,255,.54); }
 .manager-form h2 { margin:1px 0 13px; }

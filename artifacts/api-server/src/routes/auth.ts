@@ -3,7 +3,7 @@ import { Router, type IRouter } from "express";
 import { usersTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { clearSession, createSession, getSessionId, setSessionCookie, upsertUser } from "../lib/auth";
-import { ensureCreatorAccount, founderMappingConfigured } from "../lib/creator-account";
+import { ensureCreatorAccount, founderMappingConfigured, isTastekinAdmin } from "../lib/creator-account";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -32,6 +32,7 @@ router.get("/me", async (req, res) => {
       verified: authorization.verified,
       ownsWorkspace: true,
     } : null,
+    isAdmin: isTastekinAdmin(req.user),
     founderMappingConfigured: founderMappingConfigured(),
   });
 });

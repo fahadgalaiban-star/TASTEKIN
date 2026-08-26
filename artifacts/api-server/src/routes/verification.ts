@@ -49,7 +49,9 @@ router.post("/verification-application", async (req, res) => {
 
 router.get("/admin/creators", async (req, res) => {
   if (!isTastekinAdmin(req.user)) { res.status(403).json({ error: "TASTEKIN administrator access required" }); return; }
-  const rows = await db.select({
+  const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
+  const statusFilter = statusParam && allowedStatuses.has(statusParam) ? statusParam : undefined;
+  const query = db.select({
     creatorId: creatorWorkspaces.creatorId,
     profile: creatorWorkspaces.profile,
     ownerUserId: creatorWorkspaces.ownerUserId,
@@ -62,6 +64,7 @@ router.get("/admin/creators", async (req, res) => {
   }).from(creatorWorkspaces)
     .leftJoin(usersTable, eq(creatorWorkspaces.ownerUserId, usersTable.id))
     .leftJoin(verificationApplications, eq(creatorWorkspaces.ownerUserId, verificationApplications.userId));
+  const rows = statusFilter ? await query.where(eq(verificationApplications.status, statusFilter)) : await query;
   res.json({ creators: rows });
 });
 
