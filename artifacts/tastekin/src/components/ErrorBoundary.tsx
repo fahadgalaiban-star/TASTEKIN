@@ -18,10 +18,15 @@ export class ErrorBoundary extends React.Component<React.PropsWithChildren, { ha
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: 24 }}>
-          <h2>Something went wrong</h2>
-          <p>Try reloading the page. If the problem persists, contact support.</p>
-          <button onClick={() => window.location.reload()}>Reload</button>
+        <div className="approved-app">
+          <main className="approved-shell">
+            <span className="approved-kicker">TASTEKIN</span>
+            <h1 className="approved-title">Something went wrong</h1>
+            <div className="approved-panel">
+              <p>Try reloading the page. If the problem persists, contact support.</p>
+            </div>
+            <button className="approved-button primary wide" onClick={() => window.location.reload()}>Reload</button>
+          </main>
         </div>
       );
     }
