@@ -1,9 +1,18 @@
+import { execSync } from 'child_process';
 import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
+
+function commitHash() {
+  try {
+    return execSync('git rev-parse --short HEAD', { cwd: import.meta.dirname }).toString().trim();
+  } catch {
+    return 'unknown';
+  }
+}
 
 const rawPort = process.env.PORT;
 
@@ -29,6 +38,9 @@ if (!basePath) {
 
 export default defineConfig({
   base: basePath,
+  define: {
+    __COMMIT_HASH__: JSON.stringify(commitHash()),
+  },
   plugins: [
     react(),
     tailwindcss(),
