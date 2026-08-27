@@ -1643,7 +1643,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
           return <button key={collection.id} className="profile-featured-card" data-testid={`featured-collection-${collection.id}`} onClick={() => onOpenCollection(collection)}>
             <span className="profile-featured-cover"><img src={imageSrc(cover)} alt="" />{collection.access === 'locked' ? <span className="profile-featured-visibility"><LockKeyhole size={11} /></span> : <span className="profile-featured-visibility"><Globe size={11} /></span>}</span>
             <strong>{ar ? collection.titleAr : collection.title}</strong>
-            <small>{ar ? `${collection.editIds.length} تعديل` : `${collection.editIds.length} edits`}</small>
+            <small>{ar ? `${collection.editIds.length + (collection.uploads?.length || 0)} عنصر` : `${collection.editIds.length + (collection.uploads?.length || 0)} items`}</small>
           </button>;
         })}
       </div>
@@ -2108,7 +2108,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, can
       </div>
     </div>}
 
-    {orderedItems.length > 0 ? <div className="collection-grid" onPointerMove={moveDrag} onPointerUp={endDrag}>
+    {orderedItems.length > 0 ? <div className={`collection-grid ${manageMode ? 'collection-grid-manage' : ''}`} onPointerMove={moveDrag} onPointerUp={endDrag}>
       {orderedItems.map((item) => <div key={item.id} data-edit-id={item.id} className={`collection-grid-item ${dragId === item.id ? 'dragging' : ''} ${overId === item.id && dragId && dragId !== item.id ? 'drag-over' : ''}`}>
         <button type="button" className="collection-grid-tap" onClick={() => { if (!manageMode && item.kind === 'edit' && item.edit) onOpen(item.edit); }} onPointerDown={beginDrag(item.id)} aria-label={item.label}>
           <img src={imageSrc(item.image)} alt="" />

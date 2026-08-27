@@ -169,11 +169,17 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .collection-picker-row img { width:38px; height:38px; border-radius:9px; object-fit:cover; flex:0 0 38px; }
 .collection-picker-row span { flex:1; min-width:0; font-size:12px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .collection-picker-row svg { flex:0 0 auto; color:var(--tk-wine); }
-.collection-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; touch-action:none; }
+.collection-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:4px; }
 .collection-grid-item { position:relative; aspect-ratio:1 / 1; }
 .collection-grid-item.dragging { opacity:.4; }
 .collection-grid-item.drag-over { outline:2px solid var(--tk-wine); outline-offset:-2px; border-radius:6px; }
-.collection-grid-tap { width:100%; height:100%; padding:0; border:0; background:none; touch-action:none; }
+.collection-grid-tap { width:100%; height:100%; padding:0; border:0; background:none; }
+/* Touch-action must be set before a gesture starts to take effect, so this
+   is keyed off Manage mode (a deliberate prior tap) rather than the drag
+   itself — reacting to the drag would be a beat too late for the browser's
+   gesture recognizer. Outside Manage mode the grid must scroll like any
+   other content. */
+.collection-grid-manage, .collection-grid-manage .collection-grid-tap { touch-action:none; }
 .collection-grid-tap img { width:100%; height:100%; display:block; object-fit:cover; }
 .collection-grid-remove { position:absolute; z-index:1; top:5px; inset-inline-end:5px; display:grid; place-items:center; width:22px; height:22px; border:0; border-radius:50%; background:rgba(23,20,22,.65); color:#fff; }
 .approved-list { display:grid; gap:8px; margin-top:7px; }
