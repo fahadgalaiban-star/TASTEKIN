@@ -20,14 +20,43 @@ function configuredFounderMatches(user: AuthenticatedUser) {
   return Boolean(founderEmail && user.email?.trim().toLowerCase() === founderEmail);
 }
 
-export function isTastekinAdmin(user: AuthenticatedUser | undefined) {
-  if (!user) return false;
-  const additionalIds = (process.env.ADMIN_AUTH_USER_IDS || "").split(",").map((value) => value.trim()).filter(Boolean);
-  return configuredFounderMatches(user) || additionalIds.includes(user.id);
+function additionalAdminIds() {
+  return (process.env.ADMIN_AUTH_USER_IDS || "").split(",").map((value) => value.trim()).filter(Boolean);
 }
 
 export function founderMappingConfigured() {
   return Boolean(process.env.FOUNDER_AUTH_USER_ID?.trim() || process.env.FOUNDER_EMAIL?.trim());
+}
+
+/**
+ * Admin authorization is per-account, keyed to the specific `users.id` row —
+ * never to "whichever session/Replit account happens to be active." Signing
+ * in as a different person, or via a different provider, always resolves to
+ * that provider's own row and its own `isAdmin` value; nothing carries over
+ * from a previous session the way ambient session/env matching could.
+ *
+ * FOUNDER_AUTH_USER_ID / FOUNDER_EMAIL / ADMIN_AUTH_USER_IDS remain as a
+ * standing recovery credential rather than a one-shot migration switch: as
+ * long as one of them is configured, whichever account it designates is
+ * durably (re-)flagged `isAdmin = true` in Postgres on its next request,
+ * even if that row's flag was ever cleared directly. This is what avoids
+ * ever having to guess a production user id — the same criteria that
+ * already grants admin today keeps identifying and persisting that specific
+ * row's admin status, rather than me picking an id by hand. Any OTHER admin
+ * (not covered by these env vars) is managed purely by the DB flag, e.g. by
+ * setting `users.is_admin = true` directly, until an admin-management UI
+ * exists.
+ */
+export async function isCurrentUserAdmin(user: AuthenticatedUser | undefined): Promise<boolean> {
+  if (!user) return false;
+  const [account] = await db.select({ isAdmin: usersTable.isAdmin }).from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
+  if (!account) return false;
+  if (account.isAdmin) return true;
+  if (configuredFounderMatches(user) || additionalAdminIds().includes(user.id)) {
+    await db.update(usersTable).set({ isAdmin: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    return true;
+  }
+  return false;
 }
 
 function slug(value: string) {

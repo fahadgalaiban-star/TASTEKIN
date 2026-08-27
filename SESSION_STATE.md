@@ -34,17 +34,51 @@ is an always-accessible preference screen, not a first-run flow.
 ## Auth
 
 Three coexisting sign-in methods, all producing the same session:
-1. **Replit OIDC** — the founder/admin path (`FOUNDER_EMAIL` /
-   `FOUNDER_AUTH_USER_ID` / `ADMIN_AUTH_USER_IDS` env vars identify who gets
-   founder/admin rights).
+1. **Replit OIDC** — the founder's original sign-in path.
 2. **Email + password** — signup/login/forgot-password/reset-password,
    `bcrypt`-hashed, `password_reset_tokens` table.
 3. **Google OAuth** — hand-rolled OIDC flow (no library), silently
    redirects with an error if `GOOGLE_CLIENT_ID` isn't configured rather
    than crashing.
 
+Because `users.id` is derived differently per provider (Replit OIDC's own
+`sub`, `google:<sub>` for Google, a random UUID for email/password), the
+same person can end up with more than one `users` row if they've ever
+signed in more than one way — there's no cross-provider identity merge
+beyond Google refusing to create a second row for an email a password
+account already owns.
+
 `users` table: `authProvider`, `passwordHash`, `googleId`, `isVerified`,
-`role`. Sessions are DB-backed (`sessions` table), not signed cookies.
+`isAdmin`, `role`. Sessions are DB-backed (`sessions` table), not signed
+cookies.
+
+### Admin authorization
+
+Admin status is `users.isAdmin`, a real boolean column — checked fresh from
+Postgres on every Admin request and by `/me`, keyed to the specific
+authenticated `users.id` row. It is **not** derived from which session/
+provider is currently active, so switching accounts (or auth methods) never
+carries a previous session's admin access into a new one.
+
+`FOUNDER_AUTH_USER_ID` / `FOUNDER_EMAIL` / `ADMIN_AUTH_USER_IDS` still exist,
+but only as a standing recovery credential: as long as one of them is
+configured, whichever account it designates gets `isAdmin` durably
+(re-)persisted in Postgres on its next request — even if that row's flag
+was ever cleared directly. This is what let the fix ship without guessing a
+production user id: the exact criteria that already granted admin before
+this change is what identifies and flags that same row now, automatically,
+the first time it authenticates post-deploy. Any additional admin beyond
+those env vars is managed purely by setting `users.is_admin = true`
+directly — there is no admin-management UI yet.
+
+`GET /api/me` returns `isAdmin` from this check; the frontend's Settings
+screen shows the Admin section and Verification Review purely off
+`session.isAdmin` from that response — no localStorage, query params, or
+hardcoded emails are involved on the client. Every Admin route
+(`GET /admin/creators`, `PUT /admin/creators/:id/verification`) re-checks
+this server-side independently and returns 403 to anyone (including
+signed-out requests) who isn't flagged, regardless of what the client
+renders.
 
 ## Creator workspace (Edits)
 
@@ -210,7 +244,9 @@ Everything else degrades a specific feature gracefully rather than
 crashing boot: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Google sign-in),
 `PRIVATE_OBJECT_DIR` (object storage — throws only when an upload/serve
 route is actually hit), `FOUNDER_EMAIL`/`FOUNDER_AUTH_USER_ID`/
-`ADMIN_AUTH_USER_IDS` (founder/admin identification), `ALLOWED_ORIGINS`,
+`ADMIN_AUTH_USER_IDS` (admin bootstrap — see "Admin authorization" above;
+these no longer directly gate any request, they only seed `users.isAdmin`
+the first time a matching account authenticates), `ALLOWED_ORIGINS`,
 `LOG_LEVEL` (all have safe defaults).
 
 **Replit-specific gotcha confirmed this session:** Autoscale Deployments do
