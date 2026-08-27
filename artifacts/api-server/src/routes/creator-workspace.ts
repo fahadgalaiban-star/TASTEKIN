@@ -335,7 +335,7 @@ router.get("/creator-workspace", async (req, res) => {
       });
     const publishedIds = new Set(edits.map((edit) => edit.id));
     const collections = (workspace.collections as Array<Record<string, unknown>>)
-      .filter((collection) => collection.access === "public" && (typeof collection.coverEditId !== "string" || publishedIds.has(collection.coverEditId)))
+      .filter((collection) => collection.access === "public" && (typeof collection.coverEditId !== "string" || !collection.coverEditId || publishedIds.has(collection.coverEditId)))
       .map((collection) => ({ ...collection, editIds: Array.isArray(collection.editIds) ? collection.editIds.filter((id) => publishedIds.has(id)) : [] }));
     res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits, collections }));
   } catch (error) {

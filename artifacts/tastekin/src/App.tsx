@@ -4,7 +4,7 @@ import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, us
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel } from '@workspace/taste-catalog';
 import {
-  Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Heart, Inbox, LogOut, MessageCircle,
+  Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, Pencil, Plus, PlusCircle, Search, Settings2,
   Send, Share2, ShieldCheck, Upload, UserRound, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
@@ -47,7 +47,7 @@ type CreatorEdit = {
   placeName?: string | null; locationLabel?: string | null; mapsUrl?: string | null; tasteRating?: number | null; creatorReview?: string | null;
   creatorUsername?: string; creatorName?: string; creatorVerified?: boolean; creatorAvatar?: string; following?: boolean;
 };
-type CreatorCollection = { id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; editIds: string[] };
+type CreatorCollection = { id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; coverImage?: string; coverImageObjectPath?: string | null; editIds: string[] };
 type EditForm = Omit<CreatorEdit, 'id' | 'status'>;
 type CollectionForm = Omit<CreatorCollection, 'id'>;
 type EditEngagement = { editId: string; likeCount: number; commentCount: number; liked: boolean; saved: boolean };
@@ -147,7 +147,13 @@ const publishValidationMessage = (edit: EditForm | CreatorEdit, ar: boolean) => 
   if (!edit.tasteRating && !edit.creatorReview?.trim()) return ar ? 'أضف تقييم الذوق أو مراجعتك الشخصية للنشر.' : 'Add a Taste Rating or your personal review to publish.';
   return '';
 };
-const blankCollection = (): CollectionForm => ({ title: '', titleAr: '', description: '', descriptionAr: '', access: 'public', coverEditId: 'quiet-tailoring', editIds: [] });
+const blankCollection = (): CollectionForm => ({ title: '', titleAr: '', description: '', descriptionAr: '', access: 'public', coverEditId: '', coverImage: '', coverImageObjectPath: null, editIds: [] });
+function collectionCoverImage(collection: CreatorCollection, edits: CreatorEdit[]) {
+  if (collection.coverImage) return collection.coverImage;
+  const chosen = collection.coverEditId ? edits.find((edit) => edit.id === collection.coverEditId) : undefined;
+  const first = chosen || edits.find((edit) => edit.id === collection.editIds[0]) || edits[0];
+  return first?.image || media('quiet-tailoring.webp');
+}
 
 function Price({ ar, withVerb = true }: { ar: boolean; withVerb?: boolean }) { return ar ? <>{withVerb && 'اشترك · '}<bdi dir="ltr">19.99</bdi> دولار شهريًا</> : <>{withVerb && 'Subscribe · '}$19.99 / month</>; }
 
@@ -450,6 +456,7 @@ function TastekinApp() {
   const published = creatorEdits.filter((item) => item.status === 'published');
   const viewedCreatorProfile = viewingOwnProfile ? creatorProfile : publicCreatorProfile ?? discoveryCreatorProfiles[selectedCreatorUsername] ?? creatorProfile;
   const viewedCreatorEdits = viewingOwnProfile ? published : publicCreatorEdits;
+  const viewedCreatorCollections = viewingOwnProfile ? creatorCollections : publicCreatorCollections;
   const featuredCollections = useMemo(() => {
     const configured = featuredCollectionIds
       .map((id) => creatorCollections.find((collection) => collection.id === id))
@@ -479,7 +486,7 @@ function TastekinApp() {
     const leavingCreatorFlow = (screen === 'composer' || screen === 'creatorPreview') && next !== 'composer' && next !== 'creatorPreview';
     if (leavingCreatorFlow && pendingMediaPaths.length) { pendingMediaIsDiscardable.current = false; void cleanupCreatorMedia(pendingMediaPaths); setPendingMediaPaths([]); }
     if (leavingCreatorFlow) discardPendingCrop();
-    if (next !== 'profile' && next !== 'profileEdit') { setVisitorPreview(false); setProfileVisitorMode(false); }
+    if (!['profile', 'profileEdit', 'collection', 'collections'].includes(next)) { setVisitorPreview(false); setProfileVisitorMode(false); }
     setScreen(next);
   };
   const pendingSharedPost = useRef<{ username: string; editId: string } | null>(null);
@@ -634,7 +641,7 @@ function TastekinApp() {
   };
   const archiveEdit = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, status: 'archived' } : item), creatorCollections);
   const unarchiveEdit = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, status: 'draft' } : item), creatorCollections);
-  const openCollectionManager = (item?: CreatorCollection) => { setEditingCollectionId(item?.id || null); setCollectionForm(item ? { title: item.title, titleAr: item.titleAr, description: item.description, descriptionAr: item.descriptionAr, access: item.access, coverEditId: item.coverEditId, editIds: item.editIds } : blankCollection()); go('collectionManager'); };
+  const openCollectionManager = (item?: CreatorCollection) => { setEditingCollectionId(item?.id || null); setCollectionForm(item ? { title: item.title, titleAr: item.titleAr, description: item.description, descriptionAr: item.descriptionAr, access: item.access, coverEditId: item.coverEditId, coverImage: item.coverImage || '', coverImageObjectPath: item.coverImageObjectPath ?? null, editIds: item.editIds } : blankCollection()); go('collectionManager'); };
   const saveCollection = () => {
     const id = editingCollectionId || `collection-${Date.now()}`;
     const next = { id, ...collectionForm };
@@ -642,6 +649,42 @@ function TastekinApp() {
     const nextEdits = creatorEdits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((collectionId) => collectionId !== id).concat(next.editIds.includes(item.id) ? [id] : []) }));
     persistWorkspace(nextEdits, nextCollections);
     setEditingCollectionId(id); setSelectedCollectionId(id); return next;
+  };
+  const setCollectionEditIds = (collectionId: string, nextEditIds: string[]) => {
+    const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, editIds: nextEditIds } : item);
+    const nextEditIdsSet = new Set(nextEditIds);
+    const nextEdits = creatorEdits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId).concat(nextEditIdsSet.has(item.id) ? [collectionId] : []) }));
+    persistWorkspace(nextEdits, nextCollections);
+  };
+  const addEditsToCollection = (collectionId: string, editIds: string[]) => {
+    const current = creatorCollections.find((item) => item.id === collectionId);
+    if (!current) return;
+    setCollectionEditIds(collectionId, [...current.editIds, ...editIds.filter((id) => !current.editIds.includes(id))]);
+  };
+  const removeEditFromCollection = (collectionId: string, editId: string) => {
+    const current = creatorCollections.find((item) => item.id === collectionId);
+    if (!current) return;
+    setCollectionEditIds(collectionId, current.editIds.filter((id) => id !== editId));
+  };
+  const reorderCollectionEdits = (collectionId: string, nextEditIds: string[]) => setCollectionEditIds(collectionId, nextEditIds);
+  const setCollectionCover = (collectionId: string, coverImage: string, coverImageObjectPath: string | null) => {
+    const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, coverImage, coverImageObjectPath } : item);
+    persistWorkspace(creatorEdits, nextCollections);
+  };
+  const uploadCollectionCover = async (collectionId: string, file: File) => {
+    const previousObjectPath = creatorCollections.find((item) => item.id === collectionId)?.coverImageObjectPath;
+    try {
+      const uploaded = await uploadCreatorImage(file);
+      setCollectionCover(collectionId, uploaded.image, uploaded.objectPath);
+      if (previousObjectPath) void cleanupCreatorMedia([previousObjectPath]);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+  const clearCollectionCover = (collectionId: string) => {
+    const previousObjectPath = creatorCollections.find((item) => item.id === collectionId)?.coverImageObjectPath;
+    setCollectionCover(collectionId, '', null);
+    if (previousObjectPath) void cleanupCreatorMedia([previousObjectPath]);
   };
   const abandonComposer = () => go('add');
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
@@ -661,16 +704,16 @@ function TastekinApp() {
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
-    {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} published={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onEdit={openCollectionManager} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); openCollectionManager(); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
+    {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); }} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (viewingOwnProfile) go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
-     {screen === 'collections' && <SimpleScreen kicker={creatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
-     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={viewedCreatorEdits.filter((item) => selectedCollection.editIds.includes(item.id))} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
+     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
+     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => viewedCreatorEdits.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={viewingOwnProfile && !profileVisitorMode} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onRemoveEdit={(id) => removeEditFromCollection(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionEdits(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
     {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
     {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -1478,13 +1521,14 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
     <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><button className="profile-visitor-button" type="button" onClick={onViewAsVisitor} aria-label={ar ? 'عرض كزائر' : 'View as visitor'} title={ar ? 'عرض كزائر' : 'View as visitor'}><Eye size={19} /></button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{profile.verified && <button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
-      <h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2>
-      <div className="profile-featured-grid">
+      <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
+      <div className="profile-featured-strip">
         {featuredCollections.map((collection) => {
-          const cover = publishedEdits.find((edit) => edit.id === collection.coverEditId)?.image || media('quiet-tailoring.webp');
+          const cover = collectionCoverImage(collection, publishedEdits);
           return <button key={collection.id} className="profile-featured-card" data-testid={`featured-collection-${collection.id}`} onClick={() => onOpenCollection(collection)}>
-            <img src={imageSrc(cover)} alt="" />
-            <span>{ar ? collection.titleAr : collection.title}</span>
+            <span className="profile-featured-cover"><img src={imageSrc(cover)} alt="" />{collection.access === 'locked' ? <span className="profile-featured-visibility"><LockKeyhole size={11} /></span> : <span className="profile-featured-visibility"><Globe size={11} /></span>}</span>
+            <strong>{ar ? collection.titleAr : collection.title}</strong>
+            <small>{ar ? `${collection.editIds.length} تعديل` : `${collection.editIds.length} edits`}</small>
           </button>;
         })}
       </div>
@@ -1809,19 +1853,19 @@ function EditComposer({ ar, form, collections, busy, onChange, onCropPrepared, o
 function Field({ label, value, onChange, placeholder, multiline = false, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; multiline?: boolean; type?: string }) { return <label className="form-field"><span>{label}</span>{multiline ? <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} /> : <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />}</label>; }
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label className="form-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>; }
 function CreatorPreview({ ar, busy, edit, onBack, onPublish }: { ar: boolean; busy: boolean; edit: CreatorEdit; onBack: () => void; onPublish: () => void }) { const t = (en: string, arabic: string) => ar ? arabic : en; const [publishError, setPublishError] = useState(''); const tryPublish = () => { const error = publishValidationMessage(edit, ar); if (error) { setPublishError(error); return; } setPublishError(''); onPublish(); }; return <SimpleScreen kicker={t('Consumer preview', 'معاينة للمستهلك')} title={t('This is how it will appear.', 'هكذا سيظهر.') }><p>{edit.image ? t('Your wording, access label, and image appear exactly as they will in the consumer feed.', 'ستظهر كتابتك وعلامة الوصول والصورة كما ستظهر في تغذية المستهلك.') : t('Your place recommendation appears as an intentional no-photo card.', 'ستظهر توصية المكان كبطاقة مقصودة بلا صورة.')}</p><EditCard edit={edit} ar={ar} saved={false} onSave={() => undefined} onOpen={() => undefined} />{publishError && <p className="workspace-notice" role="alert">{publishError}</p>}<div className="composer-actions"><button className="approved-button" onClick={onBack} disabled={busy}>{t('Keep editing', 'متابعة التعديل')}</button><button className="approved-button primary" onClick={tryPublish} disabled={busy}>{t('Publish Edit', 'نشر التعديل')}</button></div></SimpleScreen>; }
-function CollectionManager({ ar, collections, published, form, editing, featuredCollectionIds, onChange, onEdit, onNew, onSave, onToggleFeatured, onMoveFeatured }: { ar: boolean; collections: CreatorCollection[]; published: CreatorEdit[]; form: CollectionForm; editing: string | null; featuredCollectionIds: string[]; onChange: (form: CollectionForm) => void; onEdit: (item?: CreatorCollection) => void; onNew: () => void; onSave: () => void; onToggleFeatured: (id: string) => void; onMoveFeatured: (id: string, direction: 'up' | 'down') => void }) {
+function CollectionManager({ ar, collections, edits, form, editing, featuredCollectionIds, onChange, onOpenCollection, onNew, onSave, onToggleFeatured, onMoveFeatured }: { ar: boolean; collections: CreatorCollection[]; edits: CreatorEdit[]; form: CollectionForm; editing: string | null; featuredCollectionIds: string[]; onChange: (form: CollectionForm) => void; onOpenCollection: (item: CreatorCollection) => void; onNew: () => void; onSave: () => void; onToggleFeatured: (id: string) => void; onMoveFeatured: (id: string, direction: 'up' | 'down') => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const update = <K extends keyof CollectionForm>(key: K, value: CollectionForm[K]) => onChange({ ...form, [key]: value });
   return <section className="creator-composer">
     <span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span>
-    <div className="workspace-head"><div><h1 className="approved-title">{t('Collections', 'المجموعات')}</h1><p>{t('Group recommendations into a complete taste world.', 'اجمع التوصيات في عالم ذوق متكامل.')}</p></div><button className="approved-button" onClick={onNew}><Plus size={15} /> {t('New', 'جديد')}</button></div>
-    <div className="manager-list">
+    {editing === null && <div className="workspace-head"><div><h1 className="approved-title">{t('Collections', 'المجموعات')}</h1><p>{t('Group recommendations into a complete taste world.', 'اجمع التوصيات في عالم ذوق متكامل.')}</p></div><button className="approved-button" onClick={onNew}><Plus size={15} /> {t('New', 'جديد')}</button></div>}
+    {editing === null && <div className="manager-list">
       {collections.map((item) => {
         const featuredIndex = featuredCollectionIds.indexOf(item.id);
         const isFeatured = featuredIndex >= 0;
         const featureLimitReached = !isFeatured && featuredCollectionIds.length >= 3;
         return <div className="manager-collection-row" key={item.id}>
-          <button className="workspace-collection-link" onClick={() => onEdit(item)}><span><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong></span><Pencil size={16} /></button>
+          <button className="workspace-collection-link" onClick={() => onOpenCollection(item)}><span><img src={imageSrc(collectionCoverImage(item, edits))} alt="" /><span className="manager-collection-copy"><strong>{ar ? item.titleAr : item.title}</strong><small>{t(`${item.editIds.length} edits`, `${item.editIds.length} تعديل`)}</small></span></span><ChevronRight size={16} /></button>
           <div className="manager-feature-actions">
             <button type="button" className={isFeatured ? 'selected' : ''} onClick={() => onToggleFeatured(item.id)} disabled={featureLimitReached}>{isFeatured ? t('Unfeature', 'إلغاء التمييز') : t('Feature', 'تمييز')}</button>
             {isFeatured && <div className="manager-feature-order">
@@ -1831,8 +1875,108 @@ function CollectionManager({ ar, collections, published, form, editing, featured
           </div>
         </div>;
       })}
-    </div>
-    <div className="manager-form"><h2>{editing ? t('Edit collection', 'تعديل المجموعة') : t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><SelectField label={t('Cover Edit', 'تعديل الغلاف')} value={form.coverEditId} onChange={(value) => update('coverEditId', value)} options={published.map((item) => ({ value: item.id, label: ar ? item.titleAr : item.title }))} /><span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')}>{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')}>{t('Subscribers Only', 'للمشتركين فقط')}</button></div><span className="form-label">{t('Included published Edits', 'التعديلات المنشورة المضمنة')}</span><div className="collection-checks">{published.map((item) => <button key={item.id} className={form.editIds.includes(item.id) ? 'selected' : ''} onClick={() => update('editIds', form.editIds.includes(item.id) ? form.editIds.filter((id) => id !== item.id) : [...form.editIds, item.id])}>{form.editIds.includes(item.id) && <Check size={14} />}{ar ? item.titleAr : item.title}</button>)}</div><button className="approved-button primary wide" onClick={onSave}>{editing ? t('Save changes', 'حفظ التغييرات') : t('Create collection', 'إنشاء المجموعة')}</button></div>
+      {!collections.length && <Empty text={t('No Collections yet. Create one to start grouping your Edits.', 'لا توجد مجموعات بعد. أنشئ واحدة لتبدأ بتجميع تعديلاتك.')} />}
+    </div>}
+    {editing !== null && <div className="manager-form"><h2>{t('Edit details', 'تعديل التفاصيل')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')}>{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')}>{t('Subscribers Only', 'للمشتركين فقط')}</button></div><button className="approved-button primary wide" onClick={onSave}>{t('Save changes', 'حفظ التغييرات')}</button></div>}
+    {editing === null && <div className="manager-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')}>{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')}>{t('Subscribers Only', 'للمشتركين فقط')}</button></div><button className="approved-button primary wide" onClick={onSave} disabled={!form.title.trim()}>{t('Create collection', 'إنشاء المجموعة')}</button></div>}
   </section>;
 }
-function CollectionDetail({ ar, collection, edits, canView, onOpen, onSubscribe }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; canView: boolean; onOpen: (edit: CreatorEdit) => void; onSubscribe: () => void }) { const t = (en: string, arabic: string) => ar ? arabic : en; if (!canView && collection.access === 'locked') return <SimpleScreen kicker={t('Subscribers only', 'للمشتركين فقط')} title={ar ? collection.titleAr : collection.title}><div className="approved-panel collection-gate"><LockKeyhole size={25} /><h3>{t('A private creator collection.', 'مجموعة خاصة من المبدع.')}</h3><p>{t('Subscribe to unlock the complete collection and its field notes.', 'اشترك لفتح المجموعة الكاملة وملاحظاتها.')}</p><button className="approved-button primary wide" onClick={onSubscribe}><Price ar={ar} /></button></div></SimpleScreen>; return <SimpleScreen kicker={ar ? 'مجموعة' : 'Collection'} title={ar ? collection.titleAr : collection.title}><img className="approved-collection-hero" src={imageSrc(edits[0]?.image || media('quiet-tailoring.webp'))} alt="" /><p>{ar ? collection.descriptionAr : collection.description}</p><h3 className="approved-kicker">{ar ? 'التعديلات المضمنة' : 'Included edits'}</h3><div className="approved-list">{edits.map((item) => { const caption = publicCaptionLine(item, ar); return <button key={item.id} onClick={() => onOpen(item)}><span>{caption}</span><ChevronRight size={17} /></button>; })}</div></SimpleScreen>; }
+function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, canView, onOpen, onSubscribe, onAddEdits, onRemoveEdit, onReorder, onEditDetails, onUploadCover, onClearCover }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; allPublishedEdits: CreatorEdit[]; owner: boolean; canView: boolean; onOpen: (edit: CreatorEdit) => void; onSubscribe: () => void; onAddEdits: (editIds: string[]) => void; onRemoveEdit: (editId: string) => void; onReorder: (editIds: string[]) => void; onEditDetails: () => void; onUploadCover: (file: File) => void; onClearCover: () => void }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [manageMode, setManageMode] = useState(false);
+  const [addingEdits, setAddingEdits] = useState(false);
+  const [pickedIds, setPickedIds] = useState<string[]>([]);
+  const [order, setOrder] = useState<string[]>(edits.map((item) => item.id));
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+  useEffect(() => { setOrder(edits.map((item) => item.id)); }, [edits]);
+  const orderedEdits = order.map((id) => edits.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item));
+  const cover = collectionCoverImage(collection, edits);
+
+  if (!owner && !canView && collection.access === 'locked') return <SimpleScreen kicker={t('Subscribers only', 'للمشتركين فقط')} title={ar ? collection.titleAr : collection.title}><div className="approved-panel collection-gate"><LockKeyhole size={25} /><h3>{t('A private creator collection.', 'مجموعة خاصة من المبدع.')}</h3><p>{t('Subscribe to unlock the complete collection and its field notes.', 'اشترك لفتح المجموعة الكاملة وملاحظاتها.')}</p><button className="approved-button primary wide" onClick={onSubscribe}><Price ar={ar} /></button></div></SimpleScreen>;
+
+  const beginDrag = (id: string) => (event: ReactPointerEvent<HTMLButtonElement>) => {
+    if (!manageMode) return;
+    event.preventDefault();
+    setDragId(id);
+  };
+  const moveDrag = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (!dragId) return;
+    const target = document.elementFromPoint(event.clientX, event.clientY);
+    const tile = target instanceof Element ? target.closest('[data-edit-id]') : null;
+    const id = tile?.getAttribute('data-edit-id');
+    if (id) setOverId(id);
+  };
+  const endDrag = () => {
+    if (dragId && overId && dragId !== overId) {
+      setOrder((current) => {
+        const next = [...current];
+        const from = next.indexOf(dragId);
+        const to = next.indexOf(overId);
+        if (from === -1 || to === -1) return current;
+        next.splice(from, 1);
+        next.splice(to, 0, dragId);
+        onReorder(next);
+        return next;
+      });
+    }
+    setDragId(null); setOverId(null);
+  };
+
+  const pickableEdits = allPublishedEdits.filter((item) => !collection.editIds.includes(item.id));
+
+  return <SimpleScreen kicker={ar ? 'مجموعة' : 'Collection'} title={ar ? collection.titleAr : collection.title}>
+    <div className="collection-cover-wrap">
+      <img className="approved-collection-hero" src={imageSrc(cover)} alt="" />
+      {owner && <label className="collection-cover-edit">
+        <ImagePlus size={15} /> {t('Change cover', 'تغيير الغلاف')}
+        <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadCover(file); event.target.value = ''; }} />
+      </label>}
+      {owner && collection.coverImage && <button type="button" className="collection-cover-clear" onClick={onClearCover}>{t('Use default cover', 'استخدام الغلاف الافتراضي')}</button>}
+    </div>
+    <div className="collection-meta-row">
+      <div>
+        <p>{ar ? collection.descriptionAr : collection.description}</p>
+        <p className="profile-taste-meta">
+          {t(`${collection.editIds.length} edits`, `${collection.editIds.length} تعديل`)}
+          {' · '}
+          {collection.access === 'locked' ? <span className="collection-visibility"><LockKeyhole size={12} /> {t('Subscribers only', 'للمشتركين فقط')}</span> : <span className="collection-visibility"><Globe size={12} /> {t('Public', 'عام')}</span>}
+        </p>
+      </div>
+      {owner && <button className="approved-button" onClick={onEditDetails}><Pencil size={14} /> {t('Edit details', 'تعديل التفاصيل')}</button>}
+    </div>
+
+    {owner && <div className="collection-owner-actions">
+      <button className="approved-button" onClick={() => setAddingEdits(true)}><Plus size={15} /> {t('Add Edits', 'إضافة تعديلات')}</button>
+      <button className={`approved-button ${manageMode ? 'selected' : ''}`} onClick={() => setManageMode(!manageMode)} disabled={!orderedEdits.length}>{manageMode ? t('Done', 'تم') : t('Manage', 'إدارة')}</button>
+    </div>}
+
+    {addingEdits && <div className="approved-panel collection-add-picker">
+      <h3>{t('Add Edits', 'إضافة تعديلات')}</h3>
+      {pickableEdits.length === 0 && <Empty text={t('All your published Edits are already in this Collection.', 'جميع تعديلاتك المنشورة موجودة بالفعل في هذه المجموعة.')} />}
+      <div className="collection-picker-list">
+        {pickableEdits.map((item) => {
+          const picked = pickedIds.includes(item.id);
+          return <button key={item.id} type="button" className={`collection-picker-row ${picked ? 'selected' : ''}`} onClick={() => setPickedIds(picked ? pickedIds.filter((id) => id !== item.id) : [...pickedIds, item.id])}>
+            <img src={imageSrc(item.image || media('quiet-tailoring.webp'))} alt="" />
+            <span>{ar ? item.titleAr : item.title}</span>
+            {picked && <Check size={16} />}
+          </button>;
+        })}
+      </div>
+      <div className="admin-confirm-actions">
+        <button className="approved-button" onClick={() => { setAddingEdits(false); setPickedIds([]); }}>{t('Cancel', 'إلغاء')}</button>
+        <button className="approved-button primary" onClick={() => { onAddEdits(pickedIds); setAddingEdits(false); setPickedIds([]); }} disabled={!pickedIds.length}>{t(`Add ${pickedIds.length}`, `إضافة ${pickedIds.length}`)}</button>
+      </div>
+    </div>}
+
+    {orderedEdits.length > 0 ? <div className="collection-grid" onPointerMove={moveDrag} onPointerUp={endDrag}>
+      {orderedEdits.map((item) => <div key={item.id} data-edit-id={item.id} className={`collection-grid-item ${dragId === item.id ? 'dragging' : ''} ${overId === item.id && dragId && dragId !== item.id ? 'drag-over' : ''}`}>
+        <button type="button" className="collection-grid-tap" onClick={() => !manageMode && onOpen(item)} onPointerDown={beginDrag(item.id)} aria-label={ar ? item.titleAr : item.title}>
+          <img src={imageSrc(item.image || media('quiet-tailoring.webp'))} alt="" />
+        </button>
+        {owner && manageMode && <button type="button" className="collection-grid-remove" onClick={() => onRemoveEdit(item.id)} aria-label={t('Remove from collection', 'إزالة من المجموعة')}><X size={14} /></button>}
+      </div>)}
+    </div> : <Empty text={owner ? t('No Edits yet. Tap "Add Edits" to start building this Collection.', 'لا توجد تعديلات بعد. اضغط "إضافة تعديلات" لبدء بناء هذه المجموعة.') : t('This Collection has no Edits yet.', 'لا تحتوي هذه المجموعة على تعديلات بعد.')} />}
+  </SimpleScreen>;
+}

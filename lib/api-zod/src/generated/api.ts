@@ -822,7 +822,9 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "description": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionMax),
   "descriptionAr": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
-  "coverEditId": zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "coverEditId": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "coverImage": zod.string().max(2000).optional(),
+  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
   "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
 })).max(getCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
@@ -992,7 +994,9 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "description": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionMax),
   "descriptionAr": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
-  "coverEditId": zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
+  "coverEditId": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
+  "coverImage": zod.string().max(2000).optional(),
+  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
   "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax)
 })).max(saveCreatorWorkspaceBodyCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
@@ -1154,7 +1158,9 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "description": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionMax),
   "descriptionAr": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
-  "coverEditId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "coverEditId": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "coverImage": zod.string().max(2000).optional(),
+  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
   "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
 })).max(saveCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
