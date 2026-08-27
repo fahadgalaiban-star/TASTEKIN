@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
@@ -22,7 +22,7 @@ export default function App() {
 }
 
 type Language = 'en' | 'ar';
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'settings';
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'settings' | 'auth';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -222,7 +222,9 @@ function TastekinApp() {
   const session = useTasteSessionController();
   const queryClient = useQueryClient();
   const [language, setLanguage] = useState<Language>(() => new URLSearchParams(location.search).get('lang') === 'ar' ? 'ar' : read('interface-language', 'en'));
-  const [screen, setScreen] = useState<Screen>('home');
+  const [passwordResetToken] = useState<string | null>(() => window.location.pathname === '/reset-password' ? new URLSearchParams(location.search).get('token') : null);
+  const [authError] = useState<string | null>(() => new URLSearchParams(location.search).get('authError'));
+  const [screen, setScreen] = useState<Screen>(() => passwordResetToken || authError ? 'auth' : 'home');
   const [exploreCategory, setExploreCategory] = useState<Category>('All');
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
   const [saved, setSaved] = useState<string[]>([]);
@@ -480,7 +482,7 @@ function TastekinApp() {
     go('edit');
   }, [selectedCreatorUsername, creatorEdits, publicCreatorEdits, session.creator?.handle]);
   const toggleSaved = async (id: string) => {
-    if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; }
+    if (session.status !== 'authenticated') { go('auth'); return; }
     const wasSaved = saved.includes(id);
     const next = wasSaved ? saved.filter((item) => item !== id) : [...saved, id];
     savedHydrationVersion.current += 1;
@@ -516,7 +518,7 @@ function TastekinApp() {
   };
   const openEdit = (item: CreatorEdit) => { if (item.creatorUsername) setSelectedCreatorUsername(item.creatorUsername); setSelectedEditId(item.id); go('edit'); };
   const startMessage = async () => {
-    if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; }
+    if (session.status !== 'authenticated') { go('auth'); return; }
     try {
       const response = await fetch('/api/conversations', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ creatorUsername: selectedCreatorUsername }),
@@ -633,27 +635,28 @@ function TastekinApp() {
     <header className="approved-topbar">{!['home', 'you', 'add'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
-    {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? window.location.assign('/api/login?returnTo=/') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
+    {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
     {screen === 'home' && <><section className="approved-hero"><span className="approved-kicker">{t('Taste-led discovery', 'اكتشاف مبني على الذوق')}</span><h1>{t('Follow the taste, not the numbers.', 'اتبع الذوق، لا الأرقام.')}</h1><p>{t('A considered feed of people, places, and daily routines shaped by what you actually like.', 'تغذية منتقاة من الأشخاص وأماكنهم وروتينهم اليومي، تتشكل بحسب ما تحبه فعلاً.')}</p></section><HomeFeedTabs ar={ar} active={homeFeedTab} onSelect={setHomeFeedTab} /><div className="approved-feed">{homeFeed.map((item) => <EditCard key={item.id} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}</div></>}
-    {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} />}
-    {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} />}
+    {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
+    {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} published={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onEdit={openCollectionManager} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); openCollectionManager(); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
-    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
-    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); }} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} />}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { window.location.assign('/api/login?returnTo=/'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (viewingOwnProfile) go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} />}
+    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
+    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); }} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onSignIn={() => go('auth')} />}
+    {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (viewingOwnProfile) go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} />}
      {screen === 'collections' && <SimpleScreen kicker={creatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={viewedCreatorEdits.filter((item) => selectedCollection.editIds.includes(item.id))} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
     {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
-    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} />}
-    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} />}
+    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} />}
+    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
-    {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} />}
+    {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
     {screen === 'adminVerification' && <AdminVerificationScreen ar={ar} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
@@ -677,7 +680,7 @@ function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorPro
   const initials = (profile.displayName || '?').trim().slice(0, 1).toUpperCase();
   return <div className="approved-avatar">{image ? <img src={image} alt={profile.displayName} /> : <span aria-hidden="true">{initials}</span>}</div>;
 }
-function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, onOpenProfile, onOpenEdit }: { ar: boolean; category: Category; setCategory: (c: Category) => void; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void }) {
+function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, onOpenProfile, onOpenEdit, onSignIn }: { ar: boolean; category: Category; setCategory: (c: Category) => void; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void; onSignIn: () => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -730,7 +733,7 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
       {session.status === 'signed-out' && sort === 'best' && (
          <div className="workspace-notice">
             {t('Sign in to see personalized Best Matches.', 'سجل الدخول لرؤية أفضل التطابقات المخصصة لك.')}
-            <button onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Sign in', 'تسجيل الدخول')}</button>
+            <button onClick={onSignIn}>{t('Sign in', 'تسجيل الدخول')}</button>
          </div>
       )}
 
@@ -765,7 +768,7 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
   );
 }
 
-function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
+function TuneTasteScreen({ ar, onBack, onSignIn }: { ar: boolean; onBack: () => void; onSignIn: () => void }) {
   const { data: catalog, isLoading: catalogLoading } = useGetTasteCatalog();
   const session = useTasteSession();
   const { data: prefs, isLoading: prefsLoading, error: prefsError } = useGetTastePreferences({
@@ -812,7 +815,7 @@ function TuneTasteScreen({ ar, onBack }: { ar: boolean; onBack: () => void }) {
       <SimpleScreen kicker={ar ? 'تطابق الذوق' : 'Taste Match'} title={ar ? 'ضبط ذوقك' : 'Tune your taste'}>
         <div className="workspace-notice" role="alert">
           {ar ? 'سجل الدخول لضبط تفضيلات ذوقك.' : 'Sign in to tune your taste preferences.'}
-          <button onClick={() => window.location.assign('/api/login?returnTo=/')}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button>
+          <button onClick={onSignIn}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button>
         </div>
         <button className="approved-button wide" style={{ marginTop: 16 }} onClick={onBack}>{ar ? 'رجوع' : 'Back'}</button>
       </SimpleScreen>
@@ -891,7 +894,7 @@ function EditCard({ edit, ar, saved, onSave, onOpen }: { edit: CreatorEdit; ar: 
   if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
   return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} /><button className="approved-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
-function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSubscribe }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void }) {
+function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSubscribe, onSignIn }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void; onSignIn: () => void }) {
   const locked = edit.access === 'locked';
   const caption = publicCaptionLine(edit, ar);
   const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption;
@@ -904,13 +907,13 @@ function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSu
     {locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>
       {isPlaceCategory(edit.category) && edit.image && <PlaceDetails edit={edit} ar={ar} showName={false} />}
       {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
-      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} onSave={onSave} />
+      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} onSave={onSave} onSignIn={onSignIn} />
       <button className={`approved-button wide ${saved ? 'primary' : ''}`} onClick={onSave}>{saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'احفظ هذا التعديل' : 'Save this edit')}</button>
     </>}
   </SimpleScreen>;
 }
 
-function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, onSave }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; onSave: () => void }) {
+function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, onSave, onSignIn }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; onSave: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const [engagement, setEngagement] = useState<EditEngagement>({ editId, likeCount: 0, commentCount: 0, liked: false, saved });
   const [comments, setComments] = useState<EditComment[]>([]);
@@ -918,7 +921,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
   const [liking, setLiking] = useState(false);
-  const signIn = () => window.location.assign('/api/login?returnTo=/');
+  const signIn = () => onSignIn();
   const load = useCallback(async () => {
     try {
       const [engagementResponse, commentsResponse] = await Promise.all([
@@ -1011,7 +1014,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
   </section>;
 }
 
-function InboxScreen({ ar, activeConversationId, onOpen }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void }) {
+function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -1024,7 +1027,7 @@ function InboxScreen({ ar, activeConversationId, onOpen }: { ar: boolean; active
     } catch { setState('error'); }
   }, [session.status]);
   useEffect(() => { void load(); }, [load, activeConversationId]);
-  if (session.status !== 'authenticated') return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}><div className="workspace-notice">{ar ? 'سجّل الدخول لرؤية رسائلك.' : 'Sign in to view your messages.'}<button onClick={() => window.location.assign('/api/login?returnTo=/')}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button></div></SimpleScreen>;
+  if (session.status !== 'authenticated') return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}><div className="workspace-notice">{ar ? 'سجّل الدخول لرؤية رسائلك.' : 'Sign in to view your messages.'}<button onClick={onSignIn}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button></div></SimpleScreen>;
   return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}>
     {state === 'loading' && <Empty text={ar ? 'جارٍ تحميل رسائلك…' : 'Loading your messages…'} />}
     {state === 'error' && <div className="workspace-notice">{ar ? 'تعذر تحميل الرسائل.' : 'Could not load your messages.'}<button onClick={() => void load()}>{ar ? 'حاول مجدداً' : 'Try again'}</button></div>}
@@ -1100,7 +1103,7 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
   </SimpleScreen>;
 }
 
-function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, isAdmin, onOpenAdminVerification }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; isAdmin: boolean; onOpenAdminVerification: () => void }) {
+function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, isAdmin, onOpenAdminVerification, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; isAdmin: boolean; onOpenAdminVerification: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [pushNotifications, setPushNotifications] = useState(() => read('notify-push', true));
@@ -1109,7 +1112,7 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
   const toggleEmail = () => { const next = !emailUpdates; setEmailUpdates(next); write('notify-email', next); };
   const accountName = owner ? creatorProfile.displayName : session.user?.email ? session.user.email.split('@')[0] : t('Guest', 'زائر');
   return <SimpleScreen kicker={t('Account', 'الحساب')} title={t('Settings', 'الإعدادات')}>
-    {session.status !== 'authenticated' && <button data-testid="settings-sign-in" className="approved-button primary wide" style={{ marginBottom: 16 }} onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Sign in', 'تسجيل الدخول')}</button>}
+    {session.status !== 'authenticated' && <button data-testid="settings-sign-in" className="approved-button primary wide" style={{ marginBottom: 16 }} onClick={onSignIn}>{t('Sign in', 'تسجيل الدخول')}</button>}
     <div className="settings-section">
       <h3>{t('Account', 'الحساب')}</h3>
       <div className="settings-row"><span>{t('Name', 'الاسم')}</span><strong>{accountName || (ar ? 'غير محدد' : 'Not set')}</strong></div>
@@ -1146,6 +1149,110 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
       <a className="approved-button wide" href="mailto:support@tastekin.app">{t('Contact support', 'تواصل مع الدعم')}</a>
     </div>
     {session.status === 'authenticated' && <button data-testid="settings-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
+  </SimpleScreen>;
+}
+
+function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boolean; initialResetToken: string | null; initialError: string | null; onDone: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset'>(initialResetToken ? 'reset' : 'signin');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState(initialError || '');
+  const [notice, setNotice] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const submitEmailPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(''); setNotice('');
+    if (!email.trim() || !email.includes('@')) { setError(t('Enter a valid email address.', 'أدخل بريداً إلكترونياً صحيحاً.')); return; }
+    if (password.length < 8) { setError(t('Password must be at least 8 characters.', 'يجب ألا تقل كلمة المرور عن 8 أحرف.')); return; }
+    setBusy(true);
+    try {
+      const response = await fetch(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { setError(data.error || t('Something went wrong. Please try again.', 'حدث خطأ ما. حاول مرة أخرى.')); return; }
+      await session.refresh();
+      onDone();
+    } catch {
+      setError(t('Network error. Please try again.', 'خطأ في الشبكة. حاول مرة أخرى.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitForgotPassword = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(''); setNotice('');
+    if (!email.trim() || !email.includes('@')) { setError(t('Enter a valid email address.', 'أدخل بريداً إلكترونياً صحيحاً.')); return; }
+    setBusy(true);
+    try {
+      const response = await fetch('/api/auth/forgot-password', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim() }) });
+      const data = await response.json().catch(() => ({}));
+      setNotice(data.message || t('If an account with that email exists, a reset link has been sent.', 'إذا كان هناك حساب بهذا البريد، فقد تم إرسال رابط إعادة التعيين.'));
+    } catch {
+      setError(t('Network error. Please try again.', 'خطأ في الشبكة. حاول مرة أخرى.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const submitReset = async (event: FormEvent) => {
+    event.preventDefault();
+    setError(''); setNotice('');
+    if (password.length < 8) { setError(t('Password must be at least 8 characters.', 'يجب ألا تقل كلمة المرور عن 8 أحرف.')); return; }
+    setBusy(true);
+    try {
+      const response = await fetch('/api/auth/reset-password', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: initialResetToken, password }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) { setError(data.error || t('This reset link is invalid or has expired.', 'رابط إعادة التعيين غير صالح أو منتهي الصلاحية.')); return; }
+      setNotice(data.message || t('Your password has been reset. You can now sign in.', 'تمت إعادة تعيين كلمة المرور. يمكنك تسجيل الدخول الآن.'));
+      setMode('signin'); setPassword('');
+    } catch {
+      setError(t('Network error. Please try again.', 'خطأ في الشبكة. حاول مرة أخرى.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return <SimpleScreen kicker={t('Account', 'الحساب')} title={mode === 'signup' ? t('Create your account', 'أنشئ حسابك') : mode === 'forgot' ? t('Reset your password', 'إعادة تعيين كلمة المرور') : mode === 'reset' ? t('Choose a new password', 'اختر كلمة مرور جديدة') : t('Sign in', 'تسجيل الدخول')}>
+    {mode !== 'reset' && <>
+      <button className="approved-button wide" onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Continue with Replit', 'متابعة عبر Replit')}</button>
+      <button className="approved-button wide" onClick={() => window.location.assign('/api/auth/google?returnTo=/')}>{t('Continue with Google', 'متابعة عبر Google')}</button>
+      <div className="auth-divider">{t('or', 'أو')}</div>
+    </>}
+    {(mode === 'signin' || mode === 'signup') && <form onSubmit={(event) => void submitEmailPassword(event)}>
+      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+      <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      {mode === 'signup' && <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>}
+      {error && <p className="settings-note" role="alert" style={{ color: '#b3261e' }}>{error}</p>}
+      <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : mode === 'signup' ? t('Create account', 'إنشاء حساب') : t('Sign in', 'تسجيل الدخول')}</button>
+      <div className="auth-links">
+        {mode === 'signin' ? (
+          <button type="button" className="auth-link" onClick={() => { setMode('signup'); setError(''); }}>{t("Don't have an account? Sign up", 'ليس لديك حساب؟ أنشئ حساباً')}</button>
+        ) : (
+          <button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); }}>{t('Already have an account? Sign in', 'لديك حساب بالفعل؟ سجّل الدخول')}</button>
+        )}
+        {mode === 'signin' && <button type="button" className="auth-link" onClick={() => { setMode('forgot'); setError(''); setNotice(''); }}>{t('Forgot password?', 'نسيت كلمة المرور؟')}</button>}
+      </div>
+    </form>}
+    {mode === 'forgot' && <form onSubmit={(event) => void submitForgotPassword(event)}>
+      <p className="settings-note">{t('Enter your email and we’ll send you a link to reset your password.', 'أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.')}</p>
+      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+      {error && <p className="settings-note" role="alert" style={{ color: '#b3261e' }}>{error}</p>}
+      {notice && <p className="settings-note" role="status">{notice}</p>}
+      <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : t('Send reset link', 'إرسال رابط إعادة التعيين')}</button>
+      <div className="auth-links"><button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); setNotice(''); }}>{t('Back to sign in', 'العودة لتسجيل الدخول')}</button></div>
+    </form>}
+    {mode === 'reset' && <form onSubmit={(event) => void submitReset(event)}>
+      <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>
+      {error && <p className="settings-note" role="alert" style={{ color: '#b3261e' }}>{error}</p>}
+      {notice && <p className="settings-note" role="status">{notice}</p>}
+      <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : t('Reset password', 'إعادة تعيين كلمة المرور')}</button>
+    </form>}
   </SimpleScreen>;
 }
 
@@ -1235,7 +1342,7 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
   </SimpleScreen>;
 }
 
-function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void }) {
+function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch, onSignIn }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const ownerView = owner && !visitorPreview;
   const [sealOpen, setSealOpen] = useState(false);
@@ -1321,7 +1428,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
             </div>
           )}
 
-           <button className="approved-button wide" onClick={() => matchData?.match?.state === 'signed_out' ? window.location.assign('/api/login?returnTo=/') : onMatch()}>
+           <button className="approved-button wide" onClick={() => matchData?.match?.state === 'signed_out' ? onSignIn() : onMatch()}>
              {matchData?.match?.state === 'signed_out'
                ? (ar ? 'تسجيل الدخول' : 'Sign in')
                : (ar ? 'ضبط ذوقك' : 'Tune my taste')}
