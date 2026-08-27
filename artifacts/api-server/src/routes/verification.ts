@@ -2,7 +2,7 @@ import { creatorWorkspaces, db, usersTable, verificationApplications } from "@wo
 import { eq, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 
-import { ensureCreatorAccount, isTastekinAdmin } from "../lib/creator-account";
+import { ensureCreatorAccount, isCurrentUserAdmin } from "../lib/creator-account";
 
 const router: IRouter = Router();
 const allowedStatuses = new Set(["pending", "approved", "rejected", "needs_improvement"]);
@@ -61,7 +61,7 @@ router.post("/verification-application", async (req, res) => {
 });
 
 router.get("/admin/creators", async (req, res) => {
-  if (!isTastekinAdmin(req.user)) { res.status(403).json({ error: "TASTEKIN administrator access required" }); return; }
+  if (!(await isCurrentUserAdmin(req.user))) { res.status(403).json({ error: "TASTEKIN administrator access required" }); return; }
   const statusParam = typeof req.query.status === "string" ? req.query.status : undefined;
   const statusFilter = statusParam && allowedStatuses.has(statusParam) ? statusParam : undefined;
   const query = db.select({
@@ -86,7 +86,7 @@ router.get("/admin/creators", async (req, res) => {
 });
 
 router.put("/admin/creators/:creatorId/verification", async (req, res) => {
-  if (!isTastekinAdmin(req.user)) { res.status(403).json({ error: "TASTEKIN administrator access required" }); return; }
+  if (!(await isCurrentUserAdmin(req.user))) { res.status(403).json({ error: "TASTEKIN administrator access required" }); return; }
   const status = typeof req.body?.status === "string" ? req.body.status : "";
   if (!reviewStatuses.has(status)) { res.status(400).json({ error: "Status must be approved, needs_improvement, or rejected" }); return; }
   const reviewNote = typeof req.body?.reviewNote === "string" ? req.body.reviewNote.trim().slice(0, 1000) : "";

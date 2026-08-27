@@ -8,7 +8,7 @@ import {
   upsertUser, validatePassword, verifyPassword,
 } from "../lib/auth";
 import { logger } from "../lib/logger";
-import { ensureCreatorAccount, founderMappingConfigured, isTastekinAdmin } from "../lib/creator-account";
+import { ensureCreatorAccount, founderMappingConfigured, isCurrentUserAdmin } from "../lib/creator-account";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -39,7 +39,7 @@ router.get("/me", async (req, res) => {
         verified: authorization.verified,
         ownsWorkspace: true,
       } : null,
-      isAdmin: isTastekinAdmin(req.user),
+      isAdmin: await isCurrentUserAdmin(req.user),
       founderMappingConfigured: founderMappingConfigured(),
     });
   } catch (error) {
