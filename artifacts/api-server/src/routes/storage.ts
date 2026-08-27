@@ -12,9 +12,12 @@ const privatePath = /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/;
 
 function referencedPaths(workspace: typeof creatorWorkspaces.$inferSelect) {
   const paths = new Set(
-    (workspace.edits as Array<Record<string, unknown>>)
-      .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage])
-      .filter((path): path is string => typeof path === "string"),
+    [
+      ...(workspace.edits as Array<Record<string, unknown>>)
+        .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage]),
+      ...(workspace.collections as Array<Record<string, unknown>>)
+        .flatMap((collection) => [collection.coverImage, ...(Array.isArray(collection.uploads) ? (collection.uploads as Array<{ image?: unknown }>).map((item) => item.image) : [])]),
+    ].filter((path): path is string => typeof path === "string"),
   );
   if (workspace.profile?.avatar) paths.add(workspace.profile.avatar);
   return paths;

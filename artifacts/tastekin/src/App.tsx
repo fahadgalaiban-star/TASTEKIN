@@ -260,6 +260,19 @@ function TastekinApp() {
   const [workspaceRevision, setWorkspaceRevision] = useState(1);
   const [workspaceState, setWorkspaceState] = useState<'loading' | 'ready' | 'syncing' | 'error'>('loading');
   const [workspaceError, setWorkspaceError] = useState('');
+  // Mirror the confirmed-latest workspace state in refs so an in-flight save
+  // (or one queued right behind it) always reads the true latest revision and
+  // edits/collections at the moment it actually fires, instead of whatever a
+  // React state closure captured when the triggering click happened. Without
+  // this, two saves fired in quick succession (e.g. uploading photos into a
+  // Collection one after another) can both compute their payload from the
+  // same pre-save snapshot: the second either overwrites the first's result
+  // or gets rejected with a false "workspace changed on another device"
+  // conflict, because its `expectedRevision` was already stale before it sent.
+  const workspaceRevisionRef = useRef(1);
+  const creatorEditsRef = useRef<CreatorEdit[]>(seedEdits);
+  const creatorCollectionsRef = useRef<CreatorCollection[]>(seedCollections);
+  const persistQueueRef = useRef<Promise<unknown>>(Promise.resolve());
   const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>(blankCreatorProfile);
   const [publicCreatorProfile, setPublicCreatorProfile] = useState<CreatorProfile | null>(null);
   const [publicCreatorEdits, setPublicCreatorEdits] = useState<CreatorEdit[]>([]);
@@ -303,7 +316,7 @@ function TastekinApp() {
       });
       if (!response.ok) throw new Error('Could not load the shared creator workspace.');
       const workspace = await response.json() as { edits: CreatorEdit[]; collections: CreatorCollection[]; revision: number };
-      setCreatorEdits(workspace.edits); setCreatorCollections(workspace.collections); setWorkspaceRevision(workspace.revision); setWorkspaceState('ready');
+      applyWorkspaceSnapshot(workspace.edits, workspace.collections, workspace.revision); setWorkspaceState('ready');
     } catch {
       // This data only matters for the workspace owner's own creator tools; a failure here shouldn't
       // block or alarm a signed-out visitor or a plain consumer who never sees that screen.
@@ -400,22 +413,51 @@ function TastekinApp() {
       })
       .catch(() => undefined);
   }, [session.status, session.revision]);
-  const persistWorkspace = async (edits: CreatorEdit[], collections: CreatorCollection[], cleanupPaths = pendingMediaPaths) => {
-    setCreatorEdits(edits); setCreatorCollections(collections); setWorkspaceState('syncing'); setWorkspaceError('');
+  const applyWorkspaceSnapshot = (edits: CreatorEdit[], collections: CreatorCollection[], revision: number) => {
+    creatorEditsRef.current = edits; creatorCollectionsRef.current = collections; workspaceRevisionRef.current = revision;
+    setCreatorEdits(edits); setCreatorCollections(collections); setWorkspaceRevision(revision);
+  };
+  const runPersist = async (edits: CreatorEdit[], collections: CreatorCollection[], cleanupPaths: string[]) => {
+    applyWorkspaceSnapshot(edits, collections, workspaceRevisionRef.current);
+    setWorkspaceState('syncing'); setWorkspaceError('');
     pendingMediaIsDiscardable.current = false;
     try {
-      const response = await fetch('/api/creator-workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edits, collections, expectedRevision: workspaceRevision }) });
+      const response = await fetch('/api/creator-workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edits, collections, expectedRevision: workspaceRevisionRef.current }) });
       if (response.status === 401) throw new Error('auth');
       if (response.status === 409) throw new Error('conflict');
       if (!response.ok) throw new Error('Could not save the shared creator workspace.');
       const workspace = await response.json() as { edits: CreatorEdit[]; collections: CreatorCollection[]; revision: number };
-      setCreatorEdits(workspace.edits); setCreatorCollections(workspace.collections); setWorkspaceRevision(workspace.revision); setPendingMediaPaths([]); setWorkspaceState('ready');
+      applyWorkspaceSnapshot(workspace.edits, workspace.collections, workspace.revision);
+      setPendingMediaPaths([]); setWorkspaceState('ready');
       return true;
     } catch (error) {
       if (cleanupPaths.length) { void cleanupCreatorMedia(cleanupPaths); setPendingMediaPaths([]); }
       setWorkspaceState('error'); setWorkspaceError(error instanceof Error && error.message === 'auth' ? 'Sign in to save changes to your creator workspace.' : error instanceof Error && error.message === 'conflict' ? 'This workspace changed on another device. Reload your workspace before saving again.' : 'Your latest creator change has not been saved. Try again before leaving this screen.');
       return false;
     }
+  };
+  // Every save — whatever triggered it — funnels through this single queue,
+  // so two saves fired close together (e.g. two "Upload new photo" actions
+  // back to back) run strictly one after another instead of racing over the
+  // same expectedRevision.
+  const persistWorkspace = (edits: CreatorEdit[], collections: CreatorCollection[], cleanupPaths = pendingMediaPaths) => {
+    const job = persistQueueRef.current.then(() => runPersist(edits, collections, cleanupPaths), () => runPersist(edits, collections, cleanupPaths));
+    persistQueueRef.current = job.catch(() => undefined);
+    return job;
+  };
+  // Like persistWorkspace, but the diff itself is computed lazily — once it's
+  // this mutation's turn in the queue — from the latest confirmed edits/
+  // collections rather than whatever was current when the user clicked. That
+  // is what keeps a rapid string of Collection edits (add, remove, reorder,
+  // upload, cover changes) from clobbering each other's results.
+  const queueWorkspaceMutation = (build: (edits: CreatorEdit[], collections: CreatorCollection[]) => { edits: CreatorEdit[]; collections: CreatorCollection[] } | null) => {
+    const run = () => {
+      const next = build(creatorEditsRef.current, creatorCollectionsRef.current);
+      return next ? runPersist(next.edits, next.collections, pendingMediaPaths) : Promise.resolve(true);
+    };
+    const job = persistQueueRef.current.then(run, run);
+    persistQueueRef.current = job.catch(() => undefined);
+    return job;
   };
   const cleanupCreatorMedia = async (objectPaths: string[]) => {
     if (!objectPaths.length) return;
@@ -602,7 +644,7 @@ function TastekinApp() {
       const saved = await response.json() as CreatorProfile;
       const current = saved.avatar.startsWith('/api/public-profile-media') ? { ...saved, avatar: `${saved.avatar}?v=${Date.now()}` } : saved;
       pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]);
-      setCreatorProfile(current); setProfileForm(current); setWorkspaceRevision(saved.revision); discardPendingProfilePhoto();
+      setCreatorProfile(current); setProfileForm(current); workspaceRevisionRef.current = saved.revision; setWorkspaceRevision(saved.revision); discardPendingProfilePhoto();
       setSelectedCreatorUsername(saved.username);
       await session.refresh();
       if (oldAvatar && oldAvatar !== saved.avatarObjectPath) void cleanupCreatorMedia([oldAvatar]);
@@ -665,74 +707,94 @@ function TastekinApp() {
     persistWorkspace(nextEdits, nextCollections);
     setEditingCollectionId(id); setSelectedCollectionId(id); return next;
   };
-  const setCollectionEditIds = (collectionId: string, nextEditIds: string[]) => {
-    const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, editIds: nextEditIds } : item);
+  // All Collection-mutating actions below queue onto persistQueueRef and
+  // recompute their diff from creatorEditsRef/creatorCollectionsRef at the
+  // moment they actually run (not from the possibly-stale creatorEdits/
+  // creatorCollections closure captured when the user clicked). That's what
+  // keeps a rapid sequence of saves — e.g. several "Upload new photo" actions
+  // in a row — from either overwriting each other's result or tripping the
+  // server's optimistic-concurrency check with a stale expectedRevision.
+  const applyCollectionEditIds = (edits: CreatorEdit[], collections: CreatorCollection[], collectionId: string, nextEditIds: string[], extra?: Partial<CreatorCollection>) => {
+    const nextCollections = collections.map((item) => item.id === collectionId ? { ...item, editIds: nextEditIds, ...extra } : item);
     const nextEditIdsSet = new Set(nextEditIds);
-    const nextEdits = creatorEdits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId).concat(nextEditIdsSet.has(item.id) ? [collectionId] : []) }));
-    persistWorkspace(nextEdits, nextCollections);
+    const nextEdits = edits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId).concat(nextEditIdsSet.has(item.id) ? [collectionId] : []) }));
+    return { edits: nextEdits, collections: nextCollections };
   };
   const addEditsToCollection = (collectionId: string, editIds: string[]) => {
-    const current = creatorCollections.find((item) => item.id === collectionId);
-    if (!current) return;
-    setCollectionEditIds(collectionId, [...current.editIds, ...editIds.filter((id) => !current.editIds.includes(id))]);
+    queueWorkspaceMutation((edits, collections) => {
+      const current = collections.find((item) => item.id === collectionId);
+      if (!current) return null;
+      const nextEditIds = [...current.editIds, ...editIds.filter((id) => !current.editIds.includes(id))];
+      return applyCollectionEditIds(edits, collections, collectionId, nextEditIds);
+    });
   };
   const removeCollectionItem = (collectionId: string, itemId: string) => {
-    const current = creatorCollections.find((item) => item.id === collectionId);
-    if (!current) return;
-    const removedObjectPath = current.uploads?.find((upload) => upload.id === itemId)?.imageObjectPath;
-    const nextCollections = creatorCollections.map((item) => item.id === collectionId
-      ? { ...item, editIds: item.editIds.filter((id) => id !== itemId), uploads: (item.uploads || []).filter((upload) => upload.id !== itemId), itemOrder: (item.itemOrder || []).filter((id) => id !== itemId) }
-      : item);
-    const nextEdits = creatorEdits.map((item) => item.id === itemId ? { ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId) } : item);
-    persistWorkspace(nextEdits, nextCollections);
-    if (removedObjectPath) void cleanupCreatorMedia([removedObjectPath]);
+    queueWorkspaceMutation((edits, collections) => {
+      const current = collections.find((item) => item.id === collectionId);
+      if (!current) return null;
+      const removedObjectPath = current.uploads?.find((upload) => upload.id === itemId)?.imageObjectPath;
+      const nextCollections = collections.map((item) => item.id === collectionId
+        ? { ...item, editIds: item.editIds.filter((id) => id !== itemId), uploads: (item.uploads || []).filter((upload) => upload.id !== itemId), itemOrder: (item.itemOrder || []).filter((id) => id !== itemId) }
+        : item);
+      const nextEdits = edits.map((item) => item.id === itemId ? { ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId) } : item);
+      if (removedObjectPath) void cleanupCreatorMedia([removedObjectPath]);
+      return { edits: nextEdits, collections: nextCollections };
+    });
   };
   const reorderCollectionItems = (collectionId: string, nextOrder: string[]) => {
-    const current = creatorCollections.find((item) => item.id === collectionId);
-    if (!current) return;
-    const uploadIds = new Set((current.uploads || []).map((upload) => upload.id));
-    const nextEditIds = nextOrder.filter((id) => !uploadIds.has(id));
-    const nextEditIdsSet = new Set(nextEditIds);
-    const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, editIds: nextEditIds, itemOrder: nextOrder } : item);
-    const nextEdits = creatorEdits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId).concat(nextEditIdsSet.has(item.id) ? [collectionId] : []) }));
-    persistWorkspace(nextEdits, nextCollections);
+    queueWorkspaceMutation((edits, collections) => {
+      const current = collections.find((item) => item.id === collectionId);
+      if (!current) return null;
+      const uploadIds = new Set((current.uploads || []).map((upload) => upload.id));
+      const nextEditIds = nextOrder.filter((id) => !uploadIds.has(id));
+      return applyCollectionEditIds(edits, collections, collectionId, nextEditIds, { itemOrder: nextOrder });
+    });
   };
   const uploadCollectionPhotos = async (collectionId: string, files: File[]) => {
-    const current = creatorCollections.find((item) => item.id === collectionId);
-    if (!current || !files.length) return;
+    if (!files.length) return;
     try {
       const uploadedItems: CollectionUpload[] = [];
       for (const file of files) {
         const uploaded = await uploadCreatorImage(file);
         uploadedItems.push({ id: `upload-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`, type: 'photo', image: uploaded.image, imageObjectPath: uploaded.objectPath });
       }
-      const existingOrder = current.itemOrder?.length ? current.itemOrder : [...current.editIds, ...(current.uploads || []).map((upload) => upload.id)];
-      const nextCollections = creatorCollections.map((item) => item.id === collectionId
-        ? { ...item, uploads: [...(item.uploads || []), ...uploadedItems], itemOrder: [...existingOrder, ...uploadedItems.map((upload) => upload.id)] }
-        : item);
-      persistWorkspace(creatorEdits, nextCollections);
+      await queueWorkspaceMutation((edits, collections) => {
+        const current = collections.find((item) => item.id === collectionId);
+        if (!current) return null;
+        const existingOrder = current.itemOrder?.length ? current.itemOrder : [...current.editIds, ...(current.uploads || []).map((upload) => upload.id)];
+        const nextCollections = collections.map((item) => item.id === collectionId
+          ? { ...item, uploads: [...(item.uploads || []), ...uploadedItems], itemOrder: [...existingOrder, ...uploadedItems.map((upload) => upload.id)] }
+          : item);
+        return { edits, collections: nextCollections };
+      });
     } catch (err) {
       window.alert(err instanceof Error ? err.message : String(err));
     }
   };
-  const setCollectionCover = (collectionId: string, coverImage: string, coverImageObjectPath: string | null) => {
-    const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, coverImage, coverImageObjectPath } : item);
-    persistWorkspace(creatorEdits, nextCollections);
-  };
   const uploadCollectionCover = async (collectionId: string, file: File) => {
-    const previousObjectPath = creatorCollections.find((item) => item.id === collectionId)?.coverImageObjectPath;
     try {
       const uploaded = await uploadCreatorImage(file);
-      setCollectionCover(collectionId, uploaded.image, uploaded.objectPath);
-      if (previousObjectPath) void cleanupCreatorMedia([previousObjectPath]);
+      await queueWorkspaceMutation((edits, collections) => {
+        const current = collections.find((item) => item.id === collectionId);
+        if (!current) return null;
+        const previousObjectPath = current.coverImageObjectPath;
+        const nextCollections = collections.map((item) => item.id === collectionId ? { ...item, coverImage: uploaded.image, coverImageObjectPath: uploaded.objectPath } : item);
+        if (previousObjectPath) void cleanupCreatorMedia([previousObjectPath]);
+        return { edits, collections: nextCollections };
+      });
     } catch (err) {
       window.alert(err instanceof Error ? err.message : String(err));
     }
   };
   const clearCollectionCover = (collectionId: string) => {
-    const previousObjectPath = creatorCollections.find((item) => item.id === collectionId)?.coverImageObjectPath;
-    setCollectionCover(collectionId, '', null);
-    if (previousObjectPath) void cleanupCreatorMedia([previousObjectPath]);
+    queueWorkspaceMutation((edits, collections) => {
+      const current = collections.find((item) => item.id === collectionId);
+      if (!current) return null;
+      const previousObjectPath = current.coverImageObjectPath;
+      const nextCollections = collections.map((item) => item.id === collectionId ? { ...item, coverImage: '', coverImageObjectPath: null } : item);
+      if (previousObjectPath) void cleanupCreatorMedia([previousObjectPath]);
+      return { edits, collections: nextCollections };
+    });
   };
   const abandonComposer = () => go('add');
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
