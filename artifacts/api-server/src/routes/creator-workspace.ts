@@ -287,6 +287,21 @@ function normalizeLegacyLockedEdit(edit: Record<string, unknown>) {
   return edit;
 }
 
+/**
+ * Uploaded-photo collection items have no backing Edit, so they are never
+ * gated by publishedIds — they're only ever visible when the collection
+ * itself is visible to the viewer.
+ */
+function publicCollection(collection: Record<string, unknown>, publishedIds: Set<unknown>) {
+  const uploads = Array.isArray(collection.uploads) ? collection.uploads : [];
+  const uploadIds = new Set((uploads as Array<{ id?: unknown }>).map((item) => item.id).filter((id) => typeof id === "string"));
+  const editIds = Array.isArray(collection.editIds) ? collection.editIds.filter((id) => publishedIds.has(id)) : [];
+  const itemOrder = Array.isArray(collection.itemOrder)
+    ? collection.itemOrder.filter((id) => publishedIds.has(id) || uploadIds.has(id))
+    : [...editIds, ...uploadIds];
+  return { ...collection, editIds, uploads, itemOrder };
+}
+
 function serializeWorkspace(workspace: Awaited<ReturnType<typeof getWorkspace>>) {
   return {
     creatorId: workspace.creatorId,
@@ -336,7 +351,7 @@ router.get("/creator-workspace", async (req, res) => {
     const publishedIds = new Set(edits.map((edit) => edit.id));
     const collections = (workspace.collections as Array<Record<string, unknown>>)
       .filter((collection) => collection.access === "public" && (typeof collection.coverEditId !== "string" || !collection.coverEditId || publishedIds.has(collection.coverEditId)))
-      .map((collection) => ({ ...collection, editIds: Array.isArray(collection.editIds) ? collection.editIds.filter((id) => publishedIds.has(id)) : [] }));
+      .map((collection) => publicCollection(collection, publishedIds));
     res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits, collections }));
   } catch (error) {
     req.log.error({ err: error }, "Unable to load creator workspace");
@@ -360,7 +375,7 @@ router.get("/creators/:username/workspace", async (req, res) => {
     const publishedIds = new Set(edits.map((edit) => edit.id));
     const collections = (workspace.collections as Array<Record<string, unknown>>)
       .filter((collection) => collection.access === "public")
-      .map((collection) => ({ ...collection, editIds: Array.isArray(collection.editIds) ? collection.editIds.filter((id) => publishedIds.has(id)) : [] }));
+      .map((collection) => publicCollection(collection, publishedIds));
     res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits, collections }));
   } catch (error) {
     req.log.error({ err: error }, "Unable to load public creator workspace");
@@ -483,9 +498,12 @@ router.put("/creator-workspace", async (req, res) => {
     const workspaceId = authorization.workspace.creatorId;
     const ownerId = req.user!.id;
     const privatePaths = Array.from(new Set(
-      (parsed.data.edits as Array<Record<string, unknown>>)
-        .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage])
-        .filter((path): path is string => typeof path === "string" && /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/.test(path)),
+      [
+        ...(parsed.data.edits as Array<Record<string, unknown>>)
+          .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage]),
+        ...(parsed.data.collections as Array<Record<string, unknown>>)
+          .flatMap((collection) => Array.isArray(collection.uploads) ? (collection.uploads as Array<{ image?: unknown }>).map((item) => item.image) : []),
+      ].filter((path): path is string => typeof path === "string" && /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/.test(path)),
     ));
     const result = await db.transaction(async (tx) => {
       // Engagement rows are keyed by Edit ID, so IDs must remain globally unique
@@ -507,9 +525,12 @@ router.put("/creator-workspace", async (req, res) => {
       const collides = otherWorkspaces.some((other) => (other.edits as Array<{ id?: unknown }>).some((edit) => typeof edit.id === "string" && requestedEditIds.has(edit.id)));
       if (collides) return { kind: "edit-id" as const };
       const existingPrivatePaths = Array.from(new Set(
-        (current.edits as Array<Record<string, unknown>>)
-          .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage])
-          .filter((path): path is string => typeof path === "string" && /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/.test(path)),
+        [
+          ...(current.edits as Array<Record<string, unknown>>)
+            .flatMap((edit) => [edit.sourceImage, edit.image, edit.previewImage]),
+          ...(current.collections as Array<Record<string, unknown>>)
+            .flatMap((collection) => Array.isArray(collection.uploads) ? (collection.uploads as Array<{ image?: unknown }>).map((item) => item.image) : []),
+        ].filter((path): path is string => typeof path === "string" && /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/.test(path)),
       ));
       if (existingPrivatePaths.length) {
         await tx.insert(creatorMediaUploads)

@@ -825,7 +825,14 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "coverEditId": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
   "coverImage": zod.string().max(2000).optional(),
   "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
-  "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
+  "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax),
+  "uploads": zod.array(zod.object({
+  "id": zod.string().min(1).max(200),
+  "type": zod.enum(['photo']),
+  "image": zod.string().max(2000),
+  "imageObjectPath": zod.string().max(2000).nullable().optional()
+})).max(60).optional(),
+  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
 })).max(getCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 }).and(zod.object({
@@ -997,7 +1004,14 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "coverEditId": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
   "coverImage": zod.string().max(2000).optional(),
   "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
-  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax)
+  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax),
+  "uploads": zod.array(zod.object({
+  "id": zod.string().min(1).max(200),
+  "type": zod.enum(['photo']),
+  "image": zod.string().max(2000),
+  "imageObjectPath": zod.string().max(2000).nullable().optional()
+})).max(60).optional(),
+  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
 })).max(saveCreatorWorkspaceBodyCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 })
@@ -1161,7 +1175,14 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "coverEditId": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
   "coverImage": zod.string().max(2000).optional(),
   "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
-  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
+  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax),
+  "uploads": zod.array(zod.object({
+  "id": zod.string().min(1).max(200),
+  "type": zod.enum(['photo']),
+  "image": zod.string().max(2000),
+  "imageObjectPath": zod.string().max(2000).nullable().optional()
+})).max(60).optional(),
+  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
 })).max(saveCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 }).and(zod.object({

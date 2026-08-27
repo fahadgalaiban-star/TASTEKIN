@@ -47,7 +47,12 @@ type CreatorEdit = {
   placeName?: string | null; locationLabel?: string | null; mapsUrl?: string | null; tasteRating?: number | null; creatorReview?: string | null;
   creatorUsername?: string; creatorName?: string; creatorVerified?: boolean; creatorAvatar?: string; following?: boolean;
 };
-type CreatorCollection = { id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; coverImage?: string; coverImageObjectPath?: string | null; editIds: string[] };
+// A collection item that has no backing Edit — uploaded straight into the
+// collection, so it never appears as a standalone Edit. `type` is kept
+// explicit (rather than assumed photo) so video items can slot in later
+// without another data-model change.
+type CollectionUpload = { id: string; type: 'photo'; image: string; imageObjectPath?: string | null };
+type CreatorCollection = { id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; coverImage?: string; coverImageObjectPath?: string | null; editIds: string[]; uploads?: CollectionUpload[]; itemOrder?: string[] };
 type EditForm = Omit<CreatorEdit, 'id' | 'status'>;
 type CollectionForm = Omit<CreatorCollection, 'id'>;
 type EditEngagement = { editId: string; likeCount: number; commentCount: number; liked: boolean; saved: boolean };
@@ -152,7 +157,9 @@ function collectionCoverImage(collection: CreatorCollection, edits: CreatorEdit[
   if (collection.coverImage) return collection.coverImage;
   const chosen = collection.coverEditId ? edits.find((edit) => edit.id === collection.coverEditId) : undefined;
   const first = chosen || edits.find((edit) => edit.id === collection.editIds[0]) || edits[0];
-  return first?.image || media('quiet-tailoring.webp');
+  if (first) return first.image || media('quiet-tailoring.webp');
+  const firstUpload = collection.uploads?.[0];
+  return firstUpload?.image || media('quiet-tailoring.webp');
 }
 
 function Price({ ar, withVerb = true }: { ar: boolean; withVerb?: boolean }) { return ar ? <>{withVerb && 'اشترك · '}<bdi dir="ltr">19.99</bdi> دولار شهريًا</> : <>{withVerb && 'Subscribe · '}$19.99 / month</>; }
@@ -481,6 +488,14 @@ function TastekinApp() {
   }, [homeFeedTab, publicFeedEdits, published]);
   const selectedEdit = [...creatorEdits, ...publicCreatorEdits, ...publicFeedEdits].find((item) => item.id === selectedEditId) || published[0] || seedEdits[0];
   const selectedCollection = [...creatorCollections, ...publicCreatorCollections].find((item) => item.id === selectedCollectionId) || creatorCollections[0] || seedCollections[0];
+  // Ownership of the selected Collection is determined by whether it actually
+  // belongs to the signed-in creator's own workspace data — not by which
+  // profile page happens to be selected — so a stale `selectedCreatorUsername`
+  // (left over from browsing another creator) can never make an owner's own
+  // Collection render as if a stranger were viewing it.
+  const isOwnCollection = owner && creatorCollections.some((item) => item.id === selectedCollection.id);
+  const isCollectionOwnerView = isOwnCollection && !profileVisitorMode;
+  const collectionEditsSource = isOwnCollection ? published : viewedCreatorEdits;
   const go = (next: Screen) => {
     if (workspaceState === 'syncing') return;
     const leavingCreatorFlow = (screen === 'composer' || screen === 'creatorPreview') && next !== 'composer' && next !== 'creatorPreview';
@@ -641,7 +656,7 @@ function TastekinApp() {
   };
   const archiveEdit = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, status: 'archived' } : item), creatorCollections);
   const unarchiveEdit = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, status: 'draft' } : item), creatorCollections);
-  const openCollectionManager = (item?: CreatorCollection) => { setEditingCollectionId(item?.id || null); setCollectionForm(item ? { title: item.title, titleAr: item.titleAr, description: item.description, descriptionAr: item.descriptionAr, access: item.access, coverEditId: item.coverEditId, coverImage: item.coverImage || '', coverImageObjectPath: item.coverImageObjectPath ?? null, editIds: item.editIds } : blankCollection()); go('collectionManager'); };
+  const openCollectionManager = (item?: CreatorCollection) => { setEditingCollectionId(item?.id || null); setCollectionForm(item ? { title: item.title, titleAr: item.titleAr, description: item.description, descriptionAr: item.descriptionAr, access: item.access, coverEditId: item.coverEditId, coverImage: item.coverImage || '', coverImageObjectPath: item.coverImageObjectPath ?? null, editIds: item.editIds, uploads: item.uploads, itemOrder: item.itemOrder } : blankCollection()); go('collectionManager'); };
   const saveCollection = () => {
     const id = editingCollectionId || `collection-${Date.now()}`;
     const next = { id, ...collectionForm };
@@ -661,12 +676,45 @@ function TastekinApp() {
     if (!current) return;
     setCollectionEditIds(collectionId, [...current.editIds, ...editIds.filter((id) => !current.editIds.includes(id))]);
   };
-  const removeEditFromCollection = (collectionId: string, editId: string) => {
+  const removeCollectionItem = (collectionId: string, itemId: string) => {
     const current = creatorCollections.find((item) => item.id === collectionId);
     if (!current) return;
-    setCollectionEditIds(collectionId, current.editIds.filter((id) => id !== editId));
+    const removedObjectPath = current.uploads?.find((upload) => upload.id === itemId)?.imageObjectPath;
+    const nextCollections = creatorCollections.map((item) => item.id === collectionId
+      ? { ...item, editIds: item.editIds.filter((id) => id !== itemId), uploads: (item.uploads || []).filter((upload) => upload.id !== itemId), itemOrder: (item.itemOrder || []).filter((id) => id !== itemId) }
+      : item);
+    const nextEdits = creatorEdits.map((item) => item.id === itemId ? { ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId) } : item);
+    persistWorkspace(nextEdits, nextCollections);
+    if (removedObjectPath) void cleanupCreatorMedia([removedObjectPath]);
   };
-  const reorderCollectionEdits = (collectionId: string, nextEditIds: string[]) => setCollectionEditIds(collectionId, nextEditIds);
+  const reorderCollectionItems = (collectionId: string, nextOrder: string[]) => {
+    const current = creatorCollections.find((item) => item.id === collectionId);
+    if (!current) return;
+    const uploadIds = new Set((current.uploads || []).map((upload) => upload.id));
+    const nextEditIds = nextOrder.filter((id) => !uploadIds.has(id));
+    const nextEditIdsSet = new Set(nextEditIds);
+    const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, editIds: nextEditIds, itemOrder: nextOrder } : item);
+    const nextEdits = creatorEdits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((id) => id !== collectionId).concat(nextEditIdsSet.has(item.id) ? [collectionId] : []) }));
+    persistWorkspace(nextEdits, nextCollections);
+  };
+  const uploadCollectionPhotos = async (collectionId: string, files: File[]) => {
+    const current = creatorCollections.find((item) => item.id === collectionId);
+    if (!current || !files.length) return;
+    try {
+      const uploadedItems: CollectionUpload[] = [];
+      for (const file of files) {
+        const uploaded = await uploadCreatorImage(file);
+        uploadedItems.push({ id: `upload-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`, type: 'photo', image: uploaded.image, imageObjectPath: uploaded.objectPath });
+      }
+      const existingOrder = current.itemOrder?.length ? current.itemOrder : [...current.editIds, ...(current.uploads || []).map((upload) => upload.id)];
+      const nextCollections = creatorCollections.map((item) => item.id === collectionId
+        ? { ...item, uploads: [...(item.uploads || []), ...uploadedItems], itemOrder: [...existingOrder, ...uploadedItems.map((upload) => upload.id)] }
+        : item);
+      persistWorkspace(creatorEdits, nextCollections);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
+  };
   const setCollectionCover = (collectionId: string, coverImage: string, coverImageObjectPath: string | null) => {
     const nextCollections = creatorCollections.map((item) => item.id === collectionId ? { ...item, coverImage, coverImageObjectPath } : item);
     persistWorkspace(creatorEdits, nextCollections);
@@ -712,8 +760,8 @@ function TastekinApp() {
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
-     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
-     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => viewedCreatorEdits.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={viewingOwnProfile && !profileVisitorMode} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onRemoveEdit={(id) => removeEditFromCollection(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionEdits(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
+     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
+     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} canView={isCollectionOwnerView || !publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
     {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
     {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -1865,7 +1913,7 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
         const isFeatured = featuredIndex >= 0;
         const featureLimitReached = !isFeatured && featuredCollectionIds.length >= 3;
         return <div className="manager-collection-row" key={item.id}>
-          <button className="workspace-collection-link" onClick={() => onOpenCollection(item)}><span><img src={imageSrc(collectionCoverImage(item, edits))} alt="" /><span className="manager-collection-copy"><strong>{ar ? item.titleAr : item.title}</strong><small>{t(`${item.editIds.length} edits`, `${item.editIds.length} تعديل`)}</small></span></span><ChevronRight size={16} /></button>
+          <button className="workspace-collection-link" onClick={() => onOpenCollection(item)}><span><img src={imageSrc(collectionCoverImage(item, edits))} alt="" /><span className="manager-collection-copy"><strong>{ar ? item.titleAr : item.title}</strong><small>{t(`${item.editIds.length + (item.uploads?.length || 0)} items`, `${item.editIds.length + (item.uploads?.length || 0)} عنصر`)}</small></span></span><ChevronRight size={16} /></button>
           <div className="manager-feature-actions">
             <button type="button" className={isFeatured ? 'selected' : ''} onClick={() => onToggleFeatured(item.id)} disabled={featureLimitReached}>{isFeatured ? t('Unfeature', 'إلغاء التمييز') : t('Feature', 'تمييز')}</button>
             {isFeatured && <div className="manager-feature-order">
@@ -1881,16 +1929,31 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
     {editing === null && <div className="manager-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')}>{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')}>{t('Subscribers Only', 'للمشتركين فقط')}</button></div><button className="approved-button primary wide" onClick={onSave} disabled={!form.title.trim()}>{t('Create collection', 'إنشاء المجموعة')}</button></div>}
   </section>;
 }
-function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, canView, onOpen, onSubscribe, onAddEdits, onRemoveEdit, onReorder, onEditDetails, onUploadCover, onClearCover }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; allPublishedEdits: CreatorEdit[]; owner: boolean; canView: boolean; onOpen: (edit: CreatorEdit) => void; onSubscribe: () => void; onAddEdits: (editIds: string[]) => void; onRemoveEdit: (editId: string) => void; onReorder: (editIds: string[]) => void; onEditDetails: () => void; onUploadCover: (file: File) => void; onClearCover: () => void }) {
+function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, canView, onOpen, onSubscribe, onAddEdits, onUploadPhotos, onRemoveItem, onReorder, onEditDetails, onUploadCover, onClearCover }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; allPublishedEdits: CreatorEdit[]; owner: boolean; canView: boolean; onOpen: (edit: CreatorEdit) => void; onSubscribe: () => void; onAddEdits: (editIds: string[]) => void; onUploadPhotos: (files: File[]) => void; onRemoveItem: (itemId: string) => void; onReorder: (order: string[]) => void; onEditDetails: () => void; onUploadCover: (file: File) => void; onClearCover: () => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [manageMode, setManageMode] = useState(false);
+  const [addChoice, setAddChoice] = useState(false);
   const [addingEdits, setAddingEdits] = useState(false);
   const [pickedIds, setPickedIds] = useState<string[]>([]);
-  const [order, setOrder] = useState<string[]>(edits.map((item) => item.id));
+  const uploads = collection.uploads || [];
+  // Every tile the grid can show, edit-backed or upload-only, keyed by a
+  // single id so drag-reorder can freely interleave both kinds.
+  const itemsById = useMemo(() => {
+    const map = new Map<string, { image: string; label: string; kind: 'edit' | 'upload'; edit?: CreatorEdit }>();
+    edits.forEach((item) => map.set(item.id, { image: item.image || media('quiet-tailoring.webp'), label: ar ? item.titleAr : item.title, kind: 'edit', edit: item }));
+    uploads.forEach((item) => map.set(item.id, { image: item.image || media('quiet-tailoring.webp'), label: t('Uploaded photo', 'صورة مرفوعة'), kind: 'upload' }));
+    return map;
+  }, [edits, uploads, ar]);
+  const combinedIds = (collection.itemOrder && collection.itemOrder.length ? collection.itemOrder : [...collection.editIds, ...uploads.map((item) => item.id)]).filter((id) => itemsById.has(id));
+  const [order, setOrder] = useState<string[]>(combinedIds);
   const [dragId, setDragId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
-  useEffect(() => { setOrder(edits.map((item) => item.id)); }, [edits]);
-  const orderedEdits = order.map((id) => edits.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item));
+  useEffect(() => { setOrder(combinedIds); }, [edits, uploads]);
+  const orderedItems = order.map((id) => { const item = itemsById.get(id); return item ? { id, ...item } : null; }).filter((item): item is { id: string; image: string; label: string; kind: 'edit' | 'upload'; edit?: CreatorEdit } => Boolean(item));
+  const totalCount = collection.editIds.length + uploads.length;
+  // The owner always renders their own Collection at full clarity: ownership
+  // (not the Collection's visibility setting) decides whether any lock
+  // treatment applies, here and for the cover/picker images below.
   const cover = collectionCoverImage(collection, edits);
 
   if (!owner && !canView && collection.access === 'locked') return <SimpleScreen kicker={t('Subscribers only', 'للمشتركين فقط')} title={ar ? collection.titleAr : collection.title}><div className="approved-panel collection-gate"><LockKeyhole size={25} /><h3>{t('A private creator collection.', 'مجموعة خاصة من المبدع.')}</h3><p>{t('Subscribe to unlock the complete collection and its field notes.', 'اشترك لفتح المجموعة الكاملة وملاحظاتها.')}</p><button className="approved-button primary wide" onClick={onSubscribe}><Price ar={ar} /></button></div></SimpleScreen>;
@@ -1938,7 +2001,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, can
       <div>
         <p>{ar ? collection.descriptionAr : collection.description}</p>
         <p className="profile-taste-meta">
-          {t(`${collection.editIds.length} edits`, `${collection.editIds.length} تعديل`)}
+          {t(`${totalCount} items`, `${totalCount} عنصر`)}
           {' · '}
           {collection.access === 'locked' ? <span className="collection-visibility"><LockKeyhole size={12} /> {t('Subscribers only', 'للمشتركين فقط')}</span> : <span className="collection-visibility"><Globe size={12} /> {t('Public', 'عام')}</span>}
         </p>
@@ -1947,12 +2010,20 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, can
     </div>
 
     {owner && <div className="collection-owner-actions">
-      <button className="approved-button" onClick={() => setAddingEdits(true)}><Plus size={15} /> {t('Add Edits', 'إضافة تعديلات')}</button>
-      <button className={`approved-button ${manageMode ? 'selected' : ''}`} onClick={() => setManageMode(!manageMode)} disabled={!orderedEdits.length}>{manageMode ? t('Done', 'تم') : t('Manage', 'إدارة')}</button>
+      <button className="approved-button" onClick={() => setAddChoice((value) => !value)}><Plus size={15} /> {t('Add content', 'إضافة محتوى')}</button>
+      <button className={`approved-button ${manageMode ? 'selected' : ''}`} onClick={() => setManageMode(!manageMode)} disabled={!orderedItems.length}>{manageMode ? t('Done', 'تم') : t('Manage', 'إدارة')}</button>
+    </div>}
+
+    {owner && addChoice && <div className="approved-panel collection-add-choice">
+      <button type="button" className="approved-button" onClick={() => { setAddingEdits(true); setAddChoice(false); }}><ImagePlus size={15} /> {t('Add from profile', 'إضافة من الملف الشخصي')}</button>
+      <label className="approved-button collection-upload-label">
+        <Upload size={15} /> {t('Upload new photo', 'رفع صورة جديدة')}
+        <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" multiple onChange={(event) => { const files = Array.from(event.target.files || []); if (files.length) onUploadPhotos(files); setAddChoice(false); event.target.value = ''; }} />
+      </label>
     </div>}
 
     {addingEdits && <div className="approved-panel collection-add-picker">
-      <h3>{t('Add Edits', 'إضافة تعديلات')}</h3>
+      <h3>{t('Add from profile', 'إضافة من الملف الشخصي')}</h3>
       {pickableEdits.length === 0 && <Empty text={t('All your published Edits are already in this Collection.', 'جميع تعديلاتك المنشورة موجودة بالفعل في هذه المجموعة.')} />}
       <div className="collection-picker-list">
         {pickableEdits.map((item) => {
@@ -1970,13 +2041,13 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, can
       </div>
     </div>}
 
-    {orderedEdits.length > 0 ? <div className="collection-grid" onPointerMove={moveDrag} onPointerUp={endDrag}>
-      {orderedEdits.map((item) => <div key={item.id} data-edit-id={item.id} className={`collection-grid-item ${dragId === item.id ? 'dragging' : ''} ${overId === item.id && dragId && dragId !== item.id ? 'drag-over' : ''}`}>
-        <button type="button" className="collection-grid-tap" onClick={() => !manageMode && onOpen(item)} onPointerDown={beginDrag(item.id)} aria-label={ar ? item.titleAr : item.title}>
-          <img src={imageSrc(item.image || media('quiet-tailoring.webp'))} alt="" />
+    {orderedItems.length > 0 ? <div className="collection-grid" onPointerMove={moveDrag} onPointerUp={endDrag}>
+      {orderedItems.map((item) => <div key={item.id} data-edit-id={item.id} className={`collection-grid-item ${dragId === item.id ? 'dragging' : ''} ${overId === item.id && dragId && dragId !== item.id ? 'drag-over' : ''}`}>
+        <button type="button" className="collection-grid-tap" onClick={() => { if (!manageMode && item.kind === 'edit' && item.edit) onOpen(item.edit); }} onPointerDown={beginDrag(item.id)} aria-label={item.label}>
+          <img src={imageSrc(item.image)} alt="" />
         </button>
-        {owner && manageMode && <button type="button" className="collection-grid-remove" onClick={() => onRemoveEdit(item.id)} aria-label={t('Remove from collection', 'إزالة من المجموعة')}><X size={14} /></button>}
+        {owner && manageMode && <button type="button" className="collection-grid-remove" onClick={() => onRemoveItem(item.id)} aria-label={t('Remove from collection', 'إزالة من المجموعة')}><X size={14} /></button>}
       </div>)}
-    </div> : <Empty text={owner ? t('No Edits yet. Tap "Add Edits" to start building this Collection.', 'لا توجد تعديلات بعد. اضغط "إضافة تعديلات" لبدء بناء هذه المجموعة.') : t('This Collection has no Edits yet.', 'لا تحتوي هذه المجموعة على تعديلات بعد.')} />}
+    </div> : <Empty text={owner ? t('No content yet. Tap "Add content" to start building this Collection.', 'لا يوجد محتوى بعد. اضغط "إضافة محتوى" لبدء بناء هذه المجموعة.') : t('This Collection has no content yet.', 'لا تحتوي هذه المجموعة على محتوى بعد.')} />}
   </SimpleScreen>;
 }

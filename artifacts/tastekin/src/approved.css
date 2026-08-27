@@ -157,6 +157,9 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .collection-visibility { display:inline-flex; align-items:center; gap:4px; }
 .collection-owner-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:14px 0; }
 .collection-owner-actions button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:#fff; }
+.collection-add-choice { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+.collection-upload-label { position:relative; }
+.collection-upload-label input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
 .collection-add-picker { margin-bottom:14px; }
 .collection-add-picker h3 { margin:0 0 10px; }
 .collection-picker-list { display:grid; gap:7px; max-height:340px; overflow-y:auto; margin-bottom:10px; }
