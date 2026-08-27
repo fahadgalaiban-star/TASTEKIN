@@ -21,7 +21,8 @@ assert.match(workspace, /upload\.creatorId !== workspaceId/, "workspace saves mu
 assert.match(workspace, /tastekin-edit-identifiers/, "Edit identifiers must be globally collision-protected");
 assert.match(workspace, /parsed\.data\.collections\.some\(\(collection\) => collection\.access === "locked"\)/, "unverified creators must not lock collections");
 assert.match(storage, /referencedPaths\(workspace\)\.has\(objectPath\)/, "private object reads must be scoped to the owner workspace");
-assert.match(verification, /isTastekinAdmin\(req\.user\)/, "verification approval must require a configured admin");
+assert.match(verification, /isCurrentUserAdmin\(req\.user\)/, "verification approval must require a database-backed admin check");
+assert.match(account, /db\.select\(\{ isAdmin: usersTable\.isAdmin \}\)/, "admin status must be read from Postgres, not from env or session state");
 assert.match(verification, /must submit a Taste Seal application before review/, "verification must require a creator application");
 assert.match(app, /Apply for the Taste Seal/, "unverified creators need an application entry point");
 assert.match(app, /No payment or access is being simulated/, "Phase 1 must not create fake paid entitlements");

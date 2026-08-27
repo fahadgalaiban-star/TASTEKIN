@@ -54,31 +54,44 @@ cookies.
 
 ### Admin authorization
 
-Admin status is `users.isAdmin`, a real boolean column — checked fresh from
-Postgres on every Admin request and by `/me`, keyed to the specific
-authenticated `users.id` row. It is **not** derived from which session/
-provider is currently active, so switching accounts (or auth methods) never
-carries a previous session's admin access into a new one.
+Admin status is `users.isAdmin`, a real boolean column, and Postgres is the
+**sole** authority for it. `isCurrentUserAdmin(user)`
+(`artifacts/api-server/src/lib/creator-account.ts`) does nothing but
+`SELECT is_admin FROM users WHERE id = $1` for the specific authenticated
+user id — no email comparison, no env var, no session/provider state, ever,
+at request time. `GET /api/me` and both Admin routes
+(`GET /admin/creators`, `PUT /admin/creators/:id/verification`) all call
+this and only this. The frontend's Settings screen shows the Admin section
+and Verification Review purely off `session.isAdmin` from `/me`'s
+response — no localStorage, query params, or hardcoded emails on the
+client. Switching accounts or auth providers always resolves to that
+provider's own row and its own flag; nothing carries over.
 
-`FOUNDER_AUTH_USER_ID` / `FOUNDER_EMAIL` / `ADMIN_AUTH_USER_IDS` still exist,
-but only as a standing recovery credential: as long as one of them is
-configured, whichever account it designates gets `isAdmin` durably
-(re-)persisted in Postgres on its next request — even if that row's flag
-was ever cleared directly. This is what let the fix ship without guessing a
-production user id: the exact criteria that already granted admin before
-this change is what identifies and flags that same row now, automatically,
-the first time it authenticates post-deploy. Any additional admin beyond
-those env vars is managed purely by setting `users.is_admin = true`
-directly — there is no admin-management UI yet.
+`FOUNDER_AUTH_USER_ID` / `FOUNDER_EMAIL` / `ADMIN_AUTH_USER_IDS` are **not
+read by any request handler**. They exist only as optional input to two
+explicit, human-run scripts in `scripts/src/`:
 
-`GET /api/me` returns `isAdmin` from this check; the frontend's Settings
-screen shows the Admin section and Verification Review purely off
-`session.isAdmin` from that response — no localStorage, query params, or
-hardcoded emails are involved on the client. Every Admin route
-(`GET /admin/creators`, `PUT /admin/creators/:id/verification`) re-checks
-this server-side independently and returns 403 to anyone (including
-signed-out requests) who isn't flagged, regardless of what the client
-renders.
+- `pnpm --filter scripts run admin:grant -- --user-id <id> --yes` — sets
+  `is_admin = true` for exactly one account, resolved by immutable id
+  (preferred), `--email <email>` (explicit fallback), or `--from-env`
+  (reads whichever of `FOUNDER_AUTH_USER_ID`/`FOUNDER_EMAIL` is configured
+  in that invocation's environment — a one-time bootstrap a human
+  deliberately runs once, never something the app does on its own). Dry-run
+  by default; nothing is written unless `--yes` is passed.
+- `pnpm --filter scripts run admin:revoke -- --user-id <id> --yes` — sets
+  `is_admin = false`. Nothing else in the app will ever set it back to
+  true; the only way an account becomes an admin again is another explicit
+  `admin:grant` run.
+
+`pnpm --filter scripts run verify:admin-auth` (`DATABASE_URL` must point at
+a disposable/test database — it creates real rows) is an automated
+regression suite that spawns the real compiled server and drives it over
+real HTTP to confirm: admin access works when `is_admin=true`; the same
+user gets 403 immediately after `is_admin=false`; a `FOUNDER_EMAIL` that
+matches an unflagged account's email never grants it access; an existing
+`is_admin=true` row survives that env var being changed or removed
+entirely; and switching sessions in the same cookie jar never carries over
+the previous account's admin status.
 
 ## Creator workspace (Edits)
 
@@ -244,10 +257,10 @@ Everything else degrades a specific feature gracefully rather than
 crashing boot: `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` (Google sign-in),
 `PRIVATE_OBJECT_DIR` (object storage — throws only when an upload/serve
 route is actually hit), `FOUNDER_EMAIL`/`FOUNDER_AUTH_USER_ID`/
-`ADMIN_AUTH_USER_IDS` (admin bootstrap — see "Admin authorization" above;
-these no longer directly gate any request, they only seed `users.isAdmin`
-the first time a matching account authenticates), `ALLOWED_ORIGINS`,
-`LOG_LEVEL` (all have safe defaults).
+`ADMIN_AUTH_USER_IDS` (read only by the explicit `admin:grant` script's
+`--from-env` mode — see "Admin authorization" above; no request handler
+reads them, and they never grant or restore `users.isAdmin` on their own),
+`ALLOWED_ORIGINS`, `LOG_LEVEL` (all have safe defaults).
 
 **Replit-specific gotcha confirmed this session:** Autoscale Deployments do
 not inherit the Workspace's own secrets — `DATABASE_URL` (provisioned

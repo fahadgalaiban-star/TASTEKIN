@@ -20,43 +20,27 @@ function configuredFounderMatches(user: AuthenticatedUser) {
   return Boolean(founderEmail && user.email?.trim().toLowerCase() === founderEmail);
 }
 
-function additionalAdminIds() {
-  return (process.env.ADMIN_AUTH_USER_IDS || "").split(",").map((value) => value.trim()).filter(Boolean);
-}
-
 export function founderMappingConfigured() {
   return Boolean(process.env.FOUNDER_AUTH_USER_ID?.trim() || process.env.FOUNDER_EMAIL?.trim());
 }
 
 /**
- * Admin authorization is per-account, keyed to the specific `users.id` row —
- * never to "whichever session/Replit account happens to be active." Signing
- * in as a different person, or via a different provider, always resolves to
- * that provider's own row and its own `isAdmin` value; nothing carries over
- * from a previous session the way ambient session/env matching could.
+ * Admin authorization is a plain read of `users.is_admin` for the specific
+ * authenticated `users.id` row — nothing else. No env var, email match, or
+ * ambient session/provider state ever grants, restores, or influences this
+ * value at request time; the database is the sole authority.
  *
- * FOUNDER_AUTH_USER_ID / FOUNDER_EMAIL / ADMIN_AUTH_USER_IDS remain as a
- * standing recovery credential rather than a one-shot migration switch: as
- * long as one of them is configured, whichever account it designates is
- * durably (re-)flagged `isAdmin = true` in Postgres on its next request,
- * even if that row's flag was ever cleared directly. This is what avoids
- * ever having to guess a production user id — the same criteria that
- * already grants admin today keeps identifying and persisting that specific
- * row's admin status, rather than me picking an id by hand. Any OTHER admin
- * (not covered by these env vars) is managed purely by the DB flag, e.g. by
- * setting `users.is_admin = true` directly, until an admin-management UI
- * exists.
+ * FOUNDER_AUTH_USER_ID / FOUNDER_EMAIL / ADMIN_AUTH_USER_IDS are not read
+ * here at all. They exist only as input to the explicit, human-run
+ * bootstrap tooling in `scripts/src/admin-grant.ts` — a one-time operation
+ * an operator invokes deliberately, never something this function (or any
+ * request handler) triggers on its own. Once granted, `is_admin` can only be
+ * changed by that tooling; it is never re-derived from configuration.
  */
 export async function isCurrentUserAdmin(user: AuthenticatedUser | undefined): Promise<boolean> {
   if (!user) return false;
   const [account] = await db.select({ isAdmin: usersTable.isAdmin }).from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
-  if (!account) return false;
-  if (account.isAdmin) return true;
-  if (configuredFounderMatches(user) || additionalAdminIds().includes(user.id)) {
-    await db.update(usersTable).set({ isAdmin: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
-    return true;
-  }
-  return false;
+  return Boolean(account?.isAdmin);
 }
 
 function slug(value: string) {
