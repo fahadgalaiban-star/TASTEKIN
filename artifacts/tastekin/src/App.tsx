@@ -286,10 +286,16 @@ function TastekinApp() {
       const workspace = await response.json() as { edits: CreatorEdit[]; collections: CreatorCollection[]; revision: number };
       setCreatorEdits(workspace.edits); setCreatorCollections(workspace.collections); setWorkspaceRevision(workspace.revision); setWorkspaceState('ready');
     } catch {
-      setWorkspaceState('error'); setWorkspaceError('Your shared creator workspace could not be loaded. Check your connection and try again.');
+      // This data only matters for the workspace owner's own creator tools; a failure here shouldn't
+      // block or alarm a signed-out visitor or a plain consumer who never sees that screen.
+      if (owner) { setWorkspaceState('error'); setWorkspaceError('Your shared creator workspace could not be loaded. Check your connection and try again.'); }
+      else { setWorkspaceState('ready'); }
     }
   };
-  useEffect(() => { void loadWorkspace(); }, [session.revision]);
+  useEffect(() => {
+    if (session.status !== 'authenticated') { setWorkspaceState('ready'); return; }
+    void loadWorkspace();
+  }, [session.revision, session.status]);
   const loadProfile = async () => {
     try {
       const response = await fetch('/api/creator-profile', {
