@@ -26,21 +26,26 @@ router.get("/me", async (req, res) => {
     res.json({ user: null, role: "consumer", creator: null });
     return;
   }
-  const authorization = await ensureCreatorAccount(req.user);
-  const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
-  res.json({
-    user: { id: req.user.id, email: account?.email ?? req.user.email },
-    role: authorization.ok ? "creator" : "consumer",
-    creator: authorization.ok ? {
-      id: authorization.workspace.creatorId,
-      handle: authorization.workspace.profile.username,
-      displayName: authorization.workspace.profile.displayName,
-      verified: authorization.verified,
-      ownsWorkspace: true,
-    } : null,
-    isAdmin: isTastekinAdmin(req.user),
-    founderMappingConfigured: founderMappingConfigured(),
-  });
+  try {
+    const authorization = await ensureCreatorAccount(req.user);
+    const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
+    res.json({
+      user: { id: req.user.id, email: account?.email ?? req.user.email },
+      role: authorization.ok ? "creator" : "consumer",
+      creator: authorization.ok ? {
+        id: authorization.workspace.creatorId,
+        handle: authorization.workspace.profile.username,
+        displayName: authorization.workspace.profile.displayName,
+        verified: authorization.verified,
+        ownsWorkspace: true,
+      } : null,
+      isAdmin: isTastekinAdmin(req.user),
+      founderMappingConfigured: founderMappingConfigured(),
+    });
+  } catch (error) {
+    logger.error({ err: error, userId: req.user.id }, "GET /me failed");
+    res.status(500).json({ user: null, role: "consumer", creator: null });
+  }
 });
 router.get("/login", async (req, res) => {
   const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
@@ -61,48 +66,65 @@ router.get("/callback", async (req, res) => {
 });
 router.get("/logout", async (req, res) => { await clearSession(res, getSessionId(req)); res.redirect(safeReturnTo(req.query.returnTo)); });
 
+function authErrorResponse(res: import("express").Response, error: unknown, action: string) {
+  logger.error({ err: error }, `${action} failed`);
+  res.status(500).json({ error: "Something went wrong on our end. Please try again in a moment." });
+}
+
 router.post("/auth/signup", async (req, res) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!email || !email.includes("@")) { res.status(400).json({ error: "A valid email is required." }); return; }
   if (!validatePassword(password)) { res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` }); return; }
-  const existing = await findUserByEmail(email);
-  if (existing) { res.status(409).json({ error: "An account with this email already exists." }); return; }
-  const passwordHash = await hashPassword(password);
-  const user = await createLocalUser(email, passwordHash);
-  const sid = await createSession({ user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
-  setSessionCookie(res, sid);
-  res.status(201).json({ user: { id: user.id, email: user.email } });
+  try {
+    const existing = await findUserByEmail(email);
+    if (existing) { res.status(409).json({ error: "An account with this email already exists." }); return; }
+    const passwordHash = await hashPassword(password);
+    const user = await createLocalUser(email, passwordHash);
+    const sid = await createSession({ user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+    setSessionCookie(res, sid);
+    res.status(201).json({ user: { id: user.id, email: user.email } });
+  } catch (error) {
+    authErrorResponse(res, error, "Signup");
+  }
 });
 
 router.post("/auth/login", async (req, res) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!email || !password) { res.status(400).json({ error: "Email and password are required." }); return; }
-  const user = await findUserByEmail(email);
-  if (!user || !user.passwordHash) {
-    res.status(401).json({ error: user ? `This email signed up with ${user.authProvider === "google" ? "Google" : "Replit"} sign-in. Use that instead.` : "Incorrect email or password." });
-    return;
+  try {
+    const user = await findUserByEmail(email);
+    if (!user || !user.passwordHash) {
+      res.status(401).json({ error: user ? `This email signed up with ${user.authProvider === "google" ? "Google" : "Replit"} sign-in. Use that instead.` : "Incorrect email or password." });
+      return;
+    }
+    const valid = await verifyPassword(password, user.passwordHash);
+    if (!valid) { res.status(401).json({ error: "Incorrect email or password." }); return; }
+    const sid = await createSession({ user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+    setSessionCookie(res, sid);
+    res.json({ user: { id: user.id, email: user.email } });
+  } catch (error) {
+    authErrorResponse(res, error, "Login");
   }
-  const valid = await verifyPassword(password, user.passwordHash);
-  if (!valid) { res.status(401).json({ error: "Incorrect email or password." }); return; }
-  const sid = await createSession({ user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
-  setSessionCookie(res, sid);
-  res.json({ user: { id: user.id, email: user.email } });
 });
 
 router.post("/auth/forgot-password", async (req, res) => {
   const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
   if (!email) { res.status(400).json({ error: "Email is required." }); return; }
-  const user = await findUserByEmail(email);
-  // Always respond the same way whether or not the account exists, so this endpoint can't be used to enumerate emails.
-  if (user?.passwordHash) {
-    const token = await createPasswordResetToken(user.id);
-    const resetLink = `${origin(req)}/reset-password?token=${token}`;
-    // No transactional email provider is configured yet — log the link so it can be delivered manually until one is wired up.
-    logger.info({ email, resetLink }, "Password reset requested");
+  try {
+    const user = await findUserByEmail(email);
+    // Always respond the same way whether or not the account exists, so this endpoint can't be used to enumerate emails.
+    if (user?.passwordHash) {
+      const token = await createPasswordResetToken(user.id);
+      const resetLink = `${origin(req)}/reset-password?token=${token}`;
+      // No transactional email provider is configured yet — log the link so it can be delivered manually until one is wired up.
+      logger.info({ email, resetLink }, "Password reset requested");
+    }
+    res.json({ message: "If an account with that email exists, a reset link has been sent." });
+  } catch (error) {
+    authErrorResponse(res, error, "Forgot password");
   }
-  res.json({ message: "If an account with that email exists, a reset link has been sent." });
 });
 
 router.post("/auth/reset-password", async (req, res) => {
@@ -110,11 +132,15 @@ router.post("/auth/reset-password", async (req, res) => {
   const password = typeof req.body?.password === "string" ? req.body.password : "";
   if (!token) { res.status(400).json({ error: "Reset token is required." }); return; }
   if (!validatePassword(password)) { res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` }); return; }
-  const userId = await consumePasswordResetToken(token);
-  if (!userId) { res.status(400).json({ error: "This reset link is invalid or has expired." }); return; }
-  const passwordHash = await hashPassword(password);
-  await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, userId));
-  res.json({ message: "Your password has been reset. You can now sign in." });
+  try {
+    const userId = await consumePasswordResetToken(token);
+    if (!userId) { res.status(400).json({ error: "This reset link is invalid or has expired." }); return; }
+    const passwordHash = await hashPassword(password);
+    await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+    res.json({ message: "Your password has been reset. You can now sign in." });
+  } catch (error) {
+    authErrorResponse(res, error, "Reset password");
+  }
 });
 
 router.get("/auth/google", async (req, res) => {
