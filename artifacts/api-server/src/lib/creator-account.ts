@@ -20,14 +20,27 @@ function configuredFounderMatches(user: AuthenticatedUser) {
   return Boolean(founderEmail && user.email?.trim().toLowerCase() === founderEmail);
 }
 
-export function isTastekinAdmin(user: AuthenticatedUser | undefined) {
-  if (!user) return false;
-  const additionalIds = (process.env.ADMIN_AUTH_USER_IDS || "").split(",").map((value) => value.trim()).filter(Boolean);
-  return configuredFounderMatches(user) || additionalIds.includes(user.id);
-}
-
 export function founderMappingConfigured() {
   return Boolean(process.env.FOUNDER_AUTH_USER_ID?.trim() || process.env.FOUNDER_EMAIL?.trim());
+}
+
+/**
+ * Admin authorization is a plain read of `users.is_admin` for the specific
+ * authenticated `users.id` row — nothing else. No env var, email match, or
+ * ambient session/provider state ever grants, restores, or influences this
+ * value at request time; the database is the sole authority.
+ *
+ * FOUNDER_AUTH_USER_ID / FOUNDER_EMAIL / ADMIN_AUTH_USER_IDS are not read
+ * here at all. They exist only as input to the explicit, human-run
+ * bootstrap tooling in `scripts/src/admin-grant.ts` — a one-time operation
+ * an operator invokes deliberately, never something this function (or any
+ * request handler) triggers on its own. Once granted, `is_admin` can only be
+ * changed by that tooling; it is never re-derived from configuration.
+ */
+export async function isCurrentUserAdmin(user: AuthenticatedUser | undefined): Promise<boolean> {
+  if (!user) return false;
+  const [account] = await db.select({ isAdmin: usersTable.isAdmin }).from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
+  return Boolean(account?.isAdmin);
 }
 
 function slug(value: string) {

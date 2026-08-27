@@ -15,6 +15,7 @@ export const usersTable = pgTable("users", {
   profileImageUrl: varchar("profile_image_url"),
   role: text("role").notNull().default("consumer"),
   isVerified: boolean("is_verified").notNull().default(false),
+  isAdmin: boolean("is_admin").notNull().default(false),
   authProvider: text("auth_provider").notNull().default("replit"),
   passwordHash: varchar("password_hash"),
   googleId: varchar("google_id").unique(),
