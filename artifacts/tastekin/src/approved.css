@@ -339,8 +339,11 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .admin-app-detail small { color:var(--tk-stone); font-size:12px; }
 .admin-tags { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 11px; }
 .admin-tag { padding:5px 10px; border-radius:999px; background:#e9e1d7; color:var(--tk-wine); font-size:10px; font-weight:800; }
-.admin-detail-actions, .admin-confirm-actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; margin-top:8px; }
-.admin-confirm-actions { grid-template-columns:1fr 1fr; }
+.admin-detail-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:8px; }
+.admin-detail-actions > button:last-child { grid-column:1 / -1; }
+.admin-confirm-actions { display:grid; grid-template-columns:1fr 1fr; gap:7px; margin-top:8px; }
+.admin-note-input { width:100%; min-height:90px; padding:11px 12px; margin:8px 0; border:1px solid var(--tk-border); border-radius:13px; background:var(--tk-card); color:var(--tk-ink); font:inherit; font-size:12px; resize:vertical; }
+.admin-note-input:focus { outline:none; border-color:var(--tk-wine); box-shadow:0 0 0 3px rgba(75,31,42,.08); }
 .manager-list { display:grid; gap:7px; margin:14px 0 18px; }
 .manager-form { padding:15px; border:1px solid var(--tk-border); border-radius:19px; background:rgba(255,255,255,.54); }
 .manager-form h2 { margin:1px 0 13px; }

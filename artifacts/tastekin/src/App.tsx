@@ -668,7 +668,7 @@ function TastekinApp() {
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => { if (viewingOwnProfile) go('collections'); }} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
-     {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} />}
+     {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={creatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{creatorCollections.length ? <div className="approved-grid">{creatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(published.find((edit) => edit.id === item.coverEditId)?.image || media('quiet-tailoring.webp'))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={viewedCreatorEdits.filter((item) => selectedCollection.editIds.includes(item.id))} canView={!publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} />}
     {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
@@ -1281,6 +1281,7 @@ type AdminApplicationRow = {
   applicationStatement: string | null;
   applicationLinks: unknown;
   applicationCreatedAt: string | null;
+  publishedEditsCount: number;
 };
 
 function AdminVerificationScreen({ ar }: { ar: boolean }) {
@@ -1288,7 +1289,8 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'approved' | 'rejected' | 'needs_improvement' | 'bypass' | null>(null);
+  const [noteText, setNoteText] = useState('');
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState('');
   const load = useCallback(async () => {
@@ -1304,15 +1306,17 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
   }, []);
   useEffect(() => { void load(); }, [load]);
   const selected = applications.find((item) => item.creatorId === selectedId) || null;
-  const act = async (row: AdminApplicationRow, status: 'approved' | 'rejected') => {
+  const openConfirm = (action: 'approved' | 'rejected' | 'needs_improvement' | 'bypass') => { setConfirmAction(action); setNoteText(''); };
+  const act = async (row: AdminApplicationRow, status: 'approved' | 'rejected' | 'needs_improvement', options?: { reviewNote?: string; bypassEditRequirement?: boolean }) => {
     setActing(true); setActionError('');
     try {
       const response = await fetch(`/api/admin/creators/${encodeURIComponent(row.creatorId)}/verification`, {
-        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }),
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, reviewNote: options?.reviewNote, bypassEditRequirement: options?.bypassEditRequirement }),
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       setApplications((current) => current.filter((item) => item.creatorId !== row.creatorId));
-      setSelectedId(null); setConfirmAction(null);
+      setSelectedId(null); setConfirmAction(null); setNoteText('');
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setActionError(message); window.alert(message);
@@ -1322,6 +1326,7 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
   const links = (row: AdminApplicationRow) => Array.isArray(row.applicationLinks) ? row.applicationLinks.filter((item): item is string => typeof item === 'string') : [];
   if (selected) {
     const tags = appliedAs(selected);
+    const needsNote = confirmAction === 'rejected' || confirmAction === 'needs_improvement';
     return <SimpleScreen kicker={ar ? 'إدارة تيستكن' : 'TASTEKIN admin'} title={selected.profile.displayName || selected.profile.username}>
       <div className="admin-app-detail">
         <span className="feed-creator-avatar">{selected.profile.avatar ? <img src={imageSrc(selected.profile.avatar)} alt="" /> : (selected.profile.displayName || '?').slice(0, 1)}</span>
@@ -1329,19 +1334,26 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
       </div>
       {tags.length > 0 && <div className="admin-tags">{tags.map((label) => <span key={label} className="admin-tag">{label}</span>)}</div>}
       <p className="profile-taste-meta">{ar ? 'تاريخ التقديم' : 'Submitted'}: {selected.applicationCreatedAt ? new Date(selected.applicationCreatedAt).toLocaleDateString() : '—'}</p>
+      <p className="profile-taste-meta">{ar ? 'التعديلات المنشورة' : 'Published Edits'}: {selected.publishedEditsCount}</p>
       <div className="approved-panel"><h3>{ar ? 'البيان' : 'Statement'}</h3><p>{selected.applicationStatement}</p></div>
       {links(selected).length > 0 && <div className="approved-panel"><h3>{ar ? 'روابط داعمة' : 'Evidence links'}</h3>{links(selected).map((link) => <a key={link} href={link} target="_blank" rel="noreferrer">{link}</a>)}</div>}
       {actionError && <div className="engagement-error" role="alert">{actionError}</div>}
       {confirmAction ? <div className="approved-panel admin-confirm">
-        <p>{confirmAction === 'approved' ? (ar ? 'تأكيد الموافقة على هذا الطلب؟' : 'Confirm approving this application?') : (ar ? 'تأكيد رفض هذا الطلب؟' : 'Confirm rejecting this application?')}</p>
+        {needsNote ? <>
+          <p>{confirmAction === 'rejected' ? (ar ? 'اكتب سبب الرفض لهذا المتقدم:' : 'Write the rejection message for this applicant:') : (ar ? 'اكتب ملاحظة التحسين لهذا المتقدم:' : 'Write the improvement note for this applicant:')}</p>
+          <textarea className="admin-note-input" value={noteText} onChange={(event) => setNoteText(event.target.value)} placeholder={confirmAction === 'rejected' ? (ar ? 'مثال: الصور غير واضحة، وأعد المحاولة لاحقاً.' : 'e.g. Photos are unclear; please reapply later.') : (ar ? 'مثال: حسّن جودة الصور وانشر 3 تعديلات إضافية.' : 'e.g. Improve photo quality and post 3 more Edits.')} maxLength={1000} />
+          {confirmAction === 'needs_improvement' && <p className="settings-note">{ar ? 'لن يتمكن المتقدم من إعادة التقديم لمدة 60 يوماً من هذا القرار.' : 'The applicant will be blocked from re-submitting for 60 days from this decision.'}</p>}
+        </> : <p>{confirmAction === 'approved' ? (ar ? 'تأكيد الموافقة على هذا الطلب؟' : 'Confirm approving this application?') : (ar ? 'تأكيد الموافقة مع تجاوز شرط التعديل المنشور؟' : 'Confirm approving with the published-Edit requirement bypassed?')}</p>}
         <div className="admin-confirm-actions">
-          <button className="approved-button" onClick={() => setConfirmAction(null)} disabled={acting}>{ar ? 'إلغاء' : 'Cancel'}</button>
-          <button className="approved-button primary" onClick={() => void act(selected, confirmAction)} disabled={acting}>{acting ? (ar ? 'جارٍ التنفيذ…' : 'Working…') : (ar ? 'تأكيد' : 'Confirm')}</button>
+          <button className="approved-button" onClick={() => { setConfirmAction(null); setNoteText(''); }} disabled={acting}>{ar ? 'إلغاء' : 'Cancel'}</button>
+          <button className="approved-button primary" onClick={() => void act(selected, confirmAction === 'bypass' ? 'approved' : confirmAction, { reviewNote: noteText, bypassEditRequirement: confirmAction === 'bypass' })} disabled={acting || (needsNote && !noteText.trim())}>{acting ? (ar ? 'جارٍ التنفيذ…' : 'Working…') : (ar ? 'تأكيد' : 'Confirm')}</button>
         </div>
       </div> : <div className="admin-detail-actions">
         <button className="approved-button" onClick={() => setSelectedId(null)}>{ar ? 'رجوع' : 'Back'}</button>
-        <button className="approved-button" onClick={() => setConfirmAction('rejected')}>{ar ? 'رفض' : 'Reject'}</button>
-        <button className="approved-button primary" onClick={() => setConfirmAction('approved')}>{ar ? 'موافقة' : 'Approve'}</button>
+        <button className="approved-button" onClick={() => openConfirm('rejected')}>{ar ? 'رفض' : 'Reject'}</button>
+        <button className="approved-button" onClick={() => openConfirm('needs_improvement')}>{ar ? 'يحتاج تحسين' : 'Needs Improvement'}</button>
+        {selected.publishedEditsCount === 0 && <button className="approved-button" onClick={() => openConfirm('bypass')}>{ar ? 'تجاوز شرط التعديل والموافقة' : 'Bypass Edit requirement & Approve'}</button>}
+        <button className="approved-button primary" onClick={() => openConfirm('approved')}>{ar ? 'موافقة' : 'Approve'}</button>
       </div>}
     </SimpleScreen>;
   }
@@ -1651,11 +1663,12 @@ function ProfilePhotoCropper({ ar, source, onCancel, onConfirm }: { ar: boolean;
 type VerificationApplication = {
   statement: string;
   evidenceLinks: string[];
-  status: 'pending' | 'approved' | 'rejected';
+  status: 'pending' | 'approved' | 'rejected' | 'needs_improvement';
   reviewNote?: string | null;
+  reEligibleAt?: string | null;
 };
 
-function VerificationApplicationScreen({ ar, onDone }: { ar: boolean; onDone: () => void }) {
+function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenComposer }: { ar: boolean; onDone: () => void; hasPublishedEdit: boolean; onOpenComposer: () => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [statement, setStatement] = useState('');
   const [links, setLinks] = useState('');
@@ -1690,21 +1703,33 @@ function VerificationApplicationScreen({ ar, onDone }: { ar: boolean; onDone: ()
       setState('error'); setError(cause instanceof Error ? cause.message : t('Could not submit your application.', 'تعذر إرسال طلبك.'));
     }
   };
+  const reEligibleDate = application?.reEligibleAt ? new Date(application.reEligibleAt) : null;
+  const stillCoolingDown = application?.status === 'needs_improvement' && Boolean(reEligibleDate) && reEligibleDate! > new Date();
   const statusCopy = application?.status === 'pending'
     ? t('Your application is under review. You may update it while you wait.', 'طلبك قيد المراجعة. يمكنك تحديثه أثناء الانتظار.')
     : application?.status === 'rejected'
       ? t('Your previous application was not approved. Improve the details and submit again.', 'لم تتم الموافقة على طلبك السابق. حسّن التفاصيل وقدّم مرة أخرى.')
-      : application?.status === 'approved'
-        ? t('Your Taste Seal has been approved.', 'تمت الموافقة على ختم الذوق الخاص بك.')
-        : '';
+      : application?.status === 'needs_improvement'
+        ? t('TASTEKIN asked for some improvements before this application can move forward.', 'طلبت تيستكن بعض التحسينات قبل المتابعة في هذا الطلب.')
+        : application?.status === 'approved'
+          ? t('Your Taste Seal has been approved.', 'تمت الموافقة على ختم الذوق الخاص بك.')
+          : '';
+  if (!hasPublishedEdit) {
+    return <SimpleScreen kicker={t('TASTEKIN verification', 'توثيق تيستكن')} title={t('Apply for the Taste Seal', 'قدّم للحصول على ختم الذوق')}>
+      {statusCopy && <div className="approved-panel"><strong>{statusCopy}</strong>{application?.reviewNote && <p>{application.reviewNote}</p>}</div>}
+      <div className="workspace-notice" role="alert">{t('You need at least one published Edit before applying for verification.', 'تحتاج إلى تعديل واحد منشور على الأقل قبل التقديم للتوثيق.')}</div>
+      <button className="approved-button primary wide" type="button" onClick={onOpenComposer}>{t('Create an Edit', 'أنشئ تعديلاً')}</button>
+      <button className="approved-button wide" type="button" onClick={onDone}>{t('Back to profile', 'العودة إلى الملف')}</button>
+    </SimpleScreen>;
+  }
   return <SimpleScreen kicker={t('TASTEKIN verification', 'توثيق تيستكن')} title={t('Apply for the Taste Seal', 'قدّم للحصول على ختم الذوق')}>
     <p>{t('TASTEKIN reviews identity, originality, and the quality of a creator’s public profile. Verification is never automatic or purchased.', 'تراجع تيستكن الهوية والأصالة وجودة الملف العام للمبدع. التوثيق لا يُشترى ولا يتم تلقائياً.')}</p>
-    {statusCopy && <div className="approved-panel"><strong>{statusCopy}</strong>{application?.reviewNote && <p>{application.reviewNote}</p>}</div>}
-    <label className="form-field"><span>{t('Why should this profile be verified?', 'لماذا يستحق هذا الملف التوثيق؟')}</span><textarea value={statement} maxLength={1500} onChange={(event) => setStatement(event.target.value)} placeholder={t('Describe your identity, original taste, and the content you create (minimum 40 characters).', 'اشرح هويتك وذوقك الأصلي والمحتوى الذي تقدمه (40 حرفاً على الأقل).')} disabled={state === 'saving' || state === 'loading'} /></label>
-    <label className="form-field"><span>{t('Evidence links (optional, one per line)', 'روابط إثبات اختيارية (رابط في كل سطر)')}</span><textarea value={links} onChange={(event) => setLinks(event.target.value)} placeholder="https://…" disabled={state === 'saving' || state === 'loading'} /></label>
+    {statusCopy && <div className="approved-panel"><strong>{statusCopy}</strong>{application?.reviewNote && <p>{application.reviewNote}</p>}{stillCoolingDown && <p>{t('You can reapply after', 'يمكنك إعادة التقديم بعد')} {reEligibleDate!.toLocaleDateString()}.</p>}</div>}
+    <label className="form-field"><span>{t('Why should this profile be verified?', 'لماذا يستحق هذا الملف التوثيق؟')}</span><textarea value={statement} maxLength={1500} onChange={(event) => setStatement(event.target.value)} placeholder={t('Describe your identity, original taste, and the content you create (minimum 40 characters).', 'اشرح هويتك وذوقك الأصلي والمحتوى الذي تقدمه (40 حرفاً على الأقل).')} disabled={state === 'saving' || state === 'loading' || stillCoolingDown} /></label>
+    <label className="form-field"><span>{t('Evidence links (optional, one per line)', 'روابط إثبات اختيارية (رابط في كل سطر)')}</span><textarea value={links} onChange={(event) => setLinks(event.target.value)} placeholder="https://…" disabled={state === 'saving' || state === 'loading' || stillCoolingDown} /></label>
     {error && <p className="workspace-notice" role="alert">{error}</p>}
     {state === 'saved' && <p className="profile-save-success" role="status">{t('Application submitted securely.', 'تم إرسال الطلب بأمان.')}</p>}
-    <button className="approved-button primary wide" type="button" onClick={() => void submit()} disabled={state === 'saving' || state === 'loading' || statement.trim().length < 40}>{state === 'saving' ? t('Submitting…', 'جارٍ الإرسال…') : application ? t('Update application', 'تحديث الطلب') : t('Submit for review', 'إرسال للمراجعة')}</button>
+    <button className="approved-button primary wide" type="button" onClick={() => void submit()} disabled={state === 'saving' || state === 'loading' || stillCoolingDown || statement.trim().length < 40}>{stillCoolingDown ? t('You can reapply after', 'يمكنك إعادة التقديم بعد') + ' ' + reEligibleDate!.toLocaleDateString() : state === 'saving' ? t('Submitting…', 'جارٍ الإرسال…') : application ? t('Update application', 'تحديث الطلب') : t('Submit for review', 'إرسال للمراجعة')}</button>
     <button className="approved-button wide" type="button" onClick={onDone}>{t('Back to profile', 'العودة إلى الملف')}</button>
   </SimpleScreen>;
 }

@@ -97,6 +97,9 @@ export const verificationApplications = pgTable("verification_applications", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  // Set only when status is "needs_improvement" — the applicant is blocked from
+  // resubmitting until this date. Cleared on any other status.
+  reEligibleAt: timestamp("re_eligible_at", { withTimezone: true }),
 }, (table) => [
   index("verification_applications_status_created_idx").on(table.status, table.createdAt),
 ]);
