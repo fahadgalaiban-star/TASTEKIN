@@ -71,6 +71,12 @@ const defaultCreatorProfile: CreatorProfile = {
   city: 'Kuwait City', country: 'Kuwait', interests: ['Fashion', 'Travel', 'Places'], avatar: media('fheed-profile.webp'),
   avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
 };
+// A genuinely empty placeholder — used before a signed-in user's own profile has loaded (or when
+// signed out), so nobody ever sees Fheed's showcased identity mistaken for their own account.
+const blankCreatorProfile: CreatorProfile = {
+  displayName: '', username: '', bio: '', city: '', country: '', interests: [],
+  avatar: '', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
+};
 const discoveryCreatorProfiles: Record<string, CreatorProfile> = {
   'noura.studio': {
     displayName: 'Noura Studio', username: 'noura.studio',
@@ -241,7 +247,7 @@ function TastekinApp() {
   const [workspaceRevision, setWorkspaceRevision] = useState(1);
   const [workspaceState, setWorkspaceState] = useState<'loading' | 'ready' | 'syncing' | 'error'>('loading');
   const [workspaceError, setWorkspaceError] = useState('');
-  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>(defaultCreatorProfile);
+  const [creatorProfile, setCreatorProfile] = useState<CreatorProfile>(blankCreatorProfile);
   const [publicCreatorProfile, setPublicCreatorProfile] = useState<CreatorProfile | null>(null);
   const [publicCreatorEdits, setPublicCreatorEdits] = useState<CreatorEdit[]>([]);
   const [publicCreatorCollections, setPublicCreatorCollections] = useState<CreatorCollection[]>([]);
@@ -310,7 +316,14 @@ function TastekinApp() {
       // Discovery remains usable while a profile refresh is temporarily unavailable.
     }
   };
-  useEffect(() => { void loadProfile(); }, [session.revision]);
+  useEffect(() => {
+    // GET /api/creator-profile falls back to the showcased default creator (Fheed) for a signed-out
+    // request, since that's what a guest's public preview needs. That default must never leak into
+    // creatorProfile — the state a signed-in owner's own "you"/profile screens read — so only fetch
+    // (and only trust the result) once someone is actually authenticated.
+    if (session.status !== 'authenticated') { setCreatorProfile(blankCreatorProfile); return; }
+    void loadProfile();
+  }, [session.revision, session.status]);
   useEffect(() => {
     if (session.status !== 'authenticated') { setFeaturedCollectionIds([]); return; }
     void fetch('/api/creator-featured-collections', { credentials: 'include', cache: 'no-store' })
