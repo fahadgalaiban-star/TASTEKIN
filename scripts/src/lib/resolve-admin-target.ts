@@ -1,5 +1,7 @@
-import { db, usersTable } from "@workspace/db";
+import { usersTable } from "@workspace/db/schema";
 import { eq } from "drizzle-orm";
+
+import type { AdminDb } from "./resolve-database";
 
 export type ParsedArgs = Record<string, string | boolean>;
 
@@ -22,12 +24,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 type UserRow = typeof usersTable.$inferSelect;
 
-async function byId(id: string): Promise<UserRow | null> {
+async function byId(db: AdminDb, id: string): Promise<UserRow | null> {
   const [row] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
   return row ?? null;
 }
 
-async function byEmail(email: string): Promise<UserRow | null> {
+async function byEmail(db: AdminDb, email: string): Promise<UserRow | null> {
   const normalized = email.trim().toLowerCase();
   const rows = await db.select().from(usersTable).where(eq(usersTable.email, normalized));
   if (rows.length > 1) {
@@ -45,7 +47,7 @@ async function byEmail(email: string): Promise<UserRow | null> {
  * because an operator deliberately asked this one invocation to use them —
  * never automatically, and never at request time.
  */
-export async function resolveAdminTarget(args: ParsedArgs, options: { allowFromEnv?: boolean } = {}): Promise<UserRow | null> {
+export async function resolveAdminTarget(db: AdminDb, args: ParsedArgs, options: { allowFromEnv?: boolean } = {}): Promise<UserRow | null> {
   const userId = args["user-id"];
   const email = args.email;
   const fromEnv = args["from-env"];
@@ -55,15 +57,15 @@ export async function resolveAdminTarget(args: ParsedArgs, options: { allowFromE
     throw new Error("Pass exactly one of: --user-id <id> (preferred), --email <email>" + (options.allowFromEnv ? ", or --from-env." : "."));
   }
 
-  if (typeof userId === "string") return byId(userId);
-  if (typeof email === "string") return byEmail(email);
+  if (typeof userId === "string") return byId(db, userId);
+  if (typeof email === "string") return byEmail(db, email);
 
   if (fromEnv) {
     if (!options.allowFromEnv) throw new Error("--from-env is not supported by this command.");
     const founderId = process.env.FOUNDER_AUTH_USER_ID?.trim();
     const founderEmail = process.env.FOUNDER_EMAIL?.trim();
-    if (founderId) return byId(founderId);
-    if (founderEmail) return byEmail(founderEmail);
+    if (founderId) return byId(db, founderId);
+    if (founderEmail) return byEmail(db, founderEmail);
     throw new Error("--from-env was passed but neither FOUNDER_AUTH_USER_ID nor FOUNDER_EMAIL is set in this environment.");
   }
 
