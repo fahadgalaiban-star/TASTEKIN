@@ -6,6 +6,7 @@ import creatorWorkspaceRouter from "./creator-workspace";
 import engagementRouter from "./engagement";
 import storageRouter from "./storage";
 import verificationRouter from "./verification";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
@@ -16,5 +17,6 @@ router.use(creatorWorkspaceRouter);
 router.use(engagementRouter);
 router.use(storageRouter);
 router.use(verificationRouter);
+router.use(settingsRouter);
 
 export default router;

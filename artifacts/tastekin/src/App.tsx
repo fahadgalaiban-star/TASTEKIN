@@ -175,6 +175,15 @@ type TasteSessionSnapshot = {
   role: 'creator' | 'consumer';
   creator: { id?: string; handle: string; displayName: string; verified: boolean; ownsWorkspace: boolean } | null;
   isAdmin: boolean;
+  // Server-authorized account preferences — the database is the source of
+  // truth for all of these; there is no localStorage fallback once signed in.
+  language: Language | null;
+  notifyPush: boolean;
+  notifyEmail: boolean;
+  // No subscriptions table exists yet; the server always answers false
+  // (honestly, not simulated) until Stripe entitlements are connected.
+  subscribed: boolean;
+  supportEmail: string | null;
   revision: number;
 };
 type TasteSession = TasteSessionSnapshot & { refresh: () => Promise<void> };
@@ -183,7 +192,8 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
-    status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false, revision: 0,
+    status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false,
+    language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, revision: 0,
   });
   const refresh = useCallback(async () => {
     try {
@@ -194,7 +204,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'>
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null };
       setSnapshot((current) => {
         const next = {
           status: payload.user ? 'authenticated' as const : 'signed-out' as const,
@@ -202,6 +212,11 @@ function useTasteSessionController(): TasteSession {
           role: payload.role === 'creator' ? 'creator' as const : 'consumer' as const,
           creator: payload.creator ?? null,
           isAdmin: Boolean(payload.isAdmin),
+          language: (payload.language === 'ar' || payload.language === 'en') ? payload.language : null,
+          notifyPush: payload.notifyPush ?? true,
+          notifyEmail: payload.notifyEmail ?? true,
+          subscribed: Boolean(payload.subscribed),
+          supportEmail: payload.supportEmail ?? null,
         };
         const unchanged = current.status === next.status
           && current.user?.id === next.user?.id
@@ -209,7 +224,12 @@ function useTasteSessionController(): TasteSession {
           && current.role === next.role
           && current.creator?.ownsWorkspace === next.creator?.ownsWorkspace
           && current.creator?.handle === next.creator?.handle
-          && current.isAdmin === next.isAdmin;
+          && current.isAdmin === next.isAdmin
+          && current.language === next.language
+          && current.notifyPush === next.notifyPush
+          && current.notifyEmail === next.notifyEmail
+          && current.subscribed === next.subscribed
+          && current.supportEmail === next.supportEmail;
         return unchanged ? current : { ...next, revision: current.revision + 1 };
       });
     } catch {
@@ -254,8 +274,10 @@ function TastekinApp() {
   const [saved, setSaved] = useState<string[]>([]);
   const savedHydrationVersion = useRef(0);
   const [following, setFollowing] = useState(false);
-  // Real subscription state is introduced with Stripe entitlements in Phase 3.
-  const [subscribed] = useState(false);
+  // Real subscription state is introduced with Stripe entitlements in Phase 3;
+  // until then this is the server's own honest answer (see GET /api/me),
+  // never a client-side guess.
+  const subscribed = session.subscribed;
   const [visitorPreview, setVisitorPreview] = useState(false);
   const [profileVisitorMode, setProfileVisitorMode] = useState(false);
   const [creatorEdits, setCreatorEdits] = useState<CreatorEdit[]>(seedEdits);
@@ -507,6 +529,24 @@ function TastekinApp() {
     document.documentElement.dir = ar ? 'rtl' : 'ltr';
     document.documentElement.lang = ar ? 'ar' : 'en';
   }, [ar]);
+  // The database is authoritative for a signed-in account's language: adopt
+  // it whenever a session loads or the signed-in user changes (sign-in,
+  // refresh, another device, switching accounts). A guest has no account to
+  // read from, so their language stays whatever localStorage/the URL set.
+  useEffect(() => {
+    if (session.status === 'authenticated' && session.language && session.language !== language) {
+      setLanguage(session.language);
+      write('interface-language', session.language);
+    }
+  }, [session.status, session.user?.id, session.language]);
+  const saveSettings = async (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => {
+    if (session.status !== 'authenticated') return;
+    try {
+      await fetch('/api/settings', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updates) });
+    } finally {
+      void session.refresh();
+    }
+  };
   const published = creatorEdits.filter((item) => item.status === 'published');
   const viewedCreatorProfile = viewingOwnProfile ? creatorProfile : publicCreatorProfile ?? discoveryCreatorProfiles[selectedCreatorUsername] ?? creatorProfile;
   const viewedCreatorEdits = viewingOwnProfile ? published : publicCreatorEdits;
@@ -822,7 +862,7 @@ function TastekinApp() {
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
-    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); }} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onSignIn={() => go('auth')} />}
+    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
@@ -1280,13 +1320,18 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
   </SimpleScreen>;
 }
 
-function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, isAdmin, onOpenAdminVerification, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; isAdmin: boolean; onOpenAdminVerification: () => void; onSignIn: () => void }) {
+function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
-  const [pushNotifications, setPushNotifications] = useState(() => read('notify-push', true));
-  const [emailUpdates, setEmailUpdates] = useState(() => read('notify-email', true));
-  const togglePush = () => { const next = !pushNotifications; setPushNotifications(next); write('notify-push', next); };
-  const toggleEmail = () => { const next = !emailUpdates; setEmailUpdates(next); write('notify-email', next); };
+  // Seeded from the server-authorized session, and re-synced whenever a
+  // fresh /me response arrives (sign-in, refresh, another device) — these
+  // toggles are never sourced from or considered authoritative in localStorage.
+  const [pushNotifications, setPushNotifications] = useState(session.notifyPush);
+  const [emailUpdates, setEmailUpdates] = useState(session.notifyEmail);
+  useEffect(() => { setPushNotifications(session.notifyPush); }, [session.notifyPush]);
+  useEffect(() => { setEmailUpdates(session.notifyEmail); }, [session.notifyEmail]);
+  const togglePush = () => { const next = !pushNotifications; setPushNotifications(next); void onSaveSettings({ notifyPush: next }); };
+  const toggleEmail = () => { const next = !emailUpdates; setEmailUpdates(next); void onSaveSettings({ notifyEmail: next }); };
   const accountName = owner ? creatorProfile.displayName : session.user?.email ? session.user.email.split('@')[0] : t('Guest', 'زائر');
   return <SimpleScreen kicker={t('Account', 'الحساب')} title={t('Settings', 'الإعدادات')}>
     {session.status !== 'authenticated' && <button data-testid="settings-sign-in" className="approved-button primary wide" style={{ marginBottom: 16 }} onClick={onSignIn}>{t('Sign in', 'تسجيل الدخول')}</button>}
@@ -1307,8 +1352,9 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
     </div>
     <div className="settings-section">
       <h3>{t('Notifications', 'الإشعارات')}</h3>
-      <label className="settings-toggle"><span>{t('Push notifications', 'إشعارات فورية')}</span><input type="checkbox" checked={pushNotifications} onChange={togglePush} /></label>
-      <label className="settings-toggle"><span>{t('Email updates', 'تحديثات البريد الإلكتروني')}</span><input type="checkbox" checked={emailUpdates} onChange={toggleEmail} /></label>
+      <label className="settings-toggle"><span>{t('Push notifications', 'إشعارات فورية')}</span><input type="checkbox" checked={pushNotifications} onChange={togglePush} disabled={session.status !== 'authenticated'} /></label>
+      <label className="settings-toggle"><span>{t('Email updates', 'تحديثات البريد الإلكتروني')}</span><input type="checkbox" checked={emailUpdates} onChange={toggleEmail} disabled={session.status !== 'authenticated'} /></label>
+      <p className="settings-note">{t('These preferences are saved to your account. Actual delivery requires push and email infrastructure that is not connected yet.', 'يتم حفظ هذه التفضيلات في حسابك. يتطلب الإرسال الفعلي بنية إشعارات وبريد غير متصلة بعد.')}</p>
     </div>
     {owner && <div className="settings-section">
       <h3>{t('Creator info', 'معلومات المبدع')}</h3>
@@ -1322,8 +1368,10 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
     </div>}
     <div className="settings-section">
       <h3>{t('Help & Support', 'المساعدة والدعم')}</h3>
-      <p className="settings-note">{t('Questions or issues? Reach us anytime.', 'لديك سؤال أو مشكلة؟ تواصل معنا في أي وقت.')}</p>
-      <a className="approved-button wide" href="mailto:support@tastekin.app">{t('Contact support', 'تواصل مع الدعم')}</a>
+      {session.supportEmail ? <>
+        <p className="settings-note">{t('Questions or issues? Reach us anytime.', 'لديك سؤال أو مشكلة؟ تواصل معنا في أي وقت.')}</p>
+        <a className="approved-button wide" href={`mailto:${session.supportEmail}`}>{t('Contact support', 'تواصل مع الدعم')}</a>
+      </> : <p className="settings-note">{t('Support contact is not configured yet.', 'لم يتم تفعيل التواصل مع الدعم بعد.')}</p>}
     </div>
     {session.status === 'authenticated' && <button data-testid="settings-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
   </SimpleScreen>;

@@ -8,6 +8,7 @@
     "admin:grant": "tsx ./src/admin-grant.ts",
     "admin:revoke": "tsx ./src/admin-revoke.ts",
     "verify:admin-auth": "tsx ./src/verify-admin-auth.ts",
+    "verify:settings": "tsx ./src/verify-settings.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
