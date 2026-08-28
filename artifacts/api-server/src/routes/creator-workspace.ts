@@ -274,6 +274,15 @@ router.put("/creator-profile", async (req, res): Promise<void> => {
     }
     res.json(SaveCreatorProfileResponse.parse(serializeProfile(result.workspace.profile, true, result.workspace.revision, authorization.verified)));
   } catch (error) {
+    // The pre-check above is a courtesy for the common case; the database's
+    // own case-insensitive unique index (creator_workspaces_username_unique)
+    // is the actual authority and can still fire here if two requests race
+    // to claim the same username at the same instant. Surface that as the
+    // same clean 409 a client already knows how to handle, not a 500.
+    if (error && typeof error === "object" && "code" in error && error.code === "23505") {
+      res.status(409).json({ error: "That username is already in use" });
+      return;
+    }
     req.log.error({ err: error }, "Unable to save creator profile");
     res.status(500).json({ error: "Unable to save creator profile" });
   }

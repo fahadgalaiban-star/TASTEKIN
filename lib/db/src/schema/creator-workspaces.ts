@@ -25,6 +25,10 @@ export const creatorWorkspaces = pgTable("creator_workspaces", {
 }, (table) => [
   uniqueIndex("creator_workspaces_owner_user_id_unique").on(table.ownerUserId),
   index("creator_workspaces_updated_at_idx").on(table.updatedAt),
+  // Database-enforced, case-insensitive username uniqueness (closes the race
+  // that a pre-check-then-write alone can't: two requests claiming the same
+  // username at the same time). Additive — an index, not a column change.
+  uniqueIndex("creator_workspaces_username_unique").on(sql`lower(${table.profile}->>'username')`),
 ]);
 
 export const creatorMediaUploads = pgTable("creator_media_uploads", {

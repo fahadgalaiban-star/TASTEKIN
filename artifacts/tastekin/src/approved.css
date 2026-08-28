@@ -399,6 +399,10 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-segment button { min-height:42px; border:1px solid #dfd7cd; border-radius:12px; background:var(--tk-card); color:var(--tk-ink); font-size:12px; font-weight:700; }
 .approved-segment button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:white; }
 .visitor-exit { margin-top:-7px; }
+.onboarding-screen { padding-bottom:24px; }
+.onboarding-progress { display:flex; gap:6px; margin:4px 0 6px; }
+.onboarding-progress span { flex:1 1 0; height:4px; border-radius:999px; background:var(--tk-border); }
+.onboarding-progress span.active { background:var(--tk-wine); }
 .approved-drawer-overlay { position:fixed; inset:0; background:rgba(23,20,22,.4); z-index:50; }
 .approved-drawer-content { position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:min(440px,100%); background:var(--tk-card); border-radius:24px 24px 0 0; padding:24px 16px env(safe-area-inset-bottom); z-index:51; display:flex; flex-direction:column; outline:none; box-shadow:0 -10px 40px rgba(0,0,0,0.1); }
 .approved-drawer-handle { width:40px; height:5px; background:#d8d0c6; border-radius:999px; margin:0 auto 16px; }

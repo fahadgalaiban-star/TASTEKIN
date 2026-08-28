@@ -9,6 +9,7 @@ import {
 } from "../lib/auth";
 import { logger } from "../lib/logger";
 import { ensureCreatorAccount, founderMappingConfigured, isCurrentUserAdmin } from "../lib/creator-account";
+import { resolveOnboardingStatus } from "../lib/onboarding";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -40,12 +41,16 @@ router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail() });
+    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done" });
     return;
   }
   try {
+    // ensureCreatorAccount must run before resolveOnboardingStatus: it's what
+    // guarantees a creator_workspaces row already exists for this user by the
+    // time onboarding status is computed.
     const authorization = await ensureCreatorAccount(req.user);
     const [account] = await db.select().from(usersTable).where(eq(usersTable.id, req.user.id));
+    const onboarding = await resolveOnboardingStatus(req.user.id);
     res.json({
       user: { id: req.user.id, email: account?.email ?? req.user.email },
       role: authorization.ok ? "creator" : "consumer",
@@ -66,6 +71,8 @@ router.get("/me", async (req, res) => {
       // and becomes a real entitlement check once Stripe is connected.
       subscribed: false,
       supportEmail: configuredSupportEmail(),
+      needsOnboarding: onboarding.needsOnboarding,
+      onboardingStep: onboarding.step,
     });
   } catch (error) {
     logger.error({ err: error, userId: req.user.id }, "GET /me failed");
