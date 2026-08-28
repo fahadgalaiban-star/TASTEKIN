@@ -6,21 +6,25 @@ writing. Treat this as the source of truth over any prior state doc.
 
 ## Next session focus
 
-Rebuild the **Settings page**. Target section set (see "Settings screen —
-exact sections" below for what exists today, which this replaces):
+The Settings page is now fully functional and server-backed (branch
+`claude/settings-functional`, not merged): language and notification
+preferences persist to `users` (additive columns `language`, `notify_push`,
+`notify_email`), are scoped per-account, and every value shown (name,
+email, verification, admin access, subscription, support contact) comes
+from `GET /api/me` — nothing is hardcoded or localStorage-authoritative for
+a signed-in user. See "Settings screen — exact sections" below for the
+current, accurate description.
 
-- **Account**
-- **Subscription**
-- **Notifications**
-- **Creator Tools**
-- **Support**
-- A **red** Log Out button
+## Next priorities
 
-Not yet scoped: whether Language and Admin/Verification Review (both
-currently top-level Settings sections) fold into one of the above, move
-elsewhere, or stay as-is — confirm before removing either, since Admin's
-visibility is the security-sensitive gate this session's prior work
-depended on.
+1. Complete onboarding
+2. Google Sign-In
+3. Report, Block, Mute, and content moderation
+4. Real video support
+5. Stripe and subscriptions
+6. Direct messaging for subscribers
+7. Real Taste Match algorithm
+8. Policies, security, and launch testing
 
 ## Stack
 
@@ -224,17 +228,39 @@ uploads?: CollectionUpload[], itemOrder?: string[]`.
 
 ## Settings screen — exact sections (in render order)
 
-1. **Account** — Name, Email, Password (static "managed by your sign-in
-   provider" text)
-2. **Language** — English / العربية toggle
-3. **Subscription** — status + note that billing isn't wired up yet
-4. **Notifications** — Push / Email toggles, persisted to `localStorage`
-   only (no server-side notification preferences)
+Same visual design and section order as before — the rebuild made every
+section server-backed without redesigning the page. `GET /api/me` is the
+single source read by `TasteSessionContext`; `PUT /api/settings`
+(authenticated, per-user, additive columns on `users`) is the only write
+path — localStorage is never authoritative once a user is signed in.
+
+1. **Account** — Name/email always the currently authenticated user
+   (`session.user.email`), never a hardcoded value. Password stays
+   "managed by your sign-in provider" — no in-app password management.
+2. **Language** — English / العربية toggle. Selecting a language calls
+   `PUT /api/settings` immediately; the choice is restored from the
+   database on sign-in, refresh, and on another device. Guests (no
+   account) keep the old localStorage/URL-based behavior. `document.dir`/
+   `document.lang` are driven globally by this value (LTR for English,
+   RTL for Arabic) app-wide.
+3. **Subscription** — `subscribed` comes verbatim from `GET /api/me`
+   (`subscribed: false`, honestly, since no Stripe/entitlements table
+   exists yet) — never simulated as true.
+4. **Notifications** — Push / Email toggles read from and persisted to
+   `users.notify_push` / `users.notify_email` via `PUT /api/settings`,
+   scoped to `req.user.id`. An explicit note tells the user these are
+   saved preferences only — no push/email delivery infrastructure is
+   connected, so nothing pretends to actually send anything yet.
 5. **Creator info** *(owner only)* — verification status, "Apply for the
-   Taste Seal" button, note about per-Edit access control
-6. **Admin** *(isAdmin only)* — "Verification review" button
-7. **Help & Support** — `mailto:support@tastekin.app` link
-8. **Sign out** button at the bottom
+   Taste Seal" button, note about per-Edit access control (unchanged;
+   `isVerified` already came from the server).
+6. **Admin** *(isAdmin only)* — "Verification review" button (unchanged,
+   still gated by the server-computed `isAdmin` from `GET /api/me`).
+7. **Help & Support** — renders a `mailto:` link only when the operator
+   has set the `SUPPORT_EMAIL` env var (returned as `supportEmail` by
+   `GET /api/me`); otherwise shows "Support contact is not configured
+   yet." No hardcoded fallback address.
+8. **Sign out** button at the bottom — unchanged, calls `/api/logout`.
 
 There are two "Sign out" buttons in the app, but on two different screens,
 not duplicated within one section: one on the "You" tab
@@ -242,13 +268,21 @@ not duplicated within one section: one on the "You" tab
 (`data-testid="settings-sign-out"`). Both call the same `/api/logout`.
 Functionally harmless, but a real UX redundancy if you want to simplify.
 
+Regression coverage: `scripts/src/verify-settings.ts`
+(`pnpm --filter scripts run verify:settings`) covers persistence,
+per-user isolation, unauthorized/invalid requests, sign-out/sign-in
+DB-persistence, partial updates, and an admin-authorization non-regression
+check. `artifacts/tastekin/e2e/settings-direction.spec.ts` covers the
+LTR/RTL direction toggle and its persistence across a reload.
+
 ## Subscription / billing — UI only, not wired up
 
 The Subscribe screen and Settings' Subscription section both explicitly
 say "Secure checkout will open here once Stripe entitlements are
 connected. No payment or access is being simulated." There is no Stripe
-SDK or billing logic anywhere in the repo — `subscribed` is a client-side
-placeholder value, not derived from any real entitlement check.
+SDK or billing logic anywhere in the repo — `subscribed` is now a real,
+server-computed field from `GET /api/me` (always `false` today, honestly,
+since no entitlements table exists), not a client-side placeholder.
 
 ## Data model (Postgres tables)
 
@@ -257,6 +291,12 @@ creator_media_uploads, creator_featured_collections, edit_likes,
 edit_saves, edit_comments, conversations, conversation_messages,
 creator_view_events, creator_follows, verification_applications,
 user_taste_preferences`
+
+`users` gained three additive columns for the Settings rebuild:
+`language` (text, default `'en'`), `notify_push` (boolean, default
+`true`), `notify_email` (boolean, default `true`). Applied via
+`pnpm --filter @workspace/db run push` — no data reset/reseed, no
+production database touched.
 
 `creator_workspaces.edits` and `.collections` are untyped JSONB arrays —
 adding fields to their shapes (as Collections' `uploads`/`itemOrder` did)
@@ -278,6 +318,8 @@ needs no migration, only Zod schema updates in `lib/api-zod`.
   public media/preview redirects
 - `verification.ts` — applicant + admin verification endpoints
 - `health.ts` — `/health`, `/version`, `/ready`
+- `settings.ts` — `PUT /settings` (authenticated, per-user language/
+  notifyPush/notifyEmail updates)
 
 ## Required environment variables
 
@@ -295,7 +337,10 @@ route is actually hit), `FOUNDER_EMAIL`/`FOUNDER_AUTH_USER_ID`/
 `ADMIN_AUTH_USER_IDS` (read only by the explicit `admin:grant` script's
 `--from-env` mode — see "Admin authorization" above; no request handler
 reads them, and they never grant or restore `users.isAdmin` on their own),
-`ALLOWED_ORIGINS`, `LOG_LEVEL` (all have safe defaults).
+`ALLOWED_ORIGINS`, `LOG_LEVEL` (all have safe defaults), `SUPPORT_EMAIL`
+(Settings' "Contact support" link — absent by default, no hardcoded
+fallback address; the section shows "not configured yet" until an
+operator sets it).
 
 **Replit-specific gotcha confirmed this session:** Autoscale Deployments do
 not inherit the Workspace's own secrets — `DATABASE_URL` (provisioned

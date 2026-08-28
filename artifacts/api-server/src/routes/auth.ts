@@ -19,11 +19,20 @@ function hash(value: string) { return crypto.createHash("sha256").update(value).
 function cookie(res: import("express").Response, name: string, value: string) { res.cookie(name, value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 600_000 }); }
 function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }
 
+/**
+ * Contact support is only ever a real, configured destination — never a
+ * hardcoded address baked into the client. Returns null (no button shown)
+ * until an operator sets this.
+ */
+export function configuredSupportEmail(): string | null {
+  return process.env.SUPPORT_EMAIL?.trim() || null;
+}
+
 router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null });
+    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail() });
     return;
   }
   try {
@@ -41,6 +50,14 @@ router.get("/me", async (req, res) => {
       } : null,
       isAdmin: await isCurrentUserAdmin(req.user),
       founderMappingConfigured: founderMappingConfigured(),
+      language: account?.language ?? "en",
+      notifyPush: account?.notifyPush ?? true,
+      notifyEmail: account?.notifyEmail ?? true,
+      // No subscriptions table exists yet — this is the real, honest server
+      // answer (everyone is unsubscribed) rather than a client-side guess,
+      // and becomes a real entitlement check once Stripe is connected.
+      subscribed: false,
+      supportEmail: configuredSupportEmail(),
     });
   } catch (error) {
     logger.error({ err: error, userId: req.user.id }, "GET /me failed");
