@@ -13,7 +13,15 @@ import { ensureCreatorAccount, founderMappingConfigured, isCurrentUserAdmin } fr
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
 const googleIssuer = "https://accounts.google.com";
-function origin(req: import("express").Request) { return `${req.header("x-forwarded-proto") || "https"}://${req.header("x-forwarded-host") || req.header("host")}`; }
+// req.protocol/req.hostname are trust-proxy-aware (see app.set("trust proxy", 1)
+// in app.ts): Express only honors X-Forwarded-Proto/X-Forwarded-Host from the
+// single configured trusted hop (Replit's own edge), rather than a route
+// handler reading those headers raw off any client that happens to reach the
+// process. This is what actually determines the OIDC redirect_uri, so it must
+// reflect whatever domain the browser used for *this* request (dev, the
+// production domain, or — see the /callback comment below — a preview
+// deployment's own domain) rather than any hardcoded value.
+function origin(req: import("express").Request) { return `${req.protocol}://${req.get("host")}`; }
 function safeReturnTo(value: unknown) { return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/"; }
 function hash(value: string) { return crypto.createHash("sha256").update(value).digest("base64url"); }
 function cookie(res: import("express").Response, name: string, value: string) { res.cookie(name, value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 600_000 }); }
@@ -65,21 +73,47 @@ router.get("/me", async (req, res) => {
   }
 });
 router.get("/login", async (req, res) => {
-  const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
-  const state = crypto.randomBytes(24).toString("base64url"); const verifier = crypto.randomBytes(48).toString("base64url");
-  cookie(res, "oidc_state", state); cookie(res, "oidc_verifier", verifier); cookie(res, "oidc_return_to", safeReturnTo(req.query.returnTo));
-  const url = new URL(discovery.authorization_endpoint); url.search = new URLSearchParams({ client_id: process.env.REPL_ID!, redirect_uri: `${origin(req)}/api/callback`, response_type: "code", scope: "openid email profile", state, code_challenge: hash(verifier), code_challenge_method: "S256", prompt: "login" }).toString();
-  res.redirect(url.href);
+  try {
+    const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
+    const state = crypto.randomBytes(24).toString("base64url"); const verifier = crypto.randomBytes(48).toString("base64url");
+    cookie(res, "oidc_state", state); cookie(res, "oidc_verifier", verifier); cookie(res, "oidc_return_to", safeReturnTo(req.query.returnTo));
+    const url = new URL(discovery.authorization_endpoint); url.search = new URLSearchParams({ client_id: process.env.REPL_ID!, redirect_uri: `${origin(req)}/api/callback`, response_type: "code", scope: "openid email profile", state, code_challenge: hash(verifier), code_challenge_method: "S256", prompt: "login" }).toString();
+    res.redirect(url.href);
+  } catch (error) {
+    logger.error({ err: error, host: req.get("host") }, "Replit OIDC login initiation failed");
+    res.redirect(`/?authError=${encodeURIComponent("Sign-in with Replit failed. Please try again.")}`);
+  }
 });
 router.get("/callback", async (req, res) => {
+  // Replit's OIDC authorization server validates redirect_uri against the
+  // callback URLs actually registered for this app's client_id (REPL_ID) —
+  // there is no dynamic/wildcard allowance for arbitrary hosts. On an
+  // ephemeral deployment-preview domain (a different host per preview,
+  // unregistered and unregisterable in advance), it can reject the
+  // authorization request outright and return here with an `error` query
+  // parameter instead of a `code` — this is a platform-level limitation of
+  // Replit Auth on temporary preview domains, not something this app can
+  // route around by hardcoding a URL. Surface it clearly rather than
+  // silently looping back into /api/login (which would retry the same
+  // request forever and, to the user, look like a blank/broken page).
+  if (typeof req.query.error === "string") {
+    logger.error({ error: req.query.error, description: req.query.error_description, host: req.get("host") }, "Replit OIDC authorization rejected (redirect_uri likely not registered for this host)");
+    res.redirect(`/?authError=${encodeURIComponent("Sign-in with Replit is not available on this domain yet.")}`);
+    return;
+  }
   if (req.query.state !== req.cookies?.oidc_state || typeof req.query.code !== "string") { res.redirect("/api/login"); return; }
-  const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((result) => result.json()) as { token_endpoint: string; userinfo_endpoint: string };
-  const token = await fetch(discovery.token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code: req.query.code, redirect_uri: `${origin(req)}/api/callback`, client_id: process.env.REPL_ID!, code_verifier: req.cookies.oidc_verifier }).toString() }).then(async (result) => result.ok ? result.json() as Promise<{ access_token: string; expires_in?: number }> : null);
-  if (!token?.access_token) { res.redirect("/api/login"); return; }
-  const claims = await fetch(discovery.userinfo_endpoint, { headers: { authorization: `Bearer ${token.access_token}` } }).then((result) => result.ok ? result.json() as Promise<Record<string, unknown>> : null);
-  if (!claims?.sub) { res.redirect("/api/login"); return; }
-  const user = await upsertUser(claims); const sid = await createSession({ user, accessToken: token.access_token, expiresAt: Date.now() + (token.expires_in ?? 3600) * 1000 });
-  setSessionCookie(res, sid); ["oidc_state", "oidc_verifier", "oidc_return_to"].forEach((name) => res.clearCookie(name, { path: "/" })); res.redirect(safeReturnTo(req.cookies?.oidc_return_to));
+  try {
+    const discovery = await fetch(`${issuer}/.well-known/openid-configuration`).then((result) => result.json()) as { token_endpoint: string; userinfo_endpoint: string };
+    const token = await fetch(discovery.token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ grant_type: "authorization_code", code: req.query.code, redirect_uri: `${origin(req)}/api/callback`, client_id: process.env.REPL_ID!, code_verifier: req.cookies.oidc_verifier }).toString() }).then(async (result) => result.ok ? result.json() as Promise<{ access_token: string; expires_in?: number }> : null);
+    if (!token?.access_token) { res.redirect("/api/login"); return; }
+    const claims = await fetch(discovery.userinfo_endpoint, { headers: { authorization: `Bearer ${token.access_token}` } }).then((result) => result.ok ? result.json() as Promise<Record<string, unknown>> : null);
+    if (!claims?.sub) { res.redirect("/api/login"); return; }
+    const user = await upsertUser(claims); const sid = await createSession({ user, accessToken: token.access_token, expiresAt: Date.now() + (token.expires_in ?? 3600) * 1000 });
+    setSessionCookie(res, sid); ["oidc_state", "oidc_verifier", "oidc_return_to"].forEach((name) => res.clearCookie(name, { path: "/" })); res.redirect(safeReturnTo(req.cookies?.oidc_return_to));
+  } catch (error) {
+    logger.error({ err: error, host: req.get("host") }, "Replit OIDC callback failed");
+    res.redirect(`/?authError=${encodeURIComponent("Sign-in with Replit failed. Please try again.")}`);
+  }
 });
 router.get("/logout", async (req, res) => { await clearSession(res, getSessionId(req)); res.redirect(safeReturnTo(req.query.returnTo)); });
 
