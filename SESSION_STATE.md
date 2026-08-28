@@ -6,14 +6,48 @@ writing. Treat this as the source of truth over any prior state doc.
 
 ## Next session focus
 
-The Settings page is now fully functional and server-backed (branch
-`claude/settings-functional`, not merged): language and notification
-preferences persist to `users` (additive columns `language`, `notify_push`,
-`notify_email`), are scoped per-account, and every value shown (name,
-email, verification, admin access, subscription, support contact) comes
-from `GET /api/me` — nothing is hardcoded or localStorage-authoritative for
-a signed-in user. See "Settings screen — exact sections" below for the
-current, accurate description.
+The Settings page is fully functional and server-backed (merged via PR #5):
+language and notification preferences persist to `users` (additive columns
+`language`, `notify_push`, `notify_email`), are scoped per-account, and
+every value shown (name, email, verification, admin access, subscription,
+support contact) comes from `GET /api/me` — nothing is hardcoded or
+localStorage-authoritative for a signed-in user. See "Settings screen —
+exact sections" below for the current, accurate description.
+
+**Preview-deployment health/500 investigation (branch
+`claude/fix-preview-deployment-health`, not merged):** the Replit
+deployment-preview healthcheck was failing (`/api` → 500, `/api/healthz` →
+404) and "Continue with Replit" ended on a blank Internal Server Error.
+Root cause, reproduced locally: `authMiddleware` (runs on every request)
+called `getSession(sid)` with no error handling — any database failure
+while resolving a session cookie (an unreachable/misconfigured
+`DATABASE_URL`, exactly the kind of thing a preview deployment's own,
+separately-configured secrets can get wrong per the gotcha documented
+below) threw an unhandled exception, and Express's default handler turned
+that into a raw "Internal Server Error" for **any** route, for any request
+carrying a session cookie — including the OIDC callback and, if a probe or
+browser ever carried a stale cookie, the healthcheck path itself. Fixed by:
+wrapping that lookup in try/catch (fails closed to signed-out, logs the
+real error, never crashes the pipeline), adding a real unauthenticated
+`GET /api/healthz` (dependency-free — never touches the database) for the
+platform's liveness probe, giving unmatched `/api/*` paths a clean 404 JSON
+instead of silently falling through to the SPA shell (a regex bug meant
+bare `/api` matched the SPA catch-all instead of the API 404), adding a
+last-resort JSON error handler (never leaks secrets/stack traces), setting
+`app.set("trust proxy", 1)` so the OIDC `redirect_uri` is built from
+Express's trust-proxy-aware `req.protocol`/`req.get("host")` instead of
+raw unauthenticated header reads, and making `/api/login` and
+`/api/callback` degrade to an `authError` redirect instead of crashing or
+looping when the OIDC provider is unreachable or rejects the request.
+Also documented (not fixable in-app): Replit's OIDC (`replit.com/oidc`)
+validates `redirect_uri` against callback URLs registered for the app's
+`client_id`, with no dynamic/wildcard allowance — an ephemeral preview
+domain is very unlikely to be pre-registered, so "Continue with Replit" on
+a preview URL may be a genuine platform limitation rather than a bug in
+this app; `/api/callback` now surfaces that rejection in logs instead of
+crashing, so the next real deployment attempt confirms it unambiguously.
+See `scripts/src/verify-deployment-health.ts` for regression coverage.
+Production's database and authentication were not touched.
 
 ## Next priorities
 
@@ -317,7 +351,8 @@ needs no migration, only Zod schema updates in `lib/api-zod`.
 - `storage.ts` — signed upload URLs, cleanup, private object serving,
   public media/preview redirects
 - `verification.ts` — applicant + admin verification endpoints
-- `health.ts` — `/health`, `/version`, `/ready`
+- `health.ts` — `/health`, `/healthz` (unauthenticated liveness probe, no DB
+  dependency — for the deployment platform), `/version`, `/ready`
 - `settings.ts` — `PUT /settings` (authenticated, per-user language/
   notifyPush/notifyEmail updates)
 

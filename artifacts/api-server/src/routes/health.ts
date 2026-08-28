@@ -6,6 +6,15 @@ const router = express.Router();
 
 router.get("/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
 
+// Liveness probe for the deployment platform: unauthenticated, dependency-free
+// (no DB, no session lookup), and always 200 as long as the process can serve
+// a request at all. Deliberately returns nothing beyond a fixed status — no
+// secrets, no user data, no environment details.
+router.get("/healthz", (_req, res) => {
+  res.set("Cache-Control", "no-store");
+  res.status(200).json({ status: "ok" });
+});
+
 router.get("/version", (_req, res) => {
   res.set("Cache-Control", "no-store");
   res.json({ commit: __COMMIT_HASH__ });

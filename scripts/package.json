@@ -9,6 +9,7 @@
     "admin:revoke": "tsx ./src/admin-revoke.ts",
     "verify:admin-auth": "tsx ./src/verify-admin-auth.ts",
     "verify:settings": "tsx ./src/verify-settings.ts",
+    "verify:deployment-health": "tsx ./src/verify-deployment-health.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
