@@ -138,13 +138,29 @@ export async function ensureCreatorAccount(user: AuthenticatedUser) {
       username = `${base.slice(0, 20)}_${suffix + 2}`;
     }
     const creatorId = `creator_${crypto.createHash("sha256").update(user.id).digest("hex").slice(0, 20)}`;
-    const [created] = await tx.insert(creatorWorkspaces).values({
-      creatorId,
-      ownerUserId: user.id,
-      edits: [],
-      collections: [],
-      profile: initialProfile(account, username),
-    }).returning();
+    // The pre-check above only guards against a username already committed at
+    // read time — it can't see a different brand-new signup racing to claim
+    // the exact same auto-generated slug in this same instant. The database's
+    // own case-insensitive unique index is what actually prevents a
+    // duplicate; retry with a fresh random suffix on that specific race
+    // rather than letting it surface as an opaque failure for either signup.
+    let created: typeof creatorWorkspaces.$inferSelect | undefined;
+    for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
+      try {
+        [created] = await tx.insert(creatorWorkspaces).values({
+          creatorId,
+          ownerUserId: user.id,
+          edits: [],
+          collections: [],
+          profile: initialProfile(account, username),
+        }).returning();
+      } catch (error) {
+        const isUniqueViolation = Boolean(error && typeof error === "object" && "code" in error && error.code === "23505");
+        if (!isUniqueViolation || attempt === 2) throw error;
+        username = `${base.slice(0, 20)}_${crypto.randomBytes(3).toString("hex")}`;
+      }
+    }
+    if (!created) throw new Error("Unable to create creator workspace after retrying the username assignment");
     await tx.update(usersTable).set({ role: "creator", updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     return created;
   });

@@ -7,6 +7,7 @@ import engagementRouter from "./engagement";
 import storageRouter from "./storage";
 import verificationRouter from "./verification";
 import settingsRouter from "./settings";
+import onboardingRouter from "./onboarding";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(engagementRouter);
 router.use(storageRouter);
 router.use(verificationRouter);
 router.use(settingsRouter);
+router.use(onboardingRouter);
 
 export default router;

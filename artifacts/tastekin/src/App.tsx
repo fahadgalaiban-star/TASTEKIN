@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
-import { tasteCategoryLabel } from '@workspace/taste-catalog';
+import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
 import {
   Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, Pencil, Plus, PlusCircle, Search, Settings2,
@@ -22,7 +22,10 @@ export default function App() {
 }
 
 type Language = 'en' | 'ar';
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'settings' | 'auth';
+const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
+type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
+function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'settings' | 'auth' | 'onboarding';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -184,6 +187,11 @@ type TasteSessionSnapshot = {
   // (honestly, not simulated) until Stripe entitlements are connected.
   subscribed: boolean;
   supportEmail: string | null;
+  // Server-computed and server-authorized (see GET /api/me): whether this
+  // account still needs to go through new-user onboarding, and which step to
+  // resume at. Never derived or guessed client-side.
+  needsOnboarding: boolean;
+  onboardingStep: OnboardingStep;
   revision: number;
 };
 type TasteSession = TasteSessionSnapshot & { refresh: () => Promise<void> };
@@ -193,7 +201,8 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
     status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false,
-    language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, revision: 0,
+    language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null,
+    needsOnboarding: false, onboardingStep: 'done', revision: 0,
   });
   const refresh = useCallback(async () => {
     try {
@@ -204,7 +213,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'>
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const };
       setSnapshot((current) => {
         const next = {
           status: payload.user ? 'authenticated' as const : 'signed-out' as const,
@@ -217,6 +226,8 @@ function useTasteSessionController(): TasteSession {
           notifyEmail: payload.notifyEmail ?? true,
           subscribed: Boolean(payload.subscribed),
           supportEmail: payload.supportEmail ?? null,
+          needsOnboarding: Boolean(payload.needsOnboarding),
+          onboardingStep: isOnboardingStep(payload.onboardingStep) ? payload.onboardingStep : 'done',
         };
         const unchanged = current.status === next.status
           && current.user?.id === next.user?.id
@@ -229,7 +240,9 @@ function useTasteSessionController(): TasteSession {
           && current.notifyPush === next.notifyPush
           && current.notifyEmail === next.notifyEmail
           && current.subscribed === next.subscribed
-          && current.supportEmail === next.supportEmail;
+          && current.supportEmail === next.supportEmail
+          && current.needsOnboarding === next.needsOnboarding
+          && current.onboardingStep === next.onboardingStep;
         return unchanged ? current : { ...next, revision: current.revision + 1 };
       });
     } catch {
@@ -539,6 +552,20 @@ function TastekinApp() {
       write('interface-language', session.language);
     }
   }, [session.status, session.user?.id, session.language]);
+  // Onboarding must appear only for genuinely new users, right after a
+  // successful sign-in — never for existing users, verified creators, or
+  // Admin accounts (session.needsOnboarding is entirely server-computed, see
+  // GET /api/me). Fires once per (mount, signed-in account): if the user
+  // then deliberately navigates elsewhere via the nav bar, this won't yank
+  // them back mid-session, but reopening the app (a fresh mount) resumes
+  // them at their last incomplete step, since the server state hasn't changed.
+  const onboardingRedirectedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (session.status !== 'authenticated' || !session.needsOnboarding) return;
+    if (onboardingRedirectedFor.current === session.user?.id) return;
+    onboardingRedirectedFor.current = session.user?.id ?? null;
+    if (screen !== 'onboarding') go('onboarding');
+  }, [session.status, session.needsOnboarding, session.user?.id]);
   const saveSettings = async (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => {
     if (session.status !== 'authenticated') return;
     try {
@@ -849,7 +876,7 @@ function TastekinApp() {
   };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
-    <header className="approved-topbar">{!['home', 'you', 'add'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
+    <header className="approved-topbar">{!['home', 'you', 'add', 'onboarding'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
@@ -877,7 +904,8 @@ function TastekinApp() {
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
     {screen === 'adminVerification' && <AdminVerificationScreen ar={ar} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
-   </main>{screen !== 'composer' && screen !== 'creatorPreview' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
+    {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => go('home')} />}
+   </main>{screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
    </div></TasteSessionContext.Provider>;
 }
 
@@ -1075,6 +1103,234 @@ function TuneTasteScreen({ ar, onBack, onSignIn }: { ar: boolean; onBack: () => 
       </button>
       <button className="approved-button wide" style={{ marginTop: 12 }} onClick={onBack}>{ar ? 'العودة إلى الحساب' : 'Back to Account'}</button>
     </SimpleScreen>
+  );
+}
+
+const ONBOARDING_ERROR_AR: Record<string, string> = {
+  'That username is already in use': 'اسم المستخدم هذا مُستخدم بالفعل.',
+  'Save your display name and username first.': 'يرجى حفظ اسمك الظاهر واسم المستخدم أولاً.',
+  'Choose at least one taste category to continue.': 'يرجى اختيار فئة ذوق واحدة على الأقل للمتابعة.',
+};
+function onboardingErrorText(raw: string, ar: boolean) {
+  if (!ar) return raw;
+  return ONBOARDING_ERROR_AR[raw] || 'حدث خطأ أثناء الحفظ. حاول مرة أخرى.';
+}
+async function advanceOnboarding(): Promise<{ step: OnboardingStep; completed: boolean }> {
+  const response = await fetch('/api/onboarding/advance', { method: 'POST', credentials: 'include' });
+  if (!response.ok) {
+    const detail = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(detail?.error || 'Could not save your progress.');
+  }
+  return response.json();
+}
+
+/**
+ * New-user onboarding: display name + username (required), photo + city
+ * (optional), taste categories/interests. Every step saves to the server
+ * immediately (via the existing creator-profile / taste-preferences APIs)
+ * and advances via POST /api/onboarding/advance, which re-checks each
+ * step's precondition server-side — this component's own validation is a
+ * courtesy, not the authority. Which step renders always comes from
+ * session.onboardingStep (server state), so closing the app or signing out
+ * mid-way and returning resumes exactly here, not from scratch.
+ *
+ * Deliberately never touches isAdmin, isVerified, subscriptions, or the
+ * Taste Seal — completing this flow only ever sets onboarding_completed_at.
+ * Taste ordering here is a plain, deterministic reflection of the
+ * categories/tags the user picked — no matching/recommendation claim.
+ */
+function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: boolean; creatorProfile: CreatorProfile; onUploadPhoto: (file: File) => Promise<{ objectPath: string }>; onDone: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const step = session.onboardingStep;
+
+  useEffect(() => { if (step === 'done') onDone(); }, [step, onDone]);
+
+  const [displayName, setDisplayName] = useState(creatorProfile.displayName);
+  const [username, setUsername] = useState(creatorProfile.username);
+  const [city, setCity] = useState(creatorProfile.city);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    setDisplayName(creatorProfile.displayName);
+    setUsername(creatorProfile.username);
+    setCity(creatorProfile.city);
+  }, [creatorProfile.displayName, creatorProfile.username, creatorProfile.city]);
+
+  const [photoSource, setPhotoSource] = useState<PreparedImage | null>(null);
+  const [pendingPhoto, setPendingPhoto] = useState<PendingProfilePhoto | null>(null);
+  const [imageError, setImageError] = useState('');
+  const [processingPhoto, setProcessingPhoto] = useState(false);
+
+  const { data: catalog, isLoading: catalogLoading } = useGetTasteCatalog();
+  const [categories, setCategories] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
+  const [tasteInitialized, setTasteInitialized] = useState(false);
+  const { data: prefs } = useGetTastePreferences({
+    query: { retry: false, queryKey: getGetTastePreferencesQueryKey(), enabled: step === 'taste', refetchOnMount: 'always', staleTime: 0 },
+    request: { credentials: 'include', cache: 'no-store' },
+  });
+  useEffect(() => {
+    if (prefs && !tasteInitialized) { setCategories(prefs.categories || []); setTags(prefs.tags || []); setTasteInitialized(true); }
+  }, [prefs, tasteInitialized]);
+  const toggleCategory = (id: string) => setCategories((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
+  const toggleTag = (id: string) => setTags((prev) => prev.includes(id) ? prev.filter((tg) => tg !== id) : [...prev, id]);
+
+  const saveProfileFields = async (updates: Partial<Pick<CreatorProfile, 'displayName' | 'username' | 'city' | 'avatarObjectPath' | 'interests'>>) => {
+    const body = {
+      displayName: updates.displayName ?? creatorProfile.displayName,
+      username: updates.username ?? creatorProfile.username,
+      bio: creatorProfile.bio,
+      city: updates.city ?? creatorProfile.city,
+      country: creatorProfile.country,
+      interests: updates.interests ?? creatorProfile.interests,
+      dateOfBirth: creatorProfile.dateOfBirth,
+      showAge: creatorProfile.showAge,
+      avatarObjectPath: updates.avatarObjectPath !== undefined ? updates.avatarObjectPath : creatorProfile.avatarObjectPath,
+    };
+    const response = await fetch('/api/creator-profile', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => null) as { error?: string } | null;
+      throw new Error(detail?.error || 'Could not save your profile.');
+    }
+  };
+
+  const finishStep = async (action?: () => Promise<void>) => {
+    setSaving(true); setError('');
+    try {
+      if (action) await action();
+      const result = await advanceOnboarding();
+      await session.refresh();
+      if (result.completed) onDone();
+    } catch (cause) {
+      setError(onboardingErrorText(cause instanceof Error ? cause.message : 'Could not save. Try again.', ar));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const continueBasics = () => {
+    const name = displayName.trim();
+    const handle = username.trim().toLowerCase();
+    if (!name) { setError(t('Enter your display name.', 'أدخل اسمك الظاهر.')); return; }
+    if (handle.length < 3 || handle.length > 30 || !/^[a-z0-9_]+$/.test(handle)) {
+      setError(t('Username must be 3-30 characters: lowercase letters, numbers, or underscores.', 'اسم المستخدم يجب أن يكون من 3 إلى 30 حرفاً: أحرف صغيرة أو أرقام أو شرطة سفلية.'));
+      return;
+    }
+    void finishStep(() => saveProfileFields({ displayName: name, username: handle }));
+  };
+
+  const selectPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; if (!file) return;
+    setProcessingPhoto(true); setImageError('');
+    try { setPhotoSource(await prepareImage(file)); } catch (cause) { setImageError(cause instanceof Error ? cause.message : t('Could not prepare your photo.', 'تعذر تجهيز صورتك.')); event.target.value = ''; } finally { setProcessingPhoto(false); }
+  };
+  const continuePhoto = () => void finishStep(pendingPhoto
+    ? async () => {
+      const uploaded = await onUploadPhoto(pendingPhoto.file);
+      await saveProfileFields({ avatarObjectPath: uploaded.objectPath });
+      URL.revokeObjectURL(pendingPhoto.url);
+    }
+    : undefined);
+
+  const continueCity = () => {
+    const trimmed = city.trim();
+    void finishStep(trimmed !== creatorProfile.city ? () => saveProfileFields({ city: trimmed }) : undefined);
+  };
+
+  const continueTaste = () => void finishStep(async () => {
+    const response = await fetch('/api/taste-preferences', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories, tags }) });
+    if (!response.ok) throw new Error(t('Could not save your taste preferences.', 'تعذر حفظ تفضيلات ذوقك.'));
+    await saveProfileFields({ interests: categories });
+  });
+
+  const stepIndex = Math.max(0, ONBOARDING_STEPS.slice(0, 4).indexOf(step as (typeof ONBOARDING_STEPS)[number]));
+  const progress = (
+    <div className="onboarding-progress" role="progressbar" aria-valuemin={1} aria-valuemax={4} aria-valuenow={stepIndex + 1}>
+      {ONBOARDING_STEPS.slice(0, 4).map((s, index) => <span key={s} className={index <= stepIndex ? 'active' : ''} />)}
+    </div>
+  );
+
+  if (photoSource) {
+    return <ProfilePhotoCropper ar={ar} source={photoSource} onCancel={() => { URL.revokeObjectURL(photoSource.url); setPhotoSource(null); }} onConfirm={(next) => { URL.revokeObjectURL(photoSource.url); setPhotoSource(null); setPendingPhoto(next); }} />;
+  }
+
+  if (step === 'done') return null;
+
+  if (step === 'basics') {
+    return (
+      <section className="onboarding-screen" data-testid="onboarding-basics">
+        {progress}
+        <span className="approved-kicker">{t('Welcome to TASTEKIN', 'مرحباً بك في تيستكن')}</span>
+        <h1 className="approved-title">{t("Let's set up your account", 'لنقم بإعداد حسابك')}</h1>
+        <p>{t('Start with your name and a username people can find you by.', 'ابدأ باسمك واسم مستخدم يمكن للآخرين العثور عليك من خلاله.')}</p>
+        <Field label={t('Display name', 'الاسم الظاهر')} value={displayName} onChange={setDisplayName} placeholder={t('Your name', 'اسمك')} />
+        <Field label={t('Username', 'اسم المستخدم')} value={username} onChange={(value) => setUsername(value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" />
+        {error && <p className="workspace-notice" role="alert">{error}</p>}
+        <button className="approved-button primary wide" style={{ marginTop: 16 }} onClick={continueBasics} disabled={saving}>{saving ? t('Saving…', 'جارٍ الحفظ…') : t('Continue', 'متابعة')}</button>
+      </section>
+    );
+  }
+
+  if (step === 'photo') {
+    return (
+      <section className="onboarding-screen" data-testid="onboarding-photo">
+        {progress}
+        <span className="approved-kicker">{t('Onboarding', 'الإعداد')}</span>
+        <h1 className="approved-title">{t('Add a profile photo', 'أضف صورة الملف الشخصي')}</h1>
+        <p>{t('Optional — you can always add one later from your profile.', 'اختياري — يمكنك دائماً إضافتها لاحقاً من ملفك الشخصي.')}</p>
+        <label className="profile-photo-picker">
+          <Avatar profile={creatorProfile} src={pendingPhoto?.url || creatorProfile.avatar} />
+          <span><ImagePlus size={16} /> {processingPhoto ? t('Preparing…', 'جارٍ التجهيز…') : t('Choose photo', 'اختر صورة')}</span>
+          <input aria-label={t('Choose profile photo', 'اختر صورة الملف الشخصي')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processingPhoto || saving} />
+        </label>
+        {imageError && <p className="workspace-notice" role="alert">{imageError}</p>}
+        {error && <p className="workspace-notice" role="alert">{error}</p>}
+        <button className="approved-button primary wide" style={{ marginTop: 16 }} onClick={continuePhoto} disabled={saving || processingPhoto}>{saving ? t('Saving…', 'جارٍ الحفظ…') : pendingPhoto ? t('Continue', 'متابعة') : t('Skip for now', 'تخطَّ الآن')}</button>
+      </section>
+    );
+  }
+
+  if (step === 'city') {
+    return (
+      <section className="onboarding-screen" data-testid="onboarding-city">
+        {progress}
+        <span className="approved-kicker">{t('Onboarding', 'الإعداد')}</span>
+        <h1 className="approved-title">{t('Where are you based?', 'أين تقيم؟')}</h1>
+        <p>{t('Optional — helps tailor places and recommendations near you.', 'اختياري — يساعد في تخصيص الأماكن والتوصيات القريبة منك.')}</p>
+        <Field label={t('City', 'المدينة')} value={city} onChange={setCity} placeholder={t('Your city', 'مدينتك')} />
+        {error && <p className="workspace-notice" role="alert">{error}</p>}
+        <button className="approved-button primary wide" style={{ marginTop: 16 }} onClick={continueCity} disabled={saving}>{saving ? t('Saving…', 'جارٍ الحفظ…') : city.trim() ? t('Continue', 'متابعة') : t('Skip for now', 'تخطَّ الآن')}</button>
+      </section>
+    );
+  }
+
+  const readyToContinue = categories.length >= MIN_TASTE_CATEGORIES && tags.length >= MIN_TASTE_TAGS;
+  return (
+    <section className="onboarding-screen" data-testid="onboarding-taste">
+      {progress}
+      <span className="approved-kicker">{t('Onboarding', 'الإعداد')}</span>
+      <h1 className="approved-title">{t('What do you have taste for?', 'ما الذي يعكس ذوقك؟')}</h1>
+      <p>{t('Choose at least one category and two interests. This sets your initial order — no AI, just what you picked.', 'اختر فئة واحدة على الأقل واهتمامين. يحدد هذا ترتيبك الأولي — بدون ذكاء اصطناعي، فقط ما اخترته.')}</p>
+      {catalogLoading && <div className="approved-empty">{t('Loading...', 'جارٍ التحميل...')}</div>}
+      {catalog?.categories.map((cat) => (
+        <div key={cat.id} className="approved-panel">
+          <div className="age-toggle" style={{ marginTop: 0 }}>
+            <input type="checkbox" checked={categories.includes(cat.id)} onChange={() => toggleCategory(cat.id)} />
+            <span><strong>{ar ? cat.labelAr : cat.label}</strong></span>
+          </div>
+          {categories.includes(cat.id) && (
+            <div className="profile-interests" style={{ marginTop: 12, marginBottom: 0 }}>
+              {catalog.tags.filter((tag) => tag.categoryId === cat.id).map((tag) => (
+                <button key={tag.id} className={tags.includes(tag.id) ? 'selected' : ''} onClick={() => toggleTag(tag.id)}>{ar ? tag.labelAr : tag.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+      {error && <p className="workspace-notice" role="alert">{error}</p>}
+      <button className="approved-button primary wide" style={{ marginTop: 16 }} onClick={continueTaste} disabled={saving || !readyToContinue}>{saving ? t('Saving…', 'جارٍ الحفظ…') : t('Finish', 'إنهاء')}</button>
+    </section>
   );
 }
 

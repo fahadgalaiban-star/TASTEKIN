@@ -19,6 +19,13 @@ export const usersTable = pgTable("users", {
   language: text("language").notNull().default("en"),
   notifyPush: boolean("notify_push").notNull().default(true),
   notifyEmail: boolean("notify_email").notNull().default(true),
+  // New-user onboarding progress. onboardingStep tracks which step to resume
+  // at; onboardingCompletedAt is the durable "has finished onboarding" value
+  // requested for completion — null until the wizard (or an established/
+  // admin/verified-account bypass) sets it. Neither column implies or grants
+  // isAdmin, isVerified, or any creator/subscriber entitlement.
+  onboardingStep: text("onboarding_step").notNull().default("basics"),
+  onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   authProvider: text("auth_provider").notNull().default("replit"),
   passwordHash: varchar("password_hash"),
   googleId: varchar("google_id").unique(),

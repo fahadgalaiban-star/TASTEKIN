@@ -14,8 +14,7 @@ support contact) comes from `GET /api/me` — nothing is hardcoded or
 localStorage-authoritative for a signed-in user. See "Settings screen —
 exact sections" below for the current, accurate description.
 
-**Preview-deployment health/500 investigation (branch
-`claude/fix-preview-deployment-health`, not merged):** the Replit
+**Preview-deployment health/500 investigation (merged via PR #6):** the Replit
 deployment-preview healthcheck was failing (`/api` → 500, `/api/healthz` →
 404) and "Continue with Replit" ended on a blank Internal Server Error.
 Root cause, reproduced locally: `authMiddleware` (runs on every request)
@@ -49,9 +48,67 @@ crashing, so the next real deployment attempt confirms it unambiguously.
 See `scripts/src/verify-deployment-health.ts` for regression coverage.
 Production's database and authentication were not touched.
 
+**New-user onboarding (branch `claude/onboarding-flow`, not merged):**
+implemented item 1 of "Next priorities" below. A genuinely new user is
+routed to a 4-step wizard right after their first successful sign-in
+(display name + unique username → optional photo → optional city → taste
+categories/interests); each step saves to the server immediately via the
+*existing* `PUT /creator-profile`, `PUT /taste-preferences`, and media-
+upload endpoints (no new profile/media storage was built), and a new
+`POST /api/onboarding/advance` moves the user's `users.onboarding_step`
+forward by exactly one step, re-checking that step's precondition server-
+side every time (never trusting the client). Closing the app or signing
+out mid-way resumes at the last-saved step, driven entirely by
+`users.onboarding_step`/`onboarding_completed_at` (two additive, nullable/
+defaulted columns) — never localStorage. `GET /api/me` gained
+`needsOnboarding`/`onboardingStep` fields following the same pattern as
+`isAdmin`/`language`/etc.
+
+Gating (`artifacts/api-server/src/lib/onboarding.ts`,
+`resolveOnboardingStatus`): an account is exempt from onboarding the
+instant `onboarding_completed_at` is set, or it is Admin, or it is
+`isVerified`, or its creator workspace already has real published content
+(edits/collections — something onboarding itself can never produce, so
+this is unambiguous evidence of a pre-existing creator). Two signals were
+deliberately **not** used for this auto-exemption after they proved to
+directly conflict with legitimate onboarding progress in testing:
+`creator_workspaces.revision` (onboarding's own basics-step save bumps
+this) and saved `user_taste_preferences` (onboarding's own taste step
+writes these) — using either would retroactively "complete" onboarding out
+from under a user still in the middle of it. The remaining gap — an
+existing pre-feature account that saved a profile once but has no
+edits/admin/verified flag — is closed by the new, one-time, operator-run,
+dry-run-by-default `pnpm --filter scripts run backfill:onboarding -- --yes`
+(mirrors the `admin:grant` script's safety pattern; only ever touches
+`onboarding_step`/`onboarding_completed_at`). **Must be run once against
+production, right after the schema push and before real traffic resumes,
+to fully close that gap** — it was not run this session (no production
+migration was performed).
+
+Username uniqueness is enforced by a new additive functional unique index,
+`creator_workspaces_username_unique` on `lower(profile->>'username')` —
+the pre-existing check-then-write in `PUT /creator-profile` was racy
+(advisory-locked only per-workspace, not per-username); a violation of the
+new DB constraint is now caught and translated into the same `409 "That
+username is already in use"` response instead of a raw 500.
+`ensureCreatorAccount`'s own auto-username-generation (unrelated pre-
+existing code, runs for every signed-in user) gained a small bounded retry
+for the same reason, since the new index makes a same-slug race across two
+different brand-new signups throw where it previously would have silently
+gone unnoticed.
+
+Deliberately out of scope, per the requirements: no AI/recommendation
+claim anywhere — the taste step's initial ordering is just the categories/
+tags the user picked, saved via the pre-existing `/taste-preferences`
+endpoint; onboarding never sets `isAdmin`, `isVerified`, grants the Taste
+Seal, or enables subscriber-only content. See
+`scripts/src/verify-onboarding.ts` (20 checks) for regression coverage and
+`artifacts/tastekin/e2e/onboarding.spec.ts` for the bilingual/RTL and
+resume-on-reload UI coverage.
+
 ## Next priorities
 
-1. Complete onboarding
+1. ~~Complete onboarding~~ — see above (branch not yet merged)
 2. Google Sign-In
 3. Report, Block, Mute, and content moderation
 4. Real video support
@@ -332,6 +389,19 @@ user_taste_preferences`
 `pnpm --filter @workspace/db run push` — no data reset/reseed, no
 production database touched.
 
+`users` gained two more additive columns for onboarding: `onboarding_step`
+(text, default `'basics'`) and `onboarding_completed_at` (timestamptz,
+nullable — the durable "has finished onboarding" value). `creator_workspaces`
+gained one additive index (not a column): `creator_workspaces_username_unique`,
+a case-insensitive unique index on `lower(profile->>'username')` — this is
+what makes username uniqueness actually database-enforced rather than
+just a racy pre-check. Both applied the same way (`drizzle-kit push`), not
+run against production this session; run
+`pnpm --filter scripts run backfill:onboarding -- --prod --yes` once after
+pushing, before real traffic resumes, so pre-existing accounts with no
+other exemption signal aren't shown onboarding once (see the onboarding
+section above).
+
 `creator_workspaces.edits` and `.collections` are untyped JSONB arrays —
 adding fields to their shapes (as Collections' `uploads`/`itemOrder` did)
 needs no migration, only Zod schema updates in `lib/api-zod`.
@@ -355,6 +425,9 @@ needs no migration, only Zod schema updates in `lib/api-zod`.
   dependency — for the deployment platform), `/version`, `/ready`
 - `settings.ts` — `PUT /settings` (authenticated, per-user language/
   notifyPush/notifyEmail updates)
+- `onboarding.ts` — `POST /onboarding/advance` (authenticated; advances the
+  caller's own `onboarding_step` by one, server-checked precondition per
+  step, no body)
 
 ## Required environment variables
 
