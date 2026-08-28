@@ -99,6 +99,7 @@ class Session {
       notifyEmail: boolean;
       subscribed: boolean;
       supportEmail: string | null;
+      googleAuthConfigured: boolean;
     };
   }
   async putSettings(body: Record<string, unknown>) {
@@ -274,6 +275,12 @@ async function main() {
       assert.equal(me.supportEmail, null);
     });
 
+    await check("googleAuthConfigured is false by default (no GOOGLE_CLIENT_ID) — the sign-in screen must not offer Google", async () => {
+      const anon = new Session(server.baseUrl);
+      assert.equal((await anon.me()).googleAuthConfigured, false, "must be false for a signed-out visitor too, since that's who sees the sign-in screen");
+      assert.equal((await a.me()).googleAuthConfigured, false);
+    });
+
     void userA;
   } finally {
     stopServer(server);
@@ -290,6 +297,17 @@ async function main() {
     });
   } finally {
     stopServer(server2);
+  }
+
+  console.log("\nPhase 3: GOOGLE_CLIENT_ID, when configured, flips googleAuthConfigured to true.");
+  const server3 = await startServer({ GOOGLE_CLIENT_ID: "test-google-client-id" });
+  try {
+    const anon = new Session(server3.baseUrl);
+    await check("a configured GOOGLE_CLIENT_ID makes googleAuthConfigured true, even for a signed-out visitor", async () => {
+      assert.equal((await anon.me()).googleAuthConfigured, true);
+    });
+  } finally {
+    stopServer(server3);
   }
 
   console.log("\nResults:");

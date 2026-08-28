@@ -37,11 +37,21 @@ export function configuredSupportEmail(): string | null {
   return process.env.SUPPORT_EMAIL?.trim() || null;
 }
 
+/**
+ * The sign-in screen must never offer "Continue with Google" unless Google
+ * OAuth is actually configured — showing it otherwise sends the user into a
+ * dead end (GET /auth/google already redirects back with an error in that
+ * case, but the button shouldn't appear in the first place).
+ */
+export function googleAuthConfigured(): boolean {
+  return Boolean(process.env.GOOGLE_CLIENT_ID?.trim());
+}
+
 router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done" });
+    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: googleAuthConfigured() });
     return;
   }
   try {
@@ -73,6 +83,7 @@ router.get("/me", async (req, res) => {
       supportEmail: configuredSupportEmail(),
       needsOnboarding: onboarding.needsOnboarding,
       onboardingStep: onboarding.step,
+      googleAuthConfigured: googleAuthConfigured(),
     });
   } catch (error) {
     logger.error({ err: error, userId: req.user.id }, "GET /me failed");
