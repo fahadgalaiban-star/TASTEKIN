@@ -4,6 +4,24 @@ This document is a from-scratch audit of the actual codebase (not a running
 log of past sessions). It reflects what is really implemented as of this
 writing. Treat this as the source of truth over any prior state doc.
 
+## Next session focus
+
+Rebuild the **Settings page**. Target section set (see "Settings screen —
+exact sections" below for what exists today, which this replaces):
+
+- **Account**
+- **Subscription**
+- **Notifications**
+- **Creator Tools**
+- **Support**
+- A **red** Log Out button
+
+Not yet scoped: whether Language and Admin/Verification Review (both
+currently top-level Settings sections) fold into one of the above, move
+elsewhere, or stay as-is — confirm before removing either, since Admin's
+visibility is the security-sensitive gate this session's prior work
+depended on.
+
 ## Stack
 
 - pnpm workspace monorepo, Node.js 24, TypeScript 5.9
@@ -82,6 +100,15 @@ explicit, human-run scripts in `scripts/src/`:
   `is_admin = false`. Nothing else in the app will ever set it back to
   true; the only way an account becomes an admin again is another explicit
   `admin:grant` run.
+- Both read `DATABASE_URL` by default. Pass `--prod` to use `PROD_DB_URL`
+  instead (must already be set in that shell) — never a silent fallback;
+  the resolved host + database name (never credentials) is printed before
+  anything else happens, e.g. `Connecting via PROD_DB_URL → ep-xxx.neon.tech/neondb (PRODUCTION)`.
+  This is implemented via `scripts/src/lib/resolve-database.ts`, which
+  builds its own Postgres connection from whichever URL was resolved
+  rather than importing `@workspace/db`'s pre-built one — that module
+  constructs its pool from `DATABASE_URL` the instant it's imported,
+  before a script's own `--prod` handling could ever run.
 
 `pnpm --filter scripts run verify:admin-auth` (`DATABASE_URL` must point at
 a disposable/test database — it creates real rows) is an automated
@@ -92,6 +119,14 @@ matches an unflagged account's email never grants it access; an existing
 `is_admin=true` row survives that env var being changed or removed
 entirely; and switching sessions in the same cookie jar never carries over
 the previous account's admin status.
+
+**Confirmed live in production** (PR #4, merged): the production Neon
+database's `users` table has the `is_admin` column (added via
+`pnpm --filter @workspace/db run push`, additive, no data loss), and
+`dark.gcc.kw@gmail.com` — the designated TASTEKIN admin account, separate
+from the founder's own Replit login — has `is_admin = true` there via
+`admin:grant --prod --email dark.gcc.kw@gmail.com --yes`, confirmed working
+in the live app.
 
 ## Creator workspace (Edits)
 
