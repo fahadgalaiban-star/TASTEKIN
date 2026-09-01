@@ -9,6 +9,7 @@ import verificationRouter from "./verification";
 import settingsRouter from "./settings";
 import onboardingRouter from "./onboarding";
 import moderationRouter from "./moderation";
+import blocksRouter from "./blocks";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(verificationRouter);
 router.use(settingsRouter);
 router.use(onboardingRouter);
 router.use(moderationRouter);
+router.use(blocksRouter);
 
 export default router;

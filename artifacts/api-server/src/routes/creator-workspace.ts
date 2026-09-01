@@ -15,6 +15,7 @@ import {
   fheedWorkspaceSeed,
 } from "../lib/creator-workspace-seed";
 import { creatorByUsername, ensureCreatorAccount } from "../lib/creator-account";
+import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
 
 const router: IRouter = Router();
 function noStoreAccountResponse(res: import("express").Response) {
@@ -198,6 +199,7 @@ router.get("/creators/:username/profile", async (req, res): Promise<void> => {
   try {
     const workspace = await creatorByUsername(req.params.username);
     if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
+    if (await areUsersBlocked(req.user?.id, workspace.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
     const privateView = Boolean(req.user && workspace.ownerUserId === req.user.id);
     res.json(GetCreatorProfileResponse.parse(serializeProfile(workspace.profile, privateView, workspace.revision, await verifiedForWorkspace(workspace))));
   } catch (error) {
@@ -373,6 +375,7 @@ router.get("/creators/:username/workspace", async (req, res) => {
   try {
     const workspace = await creatorByUsername(req.params.username);
     if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
+    if (await areUsersBlocked(req.user?.id, workspace.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
     const owner = Boolean(req.user && workspace.ownerUserId === req.user.id);
     if (owner) { res.json(GetCreatorWorkspaceResponse.parse(serializeWorkspace(workspace))); return; }
     const username = normalizeProfile(workspace.profile).username;
@@ -394,16 +397,18 @@ router.get("/creators/:username/workspace", async (req, res) => {
 
 router.get("/public-feed", async (req, res) => {
   try {
-    const [rows, followed] = await Promise.all([
+    const [rows, followed, blockedUserIds] = await Promise.all([
       db.select({ workspace: creatorWorkspaces, verified: usersTable.isVerified })
         .from(creatorWorkspaces)
         .leftJoin(usersTable, eq(creatorWorkspaces.ownerUserId, usersTable.id)),
       req.user
         ? db.select({ creatorId: creatorFollows.creatorId }).from(creatorFollows).where(eq(creatorFollows.followerUserId, req.user.id))
         : Promise.resolve([]),
+      blockedCounterpartIds(req.user?.id),
     ]);
     const followedIds = new Set(followed.map((item) => item.creatorId));
-    const items = rows.flatMap(({ workspace, verified }) => {
+    const visibleRows = rows.filter(({ workspace }) => !workspace.ownerUserId || !blockedUserIds.has(workspace.ownerUserId));
+    const items = visibleRows.flatMap(({ workspace, verified }) => {
       const profile = normalizeProfile(workspace.profile);
       return (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)
         .filter((edit) => edit.status === "published" && (edit.access === "public" || (edit.access === "locked" && Boolean(verified) && typeof edit.previewImage === "string")))
@@ -444,6 +449,7 @@ router.get("/creator-featured-collections", async (req, res) => {
 router.get("/creators/:username/featured-collections", async (req, res) => {
   const workspace = await creatorByUsername(req.params.username);
   if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
+  if (await areUsersBlocked(req.user?.id, workspace.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
   const rows = await db.select().from(creatorFeaturedCollections)
     .where(eq(creatorFeaturedCollections.creatorId, workspace.creatorId))
     .orderBy(asc(creatorFeaturedCollections.position));

@@ -414,6 +414,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .report-menu-item { display:flex; align-items:center; gap:9px; min-height:46px; padding:0 4px; border:0; border-bottom:1px solid #ebe4db; background:transparent; color:var(--tk-ink); font-size:13px; font-weight:600; text-align:start; }
 .report-menu-item:last-child { border-bottom:0; }
 .report-menu-item:hover { color:var(--tk-wine); }
+.report-menu-item-danger { color:#b3261e; }
+.report-menu-item-danger:hover { color:#8a1c15; }
 .report-status { display:grid; gap:14px; padding:8px 0 4px; text-align:center; }
 .report-status p { margin:0; color:var(--tk-stone); font-size:13px; line-height:1.5; }
 .admin-filter-row { display:flex; gap:7px; margin:0 0 10px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
