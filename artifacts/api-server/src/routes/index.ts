@@ -8,6 +8,7 @@ import storageRouter from "./storage";
 import verificationRouter from "./verification";
 import settingsRouter from "./settings";
 import onboardingRouter from "./onboarding";
+import moderationRouter from "./moderation";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(storageRouter);
 router.use(verificationRouter);
 router.use(settingsRouter);
 router.use(onboardingRouter);
+router.use(moderationRouter);
 
 export default router;

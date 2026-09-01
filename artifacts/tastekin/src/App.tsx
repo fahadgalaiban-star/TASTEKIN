@@ -4,8 +4,8 @@ import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, us
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
 import {
-  Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Globe, Heart, Inbox, LogOut, MessageCircle,
-  Home, ImagePlus, Link2, LockKeyhole, MapPin, Pencil, Plus, PlusCircle, Search, Settings2,
+  Archive, ArrowLeft, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
+  Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
   Send, Share2, ShieldCheck, Upload, UserRound, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
@@ -25,7 +25,7 @@ type Language = 'en' | 'ar';
 const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
 type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'settings' | 'auth' | 'onboarding';
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'settings' | 'auth' | 'onboarding';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -896,7 +896,7 @@ function TastekinApp() {
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
-    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onSignIn={() => go('auth')} />}
+    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
@@ -910,6 +910,7 @@ function TastekinApp() {
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
     {screen === 'adminVerification' && <AdminVerificationScreen ar={ar} />}
+    {screen === 'adminReports' && <AdminReportsScreen ar={ar} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => go('home')} />}
    </main>{screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
@@ -1368,6 +1369,90 @@ function CreatorAttribution({ edit }: { edit: CreatorEdit }) {
   if (!edit.creatorUsername) return null;
   return <div className="feed-creator"><span className="feed-creator-avatar">{edit.creatorAvatar ? <img src={imageSrc(edit.creatorAvatar)} alt="" /> : edit.creatorName?.slice(0, 1)}</span><span><strong>{edit.creatorName || edit.creatorUsername}</strong><small>@{edit.creatorUsername}</small></span>{edit.creatorVerified && <img className="feed-taste-seal" src={TASTE_SEAL_IMAGE} alt="Verified by TASTEKIN" />}</div>;
 }
+const REPORT_REASONS: { id: string; en: string; ar: string }[] = [
+  { id: 'spam', en: 'Spam', ar: 'محتوى غير مرغوب فيه' },
+  { id: 'harassment', en: 'Harassment or bullying', ar: 'تحرش أو تنمر' },
+  { id: 'hate_or_abuse', en: 'Hate or abusive content', ar: 'خطاب كراهية أو محتوى مسيء' },
+  { id: 'sexual_content', en: 'Sexual or inappropriate content', ar: 'محتوى جنسي أو غير لائق' },
+  { id: 'violence', en: 'Violence or dangerous content', ar: 'عنف أو محتوى خطير' },
+  { id: 'scam_or_misleading', en: 'Scam or misleading content', ar: 'احتيال أو محتوى مضلل' },
+  { id: 'privacy_violation', en: 'Privacy violation', ar: 'انتهاك خصوصية' },
+  { id: 'other', en: 'Other', ar: 'أخرى' },
+];
+
+type ReportStep = 'menu' | 'reason' | 'details' | 'submitting' | 'done' | 'error';
+
+/**
+ * Shared overflow entry point for reporting an Edit, a comment, or a
+ * profile. Reporting never hides or removes anything client-side — it only
+ * files a report for TASTEKIN's admin queue to review.
+ */
+function ReportMenu({ ar, targetType, targetId, onSignIn, label }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string }) {
+  const session = useTasteSession();
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<ReportStep>('menu');
+  const [details, setDetails] = useState('');
+  const [error, setError] = useState('');
+
+  const reset = () => { setStep('menu'); setDetails(''); setError(''); };
+  const openMenu = () => {
+    if (session.status !== 'authenticated') { onSignIn(); return; }
+    reset();
+    setOpen(true);
+  };
+  const submit = async (chosenReason: string, chosenDetails: string) => {
+    setStep('submitting');
+    try {
+      const response = await fetch('/api/reports', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetType, targetId, reason: chosenReason, details: chosenDetails || undefined }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      setStep('done');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStep('error');
+    }
+  };
+  const chooseReason = (id: string) => {
+    if (id === 'other') { setStep('details'); return; }
+    void submit(id, '');
+  };
+
+  return <>
+    <button type="button" className="approved-icon report-trigger" onClick={openMenu} aria-label={ar ? 'مزيد من الخيارات' : 'More options'}><MoreVertical size={18} /></button>
+    <Drawer.Root open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); }}>
+      <Drawer.Portal>
+        <Drawer.Overlay className="approved-drawer-overlay" />
+        <Drawer.Content className="approved-drawer-content report-drawer" aria-label={ar ? 'الإبلاغ' : 'Report'}>
+          <div className="approved-drawer-handle" />
+          {step === 'menu' && <div className="report-menu">
+            <button type="button" className="report-menu-item" onClick={() => setStep('reason')}><Flag size={16} /> {label || (ar ? 'إبلاغ' : 'Report')}</button>
+          </div>}
+          {step === 'reason' && <div className="report-menu">
+            <h2 className="approved-title" style={{ margin: '0 0 12px', fontSize: 18 }}>{ar ? 'سبب الإبلاغ' : 'Why are you reporting this?'}</h2>
+            {REPORT_REASONS.map((item) => <button key={item.id} type="button" className="report-menu-item" onClick={() => chooseReason(item.id)}>{ar ? item.ar : item.en}</button>)}
+          </div>}
+          {step === 'details' && <div className="report-details">
+            <h2 className="approved-title" style={{ margin: '0 0 12px', fontSize: 18 }}>{ar ? 'أضف التفاصيل' : 'Add details'}</h2>
+            <textarea className="admin-note-input" value={details} onChange={(event) => setDetails(event.target.value)} maxLength={1000} placeholder={ar ? 'صف المشكلة…' : 'Describe the issue…'} />
+            <button type="button" className="approved-button primary wide" disabled={!details.trim()} onClick={() => void submit('other', details.trim())}>{ar ? 'إرسال البلاغ' : 'Submit report'}</button>
+          </div>}
+          {step === 'submitting' && <div className="report-status"><p>{ar ? 'جارٍ إرسال البلاغ…' : 'Submitting your report…'}</p></div>}
+          {step === 'done' && <div className="report-status">
+            <p>{ar ? 'تم استلام بلاغك. شكراً لمساعدتك في الحفاظ على أمان TASTEKIN.' : 'Your report has been received. Thank you for helping keep TASTEKIN safe.'}</p>
+            <button type="button" className="approved-button wide" onClick={() => setOpen(false)}>{ar ? 'تم' : 'Done'}</button>
+          </div>}
+          {step === 'error' && <div className="report-status">
+            <p role="alert">{error || (ar ? 'تعذر إرسال البلاغ.' : 'Could not submit this report.')}</p>
+            <button type="button" className="approved-button wide" onClick={() => setStep('reason')}>{ar ? 'حاول مجدداً' : 'Try again'}</button>
+          </div>}
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
+  </>;
+}
+
 function EditCard({ edit, ar, saved, onSave, onOpen }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void }) {
   const caption = publicCaptionLine(edit, ar);
   const noPhoto = !edit.image;
@@ -1483,6 +1568,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
       <span><MessageCircle size={18} /> {engagement.commentCount}</span>
       <button className={`save-pill ${saved ? 'active' : ''}`} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {ar ? 'حفظ' : 'Save'}</button>
       <button className="share-pill" onClick={() => void sharePost()} aria-label={ar ? 'مشاركة هذا التعديل' : 'Share this edit'}><Share2 size={18} /></button>
+      <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} />
     </div>
     <div className="comment-composer">
       <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
@@ -1490,7 +1576,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
     </div>
     {error && <div className="engagement-error" role="alert">{error}</div>}
     {shareNotice && <div className="share-notice" role="status">{shareNotice}</div>}
-    <div className="comment-list">{comments.map((item) => <article key={item.id}><div><strong>{item.authorName}</strong><time>{new Date(item.createdAt).toLocaleDateString()}</time></div><p>{item.body}</p>{item.canDelete && <button onClick={() => void removeComment(item.id)}>{ar ? 'حذف' : 'Delete'}</button>}</article>)}</div>
+    <div className="comment-list">{comments.map((item) => <article key={item.id}><div><strong>{item.authorName}</strong><time>{new Date(item.createdAt).toLocaleDateString()}</time>{!item.canDelete && <ReportMenu ar={ar} targetType="comment" targetId={item.id} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعليق' : 'Report this comment'} />}</div><p>{item.body}</p>{item.canDelete && <button onClick={() => void removeComment(item.id)}>{ar ? 'حذف' : 'Delete'}</button>}</article>)}</div>
   </section>;
 }
 
@@ -1583,7 +1669,7 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
   </SimpleScreen>;
 }
 
-function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onSignIn: () => void }) {
+function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onOpenAdminReports, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onOpenAdminReports: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   // Seeded from the server-authorized session, and re-synced whenever a
@@ -1628,6 +1714,7 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
     {isAdmin && <div className="settings-section">
       <h3>{t('Admin', 'الإدارة')}</h3>
       <button data-testid="settings-admin-verification" className="approved-button wide" onClick={onOpenAdminVerification}><ShieldCheck size={16} /> {t('Verification review', 'مراجعة التوثيق')}</button>
+      <button data-testid="settings-admin-reports" className="approved-button wide" onClick={onOpenAdminReports}><Flag size={16} /> {t('Report queue', 'قائمة البلاغات')}</button>
     </div>}
     <div className="settings-section">
       <h3>{t('Help & Support', 'المساعدة والدعم')}</h3>
@@ -1842,6 +1929,162 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
   </SimpleScreen>;
 }
 
+const REPORT_STATUS_LABELS: Record<string, { en: string; ar: string }> = {
+  pending: { en: 'Pending', ar: 'بانتظار المراجعة' },
+  under_review: { en: 'Under review', ar: 'قيد المراجعة' },
+  resolved: { en: 'Resolved', ar: 'تم الحل' },
+  dismissed: { en: 'Dismissed', ar: 'مرفوض' },
+};
+
+const REPORT_TARGET_LABELS: Record<string, { en: string; ar: string }> = {
+  edit: { en: 'Post', ar: 'منشور' },
+  comment: { en: 'Comment', ar: 'تعليق' },
+  profile: { en: 'Profile', ar: 'ملف شخصي' },
+};
+
+function reasonLabel(id: string, ar: boolean) {
+  const found = REPORT_REASONS.find((item) => item.id === id);
+  return found ? (ar ? found.ar : found.en) : id;
+}
+
+type AdminReportContext = {
+  available: boolean;
+  creatorUsername?: string;
+  title?: string;
+  caption?: string;
+  status?: string;
+  access?: string;
+  editId?: string;
+  body?: string;
+  displayName?: string;
+};
+
+type AdminReportRow = {
+  id: string;
+  targetType: 'edit' | 'comment' | 'profile';
+  targetId: string;
+  reason: string;
+  details: string | null;
+  status: 'pending' | 'under_review' | 'resolved' | 'dismissed';
+  adminNote: string | null;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  reporterUserId: string;
+  reporterEmail: string | null;
+  context: AdminReportContext;
+};
+
+/**
+ * Admin-only report review queue. Marking a report reviewed never touches
+ * the reported content itself — hiding, restoring, or removing content is
+ * explicitly out of scope here and handled (if ever) by a separate feature.
+ */
+function AdminReportsScreen({ ar }: { ar: boolean }) {
+  const [reportsList, setReportsList] = useState<AdminReportRow[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'' | 'pending' | 'under_review' | 'resolved' | 'dismissed'>('pending');
+  const [targetTypeFilter, setTargetTypeFilter] = useState<'' | 'edit' | 'comment' | 'profile'>('');
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [confirmStatus, setConfirmStatus] = useState<'under_review' | 'resolved' | 'dismissed' | null>(null);
+  const [noteText, setNoteText] = useState('');
+  const [acting, setActing] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  const load = useCallback(async () => {
+    setState('loading'); setError('');
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter) params.set('status', statusFilter);
+      if (targetTypeFilter) params.set('targetType', targetTypeFilter);
+      const query = params.toString();
+      const response = await fetch(`/api/admin/reports${query ? `?${query}` : ''}`, { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json() as { reports: AdminReportRow[] };
+      setReportsList(payload.reports); setState('ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err)); setState('error');
+    }
+  }, [statusFilter, targetTypeFilter]);
+  useEffect(() => { void load(); }, [load]);
+
+  const selected = reportsList.find((item) => item.id === selectedId) || null;
+  const openConfirm = (status: 'under_review' | 'resolved' | 'dismissed') => { setConfirmStatus(status); setNoteText(''); };
+  const act = async (row: AdminReportRow, status: 'under_review' | 'resolved' | 'dismissed', note: string) => {
+    setActing(true); setActionError('');
+    try {
+      const response = await fetch(`/api/admin/reports/${encodeURIComponent(row.id)}`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status, adminNote: note || undefined }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      setSelectedId(null); setConfirmStatus(null); setNoteText('');
+      await load();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message); window.alert(message);
+    } finally { setActing(false); }
+  };
+
+  const contextSummary = (row: AdminReportRow) => {
+    if (!row.context.available) return ar ? 'المحتوى لم يعد متاحاً.' : 'Content is no longer available.';
+    if (row.targetType === 'edit') return `@${row.context.creatorUsername} · ${row.context.title || row.context.caption || (ar ? 'بدون عنوان' : 'Untitled')}`;
+    if (row.targetType === 'comment') return `@${row.context.creatorUsername}: "${row.context.body}"`;
+    return `@${row.context.creatorUsername}`;
+  };
+
+  if (selected) {
+    const needsNote = confirmStatus === 'resolved' || confirmStatus === 'dismissed';
+    const targetLabel = REPORT_TARGET_LABELS[selected.targetType];
+    return <SimpleScreen kicker={ar ? 'إدارة تيستكن' : 'TASTEKIN admin'} title={targetLabel ? (ar ? targetLabel.ar : targetLabel.en) : selected.targetType}>
+      <div className="admin-tags"><span className="admin-tag">{ar ? REPORT_STATUS_LABELS[selected.status]?.ar : REPORT_STATUS_LABELS[selected.status]?.en}</span></div>
+      <div className="approved-panel"><h3>{ar ? 'السياق' : 'Context'}</h3><p>{contextSummary(selected)}</p></div>
+      <div className="approved-panel"><h3>{ar ? 'السبب' : 'Reason'}</h3><p>{reasonLabel(selected.reason, ar)}</p>{selected.details && <p>{selected.details}</p>}</div>
+      <p className="profile-taste-meta">{ar ? 'المُبلّغ' : 'Reporter'}: {selected.reporterEmail || selected.reporterUserId}</p>
+      <p className="profile-taste-meta">{ar ? 'تاريخ الإبلاغ' : 'Reported'}: {new Date(selected.createdAt).toLocaleString()}</p>
+      {selected.adminNote && <div className="approved-panel"><h3>{ar ? 'ملاحظة الإدارة' : 'Admin note'}</h3><p>{selected.adminNote}</p></div>}
+      {actionError && <div className="engagement-error" role="alert">{actionError}</div>}
+      {confirmStatus ? <div className="approved-panel admin-confirm">
+        {needsNote ? <>
+          <p>{confirmStatus === 'resolved' ? (ar ? 'اكتب ملاحظة داخلية توضح سبب حل هذا البلاغ:' : 'Write an internal note explaining why this report is resolved:') : (ar ? 'اكتب ملاحظة داخلية توضح سبب رفض هذا البلاغ:' : 'Write an internal note explaining why this report is dismissed:')}</p>
+          <textarea className="admin-note-input" value={noteText} onChange={(event) => setNoteText(event.target.value)} maxLength={1000} />
+        </> : <p>{ar ? 'تأكيد وضع هذا البلاغ قيد المراجعة؟' : 'Confirm marking this report under review?'}</p>}
+        <div className="admin-confirm-actions">
+          <button className="approved-button" onClick={() => { setConfirmStatus(null); setNoteText(''); }} disabled={acting}>{ar ? 'إلغاء' : 'Cancel'}</button>
+          <button className="approved-button primary" onClick={() => void act(selected, confirmStatus, noteText.trim())} disabled={acting || (needsNote && !noteText.trim())}>{acting ? (ar ? 'جارٍ التنفيذ…' : 'Working…') : (ar ? 'تأكيد' : 'Confirm')}</button>
+        </div>
+      </div> : <div className="admin-detail-actions">
+        <button className="approved-button" onClick={() => setSelectedId(null)}>{ar ? 'رجوع' : 'Back'}</button>
+        {selected.status !== 'under_review' && <button className="approved-button" onClick={() => openConfirm('under_review')}>{ar ? 'قيد المراجعة' : 'Mark under review'}</button>}
+        <button className="approved-button" onClick={() => openConfirm('dismissed')}>{ar ? 'رفض البلاغ' : 'Dismiss'}</button>
+        <button className="approved-button primary" onClick={() => openConfirm('resolved')}>{ar ? 'تم الحل' : 'Resolve'}</button>
+      </div>}
+    </SimpleScreen>;
+  }
+
+  return <SimpleScreen kicker={ar ? 'إدارة تيستكن' : 'TASTEKIN admin'} title={ar ? 'قائمة البلاغات' : 'Report queue'}>
+    <div className="admin-filter-row">
+      {(['pending', 'under_review', 'resolved', 'dismissed', ''] as const).map((value) => <button key={value || 'all-statuses'} className={statusFilter === value ? 'selected' : ''} onClick={() => setStatusFilter(value)}>{value ? (ar ? REPORT_STATUS_LABELS[value].ar : REPORT_STATUS_LABELS[value].en) : (ar ? 'الكل' : 'All')}</button>)}
+    </div>
+    <div className="admin-filter-row">
+      {(['', 'edit', 'comment', 'profile'] as const).map((value) => <button key={value || 'all-types'} className={targetTypeFilter === value ? 'selected' : ''} onClick={() => setTargetTypeFilter(value)}>{value ? (ar ? REPORT_TARGET_LABELS[value].ar : REPORT_TARGET_LABELS[value].en) : (ar ? 'كل الأنواع' : 'All types')}</button>)}
+    </div>
+    {state === 'loading' && <Empty text={ar ? 'جارٍ التحميل…' : 'Loading…'} />}
+    {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
+    {state === 'ready' && !reportsList.length && <Empty text={ar ? 'لا توجد بلاغات في هذه الفئة.' : 'No reports in this filter.'} />}
+    {state === 'ready' && reportsList.length > 0 && <div className="admin-app-list">{reportsList.map((row) => <button key={row.id} className="admin-app-row" onClick={() => setSelectedId(row.id)}>
+      <span className="admin-app-row-copy">
+        <strong>{ar ? REPORT_TARGET_LABELS[row.targetType]?.ar : REPORT_TARGET_LABELS[row.targetType]?.en} · {reasonLabel(row.reason, ar)}</strong>
+        <small>{contextSummary(row)}</small>
+        <small>{new Date(row.createdAt).toLocaleString()} · {ar ? REPORT_STATUS_LABELS[row.status]?.ar : REPORT_STATUS_LABELS[row.status]?.en}</small>
+      </span>
+      <ChevronRight size={16} />
+    </button>)}</div>}
+  </SimpleScreen>;
+}
+
 function Profile({ ar, owner, visitorPreview, following, subscribed, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onSubscribe, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch, onSignIn }: { ar: boolean; owner: boolean; visitorPreview: boolean; following: boolean; subscribed: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onSubscribe: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const ownerView = owner && !visitorPreview;
@@ -1944,7 +2187,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
 
     {(tasteSummary || publicAge) && <p className="profile-taste-meta">{[tasteSummary, publicAge].filter(Boolean).join(' · ')}</p>}
     {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
-    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><button className="profile-visitor-button" type="button" onClick={onViewAsVisitor} aria-label={ar ? 'عرض كزائر' : 'View as visitor'} title={ar ? 'عرض كزائر' : 'View as visitor'}><Eye size={19} /></button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{profile.verified && <button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}</>}</div>
+    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><button className="profile-visitor-button" type="button" onClick={onViewAsVisitor} aria-label={ar ? 'عرض كزائر' : 'View as visitor'} title={ar ? 'عرض كزائر' : 'View as visitor'}><Eye size={19} /></button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{profile.verified && <button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} />}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
