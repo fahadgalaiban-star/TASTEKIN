@@ -26,6 +26,7 @@ import { and, eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { calculateTasteMatch, tasteReasons, type CreatorTasteProfile, type TasteSelection } from "../lib/taste-match";
 import { creatorByUsername } from "../lib/creator-account";
+import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
 
 const router: IRouter = Router();
 function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }
@@ -185,7 +186,7 @@ const publicEdit = <T extends (typeof edits)[number]>(edit: T) =>
     ? { ...edit, image: "", altText: "Subscribers only edit preview" }
     : edit;
 
-type Creator = (typeof creators)[number];
+type Creator = (typeof creators)[number] & { ownerUserId?: string };
 
 async function allCreators(): Promise<Creator[]> {
   const rows = await db.select({ workspace: creatorWorkspaces, verified: usersTable.isVerified })
@@ -214,12 +215,21 @@ async function allCreators(): Promise<Creator[]> {
       verified: Boolean(verified),
       bio: profile.bio,
       createdAt: workspace.createdAt.toISOString(),
+      ownerUserId: workspace.ownerUserId ?? undefined,
     };
   });
   const byUsername = new Map<string, Creator>();
   creators.forEach((creator) => byUsername.set(creator.username.toLowerCase(), creator));
   persisted.forEach((creator) => byUsername.set(creator.username.toLowerCase(), creator));
   return Array.from(byUsername.values());
+}
+
+/** Real (persisted) creators whose owning account has a mutual block with viewerUserId. Static demo creators have no ownerUserId and are never blockable. */
+async function excludeBlocked(availableCreators: Creator[], viewerUserId: string | undefined): Promise<Creator[]> {
+  if (!viewerUserId) return availableCreators;
+  const blocked = await blockedCounterpartIds(viewerUserId);
+  if (!blocked.size) return availableCreators;
+  return availableCreators.filter((creator) => !creator.ownerUserId || !blocked.has(creator.ownerUserId));
 }
 
 function serializePreferences(selection: TasteSelection, updatedAt: Date) {
@@ -323,7 +333,7 @@ router.get("/creators", async (req, res) => {
   const params = parsed.success ? parsed.data : {};
   const query = params.q?.toLowerCase();
   const preferences = req.user ? await preferencesForUser(req.user.id) : null;
-  const availableCreators = await allCreators();
+  const availableCreators = await excludeBlocked(await allCreators(), req.user?.id);
   const result = availableCreators.filter((creator) => {
     const matchesQuery =
       !query ||
@@ -341,6 +351,10 @@ router.get("/creators", async (req, res) => {
 router.get("/creators/:username", async (req, res) => {
   const creator = (await allCreators()).find((item) => item.username === req.params.username);
   if (!creator) {
+    res.status(404).json({ error: "Creator not found" });
+    return;
+  }
+  if (await areUsersBlocked(req.user?.id, creator.ownerUserId)) {
     res.status(404).json({ error: "Creator not found" });
     return;
   }
@@ -365,6 +379,10 @@ router.get("/taste-match/:username", async (req, res): Promise<void> => {
   const parsed = GetTasteMatchParams.safeParse(req.params);
   const creator = parsed.success ? (await allCreators()).find((item) => item.username === parsed.data.username) : undefined;
   if (!creator) {
+    res.status(404).json({ error: "Creator not found" });
+    return;
+  }
+  if (await areUsersBlocked(req.user?.id, creator.ownerUserId)) {
     res.status(404).json({ error: "Creator not found" });
     return;
   }
@@ -400,7 +418,7 @@ router.get("/explore", async (req, res) => {
       .where(eq(creatorWorkspaces.ownerUserId, req.user.id)).limit(1)
     : [];
   const sort = params.sort ?? (req.user ? "best" : "new");
-  const availableCreators = await allCreators();
+  const availableCreators = await excludeBlocked(await allCreators(), req.user?.id);
   const matchedCreators = availableCreators
     .filter((creator) => creator.id !== ownWorkspace?.creatorId)
     .filter((creator) => matches(`${creator.displayName} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")} ${creator.city}`))
@@ -442,6 +460,7 @@ router.get("/relationships/follow/:targetId", async (req, res) => {
   if (!req.user) { res.json({ type: "follow", targetId: req.params.targetId, active: false, updatedAt: new Date(0).toISOString() }); return; }
   const creator = await creatorByUsername(req.params.targetId);
   if (!creator) { res.status(404).json({ error: "Creator not found" }); return; }
+  if (await areUsersBlocked(req.user.id, creator.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
   const [follow] = await db.select().from(creatorFollows).where(and(eq(creatorFollows.followerUserId, req.user.id), eq(creatorFollows.creatorId, creator.creatorId)));
   res.json({ type: "follow", targetId: req.params.targetId, active: follow?.creatorId === creator.creatorId, updatedAt: (follow?.createdAt ?? new Date(0)).toISOString() });
 });
@@ -457,6 +476,7 @@ router.post("/relationships", async (req, res) => {
   const creator = await creatorByUsername(parsed.data.targetId);
   if (!creator) { res.status(404).json({ error: "Creator not found" }); return; }
   if (creator.ownerUserId === req.user.id) { res.status(403).json({ error: "You cannot follow yourself" }); return; }
+  if (await areUsersBlocked(req.user.id, creator.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
   if (parsed.data.active) {
     await db.insert(creatorFollows).values({ followerUserId: req.user.id, creatorId: creator.creatorId }).onConflictDoNothing();
   } else {

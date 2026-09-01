@@ -15,6 +15,7 @@ import { and, desc, eq, gt, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 
 import { creatorByUsername, isCurrentUserAdmin } from "../lib/creator-account";
+import { areUsersBlocked } from "../lib/blocks";
 import { getEditContext, requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -72,6 +73,7 @@ async function resolveReportTarget(targetType: ReportTargetType, rawTargetId: st
   // resolved here into the stable, immutable creatorId for storage.
   const workspace = await creatorByUsername(targetId);
   if (!workspace || !workspace.ownerUserId) return null;
+  if (await areUsersBlocked(userId, workspace.ownerUserId)) return null;
   return { ownerUserId: workspace.ownerUserId, storageId: workspace.creatorId };
 }
 

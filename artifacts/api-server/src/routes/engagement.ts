@@ -42,6 +42,7 @@ import { and, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { Router, type IRouter, type Request, type Response } from "express";
 
 import { creatorByUsername, requireCreator } from "../lib/creator-account";
+import { areUsersBlocked } from "../lib/blocks";
 
 const router: IRouter = Router();
 
@@ -64,7 +65,11 @@ export async function getEditContext(editId: string, userId?: string) {
   const edit = (workspace.edits as WorkspaceEdit[]).find((item) => item && item.id === editId)!;
   const owner = Boolean(userId && workspace.ownerUserId === userId);
   const publicEdit = edit.status === "published" && edit.access === "public";
-  return { workspace, edit, owner, canRead: owner || publicEdit };
+  // A block is mutual and total: once either account has blocked the other,
+  // neither can read the other's content through this shared resolver —
+  // every engagement route (likes, saves, comments, views) goes through it.
+  const blocked = await areUsersBlocked(userId, workspace.ownerUserId ?? undefined);
+  return { workspace, edit, owner, canRead: !blocked && (owner || publicEdit) };
 }
 
 function viewerName(user: { email: string | null; firstName: string | null; lastName: string | null }) {
@@ -107,6 +112,8 @@ async function conversationForViewer(conversationId: string, userId: string) {
   const [conversation] = await db.select().from(conversations).where(eq(conversations.id, conversationId));
   if (!conversation) return { kind: "missing" as const };
   if (conversation.participantA !== userId && conversation.participantB !== userId) return { kind: "forbidden" as const };
+  const otherUserId = conversation.participantA === userId ? conversation.participantB : conversation.participantA;
+  if (await areUsersBlocked(userId, otherUserId)) return { kind: "forbidden" as const };
   await db.update(conversationMessages)
     .set({ readAt: new Date() })
     .where(and(eq(conversationMessages.conversationId, conversation.id), ne(conversationMessages.senderUserId, userId), isNull(conversationMessages.readAt)));
@@ -217,6 +224,7 @@ router.post("/creators/:username/views", async (req, res): Promise<void> => {
   if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
   const user = req.user;
   if (!user) { res.status(201).json(RecordCreatorViewResponse.parse({ recorded: false })); return; }
+  if (await areUsersBlocked(user.id, workspace.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
   let owner = workspace.ownerUserId === user.id;
   if (body.data.editId) {
     const context = await getEditContext(body.data.editId, user.id);
@@ -259,6 +267,7 @@ router.post("/conversations", async (req, res): Promise<void> => {
   const workspace = await creatorByUsername(body.data.creatorUsername);
   if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
   if (!workspace.ownerUserId) { res.status(409).json({ error: "Creator messaging is not available yet" }); return; }
+  if (await areUsersBlocked(user.id, workspace.ownerUserId)) { res.status(404).json({ error: "Creator not found" }); return; }
   const [creatorAccount] = await db.select({ isVerified: usersTable.isVerified }).from(usersTable).where(eq(usersTable.id, workspace.ownerUserId)).limit(1);
   if (!creatorAccount?.isVerified) { res.status(403).json({ error: "Private messages are available only on verified creator profiles" }); return; }
   if (workspace.ownerUserId === user.id) { res.status(403).json({ error: "You cannot message yourself" }); return; }

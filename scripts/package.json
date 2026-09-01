@@ -12,6 +12,7 @@
     "verify:deployment-health": "tsx ./src/verify-deployment-health.ts",
     "verify:onboarding": "tsx ./src/verify-onboarding.ts",
     "verify:reports": "tsx ./src/verify-reports.ts",
+    "verify:blocks": "tsx ./src/verify-blocks.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
