@@ -64,6 +64,13 @@
       "when": 1787532000000,
       "tag": "0008_featured_collections",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1788302764875,
+      "tag": "0009_catch_up_migration_history",
+      "breakpoints": true
     }
   ]
 }
