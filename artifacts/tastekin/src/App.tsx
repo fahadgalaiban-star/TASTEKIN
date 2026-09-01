@@ -617,12 +617,18 @@ function TastekinApp() {
   const isOwnCollection = owner && creatorCollections.some((item) => item.id === selectedCollection.id);
   const isCollectionOwnerView = isOwnCollection && !profileVisitorMode;
   const collectionEditsSource = isOwnCollection ? published : viewedCreatorEdits;
+  // Settings can be opened from the topbar icon on almost any screen (Home,
+  // Explore, another creator's Profile, etc.), not only from "You" — this
+  // remembers whichever screen was actually active when Settings was
+  // opened, so goBack() below can return there instead of assuming "you".
+  const settingsReturnScreenRef = useRef<Screen>('you');
   const go = (next: Screen) => {
     if (workspaceState === 'syncing') return;
     const leavingCreatorFlow = (screen === 'composer' || screen === 'creatorPreview') && next !== 'composer' && next !== 'creatorPreview';
     if (leavingCreatorFlow && pendingMediaPaths.length) { pendingMediaIsDiscardable.current = false; void cleanupCreatorMedia(pendingMediaPaths); setPendingMediaPaths([]); }
     if (leavingCreatorFlow) discardPendingCrop();
     if (!['profile', 'profileEdit', 'collection', 'collections'].includes(next)) { setVisitorPreview(false); setProfileVisitorMode(false); }
+    if (next === 'settings' && screen !== 'settings') settingsReturnScreenRef.current = screen;
     setScreen(next);
   };
   const pendingSharedPost = useRef<{ username: string; editId: string } | null>(null);
@@ -879,7 +885,7 @@ function TastekinApp() {
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
   const goBack = () => {
     if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
-    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'settings' ? 'you' : 'home');
+    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'settings' ? settingsReturnScreenRef.current : 'home');
   };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
@@ -1346,7 +1352,7 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 
 function SimpleScreen({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className="approved-title">{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
-function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr || edit.placeName || edit.title).split(/\r?\n/, 1)[0].trim(); }
+function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption || edit.placeName || edit.title || '' : edit.caption || edit.captionAr || edit.placeName || edit.title || '').split(/\r?\n/, 1)[0].trim(); }
 function profileCaptionLine(edit: CreatorEdit, ar: boolean) {
   const caption = ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr;
   return caption ? caption.split(/\r?\n/, 1)[0].trim() : '';
@@ -2448,7 +2454,7 @@ function CreatorDashboard({ ar, displayName, edits, collections, busy, onNew, on
   const groups: [EditStatus, string, string][] = [['draft', 'Drafts', 'مسودات'], ['published', 'Published', 'منشور'], ['archived', 'Archived', 'مؤرشف']];
   const internalLabel = (item: CreatorEdit) => {
     const title = (ar ? item.titleAr || item.title : item.title || item.titleAr || '').trim();
-    const caption = (ar ? item.captionAr || item.caption : item.caption || item.captionAr || '').split(/\r?\n/, 1)[0].trim();
+    const caption = (ar ? item.captionAr || item.caption || '' : item.caption || item.captionAr || '').split(/\r?\n/, 1)[0].trim();
     return title || caption || t('Photo Edit', 'تعديل صورة');
   };
   const internalMeta = (item: CreatorEdit) => [item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public', 'عام'), placeLocation(item, ar)].filter(Boolean).join(' · ');
