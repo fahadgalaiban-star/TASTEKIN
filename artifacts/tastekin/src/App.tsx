@@ -192,9 +192,10 @@ type TasteSessionSnapshot = {
   // resume at. Never derived or guessed client-side.
   needsOnboarding: boolean;
   onboardingStep: OnboardingStep;
-  // Whether the server has Google OAuth configured at all (GOOGLE_CLIENT_ID
-  // set) — the sign-in screen's "Continue with Google" button must only
-  // ever appear when this is true, never unconditionally.
+  // Whether the server has Google OAuth fully configured (both
+  // GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET set) — the sign-in screen's
+  // "Continue with Google" button must only ever appear when this is true,
+  // never unconditionally.
   googleAuthConfigured: boolean;
   revision: number;
 };

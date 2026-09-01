@@ -39,12 +39,17 @@ export function configuredSupportEmail(): string | null {
 
 /**
  * The sign-in screen must never offer "Continue with Google" unless Google
- * OAuth is actually configured — showing it otherwise sends the user into a
- * dead end (GET /auth/google already redirects back with an error in that
- * case, but the button shouldn't appear in the first place).
+ * OAuth is actually fully configured. Both GOOGLE_CLIENT_ID and
+ * GOOGLE_CLIENT_SECRET are required for a real sign-in to complete: the
+ * authorize step (GET /auth/google) only needs the client id, but the token
+ * exchange in GET /auth/google/callback also sends GOOGLE_CLIENT_SECRET —
+ * checking the id alone would show the button, let the user complete a real
+ * Google consent screen, and only then fail at the token exchange and
+ * redirect back into /auth/google, which would repeat the same incomplete
+ * check (a redirect loop). Requiring both closes that gap.
  */
 export function googleAuthConfigured(): boolean {
-  return Boolean(process.env.GOOGLE_CLIENT_ID?.trim());
+  return Boolean(process.env.GOOGLE_CLIENT_ID?.trim()) && Boolean(process.env.GOOGLE_CLIENT_SECRET?.trim());
 }
 
 router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
@@ -213,12 +218,12 @@ router.post("/auth/reset-password", async (req, res) => {
 });
 
 router.get("/auth/google", async (req, res) => {
-  if (!process.env.GOOGLE_CLIENT_ID) { res.redirect(`/?authError=${encodeURIComponent("Google sign-in is not configured yet.")}`); return; }
+  if (!googleAuthConfigured()) { res.redirect(`/?authError=${encodeURIComponent("Google sign-in is not configured yet.")}`); return; }
   const discovery = await fetch(`${googleIssuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
   const state = crypto.randomBytes(24).toString("base64url");
   cookie(res, "google_state", state); cookie(res, "google_return_to", safeReturnTo(req.query.returnTo));
   const url = new URL(discovery.authorization_endpoint);
-  url.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: `${origin(req)}/api/auth/google/callback`, response_type: "code", scope: "openid email profile", state, access_type: "online", prompt: "select_account" }).toString();
+  url.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID!, redirect_uri: `${origin(req)}/api/auth/google/callback`, response_type: "code", scope: "openid email profile", state, access_type: "online", prompt: "select_account" }).toString();
   res.redirect(url.href);
 });
 router.get("/auth/google/callback", async (req, res) => {
