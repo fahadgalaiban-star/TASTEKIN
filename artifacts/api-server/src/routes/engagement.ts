@@ -38,11 +38,11 @@ import {
   UpdateEditSaveParams,
   UpdateEditSaveResponse,
 } from "@workspace/api-zod";
-import { and, desc, eq, gt, inArray, isNull, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, inArray, isNull, ne, notInArray, or, sql } from "drizzle-orm";
 import { Router, type IRouter, type Request, type Response } from "express";
 
 import { creatorByUsername, requireCreator } from "../lib/creator-account";
-import { areUsersBlocked } from "../lib/blocks";
+import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
 
 const router: IRouter = Router();
 
@@ -78,9 +78,17 @@ function viewerName(user: { email: string | null; firstName: string | null; last
 }
 
 async function engagementFor(editId: string, userId?: string) {
+  // A comment from an account the viewer is blocked with (either direction)
+  // must not count toward what the viewer sees, on this Edit or any other —
+  // the count shown must match the filtered list this same viewer would get
+  // from GET /edits/:editId/comments.
+  const blockedIds = userId ? await blockedCounterpartIds(userId) : new Set<string>();
+  const commentCountCondition = blockedIds.size
+    ? and(eq(editComments.editId, editId), notInArray(editComments.userId, [...blockedIds]))
+    : eq(editComments.editId, editId);
   const [[likes], [comments], likedRows, savedRows] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(editLikes).where(eq(editLikes.editId, editId)),
-    db.select({ count: sql<number>`count(*)::int` }).from(editComments).where(eq(editComments.editId, editId)),
+    db.select({ count: sql<number>`count(*)::int` }).from(editComments).where(commentCountCondition),
     userId ? db.select().from(editLikes).where(and(eq(editLikes.editId, editId), eq(editLikes.userId, userId))) : Promise.resolve([]),
     userId ? db.select().from(editSaves).where(and(eq(editSaves.editId, editId), eq(editSaves.userId, userId))) : Promise.resolve([]),
   ]);
@@ -164,12 +172,17 @@ router.get("/edits/:editId/comments", async (req, res): Promise<void> => {
   const context = await getEditContext(params.data.editId, req.user?.id);
   if (!context) { res.status(404).json({ error: "Edit not found" }); return; }
   if (!context.canRead) { res.status(403).json({ error: "Comments are protected with this Edit" }); return; }
+  const blockedIds = await blockedCounterpartIds(req.user?.id);
   const rows = await db.select({
     id: editComments.id, editId: editComments.editId, body: editComments.body, createdAt: editComments.createdAt,
     userId: editComments.userId, firstName: usersTable.firstName, lastName: usersTable.lastName, email: usersTable.email,
   }).from(editComments).leftJoin(usersTable, eq(editComments.userId, usersTable.id))
     .where(eq(editComments.editId, params.data.editId)).orderBy(editComments.createdAt);
-  res.json(ListEditCommentsResponse.parse(rows.map((row) => ({
+  // A comment from an account the viewer has a mutual block with (in either
+  // direction) is invisible to that viewer, even on someone else's Edit —
+  // filtered server-side here, not left to the client to hide.
+  const visibleRows = blockedIds.size ? rows.filter((row) => !blockedIds.has(row.userId)) : rows;
+  res.json(ListEditCommentsResponse.parse(visibleRows.map((row) => ({
     id: row.id, editId: row.editId, body: row.body, createdAt: row.createdAt,
     authorName: viewerName({ firstName: row.firstName, lastName: row.lastName, email: row.email }),
     canDelete: Boolean(req.user && (row.userId === req.user.id || context.owner)),
@@ -203,6 +216,10 @@ router.delete("/edits/:editId/comments/:commentId", async (req, res): Promise<vo
   if (!context.canRead) { res.status(403).json({ error: "Comments are protected with this Edit" }); return; }
   const [comment] = await db.select().from(editComments).where(and(eq(editComments.id, params.data.commentId), eq(editComments.editId, params.data.editId)));
   if (!comment) { res.status(404).json({ error: "Comment not found" }); return; }
+  // Same generic response as a genuinely missing comment — direct access to
+  // a blocked account's comment (e.g. a guessed id) must not distinguish
+  // "blocked" from "never existed".
+  if (await areUsersBlocked(user.id, comment.userId)) { res.status(404).json({ error: "Comment not found" }); return; }
   if (comment.userId !== user.id && !context.owner) { res.status(403).json({ error: "You cannot delete this comment" }); return; }
   await db.delete(editComments).where(eq(editComments.id, comment.id));
   res.status(204).send();

@@ -103,6 +103,39 @@ class Session {
   async report(body: Record<string, unknown>) {
     return this.request("/api/reports", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   }
+  async postComment(editId: string, body: string) {
+    const response = await this.request(`/api/edits/${encodeURIComponent(editId)}/comments`, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ body }),
+    });
+    await expectStatus(response, 201);
+    return (await response.json()) as { id: string };
+  }
+  async listComments(editId: string) {
+    const response = await this.request(`/api/edits/${encodeURIComponent(editId)}/comments`);
+    await expectStatus(response, 200);
+    return (await response.json()) as Array<{ id: string; body: string }>;
+  }
+  async engagement(editId: string) {
+    const response = await this.request(`/api/edits/${encodeURIComponent(editId)}/engagement`);
+    await expectStatus(response, 200);
+    return (await response.json()) as { commentCount: number };
+  }
+  async adminReports(query = "") {
+    return this.request(`/api/admin/reports${query}`);
+  }
+}
+
+const tsxBin = path.join(repoRoot, "scripts/node_modules/.bin/tsx");
+
+async function runScript(scriptPath: string, args: string[]) {
+  return new Promise<{ code: number; stdout: string }>((resolve, reject) => {
+    const child = spawn(tsxBin, [scriptPath, ...args], { cwd: path.join(repoRoot, "scripts"), env: process.env, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = "";
+    child.stdout.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.stderr.on("data", (chunk) => { stdout += chunk.toString(); });
+    child.on("error", reject);
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout }));
+  });
 }
 
 async function addPublicEdit(creatorId: string, editId: string) {
@@ -151,9 +184,23 @@ async function main() {
 
     // A third, uninvolved user — used to prove blocking A<->B never affects
     // C's own ability to see either of them, and that the Report system
-    // still works normally for an unrelated pair.
+    // still works normally for an unrelated pair. C also owns a public Edit
+    // used below as "third-party content" both A and B comment on.
     const c = new Session(server.baseUrl);
     await c.signup(`bystander-${suffix}@example.com`, PASSWORD);
+    const cWorkspace = await c.ensureWorkspace();
+    const cEditId = `edit-${suffix}-c`;
+    await addPublicEdit(cWorkspace.creatorId, cEditId);
+
+    // A fourth, fully unrelated user — never blocks or is blocked by anyone —
+    // used to prove an unrelated viewer keeps seeing both A's and B's
+    // comments on C's post regardless of the A<->B block.
+    const d = new Session(server.baseUrl);
+    await d.signup(`unrelated-${suffix}@example.com`, PASSWORD);
+
+    // A and B each comment on C's (third-party) Edit, before any block exists.
+    const aCommentOnC = await a.postComment(cEditId, "A's comment on a third party's post");
+    const bCommentOnC = await b.postComment(cEditId, "B's comment on a third party's post");
 
     // --- 0. baseline: mutual follows exist before any block ---
     await expectStatus(await a.follow(bWorkspace.username, true), 200);
@@ -290,6 +337,40 @@ async function main() {
       assert.equal(response.status, 404);
     });
 
+    // --- 9b. comments on THIRD-PARTY content are filtered in both
+    // directions, server-side, even though the Edit itself belongs to
+    // neither A nor B ---
+    await check("the blocker cannot see the blocked user's comment on a third party's post", async () => {
+      const comments = await a.listComments(cEditId);
+      assert.ok(!comments.some((item) => item.id === bCommentOnC.id), "A must not see B's comment on C's Edit");
+      assert.ok(comments.some((item) => item.id === aCommentOnC.id), "A must still see their own comment on C's Edit");
+    });
+    await check("the blocked user cannot see the blocker's comment on a third party's post", async () => {
+      const comments = await b.listComments(cEditId);
+      assert.ok(!comments.some((item) => item.id === aCommentOnC.id), "B must not see A's comment on C's Edit");
+      assert.ok(comments.some((item) => item.id === bCommentOnC.id), "B must still see their own comment on C's Edit");
+    });
+    await check("an unrelated user still sees both comments on the third party's post", async () => {
+      const [asOwner, asBystander] = await Promise.all([c.listComments(cEditId), d.listComments(cEditId)]);
+      for (const comments of [asOwner, asBystander]) {
+        assert.ok(comments.some((item) => item.id === aCommentOnC.id), "an unrelated viewer must still see A's comment");
+        assert.ok(comments.some((item) => item.id === bCommentOnC.id), "an unrelated viewer must still see B's comment");
+      }
+    });
+    await check("the comment count shown to the blocker excludes the blocked user's comment on that third-party post", async () => {
+      const [asA, asUnrelated] = await Promise.all([a.engagement(cEditId), d.engagement(cEditId)]);
+      assert.equal(asUnrelated.commentCount, 2, "an unrelated viewer sees the true count (A's and B's comments)");
+      assert.equal(asA.commentCount, 1, "A's own count must exclude B's filtered comment");
+    });
+    await check("direct access to a blocked user's comment (delete) returns the same generic 404, not a 403", async () => {
+      // B cannot delete A's comment anyway (not the author, not the Edit
+      // owner) — the point here is that a blocked target collapses to the
+      // same "not found" response as a genuinely missing comment, rather
+      // than confirming its existence with a 403.
+      const response = await b.request(`/api/edits/${encodeURIComponent(cEditId)}/comments/${encodeURIComponent(aCommentOnC.id)}`, { method: "DELETE" });
+      assert.equal(response.status, 404);
+    });
+
     // --- 10. blocking never touches subscriptions/payments (nothing to assert
     // against here since none exist yet in this codebase — documented as a
     // no-op guarantee: block only ever deletes from creatorFollows). ---
@@ -320,6 +401,25 @@ async function main() {
       assert.ok(aPayload.blocks.some((row) => row.username === bWorkspace.username), "A's own block list must include B");
     });
 
+    await check("Admin report review retains full access to a reported comment's context, regardless of the A<->B block", async () => {
+      const reportResponse = await c.report({ targetType: "comment", targetId: bCommentOnC.id, reason: "spam" });
+      await expectStatus(reportResponse, 201);
+
+      const adminEmail = `blocks-admin-${suffix}@example.com`;
+      const admin = new Session(server.baseUrl);
+      const adminAccount = await admin.signup(adminEmail, PASSWORD);
+      const grant = await runScript(path.join(repoRoot, "scripts/src/admin-grant.ts"), ["--user-id", adminAccount.user.id, "--yes"]);
+      assert.equal(grant.code, 0, `admin-grant should exit 0: ${grant.stdout}`);
+
+      const response = await admin.adminReports("?status=pending&targetType=comment");
+      await expectStatus(response, 200);
+      const payload = await response.json() as { reports: Array<{ targetId: string; context: { available: boolean; body?: string } }> };
+      const reviewed = payload.reports.find((row) => row.targetId === bCommentOnC.id);
+      assert.ok(reviewed, "the report on B's comment must be visible to admin");
+      assert.equal(reviewed.context.available, true, "admin context resolution must not be blinded by the A<->B block");
+      assert.equal(reviewed.context.body, "B's comment on a third party's post", "admin must see the actual reported comment body");
+    });
+
     // --- 12. unblock ---
     await check("unblocking a user that was never blocked is safe (idempotent)", async () => {
       const response = await c.unblock(bWorkspace.username);
@@ -345,6 +445,13 @@ async function main() {
       const response = await a.follow(bWorkspace.username, true);
       await expectStatus(response, 200);
       assert.ok(await followRowExists(aAccount.user.id, bWorkspace.creatorId));
+    });
+    await check("unblocking restores comment visibility on third-party content, both directions", async () => {
+      const [aComments, bComments] = await Promise.all([a.listComments(cEditId), b.listComments(cEditId)]);
+      assert.ok(aComments.some((item) => item.id === bCommentOnC.id), "A must see B's comment on C's Edit again after unblocking");
+      assert.ok(bComments.some((item) => item.id === aCommentOnC.id), "B must see A's comment on C's Edit again after unblocking");
+      const asA = await a.engagement(cEditId);
+      assert.equal(asA.commentCount, 2, "A's comment count must include B's comment again after unblocking");
     });
   } finally {
     stopServer(server);
