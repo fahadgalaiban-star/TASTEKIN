@@ -51,13 +51,13 @@ function privateResponse(res: Response) {
   res.set("Cache-Control", "private, no-store");
 }
 
-function requireUser(req: Request, res: Response) {
+export function requireUser(req: Request, res: Response) {
   if (req.isAuthenticated() && req.user) return req.user;
   res.status(401).json({ error: "Sign in to continue" });
   return null;
 }
 
-async function getEditContext(editId: string, userId?: string) {
+export async function getEditContext(editId: string, userId?: string) {
   const workspaces = await db.select().from(creatorWorkspaces);
   const workspace = workspaces.find((candidate) => (candidate.edits as WorkspaceEdit[]).some((item) => item && item.id === editId));
   if (!workspace) return null;

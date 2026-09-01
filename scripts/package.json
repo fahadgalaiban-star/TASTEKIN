@@ -11,6 +11,7 @@
     "verify:settings": "tsx ./src/verify-settings.ts",
     "verify:deployment-health": "tsx ./src/verify-deployment-health.ts",
     "verify:onboarding": "tsx ./src/verify-onboarding.ts",
+    "verify:reports": "tsx ./src/verify-reports.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
