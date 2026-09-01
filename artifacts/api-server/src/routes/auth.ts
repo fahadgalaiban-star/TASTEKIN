@@ -10,6 +10,7 @@ import {
 import { logger } from "../lib/logger";
 import { ensureCreatorAccount, founderMappingConfigured, isCurrentUserAdmin } from "../lib/creator-account";
 import { resolveOnboardingStatus } from "../lib/onboarding";
+import { currentFlagStates, isFeatureEnabled } from "../lib/feature-flags";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -52,11 +53,23 @@ export function googleAuthConfigured(): boolean {
   return Boolean(process.env.GOOGLE_CLIENT_ID?.trim()) && Boolean(process.env.GOOGLE_CLIENT_SECRET?.trim());
 }
 
+/**
+ * Google sign-in also requires the server-enforced `google_sign_in` feature
+ * flag to be enabled. This is checked at every entry point (the sign-in
+ * button's visibility on /me, and the actual OAuth authorize route itself)
+ * so disabling the flag genuinely turns the feature off rather than just
+ * hiding a button — the OAuth callback route needs no separate check since
+ * it is only ever reached via /auth/google, which already gates on this.
+ */
+export async function googleSignInAvailable(): Promise<boolean> {
+  return googleAuthConfigured() && (await isFeatureEnabled("google_sign_in"));
+}
+
 router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: googleAuthConfigured() });
+    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates() });
     return;
   }
   try {
@@ -88,7 +101,8 @@ router.get("/me", async (req, res) => {
       supportEmail: configuredSupportEmail(),
       needsOnboarding: onboarding.needsOnboarding,
       onboardingStep: onboarding.step,
-      googleAuthConfigured: googleAuthConfigured(),
+      googleAuthConfigured: await googleSignInAvailable(),
+      featureFlags: await currentFlagStates(),
     });
   } catch (error) {
     logger.error({ err: error, userId: req.user.id }, "GET /me failed");
@@ -218,7 +232,7 @@ router.post("/auth/reset-password", async (req, res) => {
 });
 
 router.get("/auth/google", async (req, res) => {
-  if (!googleAuthConfigured()) { res.redirect(`/?authError=${encodeURIComponent("Google sign-in is not configured yet.")}`); return; }
+  if (!(await googleSignInAvailable())) { res.redirect(`/?authError=${encodeURIComponent("Google sign-in is not configured yet.")}`); return; }
   const discovery = await fetch(`${googleIssuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
   const state = crypto.randomBytes(24).toString("base64url");
   cookie(res, "google_state", state); cookie(res, "google_return_to", safeReturnTo(req.query.returnTo));

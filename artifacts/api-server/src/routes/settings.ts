@@ -2,6 +2,8 @@ import { usersTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 
+import { isFeatureEnabled } from "../lib/feature-flags";
+
 const router: IRouter = Router();
 const SUPPORTED_LANGUAGES = new Set(["en", "ar"]);
 
@@ -30,6 +32,12 @@ router.put("/settings", async (req, res) => {
       return;
     }
     updates.language = req.body.language;
+  }
+  if (req.body?.notifyPush !== undefined || req.body?.notifyEmail !== undefined) {
+    if (!(await isFeatureEnabled("notification_preferences"))) {
+      res.status(403).json({ error: "Notification preferences cannot be changed right now" });
+      return;
+    }
   }
   if (req.body?.notifyPush !== undefined) {
     if (typeof req.body.notifyPush !== "boolean") { res.status(400).json({ error: "notifyPush must be a boolean" }); return; }

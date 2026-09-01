@@ -14,6 +14,8 @@
     "verify:reports": "tsx ./src/verify-reports.ts",
     "verify:blocks": "tsx ./src/verify-blocks.ts",
     "verify:mutes": "tsx ./src/verify-mutes.ts",
+    "verify:feature-flags": "tsx ./src/verify-feature-flags.ts",
+    "verify:analytics": "tsx ./src/verify-analytics.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
