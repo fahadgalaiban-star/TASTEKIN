@@ -370,6 +370,37 @@ async function main() {
       assert.ok(payload.reports.some((row) => row.id === reviewedReportId));
     });
 
+    await check("status filters are mutually exclusive: a report leaves its old status filter the instant it changes status", async () => {
+      // reviewedReportId was just moved pending -> under_review -> resolved above.
+      // Every status-filtered listing must reflect that immediately: present in
+      // exactly the "resolved" filter, absent from pending/under_review/dismissed.
+      const presenceByStatus = async (reportId: string) => {
+        const entries = await Promise.all((["pending", "under_review", "resolved", "dismissed"] as const).map(async (status) => {
+          const response = await admin.adminReports(`?status=${status}`);
+          await expectStatus(response, 200);
+          const payload = await response.json() as { reports: Array<{ id: string; status: string }> };
+          assert.ok(payload.reports.every((row) => row.status === status), `?status=${status} must never return a report whose actual status is not "${status}"`);
+          return [status, payload.reports.some((row) => row.id === reportId)] as const;
+        }));
+        return Object.fromEntries(entries) as Record<"pending" | "under_review" | "resolved" | "dismissed", boolean>;
+      };
+
+      assert.deepEqual(await presenceByStatus(reviewedReportId), { pending: false, under_review: false, resolved: true, dismissed: false });
+
+      // Drive a second, independent report through the same lifecycle to prove
+      // this holds for every transition, not just the one already exercised.
+      const [another] = await db.select().from(reports).where(eq(reports.targetId, comment.id));
+      assert.ok(another);
+      assert.equal(another.status, "pending", "the prior rejected (no-note) dismiss attempt must not have changed its status");
+      assert.deepEqual(await presenceByStatus(another.id), { pending: true, under_review: false, resolved: false, dismissed: false });
+
+      await expectStatus(await admin.reviewReport(another.id, { status: "under_review" }), 200);
+      assert.deepEqual(await presenceByStatus(another.id), { pending: false, under_review: true, resolved: false, dismissed: false });
+
+      await expectStatus(await admin.reviewReport(another.id, { status: "dismissed", adminNote: "Not actionable." }), 200);
+      assert.deepEqual(await presenceByStatus(another.id), { pending: false, under_review: false, resolved: false, dismissed: true });
+    });
+
     // --- 9. existing account row untouched ---
     await check("regression: reporting/reviewing never mutates the reported user's own account row", async () => {
       const [row] = await db.select().from(usersTable).where(eq(usersTable.id, adminAccount.user.id));
