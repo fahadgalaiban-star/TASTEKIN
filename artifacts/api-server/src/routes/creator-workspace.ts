@@ -16,6 +16,7 @@ import {
 } from "../lib/creator-workspace-seed";
 import { creatorByUsername, ensureCreatorAccount } from "../lib/creator-account";
 import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
+import { mutedUserIds } from "../lib/mutes";
 
 const router: IRouter = Router();
 function noStoreAccountResponse(res: import("express").Response) {
@@ -397,7 +398,7 @@ router.get("/creators/:username/workspace", async (req, res) => {
 
 router.get("/public-feed", async (req, res) => {
   try {
-    const [rows, followed, blockedUserIds] = await Promise.all([
+    const [rows, followed, blockedUserIds, mutedIds] = await Promise.all([
       db.select({ workspace: creatorWorkspaces, verified: usersTable.isVerified })
         .from(creatorWorkspaces)
         .leftJoin(usersTable, eq(creatorWorkspaces.ownerUserId, usersTable.id)),
@@ -405,9 +406,14 @@ router.get("/public-feed", async (req, res) => {
         ? db.select({ creatorId: creatorFollows.creatorId }).from(creatorFollows).where(eq(creatorFollows.followerUserId, req.user.id))
         : Promise.resolve([]),
       blockedCounterpartIds(req.user?.id),
+      mutedUserIds(req.user?.id),
     ]);
     const followedIds = new Set(followed.map((item) => item.creatorId));
-    const visibleRows = rows.filter(({ workspace }) => !workspace.ownerUserId || !blockedUserIds.has(workspace.ownerUserId));
+    // Block always takes precedence and is checked independently of mute;
+    // mute only additionally hides content from this Home/For You feed for
+    // the muter — it never affects what anyone else sees.
+    const visibleRows = rows.filter(({ workspace }) =>
+      !workspace.ownerUserId || (!blockedUserIds.has(workspace.ownerUserId) && !mutedIds.has(workspace.ownerUserId)));
     const items = visibleRows.flatMap(({ workspace, verified }) => {
       const profile = normalizeProfile(workspace.profile);
       return (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)

@@ -27,6 +27,7 @@ import { Router, type IRouter } from "express";
 import { calculateTasteMatch, tasteReasons, type CreatorTasteProfile, type TasteSelection } from "../lib/taste-match";
 import { creatorByUsername } from "../lib/creator-account";
 import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
+import { mutedUserIds } from "../lib/mutes";
 
 const router: IRouter = Router();
 function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }
@@ -232,6 +233,18 @@ async function excludeBlocked(availableCreators: Creator[], viewerUserId: string
   return availableCreators.filter((creator) => !creator.ownerUserId || !blocked.has(creator.ownerUserId));
 }
 
+/**
+ * Real (persisted) creators viewerUserId has muted. Used only for passive
+ * Explore recommendations (no search term) — a direct, intentional search
+ * for a specific creator must never be affected by mute.
+ */
+async function excludeMuted(availableCreators: Creator[], viewerUserId: string | undefined): Promise<Creator[]> {
+  if (!viewerUserId) return availableCreators;
+  const muted = await mutedUserIds(viewerUserId);
+  if (!muted.size) return availableCreators;
+  return availableCreators.filter((creator) => !creator.ownerUserId || !muted.has(creator.ownerUserId));
+}
+
 function serializePreferences(selection: TasteSelection, updatedAt: Date) {
   return {
     categories: selection.categories,
@@ -418,7 +431,12 @@ router.get("/explore", async (req, res) => {
       .where(eq(creatorWorkspaces.ownerUserId, req.user.id)).limit(1)
     : [];
   const sort = params.sort ?? (req.user ? "best" : "new");
-  const availableCreators = await excludeBlocked(await allCreators(), req.user?.id);
+  // Block always applies. Mute only applies to passive/algorithmic
+  // recommendations, i.e. when the viewer isn't typing a specific search —
+  // an intentional search (q present) must still be able to reach a muted
+  // creator, per "must not hide from direct profile search".
+  const blockFiltered = await excludeBlocked(await allCreators(), req.user?.id);
+  const availableCreators = term ? blockFiltered : await excludeMuted(blockFiltered, req.user?.id);
   const matchedCreators = availableCreators
     .filter((creator) => creator.id !== ownWorkspace?.creatorId)
     .filter((creator) => matches(`${creator.displayName} ${creator.categories.join(" ")} ${creator.tasteTags.join(" ")} ${creator.city}`))
