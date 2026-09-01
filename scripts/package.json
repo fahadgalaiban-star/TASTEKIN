@@ -14,6 +14,7 @@
     "verify:reports": "tsx ./src/verify-reports.ts",
     "verify:blocks": "tsx ./src/verify-blocks.ts",
     "verify:mutes": "tsx ./src/verify-mutes.ts",
+    "verify:cors-auth": "tsx ./src/verify-cors-auth.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

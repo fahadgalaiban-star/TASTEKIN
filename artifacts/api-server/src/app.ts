@@ -21,10 +21,38 @@ app.set("trust proxy", 1);
 const rawAllowed = process.env.ALLOWED_ORIGINS || "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000";
 const allowedOrigins = rawAllowed.split(",").map((s) => s.trim()).filter(Boolean);
 
-function originValidator(origin: string | undefined, cb: (err: Error | null, allow?: boolean) => void) {
-  if (!origin) return cb(null, true); // allow non-browser clients like curl, server-to-server
-  if (allowedOrigins.includes(origin)) return cb(null, true);
-  return cb(new Error("Origin not allowed"));
+// A per-request options delegate (the shape `cors` expects when origin
+// decisions need the request itself, per its "Configuring CORS w/ Dynamic
+// Origin" API) rather than a plain `{ origin: fn(origin, cb) }` object,
+// since deciding "is this my own current host" needs req.protocol/req.host.
+function corsOptionsDelegate(req: express.Request, cb: (err: Error | null, options?: cors.CorsOptions) => void) {
+  const origin = req.header("Origin");
+  if (!origin) { cb(null, { credentials: true, origin: true }); return; } // non-browser clients like curl, server-to-server
+  if (allowedOrigins.includes(origin)) { cb(null, { credentials: true, origin: true }); return; }
+  // A request whose Origin exactly matches the host this request itself
+  // arrived on is never actually cross-origin — this single process serves
+  // both the built frontend and /api (see the static/catch-all handler
+  // below), so in production the app calling its own API always has
+  // Origin === this host. Trusting that self-origin means a fresh Replit
+  // preview/deployment domain (which changes independently of any
+  // ALLOWED_ORIGINS secret, and which rejecting it would otherwise break)
+  // works without any manual configuration step, while a genuinely
+  // different origin (an attacker's site) can never satisfy this check — a
+  // browser sets Origin from the page's real origin, not from anything the
+  // request itself can spoof.
+  const selfOrigin = `${req.protocol}://${req.get("host")}`;
+  if (origin === selfOrigin) { cb(null, { credentials: true, origin: true }); return; }
+  // Deny (origin: false), not an error: the cors package turns a callback
+  // error into a thrown error that skips every other middleware and lands
+  // on the generic 500 handler, turning an ordinary "this origin isn't
+  // allowed" policy decision into an opaque "Internal server error" for
+  // every route, including signup/login — masking the real cause in logs
+  // and in the client. `origin: false` instead just omits the CORS
+  // headers, so the browser itself blocks the disallowed origin from
+  // reading the response (the actual security boundary), while a
+  // same-origin request, a redirect-based navigation, or a non-browser
+  // caller is never affected either way.
+  cb(null, { credentials: true, origin: false });
 }
 
 app.use(
@@ -47,7 +75,7 @@ app.use(
   }),
 );
 
-app.use(cors({ credentials: true, origin: originValidator }));
+app.use(cors(corsOptionsDelegate));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
