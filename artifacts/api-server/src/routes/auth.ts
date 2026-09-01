@@ -37,11 +37,26 @@ export function configuredSupportEmail(): string | null {
   return process.env.SUPPORT_EMAIL?.trim() || null;
 }
 
+/**
+ * The sign-in screen must never offer "Continue with Google" unless Google
+ * OAuth is actually fully configured. Both GOOGLE_CLIENT_ID and
+ * GOOGLE_CLIENT_SECRET are required for a real sign-in to complete: the
+ * authorize step (GET /auth/google) only needs the client id, but the token
+ * exchange in GET /auth/google/callback also sends GOOGLE_CLIENT_SECRET —
+ * checking the id alone would show the button, let the user complete a real
+ * Google consent screen, and only then fail at the token exchange and
+ * redirect back into /auth/google, which would repeat the same incomplete
+ * check (a redirect loop). Requiring both closes that gap.
+ */
+export function googleAuthConfigured(): boolean {
+  return Boolean(process.env.GOOGLE_CLIENT_ID?.trim()) && Boolean(process.env.GOOGLE_CLIENT_SECRET?.trim());
+}
+
 router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done" });
+    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: googleAuthConfigured() });
     return;
   }
   try {
@@ -73,6 +88,7 @@ router.get("/me", async (req, res) => {
       supportEmail: configuredSupportEmail(),
       needsOnboarding: onboarding.needsOnboarding,
       onboardingStep: onboarding.step,
+      googleAuthConfigured: googleAuthConfigured(),
     });
   } catch (error) {
     logger.error({ err: error, userId: req.user.id }, "GET /me failed");
@@ -202,12 +218,12 @@ router.post("/auth/reset-password", async (req, res) => {
 });
 
 router.get("/auth/google", async (req, res) => {
-  if (!process.env.GOOGLE_CLIENT_ID) { res.redirect(`/?authError=${encodeURIComponent("Google sign-in is not configured yet.")}`); return; }
+  if (!googleAuthConfigured()) { res.redirect(`/?authError=${encodeURIComponent("Google sign-in is not configured yet.")}`); return; }
   const discovery = await fetch(`${googleIssuer}/.well-known/openid-configuration`).then((result) => result.json()) as { authorization_endpoint: string };
   const state = crypto.randomBytes(24).toString("base64url");
   cookie(res, "google_state", state); cookie(res, "google_return_to", safeReturnTo(req.query.returnTo));
   const url = new URL(discovery.authorization_endpoint);
-  url.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID, redirect_uri: `${origin(req)}/api/auth/google/callback`, response_type: "code", scope: "openid email profile", state, access_type: "online", prompt: "select_account" }).toString();
+  url.search = new URLSearchParams({ client_id: process.env.GOOGLE_CLIENT_ID!, redirect_uri: `${origin(req)}/api/auth/google/callback`, response_type: "code", scope: "openid email profile", state, access_type: "online", prompt: "select_account" }).toString();
   res.redirect(url.href);
 });
 router.get("/auth/google/callback", async (req, res) => {

@@ -99,6 +99,7 @@ class Session {
       notifyEmail: boolean;
       subscribed: boolean;
       supportEmail: string | null;
+      googleAuthConfigured: boolean;
     };
   }
   async putSettings(body: Record<string, unknown>) {
@@ -274,6 +275,12 @@ async function main() {
       assert.equal(me.supportEmail, null);
     });
 
+    await check("googleAuthConfigured is false by default (no GOOGLE_CLIENT_ID) — the sign-in screen must not offer Google", async () => {
+      const anon = new Session(server.baseUrl);
+      assert.equal((await anon.me()).googleAuthConfigured, false, "must be false for a signed-out visitor too, since that's who sees the sign-in screen");
+      assert.equal((await a.me()).googleAuthConfigured, false);
+    });
+
     void userA;
   } finally {
     stopServer(server);
@@ -290,6 +297,61 @@ async function main() {
     });
   } finally {
     stopServer(server2);
+  }
+
+  console.log("\nPhase 3: googleAuthConfigured requires BOTH GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET — every combination.");
+
+  const bothConfigured = await startServer({ GOOGLE_CLIENT_ID: "test-google-client-id", GOOGLE_CLIENT_SECRET: "test-google-client-secret" });
+  try {
+    await check("both GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET set: googleAuthConfigured is true, and /auth/google actually starts the flow instead of bouncing back with authError", async () => {
+      const anon = new Session(bothConfigured.baseUrl);
+      assert.equal((await anon.me()).googleAuthConfigured, true);
+      const response = await anon.request("/api/auth/google", { redirect: "manual" });
+      assert.ok(response.status >= 300 && response.status < 400, `expected a redirect, got ${response.status}`);
+      const location = response.headers.get("location") ?? "";
+      assert.doesNotMatch(location, /authError=/, "a fully configured server must not immediately bounce back with an error");
+    });
+  } finally {
+    stopServer(bothConfigured);
+  }
+
+  const idOnly = await startServer({ GOOGLE_CLIENT_ID: "test-google-client-id", GOOGLE_CLIENT_SECRET: undefined });
+  try {
+    await check("GOOGLE_CLIENT_ID set but GOOGLE_CLIENT_SECRET missing: googleAuthConfigured is false, and /auth/google refuses to start the flow", async () => {
+      const anon = new Session(idOnly.baseUrl);
+      assert.equal((await anon.me()).googleAuthConfigured, false, "must be false — a half-configured server would otherwise show the button, start a real Google consent screen, and only fail later at token exchange");
+      const response = await anon.request("/api/auth/google", { redirect: "manual" });
+      assert.ok(response.status >= 300 && response.status < 400);
+      assert.match(response.headers.get("location") ?? "", /authError=/, "must bounce back with authError rather than starting a flow that can only fail");
+    });
+  } finally {
+    stopServer(idOnly);
+  }
+
+  const secretOnly = await startServer({ GOOGLE_CLIENT_ID: undefined, GOOGLE_CLIENT_SECRET: "test-google-client-secret" });
+  try {
+    await check("GOOGLE_CLIENT_SECRET set but GOOGLE_CLIENT_ID missing: googleAuthConfigured is false, and /auth/google refuses to start the flow", async () => {
+      const anon = new Session(secretOnly.baseUrl);
+      assert.equal((await anon.me()).googleAuthConfigured, false);
+      const response = await anon.request("/api/auth/google", { redirect: "manual" });
+      assert.ok(response.status >= 300 && response.status < 400);
+      assert.match(response.headers.get("location") ?? "", /authError=/);
+    });
+  } finally {
+    stopServer(secretOnly);
+  }
+
+  const neitherConfigured = await startServer({ GOOGLE_CLIENT_ID: undefined, GOOGLE_CLIENT_SECRET: undefined });
+  try {
+    await check("neither GOOGLE_CLIENT_ID nor GOOGLE_CLIENT_SECRET set: googleAuthConfigured is false, and /auth/google refuses to start the flow", async () => {
+      const anon = new Session(neitherConfigured.baseUrl);
+      assert.equal((await anon.me()).googleAuthConfigured, false);
+      const response = await anon.request("/api/auth/google", { redirect: "manual" });
+      assert.ok(response.status >= 300 && response.status < 400);
+      assert.match(response.headers.get("location") ?? "", /authError=/);
+    });
+  } finally {
+    stopServer(neitherConfigured);
   }
 
   console.log("\nResults:");

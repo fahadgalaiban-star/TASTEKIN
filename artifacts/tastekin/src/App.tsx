@@ -192,6 +192,11 @@ type TasteSessionSnapshot = {
   // resume at. Never derived or guessed client-side.
   needsOnboarding: boolean;
   onboardingStep: OnboardingStep;
+  // Whether the server has Google OAuth fully configured (both
+  // GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET set) — the sign-in screen's
+  // "Continue with Google" button must only ever appear when this is true,
+  // never unconditionally.
+  googleAuthConfigured: boolean;
   revision: number;
 };
 type TasteSession = TasteSessionSnapshot & { refresh: () => Promise<void> };
@@ -202,7 +207,7 @@ function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
     status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false,
     language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null,
-    needsOnboarding: false, onboardingStep: 'done', revision: 0,
+    needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, revision: 0,
   });
   const refresh = useCallback(async () => {
     try {
@@ -213,7 +218,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'>
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false };
       setSnapshot((current) => {
         const next = {
           status: payload.user ? 'authenticated' as const : 'signed-out' as const,
@@ -228,6 +233,7 @@ function useTasteSessionController(): TasteSession {
           supportEmail: payload.supportEmail ?? null,
           needsOnboarding: Boolean(payload.needsOnboarding),
           onboardingStep: isOnboardingStep(payload.onboardingStep) ? payload.onboardingStep : 'done',
+          googleAuthConfigured: Boolean(payload.googleAuthConfigured),
         };
         const unchanged = current.status === next.status
           && current.user?.id === next.user?.id
@@ -238,6 +244,7 @@ function useTasteSessionController(): TasteSession {
           && current.isAdmin === next.isAdmin
           && current.language === next.language
           && current.notifyPush === next.notifyPush
+          && current.googleAuthConfigured === next.googleAuthConfigured
           && current.notifyEmail === next.notifyEmail
           && current.subscribed === next.subscribed
           && current.supportEmail === next.supportEmail
@@ -1701,7 +1708,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
   return <SimpleScreen kicker={t('Account', 'الحساب')} title={mode === 'signup' ? t('Create your account', 'أنشئ حسابك') : mode === 'forgot' ? t('Reset your password', 'إعادة تعيين كلمة المرور') : mode === 'reset' ? t('Choose a new password', 'اختر كلمة مرور جديدة') : t('Sign in', 'تسجيل الدخول')}>
     {mode !== 'reset' && <>
       <button className="approved-button wide" onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Continue with Replit', 'متابعة عبر Replit')}</button>
-      <button className="approved-button wide" onClick={() => window.location.assign('/api/auth/google?returnTo=/')}>{t('Continue with Google', 'متابعة عبر Google')}</button>
+      {session.googleAuthConfigured && <button className="approved-button wide" onClick={() => window.location.assign('/api/auth/google?returnTo=/')}>{t('Continue with Google', 'متابعة عبر Google')}</button>}
       <div className="auth-divider">{t('or', 'أو')}</div>
     </>}
     {(mode === 'signin' || mode === 'signup') && <form onSubmit={(event) => void submitEmailPassword(event)}>
