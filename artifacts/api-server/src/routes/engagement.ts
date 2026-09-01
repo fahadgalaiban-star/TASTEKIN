@@ -43,6 +43,7 @@ import { Router, type IRouter, type Request, type Response } from "express";
 
 import { creatorByUsername, requireCreator } from "../lib/creator-account";
 import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
+import { mutedUserIds } from "../lib/mutes";
 
 const router: IRouter = Router();
 
@@ -79,12 +80,16 @@ function viewerName(user: { email: string | null; firstName: string | null; last
 
 async function engagementFor(editId: string, userId?: string) {
   // A comment from an account the viewer is blocked with (either direction)
-  // must not count toward what the viewer sees, on this Edit or any other —
-  // the count shown must match the filtered list this same viewer would get
-  // from GET /edits/:editId/comments.
-  const blockedIds = userId ? await blockedCounterpartIds(userId) : new Set<string>();
-  const commentCountCondition = blockedIds.size
-    ? and(eq(editComments.editId, editId), notInArray(editComments.userId, [...blockedIds]))
+  // or has muted (one-directional) must not count toward what the viewer
+  // sees, on this Edit or any other — the count shown must match the
+  // filtered list this same viewer would get from GET /edits/:editId/comments.
+  const [blockedIds, mutedIds] = await Promise.all([
+    userId ? blockedCounterpartIds(userId) : Promise.resolve(new Set<string>()),
+    userId ? mutedUserIds(userId) : Promise.resolve(new Set<string>()),
+  ]);
+  const excludedIds = new Set([...blockedIds, ...mutedIds]);
+  const commentCountCondition = excludedIds.size
+    ? and(eq(editComments.editId, editId), notInArray(editComments.userId, [...excludedIds]))
     : eq(editComments.editId, editId);
   const [[likes], [comments], likedRows, savedRows] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(editLikes).where(eq(editLikes.editId, editId)),
@@ -172,16 +177,18 @@ router.get("/edits/:editId/comments", async (req, res): Promise<void> => {
   const context = await getEditContext(params.data.editId, req.user?.id);
   if (!context) { res.status(404).json({ error: "Edit not found" }); return; }
   if (!context.canRead) { res.status(403).json({ error: "Comments are protected with this Edit" }); return; }
-  const blockedIds = await blockedCounterpartIds(req.user?.id);
+  const [blockedIds, mutedIds] = await Promise.all([blockedCounterpartIds(req.user?.id), mutedUserIds(req.user?.id)]);
   const rows = await db.select({
     id: editComments.id, editId: editComments.editId, body: editComments.body, createdAt: editComments.createdAt,
     userId: editComments.userId, firstName: usersTable.firstName, lastName: usersTable.lastName, email: usersTable.email,
   }).from(editComments).leftJoin(usersTable, eq(editComments.userId, usersTable.id))
     .where(eq(editComments.editId, params.data.editId)).orderBy(editComments.createdAt);
   // A comment from an account the viewer has a mutual block with (in either
-  // direction) is invisible to that viewer, even on someone else's Edit —
-  // filtered server-side here, not left to the client to hide.
-  const visibleRows = blockedIds.size ? rows.filter((row) => !blockedIds.has(row.userId)) : rows;
+  // direction), or has muted (one-directional — never the reverse), is
+  // invisible to that viewer, even on someone else's Edit — filtered
+  // server-side here, not left to the client to hide.
+  const excludedIds = new Set([...blockedIds, ...mutedIds]);
+  const visibleRows = excludedIds.size ? rows.filter((row) => !excludedIds.has(row.userId)) : rows;
   res.json(ListEditCommentsResponse.parse(visibleRows.map((row) => ({
     id: row.id, editId: row.editId, body: row.body, createdAt: row.createdAt,
     authorName: viewerName({ firstName: row.firstName, lastName: row.lastName, email: row.email }),

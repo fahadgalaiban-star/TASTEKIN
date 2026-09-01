@@ -13,6 +13,7 @@
     "verify:onboarding": "tsx ./src/verify-onboarding.ts",
     "verify:reports": "tsx ./src/verify-reports.ts",
     "verify:blocks": "tsx ./src/verify-blocks.ts",
+    "verify:mutes": "tsx ./src/verify-mutes.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

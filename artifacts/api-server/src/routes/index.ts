@@ -10,6 +10,7 @@ import settingsRouter from "./settings";
 import onboardingRouter from "./onboarding";
 import moderationRouter from "./moderation";
 import blocksRouter from "./blocks";
+import mutesRouter from "./mutes";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(settingsRouter);
 router.use(onboardingRouter);
 router.use(moderationRouter);
 router.use(blocksRouter);
+router.use(mutesRouter);
 
 export default router;
