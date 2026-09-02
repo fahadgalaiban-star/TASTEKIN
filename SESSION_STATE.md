@@ -6,6 +6,18 @@ writing. Treat this as the source of truth over any prior state doc.
 
 ## Next session focus
 
+**Database connection ambiguity resolved:** an earlier session raised a
+question over whether the app was actually connected to Neon production or
+Replit's internal "helium" Postgres, since `DATABASE_URL` is set separately
+in Workspace Secrets and in Deployment Secrets (see the Replit-specific
+gotcha at the bottom of this doc — Deployments don't inherit Workspace
+secrets). This is now confirmed resolved: the published app
+(`cheerful-easygoing-bytes.replit.app`) is connected to Neon production,
+host `ep-aged-rice-arsrepg5.c-4.us-west-2.aws.neon.tech`. Verified by testing
+real account signup/login on the published app and confirming accounts
+persist. No production data was read or modified to confirm this — it was
+confirmed via app-level behavior, not a direct database query.
+
 The Settings page is fully functional and server-backed (merged via PR #5):
 language and notification preferences persist to `users` (additive columns
 `language`, `notify_push`, `notify_email`), are scoped per-account, and
@@ -222,6 +234,13 @@ database's `users` table has the `is_admin` column (added via
 from the founder's own Replit login — has `is_admin = true` there via
 `admin:grant --prod --email dark.gcc.kw@gmail.com --yes`, confirmed working
 in the live app.
+
+**Re-confirmed, fully resolved:** re-verified via live app testing on the
+published deployment — signed in as `dark.gcc.kw@gmail.com`, the Settings
+Admin section is visible, including both Verification Review and the
+Report Queue. No further action needed on this item; `users.is_admin`
+remains the sole authority, no env var runtime check was added or is
+needed.
 
 ## Creator workspace (Edits)
 
