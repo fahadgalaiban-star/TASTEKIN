@@ -20,17 +20,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { closetItems, closetMediaUploads, db } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import sharp from "sharp";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
 const serverEntry = path.join(repoRoot, "artifacts/api-server/dist/index.mjs");
+const reconcileScriptEntry = path.join(repoRoot, "scripts/src/reconcile-closet-media.ts");
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is required — point this at a disposable test database, never production.");
   process.exit(1);
 }
+
+// The reconciliation script is spawned as its own subprocess (see
+// runScript below) and inherits process.env — it needs PRIVATE_OBJECT_DIR
+// set the same way startServer() sets it for the spawned api-server, so
+// both talk to the same fake sidecar bucket/prefix.
+process.env.PRIVATE_OBJECT_DIR = process.env.PRIVATE_OBJECT_DIR ?? "/closet-test-bucket/my-things";
 
 // --- fake object-storage sidecar -------------------------------------------------
 
@@ -219,7 +226,7 @@ async function main() {
     assert.equal(grant.code, 0, `admin-grant should exit 0: ${grant.stdout}`);
 
     const userA = new Session(server.baseUrl);
-    await userA.signup(`my-things-a-${suffix}@example.com`, PASSWORD);
+    const userAAccount = await userA.signup(`my-things-a-${suffix}@example.com`, PASSWORD);
     const userB = new Session(server.baseUrl);
     await userB.signup(`my-things-b-${suffix}@example.com`, PASSWORD);
 
@@ -267,6 +274,51 @@ async function main() {
       assert.equal(response.status, 422);
       const rejectedRows = await db.select().from(closetMediaUploads).where(eq(closetMediaUploads.state, "rejected"));
       assert.ok(rejectedRows.length > 0, "at least one rejected row must exist");
+    });
+    await check("storage PUT failure: 502 response, no item created, ledger reaches upload_failed with the key retained and a sanitized bounded error, and reconciliation (--yes) resolves it to deleted", async () => {
+      const itemsBefore = (await db.select().from(closetItems).where(eq(closetItems.ownerUserId, userAAccount.user.id))).length;
+
+      failNextPut = true;
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      assert.equal(uploadResponse.status, 502, "the endpoint must surface the intended failure response");
+      const uploadPayload = await uploadResponse.json() as Record<string, unknown>;
+      assert.ok(!("uploadId" in uploadPayload), "a failed upload must never return an uploadId to attach against");
+
+      const itemsAfter = (await db.select().from(closetItems).where(eq(closetItems.ownerUserId, userAAccount.user.id))).length;
+      assert.equal(itemsAfter, itemsBefore, "a failed storage PUT must never result in a closet_items row");
+
+      const [failedRow] = await db.select().from(closetMediaUploads)
+        .where(and(eq(closetMediaUploads.ownerUserId, userAAccount.user.id), eq(closetMediaUploads.state, "upload_failed")))
+        .orderBy(desc(closetMediaUploads.createdAt))
+        .limit(1);
+      assert.ok(failedRow, "the ledger must durably record the failed attempt");
+      assert.equal(failedRow.retryCount, 1, "retry_count must be incremented on a PUT failure");
+      assert.ok(failedRow.imageObjectKey, "the already-allocated private object key must be retained, not cleared, so the object (if partially written) stays trackable");
+      assert.ok(failedRow.lastError && failedRow.lastError.length <= 200, "last_error must be present and bounded");
+      assert.ok(
+        !failedRow.lastError!.includes("127.0.0.1") && !failedRow.lastError!.toLowerCase().includes("http://"),
+        "last_error must never contain a URL",
+      );
+
+      // Durably discoverable: the reconciliation eligibility query admits
+      // any 'upload_failed' row unconditionally (see reconcile-closet-media.ts's
+      // ELIGIBILITY clause), so this row can never become a silently
+      // untracked orphan — it stays 'upload_failed' until reconciliation
+      // (or a future run of it) resolves it.
+
+      // Exercise reconciliation for real, with --yes (explicit execution
+      // enabled) — the object was never actually written to the fake
+      // sidecar (the PUT failed before any bytes landed), so the
+      // reconciliation's delete call hits a 404 there, which is treated
+      // idempotently as success, exactly as it would be for a genuinely
+      // partial/missing object in real storage.
+      const reconcileRun = await runScript(reconcileScriptEntry, ["--yes"]);
+      assert.equal(reconcileRun.code, 0, `reconcile-closet-media --yes should exit 0: ${reconcileRun.stdout}`);
+
+      const [resolvedRow] = await db.select().from(closetMediaUploads).where(eq(closetMediaUploads.id, failedRow.id));
+      assert.equal(resolvedRow.state, "deleted", "reconciliation must resolve the failed upload's ledger row to deleted, idempotently, even though the object was never actually present");
+      assert.equal(resolvedRow.cleanupLeaseUntil, null);
+      assert.equal(resolvedRow.cleanupClaimToken, null);
     });
 
     // --- 3. EXIF/GPS stripping, output normalized to WebP ---
@@ -389,6 +441,21 @@ async function main() {
       assert.ok(statuses.every((s) => s === 201 || s === 422), "all 30 attempts should be accepted-or-rejected, not rate-limited yet");
       const thirtyFirst = await limitUser.uploadMedia(await validJpeg(8, 8));
       assert.equal(thirtyFirst.status, 429);
+    });
+    await check("upload rate limit under real concurrency: 35 simultaneous attempts admit exactly 30 and reject exactly 5 with 429, via the real Postgres advisory-lock path", async () => {
+      const concurrentUser = new Session(server.baseUrl);
+      const concurrentAccount = await concurrentUser.signup(`my-things-concurrent-${suffix}@example.com`, PASSWORD);
+      const buffers = await Promise.all(Array.from({ length: 35 }, () => validJpeg(8, 8)));
+      const statuses = await Promise.all(buffers.map((buffer) => concurrentUser.uploadMedia(buffer).then((response) => response.status)));
+
+      const admitted = statuses.filter((status) => status !== 429);
+      const rateLimited = statuses.filter((status) => status === 429);
+      assert.equal(admitted.length, 30, `expected exactly 30 admitted reservations, got ${admitted.length} (statuses: ${statuses.join(",")})`);
+      assert.equal(rateLimited.length, 5, `expected exactly 5 requests rejected with 429, got ${rateLimited.length}`);
+      assert.ok(admitted.every((status) => status === 201), "every admitted concurrent upload should have fully succeeded (all fixtures are valid, none should fail decode/storage)");
+
+      const ledgerRows = await db.select().from(closetMediaUploads).where(eq(closetMediaUploads.ownerUserId, concurrentAccount.user.id));
+      assert.equal(ledgerRows.length, 30, "the ledger must record exactly 30 attempts for this user's rolling-hour window — no more, no fewer, regardless of request concurrency");
     });
 
     // --- 8. delete: option (b) privacy-first behavior ---
