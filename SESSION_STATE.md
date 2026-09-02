@@ -235,6 +235,13 @@ from the founder's own Replit login — has `is_admin = true` there via
 `admin:grant --prod --email dark.gcc.kw@gmail.com --yes`, confirmed working
 in the live app.
 
+**Re-confirmed, fully resolved:** re-verified via live app testing on the
+published deployment — signed in as `dark.gcc.kw@gmail.com`, the Settings
+Admin section is visible, including both Verification Review and the
+Report Queue. No further action needed on this item; `users.is_admin`
+remains the sole authority, no env var runtime check was added or is
+needed.
+
 ## Creator workspace (Edits)
 
 One `creator_workspaces` row per creator: `profile` (JSONB), `edits`
