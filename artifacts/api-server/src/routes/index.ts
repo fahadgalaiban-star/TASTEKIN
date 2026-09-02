@@ -11,6 +11,8 @@ import onboardingRouter from "./onboarding";
 import moderationRouter from "./moderation";
 import blocksRouter from "./blocks";
 import mutesRouter from "./mutes";
+import featureFlagsRouter from "./feature-flags";
+import analyticsRouter from "./analytics";
 
 const router: IRouter = Router();
 
@@ -26,5 +28,7 @@ router.use(onboardingRouter);
 router.use(moderationRouter);
 router.use(blocksRouter);
 router.use(mutesRouter);
+router.use(featureFlagsRouter);
+router.use(analyticsRouter);
 
 export default router;

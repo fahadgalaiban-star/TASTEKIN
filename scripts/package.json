@@ -16,6 +16,8 @@
     "verify:mutes": "tsx ./src/verify-mutes.ts",
     "verify:cors-auth": "tsx ./src/verify-cors-auth.ts",
     "verify:profile-safety-actions": "tsx ./src/verify-profile-safety-actions.ts",
+    "verify:feature-flags": "tsx ./src/verify-feature-flags.ts",
+    "verify:analytics": "tsx ./src/verify-analytics.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
