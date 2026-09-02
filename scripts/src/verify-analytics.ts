@@ -206,6 +206,24 @@ async function main() {
       assert.equal(ownedRow?.userId, userAccount.user.id);
     });
 
+    // --- 3b. server timestamps only, never client-supplied ---
+    await check("a client-supplied createdAt/timestamp field is ignored — the stored row always uses a real server-generated time", async () => {
+      const editId = `edit-${suffix}-timestamp-spoof`;
+      const beforeRequest = Date.now();
+      const response = await user.request("/api/analytics/events", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "edit_viewed", metadata: { editId }, createdAt: "2000-01-01T00:00:00.000Z", timestamp: 1 }),
+      });
+      await expectStatus(response, 202);
+      const afterRequest = Date.now();
+      const rows = (await countRowsNamed("edit_viewed")).filter((row) => (row.metadata as { editId?: string })?.editId === editId);
+      assert.equal(rows.length, 1);
+      const storedAt = new Date(rows[0].createdAt).getTime();
+      assert.ok(storedAt >= beforeRequest - 1000 && storedAt <= afterRequest + 1000, "createdAt must be a real server-generated timestamp near request time, not the spoofed 2000-01-01 value");
+    });
+    await new Promise((resolve) => setTimeout(resolve, 2100)); // clear the dedupe window (keyed on subject+name only) before the dedupe check below reuses "edit_viewed" as the same user
+
     // --- 4. duplicate / rate protection ---
     await check("firing the same event twice in immediate succession is deduplicated to a single stored row", async () => {
       const editId = `edit-${suffix}-dedupe`;

@@ -178,6 +178,33 @@ async function main() {
       const payload = (await response.json()) as { flags: Array<{ key: string }> };
       assert.ok(!payload.flags.some((flag) => flag.key === `not-a-real-flag-${suffix}`));
     });
+    await check("a stale/unknown flag key already sitting in the database is ignored by /api/me and never surfaces as a flag", async () => {
+      // Simulates a flag that was toggled once and later removed from the
+      // FEATURE_FLAG_DEFINITIONS registry — the row is still in the table,
+      // but the running server no longer declares it. This must be inert:
+      // both the client-facing flag state and the admin listing must behave
+      // exactly as if the row were never there.
+      const staleKey = `retired-flag-${suffix}`;
+      await db.insert(featureFlags).values({ key: staleKey, description: "retired", enabled: false, updatedByUserId: adminAccount.user.id });
+      const me = await anon.me();
+      assert.ok(!(staleKey in me.featureFlags), "a stale unknown key must never appear in the client-facing feature flag map");
+      const listing = await admin.listFlags();
+      const payload = (await listing.json()) as { flags: Array<{ key: string }> };
+      assert.ok(!payload.flags.some((flag) => flag.key === staleKey), "a stale unknown key must never appear in the admin listing either");
+      await db.delete(featureFlags).where(eq(featureFlags.key, staleKey));
+    });
+    await check("PUT with a non-boolean 'enabled' value is rejected with 400", async () => {
+      const response = await admin.request("/api/admin/feature-flags/notification_preferences", {
+        method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: "yes" }),
+      });
+      assert.equal(response.status, 400);
+    });
+    await check("a fully anonymous (unauthenticated) PUT is rejected with 403, not merely hidden client-side", async () => {
+      assert.equal((await anon.setFlag("notification_preferences", false)).status, 403);
+    });
+    await check("GET audit-log for an unknown flag key is rejected with 404", async () => {
+      assert.equal((await admin.flagAuditLog(`not-a-real-flag-${suffix}`)).status, 404);
+    });
 
     // --- 3. Report/Block/Mute can never be disabled ---
     await check("Report, Block, and Mute are never registered as flags at all", async () => {
