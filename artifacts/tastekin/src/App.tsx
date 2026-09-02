@@ -90,15 +90,6 @@ const blankCreatorProfile: CreatorProfile = {
   displayName: '', username: '', bio: '', city: '', country: '', interests: [],
   avatar: '', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
 };
-const discoveryCreatorProfiles: Record<string, CreatorProfile> = {
-  'noura.studio': {
-    displayName: 'Noura Studio', username: 'noura.studio',
-    bio: 'Small tables, beautiful ingredients, and places worth the detour.',
-    city: 'Jeddah', country: 'Saudi Arabia', interests: ['Restaurants', 'Places', 'Travel', 'Decor'],
-    avatar: 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?auto=format&fit=crop&w=600&q=85',
-    avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
-  },
-};
 const seedEdits: CreatorEdit[] = [
   { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: media('quiet-tailoring.webp'), location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Fheed seated outside a London café in a linen polo.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
   { id: 'black-uniform', category: 'Fashion', title: 'The all-black uniform', titleAr: 'الإطلالة السوداء الكاملة', caption: 'Three pieces I return to when I want less noise.', captionAr: 'ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً.', image: media('black-uniform.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A black evening outfit on Fheed.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
@@ -429,7 +420,11 @@ function TastekinApp() {
     ]).then(async ([profileResponse, workspaceResponse, featuredResponse]) => {
       if (!active) return;
       if (profileResponse.ok) setPublicCreatorProfile(await profileResponse.json() as CreatorProfile);
-      else setPublicCreatorProfile(discoveryCreatorProfiles[selectedCreatorUsername] ?? null);
+      // A 404 here means this account genuinely doesn't exist server-side —
+      // never substitute placeholder/demo profile data that would render as
+      // if it were a real, actionable account (Follow/Report/Block/Mute all
+      // require a real creator_workspaces row to act against).
+      else setPublicCreatorProfile(null);
       if (workspaceResponse.ok) {
         const workspace = await workspaceResponse.json() as { edits: CreatorEdit[]; collections: CreatorCollection[] };
         setPublicCreatorEdits(workspace.edits); setPublicCreatorCollections(workspace.collections);
@@ -582,7 +577,13 @@ function TastekinApp() {
     }
   };
   const published = creatorEdits.filter((item) => item.status === 'published');
-  const viewedCreatorProfile = viewingOwnProfile ? creatorProfile : publicCreatorProfile ?? discoveryCreatorProfiles[selectedCreatorUsername] ?? creatorProfile;
+  // A missing public profile must never fall back to the viewer's own
+  // creatorProfile — that would silently render the viewer's own identity
+  // (and let Report/Block/Mute target the viewer's own account) in place of
+  // a creator who doesn't exist. blankCreatorProfile (empty username) is
+  // the honest "not found" value; Profile() below refuses to render
+  // interactive actions when it sees one.
+  const viewedCreatorProfile = viewingOwnProfile ? creatorProfile : publicCreatorProfile ?? blankCreatorProfile;
   const viewedCreatorEdits = viewingOwnProfile ? published : publicCreatorEdits;
   const viewedCreatorCollections = viewingOwnProfile ? creatorCollections : publicCreatorCollections;
   const featuredCollections = useMemo(() => {
@@ -2321,7 +2322,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
     setEditCategory('All');
   }, [profile.username]);
   useEffect(() => {
-    if (ownerView) return;
+    if (ownerView || !profile.username) return;
     void fetch(`/api/creators/${encodeURIComponent(profile.username)}/views`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId: null }) });
   }, [ownerView, profile.username]);
 
@@ -2329,10 +2330,20 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
   const publicAge = profile.age ? (ar ? `العمر ${profile.age}` : `Age ${profile.age}`) : '';
   const { data: matchData } = useGetTasteMatch(profile.username, {
-    query: { queryKey: getGetTasteMatchQueryKey(profile.username), enabled: session.status !== 'loading', refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
+    query: { queryKey: getGetTasteMatchQueryKey(profile.username), enabled: session.status !== 'loading' && Boolean(profile.username), refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
     request: { credentials: 'include', cache: 'no-store' },
   });
   const score = matchData?.match?.score;
+
+  // A blank username means the requested creator genuinely does not exist
+  // server-side (see viewedCreatorProfile above) — never render Follow,
+  // Subscribe, Message, or the Report/Block/Mute menu against a profile
+  // that isn't real; those all require a real creator_workspaces row.
+  if (!ownerView && !profile.username) {
+    return <SimpleScreen kicker={ar ? 'الملف الشخصي' : 'Profile'} title={ar ? 'الحساب غير متاح' : 'Account unavailable'}>
+      <Empty text={ar ? 'تعذر العثور على هذا الحساب. ربما تم حذفه أو أن الرابط غير صحيح.' : 'This account could not be found. It may have been removed, or the link may be incorrect.'} />
+    </SimpleScreen>;
+  }
 
   return <section className="creator-profile">
     <div className="approved-profile-head">
