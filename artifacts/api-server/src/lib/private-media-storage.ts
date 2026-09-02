@@ -22,6 +22,7 @@ function splitObjectPath(path: string) {
 async function signedObjectURL(
   fullPath: string,
   method: "GET" | "PUT" | "DELETE",
+  ttlSeconds = 15 * 60,
 ) {
   const { bucketName, objectName } = splitObjectPath(fullPath);
   const response = await fetch(
@@ -33,7 +34,7 @@ async function signedObjectURL(
         bucket_name: bucketName,
         object_name: objectName,
         method,
-        expires_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        expires_at: new Date(Date.now() + ttlSeconds * 1000).toISOString(),
       }),
       signal: AbortSignal.timeout(30_000),
     },
@@ -77,5 +78,49 @@ export async function deletePrivateMedia(objectPath: string) {
   const response = await fetch(signedURL, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
   if (!response.ok && response.status !== 404) {
     throw new Error(`Unable to delete private media (${response.status})`);
+  }
+}
+
+const CLOSET_MEDIA_PATH = /^\/objects\/closet\/[0-9a-fA-F-]{36}$/;
+
+/**
+ * My Things (KIN) closet-media storage helpers. Deliberately independent
+ * of the uploads/* functions above — a distinct prefix, a distinct regex,
+ * a distinct signed-URL mint per call — so relaxing validation here can
+ * never relax it for existing creator-media paths, and vice versa.
+ */
+export async function createClosetMediaUpload() {
+  const directory = privateObjectDirectory();
+  const objectName = `closet/${randomUUID()}`;
+  const uploadURL = await signedObjectURL(`${directory}/${objectName}`, "PUT");
+  return { uploadURL, objectPath: `/objects/${objectName}` };
+}
+
+/** Short-lived (60s) — closet images are meant to be consumed immediately by the browser, never held. */
+export async function getClosetMediaDownloadURL(objectPath: string) {
+  if (!CLOSET_MEDIA_PATH.test(objectPath)) {
+    throw new Error("Invalid closet media object path");
+  }
+  const objectName = objectPath.slice("/objects/".length);
+  return signedObjectURL(`${privateObjectDirectory()}/${objectName}`, "GET", 60);
+}
+
+/** Idempotent: a 404 from the sidecar (object already absent) is treated as success. */
+export async function deleteClosetMedia(objectPath: string) {
+  if (!CLOSET_MEDIA_PATH.test(objectPath)) {
+    throw new Error("Invalid closet media object path");
+  }
+  const objectName = objectPath.slice("/objects/".length);
+  const signedURL = await signedObjectURL(`${privateObjectDirectory()}/${objectName}`, "DELETE");
+  const response = await fetch(signedURL, { method: "DELETE", signal: AbortSignal.timeout(30_000) });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`Unable to delete closet media (${response.status})`);
+  }
+}
+
+export async function putClosetMediaBuffer(uploadURL: string, buffer: Buffer) {
+  const response = await fetch(uploadURL, { method: "PUT", body: buffer, signal: AbortSignal.timeout(30_000) });
+  if (!response.ok) {
+    throw new Error(`Unable to upload closet media (${response.status})`);
   }
 }

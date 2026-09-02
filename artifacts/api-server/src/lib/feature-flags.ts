@@ -28,6 +28,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "Allow members to change their push/email notification preferences in Settings. When disabled, existing stored preferences are left untouched and further changes to them are rejected server-side.",
     defaultEnabled: true,
   },
+  {
+    key: "my_things",
+    description: "Private per-user closet (My Things): create, view, and manage private closet items with photos. Backend/API foundation only in this release — no user-facing UI yet.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];
