@@ -9,6 +9,7 @@ import {
   Send, Share2, ShieldCheck, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
+import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -25,7 +26,7 @@ type Language = 'en' | 'ar';
 const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
 type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'adminFeatureFlags' | 'adminAnalytics' | 'blockedAccounts' | 'mutedAccounts' | 'settings' | 'auth' | 'onboarding';
+type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'adminFeatureFlags' | 'adminAnalytics' | 'blockedAccounts' | 'mutedAccounts' | 'settings' | 'auth' | 'onboarding' | 'myThings' | 'myThingsAdd';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -920,7 +921,7 @@ function TastekinApp() {
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
   const goBack = () => {
     if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
-    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'settings' ? settingsReturnScreenRef.current : 'home');
+    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'settings' ? settingsReturnScreenRef.current : screen === 'myThingsAdd' ? 'myThings' : screen === 'myThings' ? 'you' : 'home');
   };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
@@ -936,7 +937,7 @@ function TastekinApp() {
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
-    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
+    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} />}
@@ -956,6 +957,8 @@ function TastekinApp() {
     {screen === 'adminAnalytics' && <AdminAnalyticsScreen ar={ar} />}
     {screen === 'blockedAccounts' && <BlockedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
     {screen === 'mutedAccounts' && <MutedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
+    {screen === 'myThings' && <MyThingsScreen ar={ar} onAdd={() => go('myThingsAdd')} onUnavailable={() => go('you')} />}
+    {screen === 'myThingsAdd' && <AddClosetItemScreen ar={ar} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
    </main>{screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
@@ -2496,6 +2499,268 @@ function MutedAccountsScreen({ ar, onSignIn }: { ar: boolean; onSignIn: () => vo
       </span>
       <button className="approved-button" disabled={unmutingId === row.id} onClick={() => void unmute(row)}>{unmutingId === row.id ? (ar ? 'جارٍ…' : 'Working…') : (ar ? 'إلغاء الكتم' : 'Unmute')}</button>
     </div>)}</div>}
+  </SimpleScreen>;
+}
+
+type ClosetItem = {
+  id: string;
+  itemType: string;
+  primaryColor: string;
+  style: string;
+  occasion: string | null;
+  season: string | null;
+  brand: string | null;
+  confirmationStatus: 'confirmed' | 'pending_review';
+  createdAt: string;
+};
+
+/**
+ * My Things (KIN) — the signed-in user's private closet. Images are never
+ * loaded via a stored object key; the browser is only ever given the
+ * authorized, id-keyed GET /api/closet-items/:id/image route, which itself
+ * redirects to a 60s-TTL signed URL server-side.
+ */
+function MyThingsScreen({ ar, onAdd, onUnavailable }: { ar: boolean; onAdd: () => void; onUnavailable: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [items, setItems] = useState<ClosetItem[]>([]);
+  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [error, setError] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteNotice, setDeleteNotice] = useState('');
+
+  const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
+  useEffect(() => {
+    if (session.status !== 'loading' && !allowed) onUnavailable();
+  }, [session.status, allowed, onUnavailable]);
+
+  const load = useCallback(async () => {
+    setState('loading'); setError('');
+    try {
+      const response = await fetch('/api/closet-items', { credentials: 'include', cache: 'no-store' });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json() as { items: ClosetItem[] };
+      setItems(payload.items); setState('ready');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err)); setState('error');
+    }
+  }, []);
+  useEffect(() => { if (allowed) void load(); }, [allowed, load]);
+
+  const confirmedDelete = async (id: string) => {
+    setDeletingId(id);
+    try {
+      const response = await fetch(`/api/closet-items/${encodeURIComponent(id)}`, { method: 'DELETE', credentials: 'include' });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json().catch(() => null) as { physicalDeletion?: string } | null;
+      setItems((current) => current.filter((item) => item.id !== id));
+      setConfirmDeleteId(null);
+      setDeleteNotice(payload?.physicalDeletion === 'pending'
+        ? t('Removed. Final cleanup is finishing in the background.', 'تمت الإزالة. التنظيف النهائي يجري في الخلفية.')
+        : t('Removed.', 'تمت الإزالة.'));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  if (!allowed) return <SimpleScreen kicker={t('You', 'أنت')} title={t('My Things', 'أغراضي')}><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
+
+  return <SimpleScreen kicker={t('You', 'أنت')} title={t('My Things', 'أغراضي')}>
+    <button data-testid="my-things-add" className="approved-button primary wide" style={{ marginBottom: 16 }} onClick={onAdd}><Plus size={16} /> {t('Add item', 'أضف غرضًا')}</button>
+    {deleteNotice && <p className="settings-note">{deleteNotice}</p>}
+    {state === 'loading' && <Empty text={t('Loading…', 'جارٍ التحميل…')} />}
+    {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{t('Try again', 'حاول مجددًا')}</button></div>}
+    {state === 'ready' && !items.length && <Empty text={t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')} />}
+    {state === 'ready' && items.length > 0 && <div className="approved-grid profile-edits-grid" data-testid="my-things-grid">
+      {items.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
+        <div className="profile-grid-media">
+          <img src={`/api/closet-items/${item.id}/image`} alt="" />
+          {item.confirmationStatus === 'pending_review' && <span className="profile-grid-access">{t('Pending', 'قيد المراجعة')}</span>}
+        </div>
+        <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
+        <div style={{ padding: '0 10px 10px' }}>
+          {confirmDeleteId === item.id ? <div className="admin-confirm-actions">
+            <button className="approved-button" onClick={() => setConfirmDeleteId(null)} disabled={deletingId === item.id}>{t('Cancel', 'إلغاء')}</button>
+            <button className="approved-button primary" data-testid="my-things-confirm-delete" onClick={() => void confirmedDelete(item.id)} disabled={deletingId === item.id}>{deletingId === item.id ? t('Removing…', 'جارٍ الإزالة…') : t('Delete', 'حذف')}</button>
+          </div> : <div className="admin-detail-actions">
+            <button className="approved-button" data-testid="my-things-delete" onClick={() => setConfirmDeleteId(item.id)}>{t('Delete', 'حذف')}</button>
+          </div>}
+        </div>
+      </div>)}
+    </div>}
+  </SimpleScreen>;
+}
+
+const CLOSET_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const CLOSET_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+const CLOSET_HEIC_EXTENSION_RE = /\.(heic|heif)$/i;
+const CLOSET_MAX_BRAND_LENGTH = 100;
+
+function validateClosetPhoto(file: File, ar: boolean): string | null {
+  if (CLOSET_HEIC_EXTENSION_RE.test(file.name)) {
+    return ar ? 'صيغة HEIC/HEIF غير مدعومة هنا بعد. حوّل الصورة إلى JPEG أو PNG أو WebP أولاً.' : 'HEIC/HEIF photos aren’t supported here yet. Convert to JPEG, PNG, or WebP first.';
+  }
+  if (!file.type || !CLOSET_ACCEPTED_MIME_TYPES.includes(file.type)) {
+    return ar ? 'يُقبل فقط JPEG أو PNG أو WebP.' : 'Only JPEG, PNG, or WebP photos are accepted.';
+  }
+  if (file.size > CLOSET_MAX_UPLOAD_BYTES) {
+    return ar ? 'الصورة كبيرة جدًا (الحد الأقصى 10 ميجابايت).' : 'That photo is too large (10MB max).';
+  }
+  return null;
+}
+
+function ClosetChoiceField({ label, options, value, onSelect, disabled }: { label: string; options: TaxonomyOption[]; value: string; onSelect: (value: string) => void; disabled?: boolean }) {
+  return <div className="form-field"><span>{label}</span><div className="profile-interests" style={{ marginTop: 8 }}>
+    {options.map((option) => <button type="button" key={option.value} className={value === option.value ? 'selected' : ''} disabled={disabled} onClick={() => onSelect(option.value)}>{option.label}</button>)}
+  </div></div>;
+}
+
+type ClosetSubmitPhase = 'idle' | 'uploading' | 'creating' | 'confirming';
+
+/**
+ * Photo-first Add Item screen. There is no separate review step: this
+ * screen itself previews the photo, collects the required and optional
+ * fields, and drives the exact upload -> POST -> PUT sequence the backend
+ * requires (POST always creates as pending_review; only PUT can confirm).
+ * The sequence is idempotent across retries — once an uploadId or item id
+ * has been returned, it is reused rather than re-created.
+ */
+function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDone: () => void; onUnavailable: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState('');
+  const [itemType, setItemType] = useState('');
+  const [primaryColor, setPrimaryColor] = useState('');
+  const [style, setStyle] = useState('');
+  const [occasion, setOccasion] = useState('');
+  const [season, setSeason] = useState('');
+  const [brand, setBrand] = useState('');
+  const [phase, setPhase] = useState<ClosetSubmitPhase>('idle');
+  const [uploadId, setUploadId] = useState<string | null>(null);
+  const [itemId, setItemId] = useState<string | null>(null);
+  const [submitError, setSubmitError] = useState('');
+
+  const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
+  useEffect(() => {
+    if (session.status !== 'loading' && !allowed) onUnavailable();
+  }, [session.status, allowed, onUnavailable]);
+  useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  if (!allowed) return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Add item', 'أضف غرضًا')}><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
+
+  const photoLocked = uploadId !== null || phase !== 'idle';
+  const fieldsLocked = itemId !== null || phase !== 'idle';
+
+  const selectFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    event.target.value = '';
+    if (!selected) return;
+    const validationError = validateClosetPhoto(selected, ar);
+    if (validationError) { setPhotoError(validationError); return; }
+    setPhotoError('');
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(selected);
+    setPreviewUrl(URL.createObjectURL(selected));
+  };
+
+  const uploadClosetImage = async (toUpload: File): Promise<string> => {
+    const response = await fetch('/api/closet-items/media', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': toUpload.type }, body: toUpload,
+    });
+    if (!response.ok) throw new Error(await describeFailedResponse(response));
+    const payload = await response.json() as { uploadId: string };
+    return payload.uploadId;
+  };
+  const closetItemFields = () => ({
+    itemType, primaryColor, style,
+    occasion: occasion || undefined,
+    season: season || undefined,
+    brand: brand.trim() ? brand.trim().slice(0, CLOSET_MAX_BRAND_LENGTH) : undefined,
+  });
+  const createClosetItem = async (forUploadId: string): Promise<string> => {
+    const response = await fetch('/api/closet-items', {
+      method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uploadId: forUploadId, ...closetItemFields() }),
+    });
+    if (!response.ok) throw new Error(await describeFailedResponse(response));
+    const payload = await response.json() as { id: string };
+    return payload.id;
+  };
+  const confirmClosetItem = async (forItemId: string): Promise<void> => {
+    const response = await fetch(`/api/closet-items/${encodeURIComponent(forItemId)}`, {
+      method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...closetItemFields(), confirmationStatus: 'confirmed' }),
+    });
+    if (!response.ok) throw new Error(await describeFailedResponse(response));
+  };
+
+  const submit = async () => {
+    if (phase !== 'idle') return;
+    setSubmitError('');
+    try {
+      let currentUploadId = uploadId;
+      if (!currentUploadId) {
+        if (!file) { setSubmitError(t('Add a photo first.', 'أضف صورة أولاً.')); return; }
+        setPhase('uploading');
+        currentUploadId = await uploadClosetImage(file);
+        setUploadId(currentUploadId);
+      }
+      let currentItemId = itemId;
+      if (!currentItemId) {
+        setPhase('creating');
+        currentItemId = await createClosetItem(currentUploadId);
+        setItemId(currentItemId);
+      }
+      setPhase('confirming');
+      await confirmClosetItem(currentItemId);
+      onDone();
+    } catch (err) {
+      setPhase('idle');
+      setSubmitError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const requiredFieldsChosen = Boolean(itemType && primaryColor && style);
+  const submitDisabled = phase !== 'idle' || !requiredFieldsChosen || (!file && !uploadId);
+  const submitLabel = phase === 'uploading' ? t('Uploading photo…', 'جارٍ رفع الصورة…')
+    : phase === 'creating' ? t('Saving item…', 'جارٍ حفظ الغرض…')
+    : phase === 'confirming' ? t('Confirming…', 'جارٍ التأكيد…')
+    : itemId ? t('Retry confirmation', 'إعادة محاولة التأكيد')
+    : uploadId ? t('Retry save', 'إعادة المحاولة')
+    : t('Confirm & Add', 'تأكيد وإضافة');
+
+  return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Add item', 'أضف غرضًا')}>
+    {file && previewUrl ? <label className="image-uploader" style={{ aspectRatio: 1 }}>
+      <img src={previewUrl} alt="" />
+      <span><ImagePlus size={18} /> {t('Change photo', 'تغيير الصورة')}</span>
+      <input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} disabled={photoLocked} data-testid="my-things-photo-input" />
+    </label> : <label className="no-photo-uploader">
+      <ImagePlus size={22} />
+      <span><strong>{t('Add a photo', 'أضف صورة')}</strong><small>{t('JPEG, PNG, or WebP · up to 10MB', 'JPEG أو PNG أو WebP · حتى 10 ميجابايت')}</small></span>
+      <input aria-label={t('Add a photo', 'أضف صورة')} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} disabled={photoLocked} data-testid="my-things-photo-input" />
+    </label>}
+    {photoError && <p className="workspace-notice" role="alert" data-testid="my-things-photo-error">{photoError}</p>}
+
+    <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={setItemType} disabled={fieldsLocked} />
+    <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={setPrimaryColor} disabled={fieldsLocked} />
+    <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={setStyle} disabled={fieldsLocked} />
+
+    <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
+      <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={(next) => setOccasion(next === occasion ? '' : next)} disabled={fieldsLocked} />
+      <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={(next) => setSeason(next === season ? '' : next)} disabled={fieldsLocked} />
+      <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={fieldsLocked} placeholder={t('Optional', 'اختياري')} /></label>
+    </div></details>
+
+    {itemId && phase === 'idle' && <p className="settings-note">{t('Your item was saved. Tap below to finish confirming it.', 'تم حفظ الغرض. اضغط أدناه لإتمام التأكيد.')}</p>}
+    {!itemId && uploadId && phase === 'idle' && <p className="settings-note">{t('Your photo was uploaded. Tap below to save the item.', 'تم رفع الصورة. اضغط أدناه لحفظ الغرض.')}</p>}
+    {submitError && <p className="workspace-notice" role="alert" data-testid="my-things-submit-error">{submitError}</p>}
+
+    <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="my-things-submit" onClick={() => void submit()} disabled={submitDisabled}>{submitLabel}</button>
   </SimpleScreen>;
 }
 
