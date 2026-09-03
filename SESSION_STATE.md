@@ -120,14 +120,29 @@ resume-on-reload UI coverage.
 
 ## Next priorities
 
-1. ~~Complete onboarding~~ — see above (branch not yet merged)
-2. Google Sign-In
-3. Report, Block, Mute, and content moderation
-4. Real video support
-5. Stripe and subscriptions
-6. Direct messaging for subscribers
-7. Real Taste Match algorithm
-8. Policies, security, and launch testing
+1. ~~Complete onboarding~~ — merged (PR #7)
+2. ~~Google Sign-In~~ — merged (PR #8); the gate requires both
+   `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` to be configured, not just
+   one, and defaults to email/password-only when either is missing
+3. ~~Report, Block, Mute, and content moderation~~ — merged (PRs #9, #10, #11)
+4. ~~Feature flags + privacy-safe product analytics~~ — merged (PR #18);
+   see `artifacts/api-server/src/lib/feature-flags.ts` for the registry
+5. **KIN — My Things, PR-1 (this branch):** private per-user closet
+   backend/API and storage foundation only — see "My Things (KIN) — PR-1"
+   below. No user-facing UI yet.
+6. Real video support
+7. Stripe and subscriptions
+8. Real Taste Match algorithm
+
+**KIN roadmap, in order:** My Things backend foundation (PR-1, this branch)
+→ a manual, Photo-first UI for My Things (separately approved) → Match
+This (separately approved). Image Analysis (auto-detecting item
+attributes from photos) is a later, independent feature and is not part
+of PR-1 or the Photo-first UI. **Decision gate:** Match This (its
+matching tables and numeric compatibility rules) must not be implemented
+until it is separately reviewed and approved — this PR does not touch
+Match This, `match_this`, or any matching logic.
+9. Policies, security, and launch testing
 
 ## Stack
 
@@ -385,6 +400,63 @@ DB-persistence, partial updates, and an admin-authorization non-regression
 check. `artifacts/tastekin/e2e/settings-direction.spec.ts` covers the
 LTR/RTL direction toggle and its persistence across a reload.
 
+## My Things (KIN) — PR-1
+
+Private, per-user closet: create/list/read/update/delete a closet item
+with a private photo. Backend/API and storage foundation only in PR-1 —
+no user-facing UI, no Match This, no image analysis/AI, no brand
+auto-detection, no Taste Profile changes. Gated behind the `my_things`
+feature flag, `defaultEnabled: false` (see `feature-flags.ts`'s registry;
+admin toggle via the existing generic `PUT /admin/feature-flags/my_things`
+— `users.is_admin` remains the sole authority, no env var involved).
+
+Two new tables (`lib/db/src/schema/closet.ts`):
+- `closet_items` — one row per item: `owner_user_id` (FK → `users.id`,
+  cascade), `image_object_key` (private storage key only, unique),
+  `item_type`/`primary_color`/`style`/`occasion`/`season` (plain `text`,
+  app-level allowlists — no DB enum/check, matching this repo's existing
+  convention), `brand` (trimmed, ≤100 chars, `null` when absent — never
+  the literal string `"unknown"`), `confirmation_status`
+  (`confirmed`|`pending_review`).
+- `closet_media_uploads` — the durable upload/deletion lifecycle ledger,
+  separate from `creator_media_uploads`. `owner_user_id` and
+  `closet_item_id` are both nullable with `onDelete: "set null"` (not
+  cascade) so this ledger survives both account deletion and item
+  deletion — it is the only durable record of a private object key once
+  the row that referenced it is gone. States: `reserved`, `uploading`,
+  `rejected`, `upload_failed`, `uploaded`, `attached`, `deletion_pending`,
+  `cleanup_in_progress`, `delete_failed`, `deleted`. Every upload attempt
+  (regardless of outcome) is one row here — this is what makes the
+  30-per-hour upload rate limit durable and race-safe (a Postgres advisory
+  lock, the same idiom as the feature-flags toggle route) and immune to
+  being reset by deleting items afterward.
+
+Upload is two steps: `POST /api/closet-items/media` (raw image bytes;
+`multipart` is not used — a route-scoped `express.raw` limit instead)
+validates via real decode (`sharp`, format/dimension/corruption checks —
+never the client's declared Content-Type or filename), strips EXIF/GPS by
+re-encoding to WebP (no `.withMetadata()` call), uploads the sanitized
+bytes itself to private object storage, and returns an opaque `uploadId`
+— never the storage key. `POST /api/closet-items` then atomically verifies
+(in one transaction, `SELECT ... FOR UPDATE`, ownership and id in the same
+`WHERE`) that the upload belongs to the caller, is unconsumed, and creates
+the item.
+
+Storage keys are `/objects/closet/<uuid>` — a distinct prefix and
+independent validation regex from the pre-existing `/objects/uploads/<uuid>`
+creator-media path (new sibling functions in `private-media-storage.ts`;
+the original functions are untouched). Deleting an item hides it
+immediately (a hard delete, no soft-delete column) and attempts physical
+storage deletion synchronously in the same request; if that fails, the
+ledger durably tracks `delete_failed` for later manual reconciliation
+(`pnpm --filter scripts run reconcile:closet-media`, dry-run by default,
+no automatic background retries — there is no scheduler in this repo).
+
+New dependency: `sharp@0.35.4` (added to `artifacts/api-server`) —
+already listed by name in `build.mjs`'s esbuild `external` array before
+this PR, so no bundler change was needed. See
+`scripts/src/verify-my-things.ts` (29 checks) for regression coverage.
+
 ## Subscription / billing — UI only, not wired up
 
 The Subscribe screen and Settings' Subscription section both explicitly
@@ -400,7 +472,9 @@ since no entitlements table exists), not a client-side placeholder.
 creator_media_uploads, creator_featured_collections, edit_likes,
 edit_saves, edit_comments, conversations, conversation_messages,
 creator_view_events, creator_follows, verification_applications,
-user_taste_preferences`
+user_taste_preferences, user_blocks, user_mutes, reports,
+moderation_audit_log, feature_flags, feature_flag_audit_log,
+analytics_events, closet_items, closet_media_uploads`
 
 `users` gained three additive columns for the Settings rebuild:
 `language` (text, default `'en'`), `notify_push` (boolean, default
@@ -447,6 +521,17 @@ needs no migration, only Zod schema updates in `lib/api-zod`.
 - `onboarding.ts` — `POST /onboarding/advance` (authenticated; advances the
   caller's own `onboarding_step` by one, server-checked precondition per
   step, no body)
+- `blocks.ts`, `mutes.ts`, `moderation.ts` — user blocking/muting and the
+  report/admin-review queue
+- `feature-flags.ts` — `GET/PUT /admin/feature-flags[/:key]`,
+  `GET /admin/feature-flags/:key/audit-log` (admin-only)
+- `analytics.ts` — `POST /analytics/events` (auth-optional),
+  `GET /admin/analytics/summary` (admin-only)
+- `closet-items.ts` — My Things (KIN) PR-1: `POST /closet-items/media`,
+  `POST /closet-items`, `GET /closet-items`, `GET/PUT/DELETE
+  /closet-items/:id`, `GET /closet-items/:id/image` — all gated by the
+  `my_things` flag and scoped to the authenticated owner in every query's
+  `WHERE` clause
 
 ## Required environment variables
 

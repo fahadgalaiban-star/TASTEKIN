@@ -18,6 +18,8 @@
     "verify:profile-safety-actions": "tsx ./src/verify-profile-safety-actions.ts",
     "verify:feature-flags": "tsx ./src/verify-feature-flags.ts",
     "verify:analytics": "tsx ./src/verify-analytics.ts",
+    "verify:my-things": "tsx ./src/verify-my-things.ts",
+    "reconcile:closet-media": "tsx ./src/reconcile-closet-media.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
@@ -29,6 +31,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pg": "^8.20.0",
+    "sharp": "0.35.4",
     "tsx": "catalog:"
   }
 }
