@@ -340,3 +340,175 @@ test('Add item: clicking Confirm & Add twice in a row only submits once', async 
   await expect(page.getByTestId('my-things-add')).toBeVisible();
   expect(uploadCalls).toBe(1);
 });
+
+const FULL_ITEM = {
+  id: 'item-1',
+  itemType: 'shirt',
+  primaryColor: 'blue',
+  style: 'casual',
+  occasion: 'everyday',
+  season: 'summer',
+  brand: 'Acme',
+  confirmationStatus: 'confirmed' as const,
+  createdAt: new Date().toISOString(),
+};
+
+async function gotoEditScreen(page: Page, item: typeof FULL_ITEM = FULL_ITEM) {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [item] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-open').click();
+}
+
+test('Edit Item: tapping the card photo/caption opens Edit Item, pre-filled with all current values', async ({ page }) => {
+  await gotoEditScreen(page);
+  await expect(page.getByRole('heading', { name: 'Edit item' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Blue', exact: true })).toHaveClass(/selected/);
+
+  await page.getByText('Optional details', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Everyday', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Summer', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByPlaceholder('Optional')).toHaveValue('Acme');
+
+  // No photo picker anywhere on this screen.
+  await expect(page.getByTestId('my-things-photo-input')).toHaveCount(0);
+});
+
+test('Edit Item: saving resends every field via PUT, excludes confirmationStatus, and never uploads a new photo', async ({ page }) => {
+  let uploadCalls = 0;
+  let putBody: Record<string, unknown> | null = null;
+  await gotoEditScreen(page);
+  await page.route('**/api/closet-items/media', async (route) => { uploadCalls += 1; await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'should-not-happen' }) }); });
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() !== 'PUT') return;
+    putBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FULL_ITEM) });
+  });
+
+  await page.getByTestId('my-things-edit-save').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+
+  expect(uploadCalls).toBe(0);
+  expect(putBody).toMatchObject({ itemType: 'shirt', primaryColor: 'blue', style: 'casual', occasion: 'everyday', season: 'summer', brand: 'Acme' });
+  expect((putBody as Record<string, unknown>).confirmationStatus).toBeUndefined();
+});
+
+test('Edit Item: clearing an optional chip sends null for that field, and leaves the rest resent unchanged', async ({ page }) => {
+  let putBody: Record<string, unknown> | null = null;
+  await gotoEditScreen(page);
+  await page.getByText('Optional details', { exact: true }).click();
+  await page.getByRole('button', { name: 'Casual', exact: true }).click();
+  await page.getByRole('button', { name: 'Everyday', exact: true }).click();
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() !== 'PUT') return;
+    putBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FULL_ITEM) });
+  });
+
+  await page.getByTestId('my-things-edit-save').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+
+  expect(putBody).not.toBeNull();
+  expect((putBody as Record<string, unknown>).style).toBeNull();
+  expect((putBody as Record<string, unknown>).occasion).toBeNull();
+  expect((putBody as Record<string, unknown>).season).toBe('summer');
+});
+
+test('Edit Item: a successful save returns to My Things and shows the updated card', async ({ page }) => {
+  await gotoEditScreen(page);
+  await page.getByRole('button', { name: 'Jacket', exact: true }).click();
+  await page.getByRole('button', { name: 'Navy', exact: true }).click();
+  const updated = { ...FULL_ITEM, itemType: 'jacket', primaryColor: 'navy' };
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(updated) });
+  });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [updated] }) });
+  });
+
+  await page.getByTestId('my-things-edit-save').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Jacket · Navy');
+});
+
+test('Edit Item: a failed save stays on Edit Item with an inline error, and retry succeeds', async ({ page }) => {
+  let putCalls = 0;
+  await gotoEditScreen(page);
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() !== 'PUT') return;
+    putCalls += 1;
+    if (putCalls === 1) { await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Unable to update this item' }) }); return; }
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(FULL_ITEM) });
+  });
+
+  await page.getByTestId('my-things-edit-save').click();
+  await expect(page.getByTestId('my-things-edit-error')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Edit item' })).toBeVisible();
+
+  await page.getByTestId('my-things-edit-save').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+  expect(putCalls).toBe(2);
+});
+
+test('Edit Item: the guard sends Edit Item back to You when the flag turns off mid-session', async ({ page }) => {
+  let flagOn = true;
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: meBody({ myThings: flagOn }) });
+  });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FULL_ITEM] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-open').click();
+  await expect(page.getByTestId('my-things-edit-save')).toBeVisible();
+
+  flagOn = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByTestId('my-things-edit-save')).toHaveCount(0);
+  await expect(page.getByTestId('open-settings')).toBeVisible();
+});
+
+test('Edit Item: the guard sends Edit Item back to You when the session becomes unauthenticated', async ({ page }) => {
+  let authenticated = true;
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: meBody({ authenticated, myThings: true }) });
+  });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FULL_ITEM] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-open').click();
+  await expect(page.getByTestId('my-things-edit-save')).toBeVisible();
+
+  authenticated = false;
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByTestId('my-things-edit-save')).toHaveCount(0);
+  await expect(page.getByTestId('you-sign-in')).toBeVisible();
+});
+
+test('Edit Item: existing delete confirmation still works alongside the new open-for-edit affordance', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FULL_ITEM] }) });
+  });
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() === 'DELETE') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'removed', physicalDeletion: 'completed' }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+
+  await page.getByTestId('my-things-delete').click();
+  await page.getByTestId('my-things-confirm-delete').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+});
