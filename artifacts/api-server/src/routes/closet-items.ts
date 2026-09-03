@@ -8,6 +8,11 @@ import {
   validateClosetItemFields,
 } from "../lib/closet-items";
 import {
+  analyzeClosetImage,
+  publicClosetSuggestions,
+  reserveAnalysisAttempt,
+} from "../lib/closet-image-analysis";
+import {
   MAX_UPLOAD_BYTES,
   decodeAndReencodeClosetImage,
   reserveUploadAttempt,
@@ -34,6 +39,14 @@ function requireUserMw(req: Request, res: Response, next: NextFunction) {
 async function myThingsFlagMw(_req: Request, res: Response, next: NextFunction) {
   if (!(await isFeatureEnabled("my_things"))) {
     res.status(403).json({ error: "My Things is not available right now" });
+    return;
+  }
+  next();
+}
+
+async function closetAnalysisFlagMw(_req: Request, res: Response, next: NextFunction) {
+  if (!(await isFeatureEnabled("closet_item_analysis"))) {
+    res.status(403).json({ error: "Closet item analysis is not available right now" });
     return;
   }
   next();
@@ -134,6 +147,57 @@ router.post(
   parserRejectionHandler,
   uploadHandler,
 );
+
+/**
+ * Suggests (never creates or updates) closet item fields from an
+ * already-uploaded, not-yet-attached photo. Always responds 200 with
+ * `{ suggestions: ... | null }` for any well-scoped request — provider
+ * failure, timeout, missing API key, a malformed model response, and every
+ * field falling below the confidence threshold all collapse to the same
+ * "no suggestions" shape so the client has exactly one case to handle
+ * beyond the existing manual flow it already falls back to.
+ */
+router.post("/closet-items/media/:uploadId/analyze", requireUserMw, myThingsFlagMw, closetAnalysisFlagMw, async (req, res) => {
+  const user = req.user!;
+  const uploadId = String(req.params.uploadId);
+  if (!UUID_RE.test(uploadId)) { res.status(404).json({ error: "Upload not found" }); return; }
+
+  if (!reserveAnalysisAttempt(user.id, uploadId)) {
+    res.status(429).json({ error: "Too many analysis attempts for this photo. Try again later." });
+    return;
+  }
+
+  const [upload] = await db
+    .select({ imageObjectKey: closetMediaUploads.imageObjectKey, state: closetMediaUploads.state })
+    .from(closetMediaUploads)
+    .where(and(eq(closetMediaUploads.id, uploadId), eq(closetMediaUploads.ownerUserId, user.id)));
+  if (!upload || upload.state !== "uploaded" || !upload.imageObjectKey) {
+    res.status(404).json({ error: "Upload not found" });
+    return;
+  }
+
+  let imageBuffer: Buffer;
+  try {
+    const signedUrl = await getClosetMediaDownloadURL(upload.imageObjectKey);
+    const stored = await fetch(signedUrl, { signal: AbortSignal.timeout(10_000) });
+    if (!stored.ok) throw new Error(`HTTP ${stored.status}`);
+    imageBuffer = Buffer.from(await stored.arrayBuffer());
+  } catch (error) {
+    req.log.warn({ reason: sanitizeErrorReason("analysis fetch failed", error), userId: user.id }, "Unable to fetch closet image for analysis");
+    res.json({ suggestions: null });
+    return;
+  }
+
+  const result = await analyzeClosetImage(imageBuffer);
+  if (result.status !== "ok") {
+    if (result.reason !== "not configured") {
+      req.log.warn({ reason: result.reason, userId: user.id }, "Closet item analysis unavailable");
+    }
+    res.json({ suggestions: null });
+    return;
+  }
+  res.json({ suggestions: publicClosetSuggestions(result.suggestions) });
+});
 
 type SerializableClosetItem = typeof closetItems.$inferSelect;
 function serializeClosetItem(item: SerializableClosetItem) {

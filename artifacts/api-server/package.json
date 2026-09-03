@@ -12,6 +12,7 @@
     "test:owner-discovery": "node ./scripts/test-owner-discovery.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.123.0",
     "@workspace/api-zod": "workspace:*",
     "@workspace/db": "workspace:*",
     "@workspace/taste-catalog": "workspace:*",

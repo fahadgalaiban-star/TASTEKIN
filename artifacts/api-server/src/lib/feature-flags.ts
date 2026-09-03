@@ -33,6 +33,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "Private per-user closet (My Things): a My Things screen under You where members photograph, tag (item type, primary color, optional style/occasion/season/brand), view, and delete their own private closet items. Fully gates both the API and the UI when disabled.",
     defaultEnabled: false,
   },
+  {
+    key: "closet_item_analysis",
+    description: "Automatic clothing-photo analysis in My Things' Add Item: after uploading a photo, suggests item type, primary color, style, occasion, and season via Claude, always shown as editable pre-fills the member must review before saving — never auto-created or auto-saved. Requires my_things to also be enabled. Only an in-memory (non-durable) limit protects against repeated analysis calls per upload, so this must stay off in production until a durable limiter is added.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];
