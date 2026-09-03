@@ -6,6 +6,36 @@ writing. Treat this as the source of truth over any prior state doc.
 
 ## Next session focus
 
+**My Things (KIN) frontend UI shipped — PR-2 (#20), merged and live.** The
+closet UI (My Things list/grid + Add Item screens under You, gated by the
+`my_things` flag) is merged into `main`, and the published app has been
+redeployed and confirmed Live. The PR-1 schema (`closet_items`,
+`closet_media_uploads`) is already applied to the production database. See
+"My Things (KIN) — PR-2" below for exactly what shipped.
+
+**Not done: `is_admin` for `dark.gcc.kw@gmail.com` could not be
+(re-)confirmed in production this session.** The Replit agent's connection
+to the production database is read-only, so it cannot run
+`admin:grant --prod`. The Replit SQL editor can write to production
+directly, but doing so from the mobile UI proved impractical. This blocks
+enabling the `my_things` flag (flag toggles require `is_admin`). Note this
+sits alongside the "Confirmed live in production" / "Re-confirmed, fully
+resolved" notes under Admin authorization below, which recorded this as
+already done in an earlier session — treat that as unconfirmed until it is
+actually re-checked; this session could not verify either way.
+
+**Next session topic — do this on a desktop, not mobile:**
+1. Set `is_admin = true` for `dark.gcc.kw@gmail.com` in production (Replit
+   SQL editor, or `admin:grant --prod --email dark.gcc.kw@gmail.com --yes`
+   once a writable production `DATABASE_URL`/`PROD_DB_URL` is available
+   from that machine).
+2. Enable the `my_things` feature flag from the Admin → Feature Flags
+   screen.
+3. Test real photo upload end-to-end from an iPhone — both the camera and
+   the Photos library — including at least one real HEIC file. This path
+   has only ever been exercised with mocked/synthetic image bytes in
+   Playwright; no real device has tested it yet.
+
 **Database connection ambiguity resolved:** an earlier session raised a
 question over whether the app was actually connected to Neon production or
 Replit's internal "helium" Postgres, since `DATABASE_URL` is set separately
@@ -127,21 +157,25 @@ resume-on-reload UI coverage.
 3. ~~Report, Block, Mute, and content moderation~~ — merged (PRs #9, #10, #11)
 4. ~~Feature flags + privacy-safe product analytics~~ — merged (PR #18);
    see `artifacts/api-server/src/lib/feature-flags.ts` for the registry
-5. **KIN — My Things, PR-1 (this branch):** private per-user closet
-   backend/API and storage foundation only — see "My Things (KIN) — PR-1"
-   below. No user-facing UI yet.
+5. ~~KIN — My Things, PR-1 (backend/API/storage) and PR-2 (frontend UI)~~ —
+   merged (PR #19, PR #20) and live in production. Still open before the
+   next KIN phase: set `is_admin` for `dark.gcc.kw@gmail.com` in
+   production, enable the `my_things` flag from the Admin screen, and
+   verify real iPhone camera/Photos-library upload (including a real HEIC
+   file) on an actual device — see "Next session focus" above.
 6. Real video support
 7. Stripe and subscriptions
 8. Real Taste Match algorithm
 
-**KIN roadmap, in order:** My Things backend foundation (PR-1, this branch)
-→ a manual, Photo-first UI for My Things (separately approved) → Match
-This (separately approved). Image Analysis (auto-detecting item
-attributes from photos) is a later, independent feature and is not part
-of PR-1 or the Photo-first UI. **Decision gate:** Match This (its
-matching tables and numeric compatibility rules) must not be implemented
-until it is separately reviewed and approved — this PR does not touch
-Match This, `match_this`, or any matching logic.
+**KIN roadmap, in order:** My Things backend foundation (PR-1, merged) →
+Photo-first UI for My Things (PR-2, merged) → admin enablement + real-
+device verification (next session, see above) → Match This (separately
+approved). Image Analysis (auto-detecting item attributes from photos) is
+a later, independent feature and is not part of PR-1 or PR-2. **Decision
+gate:** Match This (its matching tables and numeric compatibility rules)
+must not be implemented until it is separately reviewed and approved —
+neither PR-1 nor PR-2 touches Match This, `match_this`, or any matching
+logic.
 9. Policies, security, and launch testing
 
 ## Stack
@@ -256,6 +290,17 @@ Admin section is visible, including both Verification Review and the
 Report Queue. No further action needed on this item; `users.is_admin`
 remains the sole authority, no env var runtime check was added or is
 needed.
+
+**Status unconfirmed as of the My Things PR-2 session:** a later session
+needed to confirm/re-set `is_admin` for `dark.gcc.kw@gmail.com` in
+production (to enable the `my_things` flag) and could not — the Replit
+agent's connection to the production database is read-only, so it cannot
+run `admin:grant --prod`. The Replit SQL editor can write to production
+directly, but doing so from the mobile UI proved impractical, so this was
+left undone. This does not necessarily mean the flag reverted from the
+"Re-confirmed, fully resolved" state above — it means that state was not
+re-checked. Next session: verify (and if needed, re-set) it from a
+desktop, per "Next session focus" above.
 
 ## Creator workspace (Edits)
 
@@ -455,7 +500,59 @@ no automatic background retries — there is no scheduler in this repo).
 New dependency: `sharp@0.35.4` (added to `artifacts/api-server`) —
 already listed by name in `build.mjs`'s esbuild `external` array before
 this PR, so no bundler change was needed. See
-`scripts/src/verify-my-things.ts` (29 checks) for regression coverage.
+`scripts/src/verify-my-things.ts` (31 checks, grew from 29 after a
+pre-merge audit closed two gaps) for regression coverage.
+
+## My Things (KIN) — PR-2
+
+Frontend UI on top of PR-1's backend (merged as PR #20). Frontend-only —
+no backend, schema, or dependency changes.
+
+- New `Screen` union entries `myThings`/`myThingsAdd`, added to the
+  existing `go()` state machine — no router was added or activated, no
+  literal URL route exists, no bottom-nav tab was added. A "My Things"
+  entry appears under **You** only when
+  `session.featureFlags.my_things === true`.
+- Both new screens carry a `useEffect` guard that calls `go('you')` if the
+  flag turns off or the session becomes unauthenticated while either is
+  active. This is a UI convenience only — the backend's existing 401/403
+  is the real enforcement layer.
+- **Add Item** has no separate review step: local photo preview, required
+  chip-selects (Item type / Primary color / Style, reusing the app's
+  existing button-chip pattern from Tune Your Taste), a collapsible
+  "Optional details" section (Occasion / Season / Brand), and one
+  "Confirm & Add" button. Because `POST /closet-items` always creates
+  `pending_review` and only `PUT` can confirm, the button drives
+  upload → `POST` → `PUT` in sequence, and retries are idempotent: a
+  failed `POST` reuses the already-returned `uploadId` rather than
+  re-uploading; a failed `PUT` reuses the already-created item id and
+  retries only the `PUT`. The button disables itself for the whole
+  sequence to prevent double submission.
+- Images render only via `GET /api/closet-items/:id/image`; the frontend
+  never reads, stores, or logs `imageObjectKey`.
+- Client-side upload validation: JPEG/PNG/WebP only, 10MB max, and
+  best-effort HEIC/HEIF rejection by both MIME type and filename
+  extension (no HEIC conversion, no new dependency added).
+- New `artifacts/tastekin/src/closet-taxonomy.ts` mirrors the backend's
+  exact tokens (`itemType`, `primaryColor`, `style`, `occasion`, `season`)
+  with English display labels kept structurally separate from the stored
+  values — no Arabic labels yet on these two screens.
+- No new CSS — reuses `approved-grid`/`approved-grid-card`,
+  `image-uploader`/`no-photo-uploader`, `profile-interests` chip buttons,
+  `admin-confirm-actions`/`admin-detail-actions`, and `nested-details`.
+- See `artifacts/tastekin/e2e/my-things.spec.ts` (12 tests) for regression
+  coverage: flag gating, the guard, empty/populated grid, the image route
+  with no object-key leakage (including a simulated backend leak), file
+  validation, required-field gating, the full upload/create/confirm
+  sequence and both its retry paths, duplicate-submit prevention, and
+  200/202 delete handling.
+
+**Not verified — manual device gate, still open (see "Next session
+focus" above):** real iPhone camera and Photos-library upload, and a real
+HEIC file on an actual device. Safari's known empty-`file.type` quirk for
+HEIC is handled in code but has only been exercised with synthetic bytes
+in Playwright, never a real device. `my_things` remains disabled in
+production pending this.
 
 ## Subscription / billing — UI only, not wired up
 
@@ -559,3 +656,12 @@ not inherit the Workspace's own secrets — `DATABASE_URL` (provisioned
 automatically for the dev workspace via the `postgresql-16` module) must be
 explicitly added to the deployment's own Secrets panel, separately from
 Workspace Secrets.
+
+**Replit-agent gotcha confirmed in the My Things PR-2 session:** the
+Replit agent's own connection to the production database is read-only —
+it cannot run `admin:grant --prod`, `admin:revoke --prod`, or any other
+write against production from inside an agent session. Production writes
+(like granting `is_admin`) need either the Replit SQL editor directly, or
+running the script from a machine with a writable `PROD_DB_URL` — and the
+SQL editor is impractical from the mobile app, so this effectively
+requires a desktop.
