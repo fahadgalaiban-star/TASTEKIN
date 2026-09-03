@@ -30,7 +30,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
   },
   {
     key: "my_things",
-    description: "Private per-user closet (My Things): create, view, and manage private closet items with photos. Backend/API foundation only in this release — no user-facing UI yet.",
+    description: "Private per-user closet (My Things): a My Things screen under You where members photograph, tag (item type, primary color, optional style/occasion/season/brand), view, and delete their own private closet items. Fully gates both the API and the UI when disabled.",
     defaultEnabled: false,
   },
 ] as const;

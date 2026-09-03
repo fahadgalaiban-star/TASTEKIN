@@ -120,6 +120,19 @@ test('populated grid renders items via the authorized image route and never expo
   expect(html).not.toContain('imageObjectKey');
 });
 
+test('populated grid renders an item whose style is null without error (PR-3: style is optional server-side)', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ ...SAMPLE_ITEM, style: null }] }) });
+    }
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+});
+
 test('delete: 200 completed and 202 pending are both treated as removed', async ({ page }) => {
   await mockMe(page, { myThings: true });
   const items = [{ ...SAMPLE_ITEM, id: 'item-completed' }, { ...SAMPLE_ITEM, id: 'item-pending' }];
@@ -179,7 +192,7 @@ test('Add item: file type and size validation reject before any upload', async (
   expect(uploadCalls).toHaveLength(0);
 });
 
-test('Add item: Confirm & Add stays disabled until a photo and all required fields are chosen', async ({ page }) => {
+test('Add item: Confirm & Add stays disabled until a photo, item type, and primary color are chosen — style is not required', async ({ page }) => {
   await gotoAddScreen(page);
   const submit = page.getByTestId('my-things-submit');
   await expect(submit).toBeDisabled();
@@ -190,7 +203,21 @@ test('Add item: Confirm & Add stays disabled until a photo and all required fiel
   await page.getByRole('button', { name: 'Shirt', exact: true }).click();
   await expect(submit).toBeDisabled();
   await page.getByRole('button', { name: 'Blue', exact: true }).click();
-  await expect(submit).toBeDisabled();
+  // As of PR-3, style is optional (moved into "Optional details") — the
+  // button must already be enabled here, without ever touching style.
+  await expect(submit).toBeEnabled();
+});
+
+test('Add item: style remains available but optional inside Optional details, and can be picked without blocking the others', async ({ page }) => {
+  await gotoAddScreen(page);
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await page.getByRole('button', { name: 'Shirt', exact: true }).click();
+  await page.getByRole('button', { name: 'Blue', exact: true }).click();
+  const submit = page.getByTestId('my-things-submit');
+  await expect(submit).toBeEnabled();
+
+  await page.getByText('Optional details', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Casual', exact: true }).click();
   await expect(submit).toBeEnabled();
 });
@@ -199,7 +226,6 @@ async function fillRequiredFields(page: Page) {
   await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
   await page.getByRole('button', { name: 'Shirt', exact: true }).click();
   await page.getByRole('button', { name: 'Blue', exact: true }).click();
-  await page.getByRole('button', { name: 'Casual', exact: true }).click();
 }
 
 test('Add item: the full upload -> create -> confirm sequence runs in order with the right payloads', async ({ page }) => {
@@ -209,17 +235,21 @@ test('Add item: the full upload -> create -> confirm sequence runs in order with
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() !== 'POST') return;
     calls.push('create');
-    const body = route.request().postDataJSON() as { uploadId: string; confirmationStatus?: string };
+    const body = route.request().postDataJSON() as { uploadId: string; confirmationStatus?: string; style?: string };
     expect(body.uploadId).toBe('up-1');
     expect(body.confirmationStatus).toBeUndefined();
+    // style was never selected (fillRequiredFields only picks item type and
+    // color) — it must be entirely absent from the body, never a fallback.
+    expect(body.style).toBeUndefined();
     await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', confirmationStatus: 'pending_review' }) });
   });
   await page.route('**/api/closet-items/item-1', async (route) => {
     if (route.request().method() !== 'PUT') return;
     calls.push('confirm');
-    const body = route.request().postDataJSON() as { confirmationStatus: string; itemType: string };
+    const body = route.request().postDataJSON() as { confirmationStatus: string; itemType: string; style?: string };
     expect(body.confirmationStatus).toBe('confirmed');
     expect(body.itemType).toBe('shirt');
+    expect(body.style).toBeUndefined();
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', confirmationStatus: 'confirmed' }) });
   });
 
