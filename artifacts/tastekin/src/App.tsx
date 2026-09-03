@@ -2506,7 +2506,7 @@ type ClosetItem = {
   id: string;
   itemType: string;
   primaryColor: string;
-  style: string;
+  style: string | null;
   occasion: string | null;
   season: string | null;
   brand: string | null;
@@ -2677,7 +2677,8 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     return payload.uploadId;
   };
   const closetItemFields = () => ({
-    itemType, primaryColor, style,
+    itemType, primaryColor,
+    style: style || undefined,
     occasion: occasion || undefined,
     season: season || undefined,
     brand: brand.trim() ? brand.trim().slice(0, CLOSET_MAX_BRAND_LENGTH) : undefined,
@@ -2725,7 +2726,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     }
   };
 
-  const requiredFieldsChosen = Boolean(itemType && primaryColor && style);
+  const requiredFieldsChosen = Boolean(itemType && primaryColor);
   const submitDisabled = phase !== 'idle' || !requiredFieldsChosen || (!file && !uploadId);
   const submitLabel = phase === 'uploading' ? t('Uploading photo…', 'جارٍ رفع الصورة…')
     : phase === 'creating' ? t('Saving item…', 'جارٍ حفظ الغرض…')
@@ -2748,9 +2749,9 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
 
     <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={setItemType} disabled={fieldsLocked} />
     <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={setPrimaryColor} disabled={fieldsLocked} />
-    <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={setStyle} disabled={fieldsLocked} />
 
     <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
+      <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={(next) => setStyle(next === style ? '' : next)} disabled={fieldsLocked} />
       <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={(next) => setOccasion(next === occasion ? '' : next)} disabled={fieldsLocked} />
       <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={(next) => setSeason(next === season ? '' : next)} disabled={fieldsLocked} />
       <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={fieldsLocked} placeholder={t('Optional', 'اختياري')} /></label>

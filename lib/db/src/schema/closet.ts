@@ -60,7 +60,11 @@ export const closetItems = pgTable("closet_items", {
   imageObjectKey: text("image_object_key").notNull(),
   itemType: text("item_type").notNull(),
   primaryColor: text("primary_color").notNull(),
-  style: text("style").notNull(),
+  // Nullable as of PR-3: style may describe an outfit/context rather than
+  // an intrinsic property of one clothing item, so unlike itemType/
+  // primaryColor it is optional — absent/null, never a fake fallback like
+  // "casual" when unknown.
+  style: text("style"),
   occasion: text("occasion"),
   season: text("season"),
   brand: text("brand"),

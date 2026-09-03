@@ -380,6 +380,65 @@ async function main() {
       assert.equal(item.brand, null);
     });
 
+    // --- PR-3: style is optional — itemType and primaryColor remain
+    // required. A missing or explicit-null style must succeed and
+    // serialize as null; an invalid non-null style must still 400; a
+    // fake fallback (e.g. "casual", "unknown", "unspecified") must never
+    // be silently inserted in its place. ---
+    await check("create succeeds with style entirely absent from the body, and serializes as style: null", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black" });
+      await expectStatus(response, 201);
+      const item = await response.json() as { style: unknown };
+      assert.equal(item.style, null, "style must be null, never a fallback token, when omitted");
+    });
+    await check("create succeeds with style explicitly null, and serializes as style: null", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", style: null });
+      await expectStatus(response, 201);
+      const item = await response.json() as { style: unknown };
+      assert.equal(item.style, null);
+    });
+    await check("create still succeeds with a valid non-null style, unchanged from before PR-3", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", style: "formal" });
+      await expectStatus(response, 201);
+      const item = await response.json() as { style: unknown };
+      assert.equal(item.style, "formal");
+    });
+    await check("create still rejects an invalid non-null style with 400", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", style: "spaceship" });
+      assert.equal(response.status, 400);
+    });
+    await check("itemType and primaryColor remain required: omitting itemType is still rejected with 400 even though style is optional", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { primaryColor: "black" });
+      assert.equal(response.status, 400);
+    });
+    await check("PUT can null out an existing style by omitting it (full-replace semantics, same as occasion/season)", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const created = await (await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", style: "formal" })).json() as { id: string; style: unknown };
+      assert.equal(created.style, "formal");
+      const updateResponse = await userA.updateItem(created.id, { itemType: "shirt", primaryColor: "black" });
+      await expectStatus(updateResponse, 200);
+      const updated = await updateResponse.json() as { style: unknown };
+      assert.equal(updated.style, null, "omitting style on a full-replace PUT must null it out, not preserve the old value");
+    });
+    await check("PUT still rejects an invalid non-null style with 400", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const created = await (await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", style: "formal" })).json() as { id: string };
+      const response = await userA.updateItem(created.id, { itemType: "shirt", primaryColor: "black", style: "spaceship" });
+      assert.equal(response.status, 400);
+    });
+
     // --- 5. CRUD, list, read ---
     await check("GET /closet-items lists only the caller's own items", async () => {
       const response = await userA.listItems();

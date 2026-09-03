@@ -1,0 +1,1 @@
+ALTER TABLE "closet_items" ALTER COLUMN "style" DROP NOT NULL;

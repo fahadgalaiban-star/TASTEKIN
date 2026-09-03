@@ -52,26 +52,35 @@ export function normalizeBrand(value: unknown): string | null {
 export type ClosetItemFields = {
   itemType: ClosetItemType;
   primaryColor: ClosetPrimaryColor;
-  style: ClosetStyle;
+  style: ClosetStyle | null;
   occasion: ClosetOccasion | null;
   season: ClosetSeason | null;
   brand: string | null;
 };
 
-/** Validates the create/update body's organized fields. Returns null on any violation. */
+/**
+ * Validates the create/update body's organized fields. Returns null on any
+ * violation. itemType and primaryColor remain required — style may
+ * describe an outfit/context rather than an intrinsic property of one
+ * clothing item, so (as of PR-3) it follows the same absent/null-allowed
+ * pattern as occasion/season: omitted or explicit null is valid, but a
+ * non-null value must still be a real taxonomy token. There is no
+ * fallback token (no "casual", no "unknown", no "unspecified") — the only
+ * honest way to represent "not supplied" is SQL NULL.
+ */
 export function validateClosetItemFields(body: unknown): ClosetItemFields | null {
   if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
   if (!isClosetItemType(record.itemType)) return null;
   if (!isClosetPrimaryColor(record.primaryColor)) return null;
-  if (!isClosetStyle(record.style)) return null;
+  if (record.style !== undefined && record.style !== null && !isClosetStyle(record.style)) return null;
   if (record.occasion !== undefined && record.occasion !== null && !isClosetOccasion(record.occasion)) return null;
   if (record.season !== undefined && record.season !== null && !isClosetSeason(record.season)) return null;
   if (record.brand !== undefined && record.brand !== null && typeof record.brand !== "string") return null;
   return {
     itemType: record.itemType,
     primaryColor: record.primaryColor,
-    style: record.style,
+    style: (record.style as ClosetStyle | null | undefined) ?? null,
     occasion: (record.occasion as ClosetOccasion | null | undefined) ?? null,
     season: (record.season as ClosetSeason | null | undefined) ?? null,
     brand: normalizeBrand(record.brand),
