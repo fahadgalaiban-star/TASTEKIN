@@ -318,7 +318,8 @@ async function creatorPage(browser: Browser, api: PrivateCropApi) {
   const page = await context.newPage();
   await api.attach(page);
   await page.goto('/');
-  await page.getByTestId('nav-add').click();
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-creator-workspace').click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   return { context, page };
 }
@@ -374,7 +375,8 @@ test('an authenticated creator persists each exact canonical crop format after p
   expect(api.workspace.edits.find((edit) => edit.title === 'portrait crop survives refresh')).toMatchObject({ sourceImage: api.objectPaths[0], image: api.objectPaths[1], previewImage: api.objectPaths[2] });
 
   await page.reload();
-  await page.getByTestId('nav-add').click();
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-creator-workspace').click();
   await expect(page.getByText('portrait crop survives refresh')).toBeVisible();
   await expect(page.getByText('square crop survives refresh')).toBeVisible();
   await expect(page.getByText('story crop survives refresh')).toBeVisible();
@@ -393,7 +395,8 @@ test('anonymous visitors receive only a locked crop preview and cannot retrieve 
   expect(api.objectPaths.every((path) => api.uploadedPaths.has(path))).toBe(true);
 
   await owner.page.reload();
-  await owner.page.getByTestId('nav-add').click();
+  await owner.page.getByTestId('nav-you').click();
+  await owner.page.getByTestId('open-creator-workspace').click();
   await expect(owner.page.getByText('Locked crop stays private')).toBeVisible();
 
   const visitorContext = await browser.newContext();
@@ -459,7 +462,8 @@ test('creator profile photo, private birthday, and public age settings persist w
   });
   expect(api.profile.avatarObjectPath).toBeTruthy();
 
-  await page.getByTestId('nav-add').click();
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-creator-workspace').click();
   await page.getByRole('button', { name: 'Archive' }).click();
   await expect.poll(() => api.workspace.edits[0]?.status).toBe('archived');
 

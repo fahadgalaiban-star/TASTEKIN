@@ -5,6 +5,7 @@ export * from "./closet";
 export * from "./creator-workspaces";
 export * from "./engagement";
 export * from "./feature-flags";
+export * from "./kin";
 export * from "./moderation";
 export * from "./mutes";
 export * from "./taste-preferences";

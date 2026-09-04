@@ -14,6 +14,7 @@ import mutesRouter from "./mutes";
 import featureFlagsRouter from "./feature-flags";
 import analyticsRouter from "./analytics";
 import closetItemsRouter from "./closet-items";
+import kinRouter from "./kin";
 
 const router: IRouter = Router();
 
@@ -32,5 +33,6 @@ router.use(mutesRouter);
 router.use(featureFlagsRouter);
 router.use(analyticsRouter);
 router.use(closetItemsRouter);
+router.use(kinRouter);
 
 export default router;

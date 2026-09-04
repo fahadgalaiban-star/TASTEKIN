@@ -20,6 +20,7 @@
     "verify:analytics": "tsx ./src/verify-analytics.ts",
     "verify:my-things": "tsx ./src/verify-my-things.ts",
     "verify:closet-analysis": "tsx ./src/verify-closet-analysis.ts",
+    "verify:kin-search": "tsx ./src/verify-kin-search.ts",
     "reconcile:closet-media": "tsx ./src/reconcile-closet-media.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

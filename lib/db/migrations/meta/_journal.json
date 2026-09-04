@@ -85,6 +85,13 @@
       "when": 1788400000000,
       "tag": "0011_closet_analysis_attempted_at",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788410000000,
+      "tag": "0012_kin_search_usage",
+      "breakpoints": true
     }
   ]
 }

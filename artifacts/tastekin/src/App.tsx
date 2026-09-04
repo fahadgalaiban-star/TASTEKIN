@@ -26,7 +26,7 @@ type Language = 'en' | 'ar';
 const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
 type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
-type Screen = 'home' | 'explore' | 'add' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'adminFeatureFlags' | 'adminAnalytics' | 'blockedAccounts' | 'mutedAccounts' | 'settings' | 'auth' | 'onboarding' | 'myThings' | 'myThingsAdd' | 'myThingsEdit';
+type Screen = 'home' | 'explore' | 'add' | 'kin' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'adminFeatureFlags' | 'adminAnalytics' | 'blockedAccounts' | 'mutedAccounts' | 'settings' | 'auth' | 'onboarding' | 'myThings' | 'myThingsAdd' | 'myThingsEdit';
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'subscribed';
@@ -922,11 +922,11 @@ function TastekinApp() {
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
   const goBack = () => {
     if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
-    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'settings' ? settingsReturnScreenRef.current : screen === 'myThingsAdd' || screen === 'myThingsEdit' ? 'myThings' : screen === 'myThings' ? 'you' : 'home');
+    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'add' ? 'you' : screen === 'settings' ? settingsReturnScreenRef.current : screen === 'myThingsAdd' || screen === 'myThingsEdit' ? 'myThings' : screen === 'myThings' ? 'you' : 'home');
   };
-  const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'add' as const, icon: PlusCircle, en: 'Add', ar: 'إضافة' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
+  const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'kin' as const, icon: Link2, en: 'KIN', ar: 'كين' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
-    <header className="approved-topbar">{!['home', 'you', 'add', 'onboarding'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
+    <header className="approved-topbar">{!['home', 'you', 'kin', 'onboarding'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
@@ -934,11 +934,12 @@ function TastekinApp() {
     {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
+    {screen === 'kin' && <KinScreen ar={ar} onUnavailable={() => go('you')} />}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
-    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
+    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('add')}>{t('Creator workspace', 'مساحة المبدع')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} subscribed={subscribed} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onSubscribe={() => { if (publicProfileViewer && viewedCreatorProfile.verified) go('subscribe'); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} />}
@@ -2516,6 +2517,167 @@ type ClosetItem = {
   confirmationStatus: 'confirmed' | 'pending_review';
   createdAt: string;
 };
+
+// KIN search — shared with the api-server contract in
+// artifacts/api-server/src/lib/kin-search.ts. price/currency/imageUrl are
+// always present on a result card (for the Looks/Travel PRs that will
+// populate them) but this PR's server never invents them — they arrive
+// null until a dedicated extraction step exists, and the UI falls back to
+// the branded placeholder image rather than ever fabricating one.
+type KinMode = 'looks' | 'travel';
+type KinCitation = { title: string | null; url: string };
+type KinResultCard = { title: string; source: string; url: string; price: number | null; currency: string | null; imageUrl: string | null };
+type KinSearchResponse =
+  | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[] }
+  | { status: 'unavailable'; reason: string };
+
+/**
+ * The KIN entry experience: a natural-language request, optional context
+ * (an existing My Things item, location, budget, size/occasion, or a
+ * travel destination/dates), and a live-search-grounded answer with
+ * citations. This is the shared foundation KIN Looks and KIN Travel build
+ * on next — this PR renders the request form and the normalized answer/
+ * results, not a full itinerary or outfit-builder UI.
+ */
+function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const allowed = session.status === 'authenticated' && session.featureFlags.kin_search === true;
+  useEffect(() => {
+    if (session.status !== 'loading' && !allowed) onUnavailable();
+  }, [session.status, allowed, onUnavailable]);
+
+  const [mode, setMode] = useState<KinMode>('looks');
+  const [query, setQuery] = useState('');
+  const [myThingsItems, setMyThingsItems] = useState<ClosetItem[]>([]);
+  const [selectedItemId, setSelectedItemId] = useState('');
+  const [location, setLocation] = useState('');
+  const [budget, setBudget] = useState('');
+  const [currency, setCurrency] = useState('USD');
+  const [size, setSize] = useState('');
+  const [occasion, setOccasion] = useState('');
+  const [destination, setDestination] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error'>('idle');
+  const [errorMessage, setErrorMessage] = useState('');
+  const [result, setResult] = useState<KinSearchResponse | null>(null);
+
+  const myThingsEnabled = session.featureFlags.my_things === true;
+  useEffect(() => {
+    if (!allowed || !myThingsEnabled) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch('/api/closet-items', { credentials: 'include', cache: 'no-store' });
+        if (!response.ok || cancelled) return;
+        const payload = await response.json() as { items: ClosetItem[] };
+        if (!cancelled) setMyThingsItems(payload.items);
+      } catch {
+        // The item picker is optional context — a failure to load it never blocks the rest of the screen.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [allowed, myThingsEnabled]);
+
+  if (!allowed) return <SimpleScreen kicker="KIN" title="KIN"><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
+
+  const submit = async () => {
+    const trimmed = query.trim();
+    if (!trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
+    setState('loading'); setErrorMessage(''); setResult(null);
+    try {
+      const body: Record<string, unknown> = { mode, query: trimmed };
+      if (selectedItemId) body.myThingsItemId = selectedItemId;
+      if (location.trim()) body.location = location.trim();
+      if (budget.trim()) body.budget = Number(budget);
+      if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
+      if (size.trim()) body.size = size.trim();
+      if (occasion.trim()) body.occasion = occasion.trim();
+      if (mode === 'travel' && destination.trim()) body.destination = destination.trim();
+      if (mode === 'travel' && startDate) body.startDate = startDate;
+      if (mode === 'travel' && endDate) body.endDate = endDate;
+
+      const response = await fetch('/api/kin/search', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json() as KinSearchResponse;
+      setResult(payload);
+      if (payload.status !== 'ok') setState('unavailable');
+      else setState(payload.answer.trim() || payload.results.length ? 'ready' : 'empty');
+    } catch (err) {
+      setErrorMessage(err instanceof Error ? err.message : String(err));
+      setState('error');
+    }
+  };
+
+  return <SimpleScreen kicker="KIN" title={t('Ask KIN anything.', 'اسأل كين عن أي شيء.')}>
+    <p>{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
+
+    <div className="profile-interests" style={{ marginTop: 4 }}>
+      <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => setMode('looks')}>{t('Looks', 'الإطلالات')}</button>
+      <button type="button" data-testid="kin-mode-travel" className={mode === 'travel' ? 'selected' : ''} onClick={() => setMode('travel')}>{t('Travel', 'السفر')}</button>
+    </div>
+
+    <label className="form-field"><span>{t('What do you need?', 'ماذا تحتاج؟')}</span>
+      <textarea data-testid="kin-query" rows={3} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 2000))}
+        placeholder={mode === 'looks' ? t('e.g. a dinner outfit in Paris, 14°C, smart casual', 'مثال: إطلالة عشاء في باريس، ١٤°م، أنيقة غير رسمية') : t('e.g. 4 days in Paris, slow mornings, great food', 'مثال: ٤ أيام في باريس، صباحات هادئة، طعام رائع')} />
+    </label>
+
+    {myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
+      <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)}>
+        <option value="">{t('None', 'بلا')}</option>
+        {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
+      </select>
+    </label>}
+
+    <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
+      <label className="form-field"><span>{t('Location / country', 'الموقع / الدولة')}</span><input data-testid="kin-location" type="text" value={location} onChange={(event) => setLocation(event.target.value.slice(0, 200))} /></label>
+      <div className="form-two">
+        <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
+        <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
+      </div>
+      {mode === 'looks' && <label className="form-field"><span>{t('Size', 'المقاس')}</span><input data-testid="kin-size" type="text" value={size} onChange={(event) => setSize(event.target.value.slice(0, 50))} /></label>}
+      <label className="form-field"><span>{t('Occasion', 'المناسبة')}</span><input data-testid="kin-occasion" type="text" value={occasion} onChange={(event) => setOccasion(event.target.value.slice(0, 200))} /></label>
+      {mode === 'travel' && <>
+        <label className="form-field"><span>{t('Destination', 'الوجهة')}</span><input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))} /></label>
+        <div className="form-two">
+          <label className="form-field"><span>{t('Start date', 'تاريخ البدء')}</span><input data-testid="kin-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+          <label className="form-field"><span>{t('End date', 'تاريخ الانتهاء')}</span><input data-testid="kin-end-date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+        </div>
+      </>}
+    </div></details>
+
+    {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
+
+    <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
+      {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Ask KIN', 'اسأل كين')}
+    </button>
+
+    {state === 'loading' && <p className="settings-note" data-testid="kin-loading">{t('KIN is searching the web…', 'كين يبحث على الويب…')}</p>}
+
+    {state === 'unavailable' && <div className="workspace-notice" role="alert" data-testid="kin-unavailable">{t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}</div>}
+
+    {state === 'empty' && <Empty text={t('No results yet — try rephrasing your request.', 'لا نتائج بعد — حاول إعادة صياغة طلبك.')} />}
+
+    {state === 'ready' && result && result.status === 'ok' && <div className="approved-panel" data-testid="kin-answer">
+      <p style={{ whiteSpace: 'pre-wrap' }}>{result.answer}</p>
+      {result.citations.length > 0 && <div data-testid="kin-citations">
+        <span className="form-label">{t('Sources', 'المصادر')}</span>
+        <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
+          {result.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
+        </ul>
+      </div>}
+    </div>}
+
+    {state === 'ready' && result && result.status === 'ok' && result.results.length > 0 && <div className="approved-grid" data-testid="kin-results">
+      {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
+        <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
+        <strong>{card.title}</strong>
+        <span>{card.source}{card.price !== null && card.currency ? ` · ${card.currency} ${card.price}` : ''}</span>
+      </a>)}
+    </div>}
+  </SimpleScreen>;
+}
 
 /**
  * My Things (KIN) — the signed-in user's private closet. Images are never
