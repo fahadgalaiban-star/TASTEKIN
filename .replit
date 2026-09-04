@@ -4,7 +4,7 @@ modules = ["nodejs-24", "python-base-3.13", "postgresql-16"]
 router = "application"
 deploymentTarget = "autoscale"
 build = ["sh", "-c", "pnpm install --frozen-lockfile && pnpm run build"]
-run = ["sh", "-c", "node artifacts/api-server/dist/index.mjs"]
+run = ["sh", "-c", "RUN_MIGRATIONS_ON_BOOT=true node artifacts/api-server/dist/index.mjs"]
 
 [deployment.postBuild]
 args = ["pnpm", "store", "prune"]
