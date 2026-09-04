@@ -409,16 +409,55 @@ async function main() {
       assert.ok(!lastAnthropicRequestBody.toLowerCase().includes("filename"), "provider payload must never reference a filename");
     });
 
-    // --- rate limiting: in-memory soft limit, 5/hour per user+upload ---
-    await check("analysis soft limit: 5 attempts/hour per upload allowed, the 6th is rejected with 429", async () => {
+    // --- durable rate limiting: at most one analysis attempt per upload,
+    // enforced in the database (closet_media_uploads.analysis_attempted_at),
+    // not in process memory. ---
+    await check("first analysis of an upload reaches the fake provider", async () => {
       fakeAnthropicMode = { kind: "ok", suggestions: FULL_CONFIDENCE_SUGGESTIONS };
       const uploadId = await freshUpload(userA);
-      const statuses: number[] = [];
-      for (let i = 0; i < 5; i += 1) statuses.push((await userA.analyze(uploadId)).status);
-      assert.ok(statuses.every((status) => status === 200), `expected all 5 to succeed, got ${statuses.join(",")}`);
-      const requestsBeforeSixth = anthropicRequestCount;
-      assert.equal((await userA.analyze(uploadId)).status, 429);
-      assert.equal(anthropicRequestCount, requestsBeforeSixth, "a soft-limited attempt must never reach the provider");
+      const before = anthropicRequestCount;
+      await expectStatus(await userA.analyze(uploadId), 200);
+      assert.equal(anthropicRequestCount, before + 1, "the first analysis attempt must reach the provider");
+      const [row] = await db.select().from(closetMediaUploads).where(eq(closetMediaUploads.id, uploadId));
+      assert.ok(row.analysisAttemptedAt !== null, "analysis_attempted_at must be set durably after the attempt");
+    });
+    await check("second analysis of the same upload returns 429 without reaching the provider", async () => {
+      fakeAnthropicMode = { kind: "ok", suggestions: FULL_CONFIDENCE_SUGGESTIONS };
+      const uploadId = await freshUpload(userA);
+      await expectStatus(await userA.analyze(uploadId), 200);
+      const before = anthropicRequestCount;
+      const second = await userA.analyze(uploadId);
+      assert.equal(second.status, 429);
+      assert.equal(anthropicRequestCount, before, "a second attempt for an already-analyzed upload must never reach the provider");
+    });
+    await check("a timeout on the first attempt still permanently consumes it: a retry on the same upload is 429", async () => {
+      fakeAnthropicMode = { kind: "timeout" };
+      const uploadId = await freshUpload(userA);
+      await expectStatus(await userA.analyze(uploadId), 200); // { suggestions: null } after the hard timeout
+      fakeAnthropicMode = { kind: "ok", suggestions: FULL_CONFIDENCE_SUGGESTIONS };
+      const before = anthropicRequestCount;
+      const retry = await userA.analyze(uploadId);
+      assert.equal(retry.status, 429, "provider cost was already spent on the timed-out attempt, so a retry must not be allowed");
+      assert.equal(anthropicRequestCount, before, "the disallowed retry must never reach the provider");
+    });
+    await check("a provider failure on the first attempt still permanently consumes it: a retry on the same upload is 429", async () => {
+      fakeAnthropicMode = { kind: "http_error", status: 500 };
+      const uploadId = await freshUpload(userA);
+      await expectStatus(await userA.analyze(uploadId), 200);
+      fakeAnthropicMode = { kind: "ok", suggestions: FULL_CONFIDENCE_SUGGESTIONS };
+      const retry = await userA.analyze(uploadId);
+      assert.equal(retry.status, 429, "provider cost was already spent on the failed attempt, so a retry must not be allowed");
+    });
+    await check("concurrent analysis requests for the same upload result in exactly one provider call", async () => {
+      fakeAnthropicMode = { kind: "ok", suggestions: FULL_CONFIDENCE_SUGGESTIONS };
+      const uploadId = await freshUpload(userA);
+      const before = anthropicRequestCount;
+      const statuses = await Promise.all(Array.from({ length: 10 }, () => userA.analyze(uploadId).then((r) => r.status)));
+      const okCount = statuses.filter((s) => s === 200).length;
+      const rateLimitedCount = statuses.filter((s) => s === 429).length;
+      assert.equal(okCount, 1, `expected exactly one 200 among concurrent requests, got statuses: ${statuses.join(",")}`);
+      assert.equal(rateLimitedCount, 9, `expected exactly nine 429s among concurrent requests, got statuses: ${statuses.join(",")}`);
+      assert.equal(anthropicRequestCount, before + 1, "concurrent requests for the same upload must reach the provider exactly once");
     });
 
     // --- missing API key: server never crashes, always degrades gracefully ---

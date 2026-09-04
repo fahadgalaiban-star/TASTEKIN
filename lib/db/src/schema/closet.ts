@@ -124,6 +124,15 @@ export const closetMediaUploads = pgTable("closet_media_uploads", {
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   cleanupLeaseUntil: timestamp("cleanup_lease_until", { withTimezone: true }),
   cleanupClaimToken: uuid("cleanup_claim_token"),
+  // Durable, one-shot gate for closet_item_analysis (see
+  // reserveAnalysisAttempt in closet-media-upload.ts): null means no
+  // analysis attempt has been made yet for this upload; set the instant an
+  // attempt is reserved (before the provider is ever called), regardless
+  // of whether that attempt goes on to succeed, fail, or time out. Never
+  // cleared, so at most one analysis attempt can ever be reserved per
+  // upload — no image content, suggestions, or provider response is
+  // stored, only the fact that an attempt happened and when.
+  analysisAttemptedAt: timestamp("analysis_attempted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [
