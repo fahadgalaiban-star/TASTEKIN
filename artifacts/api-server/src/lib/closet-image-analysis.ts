@@ -212,35 +212,3 @@ export async function analyzeClosetImage(imageBuffer: Buffer): Promise<AnalyzeCl
     return { status: "unavailable", reason: sanitizeErrorReason("analysis request failed", error) };
   }
 }
-
-// --- in-memory (non-durable) soft limiter -----------------------------------
-//
-// Resets on restart and is not shared across server instances — a
-// deliberate stopgap, not a durable rate limit. The existing durable
-// 30/hour upload limit (closet_media_uploads) remains the real outer
-// bound on how many images exist to analyze per hour. Keep
-// closet_item_analysis OFF in production until a durable per-user
-// limiter (a small, separately-approved follow-up) replaces this.
-
-const ANALYSIS_SOFT_LIMIT_MAX = 5;
-const ANALYSIS_SOFT_LIMIT_WINDOW_MS = 60 * 60 * 1000;
-const analysisAttemptCounts = new Map<string, { count: number; windowStart: number }>();
-
-/** Returns false when the caller has exceeded the soft limit for this owner+upload pair. */
-export function reserveAnalysisAttempt(ownerUserId: string, uploadId: string): boolean {
-  const key = `${ownerUserId}:${uploadId}`;
-  const now = Date.now();
-  const entry = analysisAttemptCounts.get(key);
-  if (!entry || now - entry.windowStart > ANALYSIS_SOFT_LIMIT_WINDOW_MS) {
-    analysisAttemptCounts.set(key, { count: 1, windowStart: now });
-    return true;
-  }
-  if (entry.count >= ANALYSIS_SOFT_LIMIT_MAX) return false;
-  entry.count += 1;
-  return true;
-}
-
-/** Test-only: clears the in-memory limiter state between test cases. */
-export function resetAnalysisRateLimitForTests(): void {
-  analysisAttemptCounts.clear();
-}

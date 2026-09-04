@@ -35,7 +35,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
   },
   {
     key: "closet_item_analysis",
-    description: "Automatic clothing-photo analysis in My Things' Add Item: after uploading a photo, suggests item type, primary color, style, occasion, and season via Claude, always shown as editable pre-fills the member must review before saving — never auto-created or auto-saved. Requires my_things to also be enabled. Only an in-memory (non-durable) limit protects against repeated analysis calls per upload, so this must stay off in production until a durable limiter is added.",
+    description: "Automatic clothing-photo analysis in My Things' Add Item: after uploading a photo, suggests item type, primary color, style, occasion, and season via Claude, always shown as editable pre-fills the member must review before saving — never auto-created or auto-saved. Requires my_things to also be enabled. Each upload may be analyzed at most once, enforced durably in the database (closet_media_uploads.analysis_attempted_at).",
     defaultEnabled: false,
   },
 ] as const;

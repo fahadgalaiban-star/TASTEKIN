@@ -10,11 +10,11 @@ import {
 import {
   analyzeClosetImage,
   publicClosetSuggestions,
-  reserveAnalysisAttempt,
 } from "../lib/closet-image-analysis";
 import {
   MAX_UPLOAD_BYTES,
   decodeAndReencodeClosetImage,
+  reserveAnalysisAttempt,
   reserveUploadAttempt,
   sanitizeErrorReason,
   transitionMediaUpload,
@@ -156,29 +156,31 @@ router.post(
  * field falling below the confidence threshold all collapse to the same
  * "no suggestions" shape so the client has exactly one case to handle
  * beyond the existing manual flow it already falls back to.
+ *
+ * At most one analysis attempt is ever allowed per upload — reserved
+ * durably and atomically (reserveAnalysisAttempt) before this touches
+ * storage or the provider, so a second request for the same upload always
+ * gets 429 without ever reaching Anthropic, and a provider failure or
+ * timeout still permanently consumes the one allowed attempt.
  */
 router.post("/closet-items/media/:uploadId/analyze", requireUserMw, myThingsFlagMw, closetAnalysisFlagMw, async (req, res) => {
   const user = req.user!;
   const uploadId = String(req.params.uploadId);
   if (!UUID_RE.test(uploadId)) { res.status(404).json({ error: "Upload not found" }); return; }
 
-  if (!reserveAnalysisAttempt(user.id, uploadId)) {
-    res.status(429).json({ error: "Too many analysis attempts for this photo. Try again later." });
+  const reservation = await reserveAnalysisAttempt(uploadId, user.id);
+  if (reservation.status === "already_attempted") {
+    res.status(429).json({ error: "This photo has already been analyzed." });
     return;
   }
-
-  const [upload] = await db
-    .select({ imageObjectKey: closetMediaUploads.imageObjectKey, state: closetMediaUploads.state })
-    .from(closetMediaUploads)
-    .where(and(eq(closetMediaUploads.id, uploadId), eq(closetMediaUploads.ownerUserId, user.id)));
-  if (!upload || upload.state !== "uploaded" || !upload.imageObjectKey) {
+  if (reservation.status === "not_found") {
     res.status(404).json({ error: "Upload not found" });
     return;
   }
 
   let imageBuffer: Buffer;
   try {
-    const signedUrl = await getClosetMediaDownloadURL(upload.imageObjectKey);
+    const signedUrl = await getClosetMediaDownloadURL(reservation.imageObjectKey);
     const stored = await fetch(signedUrl, { signal: AbortSignal.timeout(10_000) });
     if (!stored.ok) throw new Error(`HTTP ${stored.status}`);
     imageBuffer = Buffer.from(await stored.arrayBuffer());

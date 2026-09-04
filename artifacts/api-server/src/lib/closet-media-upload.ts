@@ -1,5 +1,5 @@
 import { closetMediaUploads, db } from "@workspace/db";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNull, sql } from "drizzle-orm";
 import sharp from "sharp";
 
 export const UPLOAD_RATE_LIMIT_MAX = 30;
@@ -103,4 +103,53 @@ export async function transitionMediaUpload(
     .update(closetMediaUploads)
     .set(setClause)
     .where(and(eq(closetMediaUploads.id, ledgerId), eq(closetMediaUploads.ownerUserId, ownerUserId)));
+}
+
+export type ReserveAnalysisAttemptResult =
+  | { status: "reserved"; imageObjectKey: string }
+  | { status: "already_attempted" }
+  | { status: "not_found" };
+
+/**
+ * Durable, atomic one-shot gate for closet_item_analysis: at most one
+ * analysis attempt may ever be reserved per upload. The UPDATE's WHERE
+ * clause (id + owner + state "uploaded" + analysis_attempted_at IS NULL)
+ * *is* the reservation — no advisory lock is needed, unlike
+ * reserveUploadAttempt above, because this check is already scoped to a
+ * single row identified by primary key. Postgres serializes concurrent
+ * UPDATEs to the same row (the second waits for the first's row lock,
+ * then re-evaluates the WHERE predicate against the now-committed row),
+ * so two concurrent requests for the same upload can never both succeed.
+ *
+ * This reserves the slot unconditionally, before the caller ever fetches
+ * the image or calls the provider: a provider failure or timeout still
+ * spent real request cost, so it must still consume the one allowed
+ * attempt, not just a successful analysis.
+ */
+export async function reserveAnalysisAttempt(uploadId: string, ownerUserId: string): Promise<ReserveAnalysisAttemptResult> {
+  const [reserved] = await db
+    .update(closetMediaUploads)
+    .set({ analysisAttemptedAt: new Date(), updatedAt: new Date() })
+    .where(and(
+      eq(closetMediaUploads.id, uploadId),
+      eq(closetMediaUploads.ownerUserId, ownerUserId),
+      eq(closetMediaUploads.state, "uploaded"),
+      isNull(closetMediaUploads.analysisAttemptedAt),
+    ))
+    .returning({ imageObjectKey: closetMediaUploads.imageObjectKey });
+  if (reserved) {
+    // An "uploaded" row always has an image key (transitionMediaUpload sets
+    // it during the upload step) — the null check is defense in depth, not
+    // an expected path.
+    if (!reserved.imageObjectKey) return { status: "not_found" };
+    return { status: "reserved", imageObjectKey: reserved.imageObjectKey };
+  }
+  const [existing] = await db
+    .select({ state: closetMediaUploads.state, analysisAttemptedAt: closetMediaUploads.analysisAttemptedAt })
+    .from(closetMediaUploads)
+    .where(and(eq(closetMediaUploads.id, uploadId), eq(closetMediaUploads.ownerUserId, ownerUserId)));
+  if (existing && existing.state === "uploaded" && existing.analysisAttemptedAt !== null) {
+    return { status: "already_attempted" };
+  }
+  return { status: "not_found" };
 }
