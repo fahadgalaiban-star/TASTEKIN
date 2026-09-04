@@ -2624,6 +2624,18 @@ function ClosetChoiceField({ label, options, value, onSelect, disabled }: { labe
 }
 
 type ClosetSubmitPhase = 'idle' | 'uploading' | 'creating' | 'confirming';
+type ClosetTouchableField = 'itemType' | 'primaryColor' | 'style' | 'occasion' | 'season';
+// The server never sends confidence numbers over the wire — each field is
+// either the suggested value or null (already past the server-side
+// confidence threshold), so there is nothing here that could accidentally
+// be rendered.
+type ClosetSuggestions = {
+  itemType: string | null;
+  primaryColor: string | null;
+  style: string | null;
+  occasion: string | null;
+  season: string | null;
+};
 
 /**
  * Photo-first Add Item screen. There is no separate review step: this
@@ -2649,12 +2661,23 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [itemId, setItemId] = useState<string | null>(null);
   const [submitError, setSubmitError] = useState('');
+  const [touchedFields, setTouchedFields] = useState<Set<ClosetTouchableField>>(new Set());
+  const [analyzing, setAnalyzing] = useState(false);
 
   const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
+  const analysisEnabled = session.featureFlags.closet_item_analysis === true;
   useEffect(() => {
     if (session.status !== 'loading' && !allowed) onUnavailable();
   }, [session.status, allowed, onUnavailable]);
   useEffect(() => () => { if (previewUrl) URL.revokeObjectURL(previewUrl); }, [previewUrl]);
+
+  // Read inside applySuggestions via a ref so a delayed analysis response
+  // always sees the latest touched/locked state, never a stale closure —
+  // this is what guarantees a user's manual pick is never clobbered by a
+  // suggestion that resolves after they've already chosen something, and
+  // that a suggestion never lands after the item has started being created.
+  const latestGuardRef = useRef({ touchedFields, itemId, phase });
+  useEffect(() => { latestGuardRef.current = { touchedFields, itemId, phase }; });
 
   if (!allowed) return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Add item', 'أضف غرضًا')}><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
 
@@ -2671,7 +2694,64 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setFile(selected);
     setPreviewUrl(URL.createObjectURL(selected));
+    // Analysis needs the photo already uploaded (it reads the sanitized
+    // stored copy via uploadId), so when the flag is on this uploads
+    // immediately on selection rather than waiting for Confirm & Add.
+    // submit() already treats an existing uploadId as done and skips
+    // re-uploading, so this doesn't change anything about the confirm flow
+    // itself — it only moves an already-idempotent step earlier. When the
+    // flag is off this is a no-op and upload still only happens on submit,
+    // exactly as before.
+    if (analysisEnabled) void autoUploadAndAnalyze(selected);
   };
+
+  const applySuggestions = (suggestions: ClosetSuggestions | null) => {
+    if (!suggestions) return;
+    const guard = latestGuardRef.current;
+    if (guard.itemId !== null || guard.phase !== 'idle') return;
+    if (!guard.touchedFields.has('itemType') && suggestions.itemType) setItemType(suggestions.itemType);
+    if (!guard.touchedFields.has('primaryColor') && suggestions.primaryColor) setPrimaryColor(suggestions.primaryColor);
+    if (!guard.touchedFields.has('style') && suggestions.style) setStyle(suggestions.style);
+    if (!guard.touchedFields.has('occasion') && suggestions.occasion) setOccasion(suggestions.occasion);
+    if (!guard.touchedFields.has('season') && suggestions.season) setSeason(suggestions.season);
+  };
+
+  const autoUploadAndAnalyze = async (selected: File) => {
+    setPhase('uploading');
+    let newUploadId: string;
+    try {
+      newUploadId = await uploadClosetImage(selected);
+    } catch (err) {
+      setPhase('idle');
+      setPhotoError(err instanceof Error ? err.message : String(err));
+      return;
+    }
+    setUploadId(newUploadId);
+    setPhase('idle');
+    setAnalyzing(true);
+    try {
+      const response = await fetch(`/api/closet-items/media/${encodeURIComponent(newUploadId)}/analyze`, {
+        method: 'POST', credentials: 'include',
+      });
+      if (response.ok) {
+        const payload = await response.json() as { suggestions: ClosetSuggestions | null };
+        applySuggestions(payload.suggestions);
+      }
+      // A non-OK response (flag off, rate-limited, etc.) is treated the
+      // same as "no suggestions" — the manual flow underneath is already
+      // fully usable, so analysis failures never surface as an error here.
+    } catch {
+      // Network/timeout failure — same silent fall-back to manual entry.
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  const chooseItemType = (next: string) => { setTouchedFields((prev) => new Set(prev).add('itemType')); setItemType(next); };
+  const choosePrimaryColor = (next: string) => { setTouchedFields((prev) => new Set(prev).add('primaryColor')); setPrimaryColor(next); };
+  const chooseStyle = (next: string) => { setTouchedFields((prev) => new Set(prev).add('style')); setStyle(next === style ? '' : next); };
+  const chooseOccasion = (next: string) => { setTouchedFields((prev) => new Set(prev).add('occasion')); setOccasion(next === occasion ? '' : next); };
+  const chooseSeason = (next: string) => { setTouchedFields((prev) => new Set(prev).add('season')); setSeason(next === season ? '' : next); };
 
   const uploadClosetImage = async (toUpload: File): Promise<string> => {
     const response = await fetch('/api/closet-items/media', {
@@ -2751,14 +2831,15 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
       <input aria-label={t('Add a photo', 'أضف صورة')} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} disabled={photoLocked} data-testid="my-things-photo-input" />
     </label>}
     {photoError && <p className="workspace-notice" role="alert" data-testid="my-things-photo-error">{photoError}</p>}
+    {analyzing && <p className="settings-note" data-testid="my-things-analyzing">{t('Analyzing photo…', 'جارٍ تحليل الصورة…')}</p>}
 
-    <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={setItemType} disabled={fieldsLocked} />
-    <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={setPrimaryColor} disabled={fieldsLocked} />
+    <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={chooseItemType} disabled={fieldsLocked} />
+    <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={choosePrimaryColor} disabled={fieldsLocked} />
 
     <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
-      <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={(next) => setStyle(next === style ? '' : next)} disabled={fieldsLocked} />
-      <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={(next) => setOccasion(next === occasion ? '' : next)} disabled={fieldsLocked} />
-      <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={(next) => setSeason(next === season ? '' : next)} disabled={fieldsLocked} />
+      <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={chooseStyle} disabled={fieldsLocked} />
+      <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={chooseOccasion} disabled={fieldsLocked} />
+      <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={chooseSeason} disabled={fieldsLocked} />
       <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={fieldsLocked} placeholder={t('Optional', 'اختياري')} /></label>
     </div></details>
 

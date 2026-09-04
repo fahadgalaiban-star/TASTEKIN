@@ -1,8 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-type MeOptions = { authenticated?: boolean; myThings?: boolean };
+type MeOptions = { authenticated?: boolean; myThings?: boolean; closetAnalysis?: boolean };
 
-function meBody({ authenticated = true, myThings = true }: MeOptions = {}) {
+function meBody({ authenticated = true, myThings = true, closetAnalysis = false }: MeOptions = {}) {
   return JSON.stringify({
     user: authenticated ? { id: 'my-things-e2e-user', email: 'my-things-e2e@tastekin.test' } : null,
     role: 'consumer',
@@ -16,7 +16,7 @@ function meBody({ authenticated = true, myThings = true }: MeOptions = {}) {
     needsOnboarding: false,
     onboardingStep: 'done',
     googleAuthConfigured: false,
-    featureFlags: { my_things: myThings },
+    featureFlags: { my_things: myThings, closet_item_analysis: closetAnalysis },
   });
 }
 
@@ -511,4 +511,179 @@ test('Edit Item: existing delete confirmation still works alongside the new open
   await page.getByTestId('my-things-delete').click();
   await page.getByTestId('my-things-confirm-delete').click();
   await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+});
+
+// --- closet_item_analysis: automatic clothing-photo analysis ---------------
+
+async function gotoAddScreenWithAnalysis(page: Page) {
+  await mockMe(page, { myThings: true, closetAnalysis: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-add').click();
+}
+
+function occasionField(page: Page) { return page.locator('.form-field').filter({ hasText: 'Occasion' }); }
+function seasonField(page: Page) { return page.locator('.form-field').filter({ hasText: 'Season' }); }
+
+test('Add item analysis: flag off — selecting a photo never triggers an analyze call', async ({ page }) => {
+  let analyzeCalls = 0;
+  await gotoAddScreen(page); // closetAnalysis defaults to false via mockMe
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/*/analyze', async (route) => { analyzeCalls += 1; await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: null }) }); });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await page.waitForTimeout(300);
+  expect(analyzeCalls).toBe(0);
+  // The upload-on-select behavior is analysis-only — with the flag off,
+  // upload must still happen only on Confirm & Add, exactly as before.
+  await expect(page.getByText('Your photo was uploaded.', { exact: false })).toHaveCount(0);
+});
+
+test('Add item analysis: a successful response preselects the returned chips, and every chip stays tappable/clearable', async ({ page }) => {
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: 'casual', occasion: null, season: null } }),
+    });
+  });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByTestId('my-things-analyzing')).toBeVisible();
+  await expect(page.getByTestId('my-things-analyzing')).toHaveCount(0);
+
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Blue', exact: true })).toHaveClass(/selected/);
+  await page.getByText('Optional details', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
+  // occasion/season came back null — left unselected, not defaulted to anything.
+  await expect(occasionField(page).locator('button.selected')).toHaveCount(0);
+  await expect(seasonField(page).locator('button.selected')).toHaveCount(0);
+
+  // Confirm & Add is already reachable — nothing about analysis blocks it.
+  await expect(page.getByTestId('my-things-submit')).toBeEnabled();
+
+  // Every preselected chip remains tappable and clearable, same as manual entry.
+  await page.getByRole('button', { name: 'Jacket', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).not.toHaveClass(/selected/);
+  await page.getByRole('button', { name: 'Casual', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Casual', exact: true })).not.toHaveClass(/selected/);
+});
+
+test('Add item analysis: confidence numbers are never rendered anywhere in the DOM', async ({ page }) => {
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }),
+    });
+  });
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  const html = await page.content();
+  expect(html).not.toContain('confidence');
+});
+
+test('Add item analysis: provider/network failure falls back to the manual flow without blocking Confirm & Add', async ({ page }) => {
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => { await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'boom' }) }); });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByTestId('my-things-analyzing')).toHaveCount(0, { timeout: 5000 });
+  await expect(page.getByTestId('my-things-photo-error')).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Shirt', exact: true }).click();
+  await page.getByRole('button', { name: 'Blue', exact: true }).click();
+  await expect(page.getByTestId('my-things-submit')).toBeEnabled();
+});
+
+test('Add item analysis: the analyze response never triggers an automatic POST /closet-items', async ({ page }) => {
+  let createCalls = 0;
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') { await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) }); return; }
+    if (route.request().method() === 'POST') { createCalls += 1; await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', confirmationStatus: 'pending_review' }) }); }
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }) });
+  });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  await page.waitForTimeout(300);
+  expect(createCalls).toBe(0);
+});
+
+test('Add item analysis: never exposes imageObjectKey anywhere reachable from the page', async ({ page }) => {
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }) });
+  });
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  const html = await page.content();
+  expect(html).not.toContain('imageObjectKey');
+  expect(html).not.toContain('/objects/closet/');
+});
+
+test('Add item analysis regression: a manual chip pick before a delayed analyze response resolves is never overwritten', async ({ page }) => {
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    // Deliberately slow — the user acts before this resolves.
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: 'casual', occasion: 'everyday', season: 'summer' } }),
+    });
+  });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'jacket.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByTestId('my-things-analyzing')).toBeVisible();
+
+  // The user picks their own values for itemType and primaryColor while
+  // analysis is still in flight...
+  await page.getByRole('button', { name: 'Jacket', exact: true }).click();
+  await page.getByRole('button', { name: 'Navy', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Navy', exact: true })).toHaveClass(/selected/);
+
+  // ...and once the delayed suggestion for those same two fields arrives,
+  // it must not clobber the user's picks. Untouched fields (style/occasion/
+  // season) are still free to be filled in by the suggestion.
+  await expect(page.getByTestId('my-things-analyzing')).toHaveCount(0, { timeout: 5000 });
+  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Navy', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).not.toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Blue', exact: true })).not.toHaveClass(/selected/);
+
+  await page.getByText('Optional details', { exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Everyday', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByRole('button', { name: 'Summer', exact: true })).toHaveClass(/selected/);
 });
