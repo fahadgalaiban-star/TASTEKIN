@@ -20,12 +20,28 @@ function sanitizeErrorReason(prefix: string, error: unknown): string {
   return `${prefix}: ${reason}`.slice(0, MAX_ERROR_LENGTH);
 }
 
-export const DEFAULT_KIN_SEARCH_MODEL = "claude-opus-5";
+// claude-sonnet-5, not an Opus-tier model: KIN search is a routine,
+// high-volume mobile request (natural-language question + a few grounded
+// web searches), not a hard long-horizon reasoning task, so Sonnet 5 is
+// the appropriate tier. output_config.effort: "low" is the conservative,
+// SDK-confirmed-supported pairing for it (@anthropic-ai/sdk 0.123.0's
+// messages.d.ts: OutputConfig.effort accepts 'low'|'medium'|'high'|
+// 'xhigh'|'max'; Sonnet 5's only "on" thinking mode is
+// ThinkingConfigAdaptive, `{type: "adaptive"}` — there is no
+// budget_tokens-style field for this model, so none is guessed here).
+export const DEFAULT_KIN_SEARCH_MODEL = "claude-sonnet-5";
 export const DEFAULT_KIN_SEARCH_MAX_WEB_USES = 3;
 export const KIN_SEARCH_TIMEOUT_MS = 45_000;
-const MAX_OUTPUT_TOKENS = 2048;
+// A hard ceiling sized for a concise mobile answer plus a short list of
+// citations/results — not a target length, just a cost/latency backstop.
+const MAX_OUTPUT_TOKENS = 1024;
 const MAX_QUERY_LENGTH = 2000;
 const MAX_TEXT_FIELD_LENGTH = 200;
+// Caps on what ever reaches the client, independent of max_uses (one
+// search call can return several results) — keeps a mobile results list
+// short and bounds response size regardless of how much the model found.
+const MAX_RESULTS = 5;
+const MAX_CITATIONS = 5;
 
 /**
  * Lazily constructed, never at module import time — a missing
@@ -233,6 +249,15 @@ function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: strin
 
 // --- response normalization ------------------------------------------------
 
+/** true only for a well-formed https:// URL — never http://, never a fabricated/relative path. */
+function isValidHttpsUrl(url: string): boolean {
+  try {
+    return new URL(url).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function hostnameOf(url: string): string {
   try {
     return new URL(url).hostname.replace(/^www\./, "");
@@ -247,7 +272,10 @@ function hostnameOf(url: string): string {
  * web_search_result_location citation) — nothing here ever JSON.parses or
  * otherwise trusts freeform model text, which is the "AI output
  * validation" for this endpoint: output is safe by construction rather
- * than by a schema check after the fact.
+ * than by a schema check after the fact. Every URL is additionally
+ * required to be https:// before it is ever kept, and both lists are
+ * capped independently of max_uses so a client always gets a short,
+ * bounded, mobile-appropriate list.
  */
 function normalizeAnthropicResponse(response: Anthropic.Message): { answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[] } {
   let answer = "";
@@ -258,13 +286,22 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
     if (block.type === "text") {
       answer += block.text;
       for (const citation of block.citations ?? []) {
-        if (citation.type === "web_search_result_location" && !citationsByUrl.has(citation.url)) {
+        if (
+          citation.type === "web_search_result_location"
+          && isValidHttpsUrl(citation.url)
+          && !citationsByUrl.has(citation.url)
+          && citationsByUrl.size < MAX_CITATIONS
+        ) {
           citationsByUrl.set(citation.url, { title: citation.title, url: citation.url });
         }
       }
     } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
       for (const item of block.content) {
-        if (!resultsByUrl.has(item.url)) {
+        if (
+          isValidHttpsUrl(item.url)
+          && !resultsByUrl.has(item.url)
+          && resultsByUrl.size < MAX_RESULTS
+        ) {
           resultsByUrl.set(item.url, {
             title: item.title,
             source: hostnameOf(item.url),
@@ -302,6 +339,8 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
         system: request.mode === "looks" ? LOOKS_SYSTEM_PROMPT : TRAVEL_SYSTEM_PROMPT,
         messages: [{ role: "user", content: buildUserMessage(request, myThingsItemContext) }],
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxWebUses() }],
+        thinking: { type: "adaptive" },
+        output_config: { effort: "low" },
       },
       { timeout: kinSearchTimeoutMs(), maxRetries: 0 },
     );

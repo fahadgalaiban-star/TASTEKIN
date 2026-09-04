@@ -14,7 +14,8 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closetItems, closetMediaUploads, db } from "@workspace/db";
+import { closetItems, closetMediaUploads, db, kinSearchUsage } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import sharp from "sharp";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -76,7 +77,8 @@ type FakeAnthropicMode =
   | { kind: "no_results" }
   | { kind: "refusal" }
   | { kind: "http_error"; status: number }
-  | { kind: "timeout" };
+  | { kind: "timeout" }
+  | { kind: "bad_and_excess_urls" };
 
 let fakeAnthropicMode: FakeAnthropicMode = { kind: "ok" };
 let lastAnthropicRequestBody = "";
@@ -99,7 +101,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
           return;
         }
         const base = {
-          id: "msg_fake", type: "message", role: "assistant", model: "claude-opus-5",
+          id: "msg_fake", type: "message", role: "assistant", model: "claude-sonnet-5",
           stop_sequence: null, usage: { input_tokens: 10, output_tokens: 20 },
         };
         if (mode.kind === "refusal") {
@@ -110,6 +112,28 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
         if (mode.kind === "no_results") {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ...base, content: [{ type: "text", text: "", citations: null }], stop_reason: "end_turn" }));
+          return;
+        }
+        if (mode.kind === "bad_and_excess_urls") {
+          const results = [
+            ...Array.from({ length: 7 }, (_, i) => ({ type: "web_search_result", title: `Store ${i}`, url: `https://store${i}.example.com/item`, encrypted_content: "enc", page_age: null })),
+            { type: "web_search_result", title: "Insecure Store", url: "http://insecure.example.com/item", encrypted_content: "enc", page_age: null },
+            { type: "web_search_result", title: "Not a URL", url: "not-a-url", encrypted_content: "enc", page_age: null },
+          ];
+          const citations = [
+            ...Array.from({ length: 6 }, (_, i) => ({ type: "web_search_result_location", cited_text: "x", encrypted_index: `idx${i}`, title: `Store ${i}`, url: `https://store${i}.example.com/item` })),
+            { type: "web_search_result_location", cited_text: "x", encrypted_index: "idx-bad", title: "Insecure Store", url: "http://insecure.example.com/item" },
+          ];
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            ...base,
+            stop_reason: "end_turn",
+            content: [
+              { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: { query: "fake query" } },
+              { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: results },
+              { type: "text", text: "Several options were found.", citations },
+            ],
+          }));
           return;
         }
         res.writeHead(200, { "content-type": "application/json" });
@@ -245,6 +269,7 @@ async function check(name: string, fn: () => Promise<void>) {
 async function resetData() {
   await db.delete(closetItems);
   await db.delete(closetMediaUploads);
+  await db.delete(kinSearchUsage);
 }
 
 async function main() {
@@ -253,7 +278,12 @@ async function main() {
   const fakeAnthropic = await startFakeAnthropic();
   const anthropicBaseUrl = `http://127.0.0.1:${fakeAnthropic.port}`;
 
-  const server = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl });
+  // A high daily limit on the main server — the functional/validation
+  // checks below make far more than DEFAULT_KIN_SEARCH_DAILY_LIMIT (10)
+  // requests against the same user and must never themselves trip the
+  // quota. The quota's own behavior is exercised separately below against
+  // a dedicated low-limit server instance.
+  const server = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1000" });
   try {
     const admin = new Session(server.baseUrl);
     const adminAccount = await admin.signup(`kin-admin-${suffix}@example.com`, PASSWORD);
@@ -355,6 +385,19 @@ async function main() {
       assert.equal(parsed.tools[0].max_uses, 3);
     });
 
+    // --- Sonnet 5 model + conservative thinking/effort configuration ---
+    await check("the request uses claude-sonnet-5 with adaptive thinking and low effort", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      await expectStatus(await userA.kinSearch({ mode: "looks", query: "ok" }), 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as {
+        model: string; thinking: { type: string }; output_config: { effort: string }; max_tokens: number;
+      };
+      assert.equal(parsed.model, "claude-sonnet-5");
+      assert.equal(parsed.thinking.type, "adaptive");
+      assert.equal(parsed.output_config.effort, "low");
+      assert.ok(parsed.max_tokens <= 1024, `max_tokens should be a concise mobile-sized cap, got ${parsed.max_tokens}`);
+    });
+
     // --- payload sent to the provider never contains user identity ---
     await check("the request sent to the provider never contains the caller's email or user id", async () => {
       fakeAnthropicMode = { kind: "ok" };
@@ -396,11 +439,14 @@ async function main() {
       await expectStatus(response, 200);
       assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
     });
-    await check("provider non-2xx: 200 with status 'unavailable', never a 5xx surfaced to the client", async () => {
+    await check("provider non-2xx: 200 with status 'unavailable', never a 5xx surfaced to the client, and no secrets leaked", async () => {
       fakeAnthropicMode = { kind: "http_error", status: 500 };
       const response = await userA.kinSearch({ mode: "looks", query: "ok" });
       await expectStatus(response, 200);
-      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      const text = await response.text();
+      assert.equal(text, JSON.stringify({ status: "unavailable", reason: "unavailable" }));
+      assert.ok(!text.includes("fake-test-key"), "the API key must never appear in the response");
+      assert.ok(!text.toLowerCase().includes("fake provider failure"), "the raw provider error message must never reach the client");
     });
     await check("provider timeout: 200 with status 'unavailable' after the hard timeout elapses", async () => {
       fakeAnthropicMode = { kind: "timeout" };
@@ -424,6 +470,23 @@ async function main() {
       fakeAnthropicMode = { kind: "ok" };
     });
 
+    // --- URL validation: https-only, capped counts ---
+    await check("non-https/malformed URLs are excluded, and results/citations are capped at 5 each", async () => {
+      fakeAnthropicMode = { kind: "bad_and_excess_urls" };
+      const response = await userA.kinSearch({ mode: "looks", query: "many options" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; citations: Array<{ url: string }>; results: Array<{ url: string }> };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.results.length, 5, "results must be capped at MAX_RESULTS even though 9 were offered");
+      assert.equal(payload.citations.length, 5, "citations must be capped at MAX_CITATIONS even though 7 were offered");
+      assert.ok(payload.results.every((r) => r.url.startsWith("https://")), "every kept result URL must be https");
+      assert.ok(payload.citations.every((c) => c.url.startsWith("https://")), "every kept citation URL must be https");
+      assert.ok(!payload.results.some((r) => r.url.includes("insecure.example.com")), "the http:// result must be excluded");
+      assert.ok(!payload.citations.some((c) => c.url.includes("insecure.example.com")), "the http:// citation must be excluded");
+      assert.ok(!payload.results.some((r) => r.url === "not-a-url"), "a malformed URL must be excluded, never passed through");
+      fakeAnthropicMode = { kind: "ok" };
+    });
+
     // --- no persistence ---
     await check("a search never writes to closet_items or closet_media_uploads", async () => {
       fakeAnthropicMode = { kind: "ok" };
@@ -434,6 +497,69 @@ async function main() {
       const uploadsAfter = (await db.select().from(closetMediaUploads)).length;
       assert.equal(itemsAfter, itemsBefore);
       assert.equal(uploadsAfter, uploadsBefore);
+    });
+
+    // --- durable, database-backed daily quota (KIN_SEARCH_DAILY_LIMIT) ---
+    await check("daily quota: within-limit searches succeed and each durably records exactly one usage row", async () => {
+      const quotaServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "3" });
+      try {
+        const session = new Session(quotaServer.baseUrl);
+        const account = await session.signup(`kin-quota-ok-${suffix}@example.com`, PASSWORD);
+        fakeAnthropicMode = { kind: "ok" };
+        await expectStatus(await session.kinSearch({ mode: "looks", query: "ok" }), 200);
+        const rows = await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, account.user.id));
+        assert.equal(rows.length, 1, "exactly one usage row must be recorded per attempt");
+      } finally {
+        stopServer(quotaServer);
+      }
+    });
+    await check("daily quota: exhausting the limit returns 429 with a stable machine-readable reason, and stops calling the provider", async () => {
+      const quotaServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "3" });
+      try {
+        const session = new Session(quotaServer.baseUrl);
+        await session.signup(`kin-quota-exhaust-${suffix}@example.com`, PASSWORD);
+        fakeAnthropicMode = { kind: "ok" };
+        for (let i = 0; i < 3; i += 1) await expectStatus(await session.kinSearch({ mode: "looks", query: "ok" }), 200);
+        const before = anthropicRequestCount;
+        const fourth = await session.kinSearch({ mode: "looks", query: "ok" });
+        assert.equal(fourth.status, 429);
+        const payload = await fourth.json() as { reason: string };
+        assert.equal(payload.reason, "daily_limit_exceeded", "the 429 body must carry a stable, machine-readable reason");
+        assert.equal(anthropicRequestCount, before, "a quota-exceeded request must never reach the provider");
+      } finally {
+        stopServer(quotaServer);
+      }
+    });
+    await check("daily quota: a provider failure still permanently consumes the attempt (counts attempted calls, not just successes)", async () => {
+      const quotaServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1" });
+      try {
+        const session = new Session(quotaServer.baseUrl);
+        fakeAnthropicMode = { kind: "http_error", status: 500 };
+        await session.signup(`kin-quota-failure-${suffix}@example.com`, PASSWORD);
+        await expectStatus(await session.kinSearch({ mode: "looks", query: "ok" }), 200);
+        fakeAnthropicMode = { kind: "ok" };
+        const retry = await session.kinSearch({ mode: "looks", query: "ok" });
+        assert.equal(retry.status, 429, "the single allowed attempt was already spent on the failed call");
+      } finally {
+        stopServer(quotaServer);
+      }
+    });
+    await check("daily quota: concurrent requests admit exactly the configured limit and reject the rest with 429", async () => {
+      const quotaServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "3" });
+      try {
+        const session = new Session(quotaServer.baseUrl);
+        const account = await session.signup(`kin-quota-concurrent-${suffix}@example.com`, PASSWORD);
+        fakeAnthropicMode = { kind: "ok" };
+        const statuses = await Promise.all(Array.from({ length: 8 }, () => session.kinSearch({ mode: "looks", query: "ok" }).then((r) => r.status)));
+        const admitted = statuses.filter((s) => s === 200);
+        const limited = statuses.filter((s) => s === 429);
+        assert.equal(admitted.length, 3, `expected exactly 3 admitted, got statuses: ${statuses.join(",")}`);
+        assert.equal(limited.length, 5, `expected exactly 5 rejected with 429, got statuses: ${statuses.join(",")}`);
+        const rows = await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, account.user.id));
+        assert.equal(rows.length, 3, "the ledger must record exactly 3 attempts regardless of request concurrency");
+      } finally {
+        stopServer(quotaServer);
+      }
     });
 
     // --- missing API key: server never crashes, consumes nothing, degrades gracefully ---
