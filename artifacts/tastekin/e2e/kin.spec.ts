@@ -30,7 +30,7 @@ test('the bottom nav opens a real KIN page when the flag is on', async ({ page }
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'Ask KIN anything.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Built around you.' })).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
   await expect(page.getByTestId('kin-mode-travel')).toBeVisible();
 });
@@ -210,7 +210,7 @@ test('Arabic UI strings render for KIN', async ({ page }) => {
   await mockMe(page, { kinSearch: true, language: 'ar' });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'اسأل كين عن أي شيء.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'مبني من أجلك.' })).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toHaveText('الإطلالات');
   await expect(page.getByTestId('kin-mode-travel')).toHaveText('السفر');
   await expect(page.getByTestId('kin-submit')).toHaveText('اسأل كين');

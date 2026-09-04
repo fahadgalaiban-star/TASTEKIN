@@ -1,4 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
+import sharp from "sharp";
+
+import { fetchProductImagesFor } from "./link-preview";
 
 const MAX_ERROR_LENGTH = 200;
 
@@ -42,6 +45,21 @@ const MAX_TEXT_FIELD_LENGTH = 200;
 // short and bounds response size regardless of how much the model found.
 const MAX_RESULTS = 5;
 const MAX_CITATIONS = 5;
+// Re-compresses an already-validated image (see decodeAndReencodeClosetImage
+// in closet-media-upload.ts, which every caller runs first) down to a size
+// appropriate for a single Anthropic request — the same resize-then-webp
+// shape as closet-image-analysis.ts's CLOSET_ANALYSIS_MAX_DIMENSION, kept as
+// its own local constant so this module still has no import dependency on
+// the closet feature.
+const KIN_LOOKS_IMAGE_MAX_DIMENSION = 1024;
+const KIN_LOOKS_IMAGE_WEBP_QUALITY = 82;
+const MAX_LOOKS_ITEM_LIST_LENGTH = 20;
+// A bounded, best-effort enhancement — real product photos for a Looks
+// answer's shopping results, fetched from the same https pages Anthropic's
+// web search already verified. Capped independent of how many results
+// came back, so one search can never fan out into an unbounded number of
+// outbound page fetches.
+const MAX_PRODUCT_IMAGE_LOOKUPS = 3;
 
 /**
  * Lazily constructed, never at module import time — a missing
@@ -121,8 +139,22 @@ export type KinSearchResultCard = {
   imageUrl: string | null;
 };
 
+/**
+ * One of KIN Looks' three styling options. reasoning/ownedItems/missingItems
+ * are extracted from the model's free-form answer via fixed literal
+ * delimiters (see parseLooksOptions) — a mechanical split, not a trust
+ * decision about model prose. When the model doesn't follow the requested
+ * format, the affected arrays are simply empty rather than guessed.
+ */
+export type KinLooksOption = {
+  label: "signature" | "safe" | "bold";
+  reasoning: string;
+  ownedItems: string[];
+  missingItems: string[];
+};
+
 export type KinSearchResult =
-  | { status: "ok"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[] }
+  | { status: "ok"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options?: KinLooksOption[] }
   | { status: "unavailable"; reason: string };
 
 // --- input validation --------------------------------------------------
@@ -216,16 +248,26 @@ export function validateKinSearchRequest(body: unknown): KinSearchValidationResu
 
 // --- prompting -----------------------------------------------------------
 
+const LOOKS_OPTION_MARKERS: { marker: string; label: KinLooksOption["label"] }[] = [
+  { marker: "###SIGNATURE###", label: "signature" },
+  { marker: "###SAFE###", label: "safe" },
+  { marker: "###BOLD###", label: "bold" },
+];
+
 const LOOKS_SYSTEM_PROMPT = [
   "You are KIN, TASTEKIN's personal styling assistant.",
   "The member describes what they need in natural language; use the web_search tool to ground any specific, current claim — prices, availability, what's in season, retailer stock — in a real search result. Never state a specific price, availability, or product detail you did not find in a search result.",
+  "If a photo of a clothing item is attached, actually look at it — its cut, color, fabric, and condition — and combine that with any taxonomy details given, rather than styling from the taxonomy alone.",
   "If the member gave an existing wardrobe item as context, build the recommendation around it rather than replacing it.",
-  "Write a warm, concise, editorial answer in the member's language. Never invent a URL, retailer name, or product.",
+  "Always structure your answer as exactly three options, each introduced by one of these exact literal markers on its own line, in this order: ###SIGNATURE### (their classic, reliable self), ###SAFE### (a lower-risk, easy-to-wear option), ###BOLD### (a more daring, statement option).",
+  "Within each option, explain in 1-3 sentences why it matches the request. Then, only if relevant, add a line starting with exactly \"OWNED:\" listing (comma-separated) pieces the member already owns that this option uses, and a line starting with exactly \"MISSING:\" listing pieces they would still need. Omit either line entirely if it doesn't apply — never write a line with nothing after the colon.",
+  "Write in the member's language. Never invent a URL, retailer name, product, or owned/missing item.",
 ].join(" ");
 
 const TRAVEL_SYSTEM_PROMPT = [
   "You are KIN, TASTEKIN's travel planning assistant.",
   "The member describes the trip they want in natural language; use the web_search tool to ground any specific, current claim — opening hours, weather, current events, reservations, prices — in a real search result. Never state a specific fact you did not find in a search result.",
+  "When you can find current weather or climate information for the destination and dates, briefly suggest what to wear day to day, referencing any existing wardrobe item given as context rather than replacing it.",
   "Write a warm, concise, editorial answer in the member's language, organized around what the member actually asked for. Never invent a URL, venue name, or event.",
 ].join(" ");
 
@@ -249,8 +291,64 @@ function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: strin
 
 // --- response normalization ------------------------------------------------
 
+/**
+ * Deterministic, mechanical split on fixed literal markers — never a trust
+ * decision about model prose. A marker the model omits simply produces one
+ * fewer option; a line that isn't a recognized OWNED:/MISSING: prefix is
+ * folded into the reasoning text as-is. Both item lists are capped
+ * independent of anything the model wrote, as defense in depth.
+ */
+function parseLooksOptions(answer: string): KinLooksOption[] {
+  const options: KinLooksOption[] = [];
+  for (let i = 0; i < LOOKS_OPTION_MARKERS.length; i++) {
+    const { marker, label } = LOOKS_OPTION_MARKERS[i];
+    const start = answer.indexOf(marker);
+    if (start === -1) continue;
+    const contentStart = start + marker.length;
+    let end = answer.length;
+    for (let j = i + 1; j < LOOKS_OPTION_MARKERS.length; j++) {
+      const nextIndex = answer.indexOf(LOOKS_OPTION_MARKERS[j].marker, contentStart);
+      if (nextIndex !== -1) { end = nextIndex; break; }
+    }
+    const section = answer.slice(contentStart, end).trim();
+    const reasoningLines: string[] = [];
+    const ownedItems: string[] = [];
+    const missingItems: string[] = [];
+    for (const rawLine of section.split("\n")) {
+      const line = rawLine.trim();
+      if (!line) continue;
+      const ownedMatch = line.match(/^OWNED:\s*(.*)$/i);
+      const missingMatch = line.match(/^MISSING:\s*(.*)$/i);
+      if (ownedMatch) ownedItems.push(...ownedMatch[1].split(",").map((s) => s.trim()).filter(Boolean));
+      else if (missingMatch) missingItems.push(...missingMatch[1].split(",").map((s) => s.trim()).filter(Boolean));
+      else reasoningLines.push(line);
+    }
+    options.push({
+      label,
+      reasoning: reasoningLines.join(" ").trim(),
+      ownedItems: ownedItems.slice(0, MAX_LOOKS_ITEM_LIST_LENGTH),
+      missingItems: missingItems.slice(0, MAX_LOOKS_ITEM_LIST_LENGTH),
+    });
+  }
+  return options;
+}
+
+/**
+ * Resizes an already-validated (decodeAndReencodeClosetImage'd) image
+ * buffer down to a size appropriate for a single Anthropic request. Callers
+ * always pass an ephemeral, in-memory buffer here — this module never
+ * touches object storage itself, so it stays independent of the closet/My
+ * Things feature's storage code.
+ */
+async function reencodeForAnthropic(imageBuffer: Buffer): Promise<Buffer> {
+  return sharp(imageBuffer)
+    .resize({ width: KIN_LOOKS_IMAGE_MAX_DIMENSION, height: KIN_LOOKS_IMAGE_MAX_DIMENSION, fit: "inside", withoutEnlargement: true })
+    .webp({ quality: KIN_LOOKS_IMAGE_WEBP_QUALITY })
+    .toBuffer();
+}
+
 /** true only for a well-formed https:// URL — never http://, never a fabricated/relative path. */
-function isValidHttpsUrl(url: string): boolean {
+export function isValidHttpsUrl(url: string): boolean {
   try {
     return new URL(url).protocol === "https:";
   } catch {
@@ -319,14 +417,47 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
 }
 
 /**
+ * Best-effort: attaches a real product photo to up to
+ * MAX_PRODUCT_IMAGE_LOOKUPS results by fetching each page's own og:image
+ * (see link-preview.ts, which enforces the https/SSRF/size/time bounds).
+ * A result whose page has no such tag, or whose fetch fails, keeps
+ * imageUrl: null — never a fabricated or generic photo.
+ */
+async function attachProductImages(results: KinSearchResultCard[]): Promise<KinSearchResultCard[]> {
+  if (results.length === 0) return results;
+  const imagesByUrl = await fetchProductImagesFor(results.map((r) => r.url), MAX_PRODUCT_IMAGE_LOOKUPS);
+  return results.map((result) => imagesByUrl.has(result.url) ? { ...result, imageUrl: imagesByUrl.get(result.url)! } : result);
+}
+
+/**
  * Runs one KIN search turn. Web search is a server-side Anthropic tool —
  * the provider executes searches and appends results within this single
  * request/response, so no client-side tool loop is needed here (unlike a
  * user-defined tool).
+ *
+ * imageBuffer, when given, is an already-validated (decoded/re-encoded,
+ * MIME- and size-checked by the caller) image buffer — either an ephemeral
+ * new photo that is never persisted, or the actual bytes of an owned My
+ * Things item fetched by the caller. This function never fetches or
+ * decodes an image itself; it only resizes what it's handed for the
+ * Anthropic request.
  */
-export async function runKinSearch(request: KinSearchRequest, myThingsItemContext?: string): Promise<KinSearchResult> {
+export async function runKinSearch(request: KinSearchRequest, myThingsItemContext?: string, imageBuffer?: Buffer): Promise<KinSearchResult> {
   const client = anthropicClient();
   if (!client) return { status: "unavailable", reason: "not configured" };
+
+  let content: string | Anthropic.MessageParam["content"] = buildUserMessage(request, myThingsItemContext);
+  if (imageBuffer) {
+    try {
+      const resized = await reencodeForAnthropic(imageBuffer);
+      content = [
+        { type: "image", source: { type: "base64", media_type: "image/webp", data: resized.toString("base64") } },
+        { type: "text", text: buildUserMessage(request, myThingsItemContext) },
+      ];
+    } catch (error) {
+      return { status: "unavailable", reason: sanitizeErrorReason("image processing failed", error) };
+    }
+  }
 
   try {
     // maxRetries: 0 — the SDK's default retry-on-timeout behavior would
@@ -337,7 +468,7 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
         model: kinSearchModel(),
         max_tokens: MAX_OUTPUT_TOKENS,
         system: request.mode === "looks" ? LOOKS_SYSTEM_PROMPT : TRAVEL_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: buildUserMessage(request, myThingsItemContext) }],
+        messages: [{ role: "user", content }],
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxWebUses() }],
         thinking: { type: "adaptive" },
         output_config: { effort: "low" },
@@ -346,7 +477,12 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
     );
 
     if (response.stop_reason === "refusal") return { status: "unavailable", reason: "refusal" };
-    return { status: "ok", ...normalizeAnthropicResponse(response) };
+    const normalized = normalizeAnthropicResponse(response);
+    if (request.mode === "looks") {
+      const withImages = await attachProductImages(normalized.results);
+      return { status: "ok", ...normalized, results: withImages, options: parseLooksOptions(normalized.answer) };
+    }
+    return { status: "ok", ...normalized };
   } catch (error) {
     return { status: "unavailable", reason: sanitizeErrorReason("kin search request failed", error) };
   }
