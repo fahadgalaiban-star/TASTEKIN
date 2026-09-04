@@ -1,10 +1,22 @@
 import { computeRoute } from "./google-routes";
-import { isGooglePlacesConfigured, searchPlaces, type GooglePlace } from "./google-places";
+import { isGooglePlacesConfigured, resolvePlacePhotoUrl, searchPlaces, type GooglePlace } from "./google-places";
 import { runKinSearch, type KinSearchCitation, type KinSearchRequest } from "./kin-search";
 
 const MAX_TRIP_DAYS = 10;
 
-export type KinTravelPlace = GooglePlace;
+export type KinTravelPlace = Omit<GooglePlace, "photoRef"> & { photoUrl: string | null; photoAttribution: string | null };
+
+/**
+ * Resolves at most one real photo per place (Google's photos[0]) to an
+ * actual, temporary media URL — never fabricated, and simply null when the
+ * place has no photo or the resolve call fails. Attribution text travels
+ * alongside the URL since Google's ToS requires it be shown with the photo.
+ */
+async function resolvePlace(place: GooglePlace): Promise<KinTravelPlace> {
+  const { photoRef, ...rest } = place;
+  const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
+  return { ...rest, photoUrl, photoAttribution: photoUrl ? photoRef!.attributionText : null };
+}
 
 export type KinTravelRoute = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 
@@ -91,8 +103,9 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
   const searchResult = await runKinSearch(request, myThingsItemContext);
   if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason };
 
+  const resolvedPlaces = await Promise.all(placesResult.places.map(resolvePlace));
   const dayCount = dayCountFor(request.startDate, request.endDate);
-  const buckets = distributePlaces(placesResult.places, dayCount);
+  const buckets = distributePlaces(resolvedPlaces, dayCount);
   const days: KinTravelDay[] = [];
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
     const dayPlaces = buckets[dayIndex];
@@ -108,4 +121,31 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
     status: "ok",
     plan: { destination: request.destination, narrative: searchResult.answer, citations: searchResult.citations, days },
   };
+}
+
+export type KinTravelSwapResult =
+  | { status: "ok"; place: KinTravelPlace }
+  | { status: "unavailable"; reason: string };
+
+/**
+ * One real, additional Google Places lookup for the same destination,
+ * returning the first result not already present anywhere else in the
+ * itinerary (excludePlaceIds). Never fabricates an alternative — if every
+ * result Google returns is already in use, this reports unavailable
+ * rather than inventing a new place.
+ */
+const SWAP_CANDIDATE_POOL_SIZE = 10;
+
+export async function swapPlace(destination: string, excludePlaceIds: string[]): Promise<KinTravelSwapResult> {
+  if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
+  // A larger candidate pool than the itinerary's own 5 — otherwise every
+  // "swap" would just re-see the same 5 places already shown and never
+  // find a genuine alternative. Still capped (10, not unbounded), and the
+  // member is never shown more than one of these at a time.
+  const placesResult = await searchPlaces(`top attractions and things to do in ${destination}`, SWAP_CANDIDATE_POOL_SIZE);
+  if (placesResult.status !== "ok") return { status: "unavailable", reason: placesResult.reason };
+  const excluded = new Set(excludePlaceIds);
+  const alternative = placesResult.places.find((place) => !excluded.has(place.placeId));
+  if (!alternative) return { status: "unavailable", reason: "no alternative available" };
+  return { status: "ok", place: await resolvePlace(alternative) };
 }

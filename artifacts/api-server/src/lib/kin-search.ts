@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import sharp from "sharp";
 
+import { fetchProductImagesFor } from "./link-preview";
+
 const MAX_ERROR_LENGTH = 200;
 
 /**
@@ -52,6 +54,12 @@ const MAX_CITATIONS = 5;
 const KIN_LOOKS_IMAGE_MAX_DIMENSION = 1024;
 const KIN_LOOKS_IMAGE_WEBP_QUALITY = 82;
 const MAX_LOOKS_ITEM_LIST_LENGTH = 20;
+// A bounded, best-effort enhancement — real product photos for a Looks
+// answer's shopping results, fetched from the same https pages Anthropic's
+// web search already verified. Capped independent of how many results
+// came back, so one search can never fan out into an unbounded number of
+// outbound page fetches.
+const MAX_PRODUCT_IMAGE_LOOKUPS = 3;
 
 /**
  * Lazily constructed, never at module import time — a missing
@@ -409,6 +417,19 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
 }
 
 /**
+ * Best-effort: attaches a real product photo to up to
+ * MAX_PRODUCT_IMAGE_LOOKUPS results by fetching each page's own og:image
+ * (see link-preview.ts, which enforces the https/SSRF/size/time bounds).
+ * A result whose page has no such tag, or whose fetch fails, keeps
+ * imageUrl: null — never a fabricated or generic photo.
+ */
+async function attachProductImages(results: KinSearchResultCard[]): Promise<KinSearchResultCard[]> {
+  if (results.length === 0) return results;
+  const imagesByUrl = await fetchProductImagesFor(results.map((r) => r.url), MAX_PRODUCT_IMAGE_LOOKUPS);
+  return results.map((result) => imagesByUrl.has(result.url) ? { ...result, imageUrl: imagesByUrl.get(result.url)! } : result);
+}
+
+/**
  * Runs one KIN search turn. Web search is a server-side Anthropic tool —
  * the provider executes searches and appends results within this single
  * request/response, so no client-side tool loop is needed here (unlike a
@@ -457,7 +478,10 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
 
     if (response.stop_reason === "refusal") return { status: "unavailable", reason: "refusal" };
     const normalized = normalizeAnthropicResponse(response);
-    if (request.mode === "looks") return { status: "ok", ...normalized, options: parseLooksOptions(normalized.answer) };
+    if (request.mode === "looks") {
+      const withImages = await attachProductImages(normalized.results);
+      return { status: "ok", ...normalized, results: withImages, options: parseLooksOptions(normalized.answer) };
+    }
     return { status: "ok", ...normalized };
   } catch (error) {
     return { status: "unavailable", reason: sanitizeErrorReason("kin search request failed", error) };

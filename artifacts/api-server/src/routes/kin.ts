@@ -18,7 +18,7 @@ import {
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { runKinTravelPlan } from "../lib/kin-travel";
+import { runKinTravelPlan, swapPlace } from "../lib/kin-travel";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -272,6 +272,43 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     return;
   }
   res.json({ status: "ok", plan: result.plan });
+});
+
+/**
+ * Swaps one itinerary stop for a different real place at the same
+ * destination — one additional Google Places lookup, excluding every
+ * placeId already shown anywhere in the current itinerary so the
+ * replacement is never a duplicate. Counts against the same daily quota
+ * as every other KIN action (it still spends real request cost even
+ * though it never calls Anthropic).
+ */
+router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req, res) => {
+  const user = req.user!;
+  const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+  const destination = typeof body.destination === "string" ? body.destination.trim() : "";
+  if (!destination || destination.length > MAX_TEXT_LENGTH) {
+    res.status(400).json({ error: "destination is required" });
+    return;
+  }
+  const excludePlaceIds = Array.isArray(body.excludePlaceIds)
+    ? body.excludePlaceIds.filter((id): id is string => typeof id === "string").slice(0, 20)
+    : [];
+
+  const reservation = await reserveKinSearchAttempt(user.id);
+  if ("rateLimited" in reservation) {
+    daily429(res);
+    return;
+  }
+
+  const result = await swapPlace(destination, excludePlaceIds);
+  if (result.status !== "ok") {
+    if (result.reason !== "not configured" && result.reason !== "no alternative available") {
+      req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel swap-place unavailable");
+    }
+    res.json({ status: "unavailable", reason: "unavailable" });
+    return;
+  }
+  res.json({ status: "ok", place: result.place });
 });
 
 // --- persistence: saved recommendations, trips, trip items ----------------
