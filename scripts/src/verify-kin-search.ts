@@ -14,7 +14,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { closetItems, closetMediaUploads, db, kinSearchUsage } from "@workspace/db";
+import { closetItems, closetMediaUploads, db, kinSavedRecommendations, kinSearchUsage, kinTripItems, kinTrips } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import sharp from "sharp";
 
@@ -78,7 +78,8 @@ type FakeAnthropicMode =
   | { kind: "refusal" }
   | { kind: "http_error"; status: number }
   | { kind: "timeout" }
-  | { kind: "bad_and_excess_urls" };
+  | { kind: "bad_and_excess_urls" }
+  | { kind: "looks_options" };
 
 let fakeAnthropicMode: FakeAnthropicMode = { kind: "ok" };
 let lastAnthropicRequestBody = "";
@@ -112,6 +113,23 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
         if (mode.kind === "no_results") {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ...base, content: [{ type: "text", text: "", citations: null }], stop_reason: "end_turn" }));
+          return;
+        }
+        if (mode.kind === "looks_options") {
+          const answer = [
+            "###SIGNATURE###",
+            "Your classic tailored look works perfectly here.",
+            "OWNED: navy blazer, white shirt",
+            "MISSING: brown loafers",
+            "###SAFE###",
+            "A relaxed, easy pairing that never misses.",
+            "OWNED: jeans",
+            "###BOLD###",
+            "A statement piece for a memorable entrance.",
+            "MISSING: silk scarf, patent boots",
+          ].join("\n");
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ...base, stop_reason: "end_turn", content: [{ type: "text", text: answer, citations: null }] }));
           return;
         }
         if (mode.kind === "bad_and_excess_urls") {
@@ -161,6 +179,85 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
       const address = server.address();
       if (address && typeof address === "object") resolve({ server, port: address.port });
       else reject(new Error("failed to bind fake Anthropic server"));
+    });
+    server.on("error", reject);
+  });
+}
+
+// --- fake Google Places / Routes providers ---------------------------------
+
+type FakeGooglePlacesMode = { kind: "ok" } | { kind: "malformed" } | { kind: "http_error"; status: number } | { kind: "timeout" };
+type FakeGoogleRoutesMode = { kind: "ok" } | { kind: "malformed" } | { kind: "http_error"; status: number } | { kind: "timeout" };
+
+let fakeGooglePlacesMode: FakeGooglePlacesMode = { kind: "ok" };
+let fakeGoogleRoutesMode: FakeGoogleRoutesMode = { kind: "ok" };
+let lastPlacesFieldMask = "";
+let lastPlacesRequestBody = "";
+let lastRoutesFieldMask = "";
+let googlePlacesRequestCount = 0;
+let googleRoutesRequestCount = 0;
+
+function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        if (req.method !== "POST") { res.writeHead(404); res.end(); return; }
+        googlePlacesRequestCount += 1;
+        lastPlacesFieldMask = String(req.headers["x-goog-fieldmask"] || "");
+        lastPlacesRequestBody = Buffer.concat(chunks).toString("utf8");
+        const mode = fakeGooglePlacesMode;
+        if (mode.kind === "timeout") return;
+        if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
+        if (mode.kind === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end("{not json"); return; }
+        const places = Array.from({ length: 7 }, (_, i) => ({
+          id: `place-${i}`,
+          displayName: { text: `Fake Place ${i}` },
+          formattedAddress: i === 2 ? undefined : `${i} Example Street`,
+          location: { latitude: 48.85 + i * 0.001, longitude: 2.35 + i * 0.001 },
+          rating: i % 2 === 0 ? 4.5 : undefined,
+          websiteUri: i === 0 ? "https://fakeplace0.example.com" : undefined,
+          googleMapsUri: `https://maps.google.com/?cid=${i}`,
+        }));
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ places }));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address && typeof address === "object") resolve({ server, port: address.port });
+      else reject(new Error("failed to bind fake Google Places server"));
+    });
+    server.on("error", reject);
+  });
+}
+
+function startFakeGoogleRoutes(): Promise<{ server: http.Server; port: number }> {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const chunks: Buffer[] = [];
+      req.on("data", (chunk: Buffer) => chunks.push(chunk));
+      req.on("end", () => {
+        if (req.method !== "POST") { res.writeHead(404); res.end(); return; }
+        googleRoutesRequestCount += 1;
+        lastRoutesFieldMask = String(req.headers["x-goog-fieldmask"] || "");
+        const mode = fakeGoogleRoutesMode;
+        if (mode.kind === "timeout") return;
+        if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
+        if (mode.kind === "malformed") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ routes: [{ distanceMeters: 1200 }] })); // duration missing on purpose
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" });
+        res.end(JSON.stringify({ routes: [{ distanceMeters: 850, duration: "600s" }] }));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address && typeof address === "object") resolve({ server, port: address.port });
+      else reject(new Error("failed to bind fake Google Routes server"));
     });
     server.on("error", reject);
   });
@@ -222,6 +319,40 @@ class Session {
   async kinSearch(body: Record<string, unknown>) {
     return this.request("/api/kin/search", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   }
+  async kinLooksPhoto(buffer: Buffer, params: Record<string, string> = {}, contentType = "image/jpeg") {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/api/kin/looks/photo${query ? `?${query}` : ""}`, { method: "POST", headers: { "content-type": contentType }, body: buffer });
+  }
+  async kinTravelPlan(body: Record<string, unknown>) {
+    return this.request("/api/kin/travel/plan", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  }
+  async saveRecommendation(body: Record<string, unknown>) {
+    return this.request("/api/kin/saved", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  }
+  async listSaved() {
+    return this.request("/api/kin/saved");
+  }
+  async deleteSaved(id: string) {
+    return this.request(`/api/kin/saved/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  async createTrip(body: Record<string, unknown>) {
+    return this.request("/api/kin/trips", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  }
+  async listTrips() {
+    return this.request("/api/kin/trips");
+  }
+  async getTrip(id: string) {
+    return this.request(`/api/kin/trips/${encodeURIComponent(id)}`);
+  }
+  async deleteTrip(id: string) {
+    return this.request(`/api/kin/trips/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+  async addTripItem(tripId: string, body: Record<string, unknown>) {
+    return this.request(`/api/kin/trips/${encodeURIComponent(tripId)}/items`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  }
+  async deleteTripItem(tripId: string, itemId: string) {
+    return this.request(`/api/kin/trips/${encodeURIComponent(tripId)}/items/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+  }
   async uploadMedia(buffer: Buffer, contentType = "image/jpeg") {
     return this.request("/api/closet-items/media", { method: "POST", headers: { "content-type": contentType }, body: buffer });
   }
@@ -251,6 +382,8 @@ async function validJpeg(): Promise<Buffer> {
   return sharp({ create: { width: 40, height: 40, channels: 3, background: { r: 180, g: 60, b: 60 } } }).jpeg().toBuffer();
 }
 
+const OVERSIZED_IMAGE_BYTES = 10 * 1024 * 1024 + 1024;
+
 const suffix = Date.now();
 const PASSWORD = "regression-test-1234";
 const results: Array<{ name: string; ok: boolean; error?: string }> = [];
@@ -267,6 +400,9 @@ async function check(name: string, fn: () => Promise<void>) {
 }
 
 async function resetData() {
+  await db.delete(kinTripItems);
+  await db.delete(kinTrips);
+  await db.delete(kinSavedRecommendations);
   await db.delete(closetItems);
   await db.delete(closetMediaUploads);
   await db.delete(kinSearchUsage);
@@ -277,13 +413,20 @@ async function main() {
   const sidecar = await startFakeSidecar();
   const fakeAnthropic = await startFakeAnthropic();
   const anthropicBaseUrl = `http://127.0.0.1:${fakeAnthropic.port}`;
+  const fakeGooglePlaces = await startFakeGooglePlaces();
+  const fakeGoogleRoutes = await startFakeGoogleRoutes();
+  const googlePlacesBaseUrl = `http://127.0.0.1:${fakeGooglePlaces.port}`;
+  const googleRoutesBaseUrl = `http://127.0.0.1:${fakeGoogleRoutes.port}`;
 
   // A high daily limit on the main server — the functional/validation
   // checks below make far more than DEFAULT_KIN_SEARCH_DAILY_LIMIT (10)
   // requests against the same user and must never themselves trip the
   // quota. The quota's own behavior is exercised separately below against
   // a dedicated low-limit server instance.
-  const server = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1000" });
+  const server = await startServer({
+    ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1000",
+    GOOGLE_MAPS_API_KEY: "fake-google-key", GOOGLE_PLACES_BASE_URL: `${googlePlacesBaseUrl}/places:searchText`, GOOGLE_ROUTES_BASE_URL: `${googleRoutesBaseUrl}/computeRoutes`,
+  });
   try {
     const admin = new Session(server.baseUrl);
     const adminAccount = await admin.signup(`kin-admin-${suffix}@example.com`, PASSWORD);
@@ -418,12 +561,11 @@ async function main() {
       const item = await createResponse.json() as { id: string };
       itemId = item.id;
     });
-    await check("a valid myThingsItemId is accepted and its attributes (never the image) reach the provider as text context", async () => {
+    await check("a valid myThingsItemId is accepted and its taxonomy attributes reach the provider as text context", async () => {
       fakeAnthropicMode = { kind: "ok" };
       const response = await userA.kinSearch({ mode: "looks", query: "style this with something", myThingsItemId: itemId });
       await expectStatus(response, 200);
       assert.ok(lastAnthropicRequestBody.includes("shirt"), "the item's taxonomy attributes should reach the model as text context");
-      assert.ok(!lastAnthropicRequestBody.includes("image"), "no image content block should ever be sent for My Things context");
     });
     const userB = new Session(server.baseUrl);
     await userB.signup(`kin-b-${suffix}@example.com`, PASSWORD);
@@ -562,6 +704,275 @@ async function main() {
       }
     });
 
+    // --- KIN Looks: signature/safe/bold structured options ---
+    await check("looks options: a three-marker answer is parsed into signature/safe/bold with owned/missing items", async () => {
+      fakeAnthropicMode = { kind: "looks_options" };
+      const response = await userA.kinSearch({ mode: "looks", query: "style me for a gala" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; options: Array<{ label: string; reasoning: string; ownedItems: string[]; missingItems: string[] }> };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.options.length, 3);
+      assert.deepEqual(payload.options.map((o) => o.label), ["signature", "safe", "bold"]);
+      assert.deepEqual(payload.options[0].ownedItems, ["navy blazer", "white shirt"]);
+      assert.deepEqual(payload.options[0].missingItems, ["brown loafers"]);
+      assert.ok(payload.options[0].reasoning.includes("classic tailored"));
+      assert.deepEqual(payload.options[1].ownedItems, ["jeans"]);
+      assert.deepEqual(payload.options[1].missingItems, []);
+      fakeAnthropicMode = { kind: "ok" };
+    });
+    await check("a travel-mode response never carries a looks 'options' field", async () => {
+      fakeAnthropicMode = { kind: "looks_options" };
+      const response = await userA.kinSearch({ mode: "travel", query: "plan my trip" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { options?: unknown };
+      assert.equal(payload.options, undefined);
+      fakeAnthropicMode = { kind: "ok" };
+    });
+
+    // --- KIN Looks: real image analysis (new photo, never persisted) ---
+    await check("a new clothing photo reaches the provider as a real image content block", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinLooksPhoto(await validJpeg(), { query: "style this top" });
+      await expectStatus(response, 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { messages: Array<{ content: Array<{ type: string; source?: { media_type: string } }> }> };
+      const content = parsed.messages[0].content;
+      assert.ok(Array.isArray(content), "content must be a content-block array when an image is sent");
+      const imageBlock = content.find((block) => block.type === "image");
+      assert.ok(imageBlock, "an image content block must be present");
+      assert.equal(imageBlock!.source!.media_type, "image/webp");
+    });
+    await check("a new clothing photo is never written to closet_items or closet_media_uploads (ephemeral only)", async () => {
+      const uploadsBefore = (await db.select().from(closetMediaUploads)).length;
+      const itemsBefore = (await db.select().from(closetItems)).length;
+      await expectStatus(await userA.kinLooksPhoto(await validJpeg(), { query: "ephemeral check" }), 200);
+      assert.equal((await db.select().from(closetMediaUploads)).length, uploadsBefore);
+      assert.equal((await db.select().from(closetItems)).length, itemsBefore);
+    });
+    await check("an oversized photo upload is rejected with 413 and never reaches the provider", async () => {
+      const before = anthropicRequestCount;
+      const response = await userA.kinLooksPhoto(Buffer.alloc(OVERSIZED_IMAGE_BYTES, 1), { query: "too big" });
+      assert.equal(response.status, 413);
+      assert.equal(anthropicRequestCount, before);
+    });
+    await check("an invalid image format is rejected with 422 and never reaches the provider", async () => {
+      const before = anthropicRequestCount;
+      const response = await userA.kinLooksPhoto(Buffer.from("not an image"), { query: "bad format" }, "image/gif");
+      assert.equal(response.status, 422);
+      assert.equal(anthropicRequestCount, before);
+    });
+    await check("a valid photo upload still consumes the daily quota (ledger row recorded)", async () => {
+      const before = (await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, userAAccount.user.id))).length;
+      await expectStatus(await userA.kinLooksPhoto(await validJpeg(), { query: "quota check" }), 200);
+      const after = (await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, userAAccount.user.id))).length;
+      assert.equal(after, before + 1);
+    });
+
+    // --- KIN Looks: real image analysis for an owned My Things item ---
+    let itemWithImageId = "";
+    await check("fixture: user A has a My Things item with real stored image bytes", async () => {
+      const jpeg = await validJpeg();
+      const uploadResponse = await userA.uploadMedia(jpeg);
+      await expectStatus(uploadResponse, 201);
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const createResponse = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "green", style: "casual" });
+      await expectStatus(createResponse, 201);
+      itemWithImageId = (await createResponse.json() as { id: string }).id;
+    });
+    await check("myThingsItemId + Looks mode fetches the real stored image and sends it as an image content block", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinSearch({ mode: "looks", query: "style this", myThingsItemId: itemWithImageId });
+      await expectStatus(response, 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { messages: Array<{ content: Array<{ type: string }> }> };
+      const content = parsed.messages[0].content;
+      assert.ok(Array.isArray(content) && content.some((block) => block.type === "image"), "the owned item's real image must be sent, not just taxonomy text");
+    });
+    await check("myThingsItemId + Travel mode never fetches or sends an image (text context only)", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinSearch({ mode: "travel", query: "plan around this", myThingsItemId: itemWithImageId, destination: "Rome" });
+      await expectStatus(response, 200);
+      assert.ok(!lastAnthropicRequestBody.includes('"type":"image"'), "travel mode must never send image content");
+    });
+    await check("cross-user: B cannot use A's item's image via the photo-less Looks path either", async () => {
+      const response = await userB.kinSearch({ mode: "looks", query: "ok", myThingsItemId: itemWithImageId });
+      assert.equal(response.status, 400);
+    });
+
+    // --- KIN Travel: Google Places + Routes day-by-day plan ---
+    await check("without GOOGLE_MAPS_API_KEY configured, travel plan reports unavailable rather than fabricating places", async () => {
+      const noGoogleServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl });
+      try {
+        const session = new Session(noGoogleServer.baseUrl);
+        await session.signup(`kin-nogoogle-${suffix}@example.com`, PASSWORD);
+        fakeAnthropicMode = { kind: "ok" };
+        const response = await session.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+        await expectStatus(response, 200);
+        assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      } finally {
+        stopServer(noGoogleServer);
+      }
+    });
+    await check("travel plan without a destination is rejected with 400", async () => {
+      assert.equal((await userA.kinTravelPlan({ query: "plan my trip" })).status, 400);
+    });
+    let lastPlan: { destination: string; narrative: string; citations: unknown[]; days: Array<{ dayIndex: number; date: string | null; places: Array<{ placeId: string; name: string; rating: number | null; formattedAddress: string | null }>; routes: Array<{ distanceMeters: number; durationSeconds: number }> }> } | null = null;
+    await check("a valid travel plan combines real Places results, Routes legs, and the Anthropic narrative into day-by-day itinerary", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      fakeGoogleRoutesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", startDate: "2026-10-01", endDate: "2026-10-02" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; plan: typeof lastPlan };
+      assert.equal(payload.status, "ok");
+      lastPlan = payload.plan;
+      assert.equal(lastPlan!.destination, "Paris");
+      assert.ok(lastPlan!.narrative.length > 0, "narrative must come from the Anthropic call");
+      assert.equal(lastPlan!.days.length, 2, "a 2-day date range must produce 2 days");
+      const totalPlaces = lastPlan!.days.reduce((sum, day) => sum + day.places.length, 0);
+      assert.equal(totalPlaces, 5, "at most GOOGLE_PLACES_MAX_RESULTS (5) places must ever appear, none fabricated");
+      assert.ok(lastPlan!.days.some((day) => day.routes.length > 0), "at least one day must have a real route leg between two places");
+      for (const day of lastPlan!.days) for (const route of day.routes) {
+        assert.equal(route.distanceMeters, 850);
+        assert.equal(route.durationSeconds, 600);
+      }
+    });
+    await check("Google Places request uses a minimal field mask and caps results at 5", async () => {
+      assert.ok(lastPlacesFieldMask.includes("places.id") && lastPlacesFieldMask.includes("places.displayName"));
+      assert.ok(!lastPlacesFieldMask.includes("*"), "the field mask must never be a wildcard");
+      const parsedBody = JSON.parse(lastPlacesRequestBody) as { maxResultCount: number };
+      assert.equal(parsedBody.maxResultCount, 5);
+    });
+    await check("Google Routes request uses a minimal field mask", async () => {
+      assert.ok(lastRoutesFieldMask.includes("distanceMeters") && lastRoutesFieldMask.includes("duration"));
+      assert.ok(!lastRoutesFieldMask.includes("polyline"), "the field mask must never request the polyline or turn-by-turn steps");
+    });
+    await check("a place missing an address never gets a fabricated one (omitted, not guessed)", async () => {
+      assert.ok(lastPlan!.days.some((day) => day.places.some((place) => place.formattedAddress === null)), "the 7th fake place has no address and must surface as null");
+    });
+    await check("Google Places malformed response: travel plan reports unavailable, never a fabricated itinerary", async () => {
+      fakeGooglePlacesMode = { kind: "malformed" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "ok" };
+    });
+    await check("Google Places timeout: travel plan reports unavailable after the short timeout, not a hang", async () => {
+      fakeGooglePlacesMode = { kind: "timeout" };
+      const started = Date.now();
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      const elapsedMs = Date.now() - started;
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      assert.ok(elapsedMs < 15_000, `Places timeout path took unexpectedly long: ${elapsedMs}ms`);
+      fakeGooglePlacesMode = { kind: "ok" };
+    });
+    await check("Google Routes malformed/missing duration: the leg is omitted, itinerary still returned with real places", async () => {
+      fakeGoogleRoutesMode = { kind: "malformed" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; plan: { days: Array<{ places: unknown[]; routes: unknown[] }> } };
+      assert.equal(payload.status, "ok");
+      assert.ok(payload.plan.days.some((day) => day.places.length > 0));
+      assert.ok(payload.plan.days.every((day) => day.routes.length === 0), "a malformed route response must never be guessed at — omitted entirely");
+      fakeGoogleRoutesMode = { kind: "ok" };
+    });
+    await check("no Google or Anthropic API key ever appears in a travel response", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      const text = await response.text();
+      assert.ok(!text.includes("fake-google-key") && !text.includes("fake-test-key"));
+    });
+
+    // --- feature flag OFF also gates the new endpoints ---
+    await check("kin_search OFF also rejects the Looks photo endpoint, travel plan, and persistence routes with 403", async () => {
+      await expectStatus(await admin.setFlag("kin_search", false), 200);
+      assert.equal((await userA.kinLooksPhoto(await validJpeg(), { query: "ok" })).status, 403);
+      assert.equal((await userA.kinTravelPlan({ query: "ok", destination: "Paris" })).status, 403);
+      assert.equal((await userA.saveRecommendation({ mode: "looks", query: "ok", answer: "ok" })).status, 403);
+      assert.equal((await userA.listTrips()).status, 403);
+      await expectStatus(await admin.setFlag("kin_search", true), 200);
+    });
+
+    // --- persistence: saved recommendations (explicit opt-in only) ---
+    let savedId = "";
+    await check("saving a recommendation persists exactly what was passed, scoped to the owner", async () => {
+      const response = await userA.saveRecommendation({
+        mode: "looks", query: "a dinner outfit", answer: "Wear the navy blazer.",
+        options: [{ label: "signature", reasoning: "classic", ownedItems: ["blazer"], missingItems: [] }],
+        citations: [{ title: "Store", url: "https://example.com/a" }],
+        results: [{ title: "Item", source: "example.com", url: "https://example.com/a", price: null, currency: null, imageUrl: null }],
+      });
+      await expectStatus(response, 201);
+      const payload = await response.json() as { id: string; mode: string };
+      savedId = payload.id;
+      const rows = await db.select().from(kinSavedRecommendations).where(eq(kinSavedRecommendations.id, savedId));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].ownerUserId, userAAccount.user.id);
+    });
+    await check("a saved recommendation with a non-https citation URL is rejected with 400", async () => {
+      const response = await userA.saveRecommendation({
+        mode: "looks", query: "ok", answer: "ok", citations: [{ title: null, url: "http://insecure.example.com" }], results: [],
+      });
+      assert.equal(response.status, 400);
+    });
+    await check("listing saved recommendations only returns the caller's own", async () => {
+      const listA = await userA.listSaved();
+      await expectStatus(listA, 200);
+      const payloadA = await listA.json() as { items: Array<{ id: string }> };
+      assert.ok(payloadA.items.some((item) => item.id === savedId));
+      const listB = await userB.listSaved();
+      await expectStatus(listB, 200);
+      const payloadB = await listB.json() as { items: Array<{ id: string }> };
+      assert.ok(!payloadB.items.some((item) => item.id === savedId));
+    });
+    await check("cross-user: B cannot delete A's saved recommendation (404, not deleted)", async () => {
+      const response = await userB.deleteSaved(savedId);
+      assert.equal(response.status, 404);
+      const rows = await db.select().from(kinSavedRecommendations).where(eq(kinSavedRecommendations.id, savedId));
+      assert.equal(rows.length, 1);
+    });
+    await check("the owner can delete their own saved recommendation", async () => {
+      await expectStatus(await userA.deleteSaved(savedId), 200);
+      const rows = await db.select().from(kinSavedRecommendations).where(eq(kinSavedRecommendations.id, savedId));
+      assert.equal(rows.length, 0);
+    });
+
+    // --- persistence: trips and itinerary items (Add to Trip) ---
+    let tripId = "";
+    await check("creating a trip persists it scoped to the owner", async () => {
+      const response = await userA.createTrip({ destination: "Paris", startDate: "2026-10-01", endDate: "2026-10-03", budget: 2000, currency: "USD" });
+      await expectStatus(response, 201);
+      tripId = (await response.json() as { id: string }).id;
+      const rows = await db.select().from(kinTrips).where(eq(kinTrips.id, tripId));
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0].ownerUserId, userAAccount.user.id);
+    });
+    await check("cross-user: B cannot read A's trip (404)", async () => {
+      assert.equal((await userB.getTrip(tripId)).status, 404);
+    });
+    let tripItemId = "";
+    await check("adding an itinerary item requires trip ownership and persists it", async () => {
+      const denied = await userB.addTripItem(tripId, { name: "Louvre", dayIndex: 0 });
+      assert.equal(denied.status, 404);
+      const response = await userA.addTripItem(tripId, { name: "Louvre", dayIndex: 0, placeId: "place-0", lat: 48.86, lng: 2.34, formattedAddress: "Rue de Rivoli" });
+      await expectStatus(response, 201);
+      tripItemId = (await response.json() as { id: string }).id;
+      const trip = await userA.getTrip(tripId);
+      const payload = await trip.json() as { items: Array<{ id: string }> };
+      assert.ok(payload.items.some((item) => item.id === tripItemId));
+    });
+    await check("cross-user: B cannot delete A's itinerary item (404, not deleted)", async () => {
+      const response = await userB.deleteTripItem(tripId, tripItemId);
+      assert.equal(response.status, 404);
+      const rows = await db.select().from(kinTripItems).where(eq(kinTripItems.id, tripItemId));
+      assert.equal(rows.length, 1);
+    });
+    await check("the owner can delete their own itinerary item and trip", async () => {
+      await expectStatus(await userA.deleteTripItem(tripId, tripItemId), 200);
+      await expectStatus(await userA.deleteTrip(tripId), 200);
+      const rows = await db.select().from(kinTrips).where(eq(kinTrips.id, tripId));
+      assert.equal(rows.length, 0);
+    });
+
     // --- missing API key: server never crashes, consumes nothing, degrades gracefully ---
     await check("missing ANTHROPIC_API_KEY: server boots fine, search returns the structured unavailable response, and never reaches a provider", async () => {
       const noKeyServer = await startServer({ ANTHROPIC_API_KEY: undefined, ANTHROPIC_BASE_URL: anthropicBaseUrl });
@@ -583,6 +994,8 @@ async function main() {
     stopServer(server);
     await new Promise<void>((resolve) => sidecar.close(() => resolve()));
     await new Promise<void>((resolve) => fakeAnthropic.server.close(() => resolve()));
+    await new Promise<void>((resolve) => fakeGooglePlaces.server.close(() => resolve()));
+    await new Promise<void>((resolve) => fakeGoogleRoutes.server.close(() => resolve()));
     await resetData();
   }
 

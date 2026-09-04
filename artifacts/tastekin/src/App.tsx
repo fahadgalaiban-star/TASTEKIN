@@ -2520,16 +2520,31 @@ type ClosetItem = {
 
 // KIN search — shared with the api-server contract in
 // artifacts/api-server/src/lib/kin-search.ts. price/currency/imageUrl are
-// always present on a result card (for the Looks/Travel PRs that will
-// populate them) but this PR's server never invents them — they arrive
-// null until a dedicated extraction step exists, and the UI falls back to
-// the branded placeholder image rather than ever fabricating one.
+// always present on a result card but the server never invents them — they
+// arrive null unless Anthropic's web search actually returned one, and the
+// UI falls back to the branded placeholder image rather than fabricating one.
 type KinMode = 'looks' | 'travel';
 type KinCitation = { title: string | null; url: string };
 type KinResultCard = { title: string; source: string; url: string; price: number | null; currency: string | null; imageUrl: string | null };
+type KinLooksOption = { label: 'signature' | 'safe' | 'bold'; reasoning: string; ownedItems: string[]; missingItems: string[] };
 type KinSearchResponse =
-  | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[] }
+  | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[] }
   | { status: 'unavailable'; reason: string };
+
+const KIN_LOOKS_OPTION_COPY: Record<KinLooksOption['label'], { en: string; ar: string }> = {
+  signature: { en: 'Signature', ar: 'الإطلالة المميزة' },
+  safe: { en: 'Safe', ar: 'الخيار الآمن' },
+  bold: { en: 'Bold', ar: 'الخيار الجريء' },
+};
+
+// KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
+// is either something Google's Places/Routes APIs genuinely returned or
+// null/omitted; the UI never invents a rating, address, or route.
+type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null };
+type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
+type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
+type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
+type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unavailable'; reason: string };
 
 /**
  * The KIN entry experience: a natural-language request, optional context
@@ -2551,6 +2566,9 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [query, setQuery] = useState('');
   const [myThingsItems, setMyThingsItems] = useState<ClosetItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('');
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [photoError, setPhotoError] = useState('');
   const [location, setLocation] = useState('');
   const [budget, setBudget] = useState('');
   const [currency, setCurrency] = useState('USD');
@@ -2559,9 +2577,14 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error'>('idle');
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<KinSearchResponse | null>(null);
+  const [travelPlan, setTravelPlan] = useState<KinTravelPlan | null>(null);
+  const [savedNotice, setSavedNotice] = useState('');
+  const [tripId, setTripId] = useState<string | null>(null);
+  const [addingTripItemKey, setAddingTripItemKey] = useState<string | null>(null);
+  const [addedTripItems, setAddedTripItems] = useState<Set<string>>(new Set());
 
   const myThingsEnabled = session.featureFlags.my_things === true;
   useEffect(() => {
@@ -2580,33 +2603,146 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     return () => { cancelled = true; };
   }, [allowed, myThingsEnabled]);
 
+  useEffect(() => () => { if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl); }, [photoPreviewUrl]);
+
   if (!allowed) return <SimpleScreen kicker="KIN" title="KIN"><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
+
+  const clearPhoto = () => {
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    setPhotoFile(null); setPhotoPreviewUrl(null); setPhotoError('');
+  };
+
+  const selectPhoto = (event: ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files?.[0];
+    event.target.value = '';
+    if (!selected) return;
+    const validationError = validateClosetPhoto(selected, ar);
+    if (validationError) { setPhotoError(validationError); return; }
+    setPhotoError('');
+    if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
+    setPhotoFile(selected);
+    setPhotoPreviewUrl(URL.createObjectURL(selected));
+    setSelectedItemId('');
+  };
+
+  const selectMyThingsItem = (id: string) => {
+    setSelectedItemId(id);
+    if (id) clearPhoto();
+  };
 
   const submit = async () => {
     const trimmed = query.trim();
     if (!trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
-    setState('loading'); setErrorMessage(''); setResult(null);
+    if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
+    setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
+    setTripId(null); setAddedTripItems(new Set());
     try {
-      const body: Record<string, unknown> = { mode, query: trimmed };
-      if (selectedItemId) body.myThingsItemId = selectedItemId;
-      if (location.trim()) body.location = location.trim();
-      if (budget.trim()) body.budget = Number(budget);
-      if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
-      if (size.trim()) body.size = size.trim();
-      if (occasion.trim()) body.occasion = occasion.trim();
-      if (mode === 'travel' && destination.trim()) body.destination = destination.trim();
-      if (mode === 'travel' && startDate) body.startDate = startDate;
-      if (mode === 'travel' && endDate) body.endDate = endDate;
+      if (mode === 'travel') {
+        const body: Record<string, unknown> = { query: trimmed, destination: destination.trim() };
+        if (selectedItemId) body.myThingsItemId = selectedItemId;
+        if (location.trim()) body.location = location.trim();
+        if (budget.trim()) body.budget = Number(budget);
+        if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
+        if (occasion.trim()) body.occasion = occasion.trim();
+        if (startDate) body.startDate = startDate;
+        if (endDate) body.endDate = endDate;
+        const response = await fetch('/api/kin/travel/plan', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (response.status === 429) { setState('quota-exceeded'); return; }
+        if (!response.ok) throw new Error(await describeFailedResponse(response));
+        const payload = await response.json() as KinTravelResponse;
+        if (payload.status !== 'ok') { setState('unavailable'); return; }
+        setTravelPlan(payload.plan);
+        setState(payload.plan.narrative.trim() || payload.plan.days.some((day) => day.places.length > 0) ? 'ready' : 'empty');
+        return;
+      }
 
-      const response = await fetch('/api/kin/search', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      let response: Response;
+      if (photoFile && !selectedItemId) {
+        const params = new URLSearchParams({ query: trimmed });
+        if (location.trim()) params.set('location', location.trim());
+        if (budget.trim()) params.set('budget', budget.trim());
+        if (budget.trim() && currency.trim()) params.set('currency', currency.trim().toUpperCase());
+        if (size.trim()) params.set('size', size.trim());
+        if (occasion.trim()) params.set('occasion', occasion.trim());
+        response = await fetch(`/api/kin/looks/photo?${params.toString()}`, {
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': photoFile.type }, body: photoFile,
+        });
+      } else {
+        const body: Record<string, unknown> = { mode: 'looks', query: trimmed };
+        if (selectedItemId) body.myThingsItemId = selectedItemId;
+        if (location.trim()) body.location = location.trim();
+        if (budget.trim()) body.budget = Number(budget);
+        if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
+        if (size.trim()) body.size = size.trim();
+        if (occasion.trim()) body.occasion = occasion.trim();
+        response = await fetch('/api/kin/search', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }
+      if (response.status === 429) { setState('quota-exceeded'); return; }
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as KinSearchResponse;
       setResult(payload);
-      if (payload.status !== 'ok') setState('unavailable');
-      else setState(payload.answer.trim() || payload.results.length ? 'ready' : 'empty');
+      if (payload.status !== 'ok') { setState('unavailable'); return; }
+      const hasOptions = (payload.options?.length ?? 0) > 0;
+      setState(payload.answer.trim() || payload.results.length || hasOptions ? 'ready' : 'empty');
     } catch (err) {
       setErrorMessage(err instanceof Error ? err.message : String(err));
       setState('error');
+    }
+  };
+
+  const saveRecommendation = async () => {
+    if (!result || result.status !== 'ok') return;
+    try {
+      const response = await fetch('/api/kin/saved', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'looks', query: query.trim(), answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      setSavedNotice(t('Saved to your KIN history.', 'تم الحفظ في سجل كين.'));
+    } catch (err) {
+      setSavedNotice(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const ensureTrip = async (): Promise<string | null> => {
+    if (tripId) return tripId;
+    try {
+      const body: Record<string, unknown> = { destination: destination.trim() };
+      if (startDate) body.startDate = startDate;
+      if (endDate) body.endDate = endDate;
+      if (budget.trim()) body.budget = Number(budget);
+      if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
+      const response = await fetch('/api/kin/trips', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json() as { id: string };
+      setTripId(payload.id);
+      return payload.id;
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+      return null;
+    }
+  };
+
+  const addToTrip = async (day: KinTravelDay, place: KinTravelPlace) => {
+    const key = `${day.dayIndex}:${place.placeId}`;
+    setAddingTripItemKey(key);
+    try {
+      const trip = await ensureTrip();
+      if (!trip) return;
+      const response = await fetch(`/api/kin/trips/${encodeURIComponent(trip)}/items`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dayIndex: day.dayIndex, placeId: place.placeId, name: place.name,
+          formattedAddress: place.formattedAddress ?? undefined,
+          lat: place.lat ?? undefined, lng: place.lng ?? undefined,
+        }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      setAddedTripItems((current) => new Set(current).add(key));
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAddingTripItemKey(null);
     }
   };
 
@@ -2624,11 +2760,22 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     </label>
 
     {myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
-      <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => setSelectedItemId(event.target.value)}>
+      <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
         <option value="">{t('None', 'بلا')}</option>
         {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
       </select>
     </label>}
+
+    {mode === 'looks' && !selectedItemId && <div className="form-field"><span>{t('Or add a photo (optional)', 'أو أضف صورة (اختياري)')}</span>
+      {photoPreviewUrl ? <div className="profile-grid-media" style={{ maxWidth: 160 }}>
+        <img src={photoPreviewUrl} alt="" />
+        <button type="button" className="approved-button" data-testid="kin-photo-clear" onClick={clearPhoto}>{t('Remove photo', 'إزالة الصورة')}</button>
+      </div> : <label className="approved-button" style={{ display: 'inline-flex', width: 'fit-content' }}>
+        {t('Take or choose a photo', 'التقط أو اختر صورة')}
+        <input aria-label={t('Add a clothing photo', 'أضف صورة قطعة ملابس')} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: 'none' }} data-testid="kin-photo-input" onChange={selectPhoto} />
+      </label>}
+      {photoError && <p className="workspace-notice" role="alert" data-testid="kin-photo-error">{photoError}</p>}
+    </div>}
 
     <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
       <label className="form-field"><span>{t('Location / country', 'الموقع / الدولة')}</span><input data-testid="kin-location" type="text" value={location} onChange={(event) => setLocation(event.target.value.slice(0, 200))} /></label>
@@ -2657,24 +2804,73 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
 
     {state === 'unavailable' && <div className="workspace-notice" role="alert" data-testid="kin-unavailable">{t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}</div>}
 
+    {state === 'quota-exceeded' && <div className="workspace-notice" role="alert" data-testid="kin-quota-exceeded">{t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')}</div>}
+
     {state === 'empty' && <Empty text={t('No results yet — try rephrasing your request.', 'لا نتائج بعد — حاول إعادة صياغة طلبك.')} />}
 
-    {state === 'ready' && result && result.status === 'ok' && <div className="approved-panel" data-testid="kin-answer">
-      <p style={{ whiteSpace: 'pre-wrap' }}>{result.answer}</p>
+    {mode === 'looks' && state === 'ready' && result && result.status === 'ok' && <>
+      {result.options && result.options.length > 0 ? <div className="approved-grid" data-testid="kin-looks-options">
+        {result.options.map((option) => <div key={option.label} className="approved-panel" data-testid="kin-look-option">
+          <span className="approved-kicker">{t(KIN_LOOKS_OPTION_COPY[option.label].en, KIN_LOOKS_OPTION_COPY[option.label].ar)}</span>
+          <p style={{ whiteSpace: 'pre-wrap' }}>{option.reasoning}</p>
+          {option.ownedItems.length > 0 && <p className="settings-note">{t('Already in My Things: ', 'موجود في أغراضي: ')}{option.ownedItems.join(', ')}</p>}
+          {option.missingItems.length > 0 && <p className="settings-note">{t('You would still need: ', 'ستحتاج إلى: ')}{option.missingItems.join(', ')}</p>}
+        </div>)}
+      </div> : <div className="approved-panel" data-testid="kin-answer"><p style={{ whiteSpace: 'pre-wrap' }}>{result.answer}</p></div>}
+
       {result.citations.length > 0 && <div data-testid="kin-citations">
         <span className="form-label">{t('Sources', 'المصادر')}</span>
         <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
           {result.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
         </ul>
       </div>}
-    </div>}
 
-    {state === 'ready' && result && result.status === 'ok' && result.results.length > 0 && <div className="approved-grid" data-testid="kin-results">
-      {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
-        <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
-        <strong>{card.title}</strong>
-        <span>{card.source}{card.price !== null && card.currency ? ` · ${card.currency} ${card.price}` : ''}</span>
-      </a>)}
+      {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results">
+        {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
+          <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
+          <strong>{card.title}</strong>
+          <span>{card.source}{card.price !== null && card.currency ? ` · ${card.currency} ${card.price}` : ''}</span>
+        </a>)}
+      </div>}
+
+      <div className="admin-detail-actions" style={{ marginTop: 12 }}>
+        <button className="approved-button" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save', 'حفظ')}</button>
+        <button className="approved-button" data-testid="kin-swap" onClick={() => void submit()}>{t('Swap', 'تبديل')}</button>
+      </div>
+      {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
+    </>}
+
+    {mode === 'travel' && state === 'ready' && travelPlan && <div data-testid="kin-travel-plan">
+      <div className="approved-panel" data-testid="kin-answer">
+        <p style={{ whiteSpace: 'pre-wrap' }}>{travelPlan.narrative}</p>
+        {travelPlan.citations.length > 0 && <div data-testid="kin-citations">
+          <span className="form-label">{t('Sources', 'المصادر')}</span>
+          <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
+            {travelPlan.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
+          </ul>
+        </div>}
+      </div>
+
+      {travelPlan.days.map((day) => <div key={day.dayIndex} className="approved-panel" data-testid="kin-travel-day" style={{ marginTop: 12 }}>
+        <span className="approved-kicker">{day.date || `${t('Day', 'اليوم')} ${day.dayIndex + 1}`}</span>
+        {day.places.length === 0 && <p className="settings-note">{t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')}</p>}
+        {day.places.map((place, index) => {
+          const key = `${day.dayIndex}:${place.placeId}`;
+          const leg = index > 0 ? day.routes[index - 1] : undefined;
+          return <div key={place.placeId} className="approved-grid-card" data-testid="kin-travel-place" style={{ padding: 10, marginTop: index > 0 ? 8 : 0 }}>
+            <strong>{place.name}</strong>
+            {place.formattedAddress && <span>{place.formattedAddress}</span>}
+            {place.rating !== null && <span>★ {place.rating}</span>}
+            {leg && <span className="settings-note">{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min from previous stop', 'دقيقة من المحطة السابقة')}`}</span>}
+            <div className="admin-detail-actions">
+              {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open in Maps', 'فتح في الخرائط')}</a>}
+              <button className="approved-button primary" data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(day, place)}>
+                {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
+              </button>
+            </div>
+          </div>;
+        })}
+      </div>)}
     </div>}
   </SimpleScreen>;
 }

@@ -40,7 +40,7 @@ export const FEATURE_FLAG_DEFINITIONS = [
   },
   {
     key: "kin_search",
-    description: "KIN: the central nav entry point for natural-language Looks/Travel requests, backed by an authenticated server endpoint that calls Claude with Anthropic's live web-search tool. Nothing is persisted — no search text, results, or wardrobe context is stored anywhere. Has no per-request/per-user rate limit yet beyond this flag, so keep disabled outside of controlled testing until a durable limiter (mirroring closet_item_analysis's) ships in a follow-up PR.",
+    description: "KIN: the central nav entry point for natural-language Looks/Travel requests. KIN Looks analyzes a new photo, an owned My Things item's real image, or text alone via Claude with live web search, returning signature/safe/bold styling options. KIN Travel combines real Google Places/Routes data with a grounded Claude answer into a day-by-day itinerary. A member may explicitly save a recommendation or build a trip; everything else (the search itself) is never persisted. Gated by a durable per-user daily quota on every attempted Claude request (kin_search_usage), independent of this flag.",
     defaultEnabled: false,
   },
 ] as const;
