@@ -81,7 +81,8 @@ type FakeAnthropicMode =
   | { kind: "timeout" }
   | { kind: "bad_and_excess_urls" }
   | { kind: "looks_options" }
-  | { kind: "looks_product_page" };
+  | { kind: "looks_product_page" }
+  | { kind: "looks_arabic" };
 
 let fakeAnthropicMode: FakeAnthropicMode = { kind: "ok" };
 let lastAnthropicRequestBody = "";
@@ -132,6 +133,20 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
             "###BOLD###",
             "A statement piece for a memorable entrance.",
             "MISSING: silk scarf, patent boots",
+          ].join("\n");
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ...base, stop_reason: "end_turn", content: [{ type: "text", text: answer, citations: null }] }));
+          return;
+        }
+        if (mode.kind === "looks_arabic") {
+          // A real model, instructed to "write in the member's language",
+          // would answer an Arabic query in Arabic — this mirrors that,
+          // rather than always returning the fixed English canned text.
+          const answer = [
+            "###SIGNATURE###",
+            "بليزر كحلي مصمم مع قميص أبيض هو اختيار كلاسيكي أنيق لهذه المناسبة — خطوط نظيفة وأناقة بلا مجهود.",
+            "OWNED: بليزر كحلي, قميص أبيض",
+            "MISSING: حذاء جلدي بني",
           ].join("\n");
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ...base, stop_reason: "end_turn", content: [{ type: "text", text: answer, citations: null }] }));
@@ -891,6 +906,19 @@ async function main() {
       await expectStatus(response, 200);
       const payload = await response.json() as { options?: unknown };
       assert.equal(payload.options, undefined);
+      fakeAnthropicMode = { kind: "ok" };
+    });
+    await check("an Arabic query gets a real Arabic-language Looks result, never English reasoning text", async () => {
+      fakeAnthropicMode = { kind: "looks_arabic" };
+      const response = await userA.kinSearch({ mode: "looks", query: "إطلالة عشاء أنيقة وغير رسمية" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; options: Array<{ label: string; reasoning: string; ownedItems: string[] }> };
+      assert.equal(payload.status, "ok");
+      const signature = payload.options.find((o) => o.label === "signature");
+      assert.ok(signature, "the Arabic response must still parse into structured options");
+      const arabicPattern = /[؀-ۿ]/;
+      assert.ok(arabicPattern.test(signature!.reasoning), "the reasoning text for an Arabic query must contain real Arabic content, not the fixed English canned text");
+      assert.ok(signature!.ownedItems.some((item) => arabicPattern.test(item)), "owned items for an Arabic query must also be in Arabic");
       fakeAnthropicMode = { kind: "ok" };
     });
 

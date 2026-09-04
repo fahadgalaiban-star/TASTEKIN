@@ -2944,7 +2944,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={backToForm}><ArrowLeft size={18} /></button>
       <span className="kin-kicker">{t('KIN Travel', 'كين ترافل')}</span>
       <h1 className="kin-headline">{t(`${travelPlan.destination}, shaped around you.`, `${travelPlan.destination}، مصمم من أجلك.`)}</h1>
-      {(startDate || endDate) && <p className="kin-subline">{[startDate, endDate].filter(Boolean).join(' – ')}</p>}
+      {(startDate || endDate) && <p className="kin-subline" dir="ltr">{[startDate, endDate].filter(Boolean).join(' – ')}</p>}
 
       <div className="kin-hero" data-testid="kin-travel-hero">
         {heroPhoto?.photoUrl ? <img src={heroPhoto.photoUrl} alt="" /> : <KinRingsMark size={56} />}
