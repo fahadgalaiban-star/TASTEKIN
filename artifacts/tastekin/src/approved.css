@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&family=Lora:ital,wght@0,500;0,600;1,500&display=swap');
 
 :root { --tk-ivory:#f5f1e9; --tk-ink:#171416; --tk-wine:#4b1f2a; --tk-coral:#e85f42; --tk-stone:#726b64; --tk-border:#e1d9cf; --tk-card:#fffdf8; }
 * { box-sizing:border-box; }
@@ -425,3 +425,77 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-app[dir="rtl"] .approved-title, .approved-app[dir="rtl"] .home-feed-header h1, .approved-app[dir="rtl"] .approved-name h1 { letter-spacing:0; }
 .approved-app[dir="rtl"] .taste-seal-popover { margin-right:71px; margin-left:0; }
 @media (min-width:600px) { .approved-app { padding:16px; background:#e8e0d6; } .approved-shell { min-height:calc(100dvh - 32px); border-radius:28px; background:var(--tk-ivory); box-shadow:0 20px 70px rgba(40,26,26,.13); } }
+
+/* ---- KIN Looks / KIN Travel editorial presentation ---- */
+.kin-kicker { display:block; margin:2px 0 6px; color:var(--tk-stone); font-size:10px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; text-align:center; }
+.kin-headline { margin:0 0 4px; color:var(--tk-ink); font-family:'Lora', serif; font-size:26px; font-weight:500; line-height:1.18; letter-spacing:-.01em; text-align:center; }
+.approved-app[dir="rtl"] .kin-headline { font-family:'IBM Plex Sans Arabic', sans-serif; font-weight:700; letter-spacing:0; }
+.kin-subline { margin:0 0 18px; color:var(--tk-stone); font-size:12px; text-align:center; }
+.kin-pills { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin:0 0 18px; }
+.kin-pill { padding:6px 12px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-wine); font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
+.kin-tabs { display:flex; justify-content:center; gap:8px; margin:0 0 18px; }
+.kin-tabs button { padding:10px 22px; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); font-size:13px; font-weight:700; }
+.kin-tabs button.selected { background:var(--tk-wine); color:#fff; }
+
+.kin-card { overflow:hidden; border-radius:20px; background:var(--tk-card); box-shadow:0 10px 30px rgba(38,25,23,.08); }
+.kin-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 16px 0; }
+.kin-card-kicker { color:var(--tk-wine); font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+.kin-badge { padding:5px 10px; border-radius:999px; background:var(--tk-wine); color:#fff; font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
+.kin-card-image { position:relative; margin:14px 16px 0; border-radius:14px; overflow:hidden; aspect-ratio:1/1; background:#ded6cb; }
+.kin-card-image img { width:100%; height:100%; display:block; object-fit:cover; }
+.kin-card-caption { margin:14px 16px 0; color:var(--tk-ink); font-family:'Lora', serif; font-style:italic; font-size:14px; line-height:1.5; }
+.approved-app[dir="rtl"] .kin-card-caption { font-family:'IBM Plex Sans Arabic', sans-serif; font-style:normal; }
+.kin-tag-row { display:flex; flex-wrap:wrap; gap:6px; margin:12px 16px 0; }
+.kin-tag { padding:4px 10px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-ivory); color:var(--tk-stone); font-size:10px; font-weight:700; }
+.kin-tag.owned { border-color:var(--tk-wine); color:var(--tk-wine); }
+.kin-dots { display:flex; justify-content:center; gap:6px; margin:16px 0 4px; }
+.kin-dots span { width:6px; height:6px; border-radius:50%; background:var(--tk-border); }
+.kin-dots span.active { background:var(--tk-wine); }
+.kin-card-actions { display:flex; gap:8px; padding:16px; }
+.kin-card-actions .approved-button { flex:1; }
+.kin-link-row { padding:0 16px 16px; text-align:center; }
+.kin-link { border:0; background:transparent; color:var(--tk-wine); font-size:12px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; text-decoration:underline; text-underline-offset:3px; }
+.kin-link:disabled { color:var(--tk-stone); text-decoration:none; cursor:default; }
+
+.kin-hero { position:relative; margin-bottom:14px; border-radius:18px; overflow:hidden; aspect-ratio:16/10; background:linear-gradient(135deg,#efe6d8,#e2d5c2); display:flex; align-items:center; justify-content:center; }
+.kin-hero svg { width:56px; height:56px; color:var(--tk-wine); opacity:.5; }
+.kin-hero-tag { position:absolute; bottom:10px; inset-inline-start:10px; padding:6px 11px; border-radius:999px; background:rgba(23,20,22,.55); color:#fff; font-size:10px; font-weight:700; }
+
+.kin-day-tabs { display:flex; gap:8px; overflow-x:auto; margin:0 0 14px; padding-bottom:2px; -webkit-overflow-scrolling:touch; }
+.kin-day-tabs button { flex:0 0 auto; padding:8px 16px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-stone); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
+.kin-day-tabs button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:#fff; }
+
+.kin-day-card { padding:16px; border-radius:20px; background:var(--tk-card); box-shadow:0 10px 30px rgba(38,25,23,.08); }
+.kin-day-kicker { color:var(--tk-wine); font-size:10px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
+.kin-day-title { margin:4px 0 14px; color:var(--tk-ink); font-family:'Lora', serif; font-size:20px; font-weight:500; }
+.approved-app[dir="rtl"] .kin-day-title { font-family:'IBM Plex Sans Arabic', sans-serif; font-weight:700; }
+
+.kin-map { display:block; width:100%; height:auto; margin-bottom:16px; border-radius:14px; background:#ede4d4; }
+.kin-map circle.pin { fill:var(--tk-wine); }
+.kin-map text.pin-index { fill:#fff; font-size:9px; font-weight:800; }
+.kin-map text.pin-label { fill:var(--tk-ink); font-size:8px; font-weight:700; }
+.kin-map path.route { fill:none; stroke:var(--tk-wine); stroke-width:1.6; }
+
+.kin-timeline { position:relative; }
+.kin-timeline-item { position:relative; display:grid; grid-template-columns:24px 20px 1fr; gap:8px; }
+.kin-timeline-time { padding-top:14px; color:var(--tk-wine); font-size:11px; font-weight:800; text-align:end; }
+.kin-timeline-rail { position:relative; display:flex; justify-content:center; }
+.kin-timeline-rail::before { content:''; position:absolute; top:20px; bottom:-14px; width:1px; background:var(--tk-border); }
+.kin-timeline-item:last-child .kin-timeline-rail::before { display:none; }
+.kin-timeline-dot { position:relative; z-index:1; margin-top:14px; width:9px; height:9px; border-radius:50%; background:var(--tk-wine); }
+.kin-timeline-card { display:flex; gap:10px; padding:10px; border-radius:14px; background:var(--tk-ivory); }
+.kin-timeline-thumb { flex:0 0 56px; width:56px; height:56px; border-radius:10px; overflow:hidden; background:#ded6cb; display:flex; align-items:center; justify-content:center; }
+.kin-timeline-thumb img { width:100%; height:100%; object-fit:cover; }
+.kin-timeline-thumb svg { width:22px; height:22px; color:var(--tk-wine); opacity:.5; }
+.kin-timeline-body { flex:1; min-width:0; }
+.kin-timeline-category { display:block; color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.kin-timeline-name { display:block; margin:2px 0 0; color:var(--tk-ink); font-size:14px; font-weight:700; }
+.kin-timeline-note { display:block; margin:2px 0 0; color:var(--tk-stone); font-size:11px; font-style:italic; }
+.kin-timeline-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.kin-timeline-actions .approved-button { padding:6px 12px; font-size:10px; }
+.kin-transit { grid-column:3; margin:6px 0; color:var(--tk-stone); font-size:10px; }
+.kin-freetime { grid-column:3; margin:6px 0; padding:8px 12px; border:1px dashed var(--tk-border); border-radius:999px; color:var(--tk-stone); font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; text-align:center; }
+
+.approved-bottom button[data-testid="nav-kin"].active { position:relative; }
+.approved-bottom button[data-testid="nav-kin"].active svg { width:38px; height:38px; padding:8px; border-radius:50%; background:var(--tk-wine); color:#fff; margin-top:-14px; box-shadow:0 6px 16px rgba(75,31,42,.35); }
+.approved-bottom button[data-testid="nav-kin"].active span { margin-top:2px; }

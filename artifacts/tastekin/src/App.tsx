@@ -2531,11 +2531,50 @@ type KinSearchResponse =
   | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[] }
   | { status: 'unavailable'; reason: string };
 
-const KIN_LOOKS_OPTION_COPY: Record<KinLooksOption['label'], { en: string; ar: string }> = {
-  signature: { en: 'Signature', ar: 'الإطلالة المميزة' },
-  safe: { en: 'Safe', ar: 'الخيار الآمن' },
-  bold: { en: 'Bold', ar: 'الخيار الجريء' },
+const KIN_LOOKS_OPTION_COPY: Record<KinLooksOption['label'], { en: string; ar: string; badgeEn: string; badgeAr: string }> = {
+  signature: { en: 'Signature', ar: 'الإطلالة المميزة', badgeEn: 'Very you', badgeAr: 'أنت تمامًا' },
+  safe: { en: 'Safe', ar: 'الخيار الآمن', badgeEn: 'Easy win', badgeAr: 'خيار مضمون' },
+  bold: { en: 'Bold', ar: 'الخيار الجريء', badgeEn: 'Statement', badgeAr: 'إطلالة لافتة' },
 };
+
+/** The KIN brand mark (interlocking rings) used as a placeholder for imagery this PR has no real photo for — never a fabricated photo, just the same mark already used as the app's logo. */
+function KinRingsMark({ size = 40 }: { size?: number }) {
+  return <svg width={size} height={size} viewBox="0 0 48 48" fill="none" aria-hidden="true">
+    <circle cx="19" cy="24" r="12" stroke="currentColor" strokeWidth="3.4" />
+    <circle cx="29" cy="24" r="12" stroke="currentColor" strokeWidth="3.4" />
+  </svg>;
+}
+
+/**
+ * Decorative, non-interactive route schematic built entirely client-side
+ * from the real lat/lng values Google Places already returned — never a
+ * Maps JS embed and never a fetched map tile, so no browser-restricted key
+ * is ever needed. Purely illustrative positioning (independent min/max
+ * normalization per axis), not a geographically accurate projection.
+ */
+function KinRouteMap({ places }: { places: KinTravelPlace[] }) {
+  const points = places.filter((place): place is KinTravelPlace & { lat: number; lng: number } => place.lat !== null && place.lng !== null);
+  if (points.length < 2) return null;
+  const lats = points.map((p) => p.lat);
+  const lngs = points.map((p) => p.lng);
+  const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
+  const width = 300; const height = 120; const pad = 20;
+  const coords = points.map((place) => ({
+    place,
+    x: pad + (maxLng > minLng ? (place.lng - minLng) / (maxLng - minLng) : 0.5) * (width - pad * 2),
+    y: pad + (1 - (maxLat > minLat ? (place.lat - minLat) / (maxLat - minLat) : 0.5)) * (height - pad * 2),
+  }));
+  const pathData = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`).join(' ');
+  return <svg className="kin-map" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Route overview">
+    <path className="route" d={pathData} />
+    {coords.map((c, index) => <g key={c.place.placeId}>
+      <circle className="pin" cx={c.x} cy={c.y} r="8" />
+      <text className="pin-index" x={c.x} y={c.y + 3} textAnchor="middle">{index + 1}</text>
+      <text className="pin-label" x={c.x} y={c.y - 12 < 8 ? c.y + 20 : c.y - 12} textAnchor="middle">{c.place.name.length > 16 ? `${c.place.name.slice(0, 15)}…` : c.place.name}</text>
+    </g>)}
+  </svg>;
+}
 
 // KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
 // is either something Google's Places/Routes APIs genuinely returned or
@@ -2585,6 +2624,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [tripId, setTripId] = useState<string | null>(null);
   const [addingTripItemKey, setAddingTripItemKey] = useState<string | null>(null);
   const [addedTripItems, setAddedTripItems] = useState<Set<string>>(new Set());
+  const [selectedOptionIndex, setSelectedOptionIndex] = useState(0);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+  const [lookAddedToTrip, setLookAddedToTrip] = useState(false);
+  const [addingLookToTrip, setAddingLookToTrip] = useState(false);
 
   const myThingsEnabled = session.featureFlags.my_things === true;
   useEffect(() => {
@@ -2635,7 +2678,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     if (!trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
-    setTripId(null); setAddedTripItems(new Set());
+    setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
     try {
       if (mode === 'travel') {
         const body: Record<string, unknown> = { query: trimmed, destination: destination.trim() };
@@ -2746,10 +2789,40 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     }
   };
 
-  return <SimpleScreen kicker="KIN" title={t('Ask KIN anything.', 'اسأل كين عن أي شيء.')}>
-    <p>{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
+  /**
+   * Attaches a Look to the trip already open this session (via a
+   * note-only itinerary item — no place/coordinates, since an outfit
+   * isn't a location). Only enabled once a trip exists (created from the
+   * Travel tab's own Add to Trip) — Looks has no trip picker of its own,
+   * so there is nothing honest to attach it to before that.
+   */
+  const addLookToTrip = async (option: KinLooksOption) => {
+    if (!tripId) return;
+    setAddingLookToTrip(true);
+    try {
+      const response = await fetch(`/api/kin/trips/${encodeURIComponent(tripId)}/items`, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: `${t('Look', 'إطلالة')}: ${KIN_LOOKS_OPTION_COPY[option.label][ar ? 'ar' : 'en']}`, notes: option.reasoning.slice(0, 1000) }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      setLookAddedToTrip(true);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : String(err));
+    } finally {
+      setAddingLookToTrip(false);
+    }
+  };
 
-    <div className="profile-interests" style={{ marginTop: 4 }}>
+  const looksOptions = result && result.status === 'ok' ? result.options ?? [] : [];
+  const activeOption = looksOptions[selectedOptionIndex];
+  const activeDay = travelPlan?.days[selectedDayIndex];
+
+  return <section data-testid="kin-screen">
+    <span className="kin-kicker">{mode === 'looks' ? t('KIN Looks', 'كين لوكس') : t('KIN Travel', 'كين ترافل')}</span>
+    <h1 className="kin-headline">{mode === 'looks' ? t('Built around you.', 'مبني من أجلك.') : t('Shaped around you.', 'مصمم من أجلك.')}</h1>
+    <p className="kin-subline">{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
+
+    <div className="kin-tabs">
       <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => setMode('looks')}>{t('Looks', 'الإطلالات')}</button>
       <button type="button" data-testid="kin-mode-travel" className={mode === 'travel' ? 'selected' : ''} onClick={() => setMode('travel')}>{t('Travel', 'السفر')}</button>
     </div>
@@ -2809,70 +2882,112 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     {state === 'empty' && <Empty text={t('No results yet — try rephrasing your request.', 'لا نتائج بعد — حاول إعادة صياغة طلبك.')} />}
 
     {mode === 'looks' && state === 'ready' && result && result.status === 'ok' && <>
-      {result.options && result.options.length > 0 ? <div className="approved-grid" data-testid="kin-looks-options">
-        {result.options.map((option) => <div key={option.label} className="approved-panel" data-testid="kin-look-option">
-          <span className="approved-kicker">{t(KIN_LOOKS_OPTION_COPY[option.label].en, KIN_LOOKS_OPTION_COPY[option.label].ar)}</span>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{option.reasoning}</p>
-          {option.ownedItems.length > 0 && <p className="settings-note">{t('Already in My Things: ', 'موجود في أغراضي: ')}{option.ownedItems.join(', ')}</p>}
-          {option.missingItems.length > 0 && <p className="settings-note">{t('You would still need: ', 'ستحتاج إلى: ')}{option.missingItems.join(', ')}</p>}
-        </div>)}
-      </div> : <div className="approved-panel" data-testid="kin-answer"><p style={{ whiteSpace: 'pre-wrap' }}>{result.answer}</p></div>}
+      {activeOption ? <div data-testid="kin-looks-options">
+        <div className="kin-card" data-testid="kin-look-option">
+          <div className="kin-card-head">
+            <span className="kin-card-kicker">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].en, KIN_LOOKS_OPTION_COPY[activeOption.label].ar)}</span>
+            <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
+          </div>
+          <div className="kin-card-image">
+            {photoPreviewUrl ? <img src={photoPreviewUrl} alt="" /> : <KinRingsMark size={64} />}
+          </div>
+          <p className="kin-card-caption">{activeOption.reasoning}</p>
+          {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
+            {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
+            {activeOption.missingItems.map((item, index) => <span key={`missing-${index}`} className="kin-tag">{t('Find similar', 'ابحث عن مثيل')} · {item}</span>)}
+          </div>}
+          {looksOptions.length > 1 && <div className="kin-dots" data-testid="kin-look-dots">
+            {looksOptions.map((option, index) => <span key={option.label} role="button" tabIndex={0} aria-label={t(KIN_LOOKS_OPTION_COPY[option.label].en, KIN_LOOKS_OPTION_COPY[option.label].ar)}
+              className={index === selectedOptionIndex ? 'active' : ''} onClick={() => setSelectedOptionIndex(index)}
+              onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedOptionIndex(index); }} />)}
+          </div>}
+          <div className="kin-card-actions">
+            <button className="approved-button primary" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save Look', 'احفظ الإطلالة')}</button>
+            <button className="approved-button" data-testid="kin-swap" onClick={() => void submit()}>{t('Swap a Piece', 'بدّل قطعة')}</button>
+          </div>
+          <div className="kin-link-row">
+            <button type="button" className="kin-link" data-testid="kin-add-look-to-trip" disabled={!tripId || addingLookToTrip || lookAddedToTrip} title={!tripId ? t('Plan a trip first to attach a look to it', 'خطّط لرحلة أولاً لإرفاق إطلالة بها') : undefined} onClick={() => void addLookToTrip(activeOption)}>
+              {lookAddedToTrip ? t('Added to Trip', 'أُضيف إلى الرحلة') : addingLookToTrip ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
+            </button>
+          </div>
+        </div>
+        {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
+      </div> : <div className="kin-card" data-testid="kin-answer"><p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p></div>}
 
-      {result.citations.length > 0 && <div data-testid="kin-citations">
+      {result.citations.length > 0 && <div data-testid="kin-citations" style={{ marginTop: 14 }}>
         <span className="form-label">{t('Sources', 'المصادر')}</span>
         <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
           {result.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
         </ul>
       </div>}
 
-      {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results">
+      {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results" style={{ marginTop: 14 }}>
         {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
           <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
           <strong>{card.title}</strong>
           <span>{card.source}{card.price !== null && card.currency ? ` · ${card.currency} ${card.price}` : ''}</span>
         </a>)}
       </div>}
-
-      <div className="admin-detail-actions" style={{ marginTop: 12 }}>
-        <button className="approved-button" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save', 'حفظ')}</button>
-        <button className="approved-button" data-testid="kin-swap" onClick={() => void submit()}>{t('Swap', 'تبديل')}</button>
-      </div>
-      {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
     </>}
 
     {mode === 'travel' && state === 'ready' && travelPlan && <div data-testid="kin-travel-plan">
-      <div className="approved-panel" data-testid="kin-answer">
-        <p style={{ whiteSpace: 'pre-wrap' }}>{travelPlan.narrative}</p>
-        {travelPlan.citations.length > 0 && <div data-testid="kin-citations">
+      <div className="kin-hero">
+        <KinRingsMark size={56} />
+        <span className="kin-hero-tag">{travelPlan.destination}</span>
+      </div>
+
+      {travelPlan.days.length > 1 && <div className="kin-day-tabs" data-testid="kin-day-tabs">
+        {travelPlan.days.map((day, index) => <button key={day.dayIndex} type="button" className={index === selectedDayIndex ? 'selected' : ''} onClick={() => setSelectedDayIndex(index)}>
+          {t(`Day ${index + 1}`, `اليوم ${index + 1}`)}
+        </button>)}
+      </div>}
+
+      {activeDay && <div className="kin-day-card" data-testid="kin-travel-day">
+        <span className="kin-day-kicker">{(activeDay.date ? new Date(`${activeDay.date}T00:00:00Z`).toLocaleDateString(ar ? 'ar' : 'en-US', { weekday: 'long', timeZone: 'UTC' }) : `${t('Day', 'اليوم')} ${activeDay.dayIndex + 1}`)} · {travelPlan.destination}</span>
+        <h2 className="kin-day-title">{t('Your day in ', 'يومك في ')}{travelPlan.destination}</h2>
+
+        <KinRouteMap places={activeDay.places} />
+
+        {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <div className="kin-timeline">
+          {activeDay.places.map((place, index) => {
+            const key = `${activeDay.dayIndex}:${place.placeId}`;
+            const leg = index > 0 ? activeDay.routes[index - 1] : undefined;
+            return <div key={place.placeId}>
+              {leg && <div className="kin-timeline-item"><span /><div className="kin-timeline-rail" /><div className="kin-transit">{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min', 'دقيقة')}`}</div></div>}
+              <div className="kin-timeline-item" data-testid="kin-travel-place">
+                <span className="kin-timeline-time">{index + 1}</span>
+                <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
+                <div className="kin-timeline-card">
+                  <div className="kin-timeline-thumb"><KinRingsMark size={22} /></div>
+                  <div className="kin-timeline-body">
+                    {place.rating !== null && <span className="kin-timeline-category">★ {place.rating}</span>}
+                    <span className="kin-timeline-name">{place.name}</span>
+                    {place.formattedAddress && <span className="kin-timeline-note">{place.formattedAddress}</span>}
+                    <div className="kin-timeline-actions">
+                      {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open in Maps', 'فتح في الخرائط')}</a>}
+                      <button className="approved-button primary" data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
+                        {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>;
+          })}
+        </div>}
+      </div>}
+
+      {travelPlan.narrative && <div className="kin-card" data-testid="kin-answer" style={{ marginTop: 14 }}>
+        <p className="kin-card-caption" style={{ margin: 16 }}>{travelPlan.narrative}</p>
+        {travelPlan.citations.length > 0 && <div data-testid="kin-citations" style={{ padding: '0 16px 16px' }}>
           <span className="form-label">{t('Sources', 'المصادر')}</span>
           <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
             {travelPlan.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
           </ul>
         </div>}
-      </div>
-
-      {travelPlan.days.map((day) => <div key={day.dayIndex} className="approved-panel" data-testid="kin-travel-day" style={{ marginTop: 12 }}>
-        <span className="approved-kicker">{day.date || `${t('Day', 'اليوم')} ${day.dayIndex + 1}`}</span>
-        {day.places.length === 0 && <p className="settings-note">{t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')}</p>}
-        {day.places.map((place, index) => {
-          const key = `${day.dayIndex}:${place.placeId}`;
-          const leg = index > 0 ? day.routes[index - 1] : undefined;
-          return <div key={place.placeId} className="approved-grid-card" data-testid="kin-travel-place" style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 12, marginTop: index > 0 ? 8 : 0 }}>
-            <strong style={{ display: 'block' }}>{place.name}</strong>
-            {place.formattedAddress && <span style={{ display: 'block' }}>{place.formattedAddress}</span>}
-            {place.rating !== null && <span style={{ display: 'block' }}>★ {place.rating}</span>}
-            {leg && <span className="settings-note" style={{ display: 'block' }}>{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min from previous stop', 'دقيقة من المحطة السابقة')}`}</span>}
-            <div className="admin-detail-actions" style={{ marginTop: 4 }}>
-              {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open in Maps', 'فتح في الخرائط')}</a>}
-              <button className="approved-button primary" data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(day, place)}>
-                {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
-              </button>
-            </div>
-          </div>;
-        })}
-      </div>)}
+      </div>}
     </div>}
-  </SimpleScreen>;
+  </section>;
 }
 
 /**
