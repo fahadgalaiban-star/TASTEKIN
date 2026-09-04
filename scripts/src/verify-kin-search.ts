@@ -703,6 +703,32 @@ async function main() {
         stopServer(quotaServer);
       }
     });
+    await check("daily quota: /kin/travel/plan reserves before any Google/Anthropic call — concurrent requests admit exactly the limit, and provider calls never exceed admitted count", async () => {
+      const quotaServer = await startServer({
+        ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "3",
+        GOOGLE_MAPS_API_KEY: "fake-google-key", GOOGLE_PLACES_BASE_URL: `${googlePlacesBaseUrl}/places:searchText`, GOOGLE_ROUTES_BASE_URL: `${googleRoutesBaseUrl}/computeRoutes`,
+      });
+      try {
+        const session = new Session(quotaServer.baseUrl);
+        const account = await session.signup(`kin-quota-travel-concurrent-${suffix}@example.com`, PASSWORD);
+        fakeAnthropicMode = { kind: "ok" };
+        fakeGooglePlacesMode = { kind: "ok" };
+        fakeGoogleRoutesMode = { kind: "ok" };
+        const placesBefore = googlePlacesRequestCount;
+        const anthropicBefore = anthropicRequestCount;
+        const statuses = await Promise.all(Array.from({ length: 8 }, () => session.kinTravelPlan({ query: "plan my trip", destination: "Paris" }).then((r) => r.status)));
+        const admitted = statuses.filter((s) => s === 200);
+        const limited = statuses.filter((s) => s === 429);
+        assert.equal(admitted.length, 3, `expected exactly 3 admitted, got statuses: ${statuses.join(",")}`);
+        assert.equal(limited.length, 5, `expected exactly 5 rejected with 429, got statuses: ${statuses.join(",")}`);
+        const rows = await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, account.user.id));
+        assert.equal(rows.length, 3, "the ledger must record exactly 3 attempts regardless of request concurrency");
+        assert.equal(googlePlacesRequestCount - placesBefore, 3, "Google Places must never be called more times than the quota admitted — a rejected request must never reach Google");
+        assert.equal(anthropicRequestCount - anthropicBefore, 3, "Anthropic must never be called more times than the quota admitted");
+      } finally {
+        stopServer(quotaServer);
+      }
+    });
 
     // --- KIN Looks: signature/safe/bold structured options ---
     await check("looks options: a three-marker answer is parsed into signature/safe/bold with owned/missing items", async () => {

@@ -2767,8 +2767,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     </label>}
 
     {mode === 'looks' && !selectedItemId && <div className="form-field"><span>{t('Or add a photo (optional)', 'أو أضف صورة (اختياري)')}</span>
-      {photoPreviewUrl ? <div className="profile-grid-media" style={{ maxWidth: 160 }}>
-        <img src={photoPreviewUrl} alt="" />
+      {photoPreviewUrl ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+        <img src={photoPreviewUrl} alt="" style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 12, display: 'block' }} />
         <button type="button" className="approved-button" data-testid="kin-photo-clear" onClick={clearPhoto}>{t('Remove photo', 'إزالة الصورة')}</button>
       </div> : <label className="approved-button" style={{ display: 'inline-flex', width: 'fit-content' }}>
         {t('Take or choose a photo', 'التقط أو اختر صورة')}
@@ -2857,12 +2857,12 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         {day.places.map((place, index) => {
           const key = `${day.dayIndex}:${place.placeId}`;
           const leg = index > 0 ? day.routes[index - 1] : undefined;
-          return <div key={place.placeId} className="approved-grid-card" data-testid="kin-travel-place" style={{ padding: 10, marginTop: index > 0 ? 8 : 0 }}>
-            <strong>{place.name}</strong>
-            {place.formattedAddress && <span>{place.formattedAddress}</span>}
-            {place.rating !== null && <span>★ {place.rating}</span>}
-            {leg && <span className="settings-note">{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min from previous stop', 'دقيقة من المحطة السابقة')}`}</span>}
-            <div className="admin-detail-actions">
+          return <div key={place.placeId} className="approved-grid-card" data-testid="kin-travel-place" style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 12, marginTop: index > 0 ? 8 : 0 }}>
+            <strong style={{ display: 'block' }}>{place.name}</strong>
+            {place.formattedAddress && <span style={{ display: 'block' }}>{place.formattedAddress}</span>}
+            {place.rating !== null && <span style={{ display: 'block' }}>★ {place.rating}</span>}
+            {leg && <span className="settings-note" style={{ display: 'block' }}>{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min from previous stop', 'دقيقة من المحطة السابقة')}`}</span>}
+            <div className="admin-detail-actions" style={{ marginTop: 4 }}>
               {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open in Maps', 'فتح في الخرائط')}</a>}
               <button className="approved-button primary" data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(day, place)}>
                 {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
