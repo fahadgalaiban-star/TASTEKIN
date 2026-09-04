@@ -38,6 +38,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "Automatic clothing-photo analysis in My Things' Add Item: after uploading a photo, suggests item type, primary color, style, occasion, and season via Claude, always shown as editable pre-fills the member must review before saving — never auto-created or auto-saved. Requires my_things to also be enabled. Each upload may be analyzed at most once, enforced durably in the database (closet_media_uploads.analysis_attempted_at).",
     defaultEnabled: false,
   },
+  {
+    key: "kin_search",
+    description: "KIN: the central nav entry point for natural-language Looks/Travel requests, backed by an authenticated server endpoint that calls Claude with Anthropic's live web-search tool. Nothing is persisted — no search text, results, or wardrobe context is stored anywhere. Has no per-request/per-user rate limit yet beyond this flag, so keep disabled outside of controlled testing until a durable limiter (mirroring closet_item_analysis's) ships in a follow-up PR.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];

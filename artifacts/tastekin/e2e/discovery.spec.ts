@@ -89,7 +89,7 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(navigation.getByRole('button')).toHaveCount(5);
   await expect(navigation).toContainText('Home');
   await expect(navigation).toContainText('Explore');
-  await expect(navigation).toContainText('Add');
+  await expect(navigation).toContainText('KIN');
   await expect(navigation).toContainText('Saved');
   await expect(navigation).toContainText('You');
 
@@ -105,7 +105,8 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Best Match' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New' })).toBeVisible();
-  await page.getByTestId('nav-add').click();
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-creator-workspace').click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   await page.getByTestId('nav-saved').click();
   await expect(page.getByRole('heading', { name: 'Saved' })).toBeVisible();
@@ -126,7 +127,7 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(navigation).toBeVisible();
   await expect(navigation).toContainText('الرئيسية');
   await expect(navigation).toContainText('اكتشف');
-  await expect(navigation).toContainText('إضافة');
+  await expect(navigation).toContainText('كين');
   await expect(navigation).toContainText('المحفوظات');
   await expect(navigation).toContainText('أنت');
 
@@ -424,7 +425,8 @@ test('keeps owner controls compact and persists featured collection choices', as
   await page.getByTestId('featured-collection-quiet-luxury').click();
   await expect(page.getByRole('heading', { name: 'Quiet Luxury' })).toBeVisible();
 
-  await page.getByTestId('nav-add').click();
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-creator-workspace').click();
   await page.getByRole('button', { name: 'Manage collections' }).click();
   await expect(page.getByRole('button', { name: 'Unfeature' })).toHaveCount(2);
   await page.getByRole('button', { name: 'Move featured collection later' }).first().click();
