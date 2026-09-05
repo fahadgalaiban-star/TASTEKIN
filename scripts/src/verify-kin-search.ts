@@ -77,7 +77,7 @@ type FakeAnthropicMode =
   | { kind: "ok" }
   | { kind: "no_results" }
   | { kind: "refusal" }
-  | { kind: "http_error"; status: number }
+  | { kind: "http_error"; status: number; message?: string; errorType?: string }
   | { kind: "timeout" }
   | { kind: "bad_and_excess_urls" }
   | { kind: "looks_options" }
@@ -103,8 +103,8 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
         const mode = fakeAnthropicMode;
         if (mode.kind === "timeout") return; // never respond — the client's own request timeout must fire
         if (mode.kind === "http_error") {
-          res.writeHead(mode.status, { "content-type": "application/json" });
-          res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: "fake provider failure" } }));
+          res.writeHead(mode.status, { "content-type": "application/json", "request-id": "req_test_fake123" });
+          res.end(JSON.stringify({ type: "error", error: { type: mode.errorType ?? "api_error", message: mode.message ?? "fake provider failure" } }));
           return;
         }
         const base = {
@@ -415,7 +415,7 @@ function startFakeProductPageHttps(): Promise<{ server: https.Server; port: numb
 // --- server harness (same pattern as every other verify-*.ts script) -------------
 
 let nextPort = 25300;
-type Server = { port: number; process: ChildProcess; baseUrl: string };
+type Server = { port: number; process: ChildProcess; baseUrl: string; takeLog: () => string };
 
 async function startServer(env: Record<string, string | undefined> = {}): Promise<Server> {
   const port = nextPort;
@@ -425,12 +425,24 @@ async function startServer(env: Record<string, string | undefined> = {}): Promis
     PRIVATE_OBJECT_DIR: "/closet-test-bucket/my-things",
   };
   const child = spawn("node", [serverEntry], { env: fullEnv, stdio: ["ignore", "pipe", "pipe"] });
+  // Captured for tests that need to inspect the server's own stdout (pino
+  // JSON lines) — e.g. asserting a diagnostic log line's shape/redaction
+  // without ever needing to expose that data over HTTP.
+  let stdout = "";
+  child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
   const baseUrl = `http://127.0.0.1:${port}`;
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${baseUrl}/api/version`);
-      if (response.ok) return { port, process: child, baseUrl };
+      if (response.ok) {
+        let cursor = stdout.length;
+        // Consuming read: returns only what's been logged since the last
+        // call (or since the server became ready, on the first call) — so
+        // one check's log lines never leak into the next check's assertions.
+        const takeLog = () => { const chunk = stdout.slice(cursor); cursor = stdout.length; return chunk; };
+        return { port, process: child, baseUrl, takeLog };
+      }
     } catch { /* not up yet */ }
     await new Promise((resolve) => setTimeout(resolve, 200));
   }
@@ -439,6 +451,20 @@ async function startServer(env: Record<string, string | undefined> = {}): Promis
 }
 
 function stopServer(server: Server) { server.process.kill(); }
+
+/** Finds the last pino JSON log line (one object per line) whose `msg` matches. Last, not first, so a check that fires its own request only ever sees that request's own entry, never an earlier one still sitting in the same captured chunk. */
+function findLogLine(log: string, msg: string): Record<string, unknown> | null {
+  const lines = log.split("\n").filter(Boolean);
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const parsed = JSON.parse(lines[i]) as Record<string, unknown>;
+      if (parsed.msg === msg) return parsed;
+    } catch {
+      // not a JSON line (e.g. a stray non-pino write) — skip it
+    }
+  }
+  return null;
+}
 
 async function expectStatus(response: Response, expected: number) {
   if (response.status !== expected) {
@@ -744,6 +770,35 @@ async function main() {
       assert.ok(!text.includes("fake-test-key"), "the API key must never appear in the response");
       assert.ok(!text.toLowerCase().includes("fake provider failure"), "the raw provider error message must never reach the client");
     });
+    await check("a provider HTTP error logs safe, structured diagnostics server-side — status, error type, request id, model, web-search flag, and a redacted message — while the client still only ever sees the fixed 'unavailable' shape", async () => {
+      server.takeLog(); // drain anything logged by earlier checks (e.g. the plain 500 above) before capturing this one
+      const sensitiveMessage = "invalid x-api-key: sk-ant-FAKESECRET1234567890ABCDEF, see https://console.anthropic.com/account/keys or email ops@example.com for help";
+      fakeAnthropicMode = { kind: "http_error", status: 401, errorType: "authentication_error", message: sensitiveMessage };
+      const response = await userA.kinSearch({ mode: "looks", query: "ok" });
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" }, "the user-facing fallback must be unaffected by this diagnostics logging");
+
+      const log = server.takeLog();
+      const entry = findLogLine(log, "KIN search: Anthropic provider error");
+      assert.ok(entry, "the diagnostic log line must be emitted");
+      assert.equal(entry!.status, 401, "the Anthropic HTTP status must be logged");
+      assert.equal(entry!.errorType, "authentication_error", "the Anthropic error type must be logged");
+      assert.equal(entry!.requestId, "req_test_fake123", "the Anthropic request id must be logged");
+      assert.equal(entry!.model, "claude-sonnet-5", "the configured KIN model must be logged");
+      assert.equal(entry!.webSearchEnabled, true, "whether web search was enabled must be logged");
+      const loggedMessage = String(entry!.message);
+      assert.ok(loggedMessage.length > 0, "a short provider message must still be logged");
+      assert.ok(!loggedMessage.includes("sk-ant-FAKESECRET1234567890ABCDEF"), "the raw API-key-like token must never be logged");
+      assert.ok(!loggedMessage.includes("https://console.anthropic.com"), "URLs must never be logged");
+      assert.ok(!loggedMessage.includes("ops@example.com"), "email addresses must never be logged");
+      assert.ok(loggedMessage.length <= 200, "the logged message must be bounded in length");
+      // Defense in depth: none of these must leak anywhere in the server's
+      // entire log output for this request, not just the one structured field.
+      assert.ok(!log.includes("fake-test-key"), "the real ANTHROPIC_API_KEY must never appear in any log line");
+      assert.ok(!log.includes("sk-ant-FAKESECRET1234567890ABCDEF"), "the API-key-like token must never appear in any log line");
+      assert.ok(!log.includes("https://console.anthropic.com"), "the URL must never appear in any log line");
+      assert.ok(!log.includes("ops@example.com"), "the email must never appear in any log line");
+    });
     await check("provider timeout: 200 with status 'unavailable' after the hard timeout elapses", async () => {
       fakeAnthropicMode = { kind: "timeout" };
       const started = Date.now();
@@ -752,6 +807,17 @@ async function main() {
       await expectStatus(response, 200);
       assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
       assert.ok(elapsedMs < 55_000, `timeout path took unexpectedly long (retries not disabled?): ${elapsedMs}ms`);
+    });
+    await check("a provider timeout logs diagnostics with a null status/request-id and an errorType of 'timeout', never a raw stack trace", async () => {
+      const log = server.takeLog();
+      const entry = findLogLine(log, "KIN search: Anthropic provider error");
+      assert.ok(entry, "the diagnostic log line must be emitted for a timeout too");
+      assert.equal(entry!.status, null, "a timeout never has an HTTP status");
+      assert.equal(entry!.errorType, "timeout", "a timeout must be distinguishable from an API error in the log");
+      assert.equal(entry!.requestId, null, "a timeout never has an Anthropic request id");
+      assert.equal(entry!.model, "claude-sonnet-5");
+      assert.equal(entry!.webSearchEnabled, true);
+      assert.ok(!Object.prototype.hasOwnProperty.call(entry!, "stack"), "a raw stack trace must never be logged");
       fakeAnthropicMode = { kind: "ok" };
     });
     await check("empty search results: ok status with an empty answer/results, not an error", async () => {

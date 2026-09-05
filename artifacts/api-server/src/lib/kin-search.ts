@@ -1,9 +1,11 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { APIConnectionError, APIConnectionTimeoutError, APIError } from "@anthropic-ai/sdk";
 import sharp from "sharp";
 
 import { fetchProductImagesFor } from "./link-preview";
+import { logger } from "./logger";
 
 const MAX_ERROR_LENGTH = 200;
+const MAX_PROVIDER_MESSAGE_LENGTH = 200;
 
 /**
  * Never persist a raw error's message/stack — only a short, fixed
@@ -21,6 +23,92 @@ function sanitizeErrorReason(prefix: string, error: unknown): string {
     else reason = "error";
   }
   return `${prefix}: ${reason}`.slice(0, MAX_ERROR_LENGTH);
+}
+
+/**
+ * Strips anything that could leak a secret, URL, or identifier from a
+ * provider-authored error message before it's ever logged. This text
+ * comes from Anthropic, never from user input, but is redacted anyway as
+ * defense in depth — a provider error is never trusted to be safe to log
+ * verbatim. Hard-truncated afterward, independent of what redaction
+ * removed, so a single field can never make the log line unbounded.
+ */
+function redactProviderMessage(raw: string): string {
+  const redacted = raw
+    .replace(/https?:\/\/\S+/gi, "[redacted-url]")
+    .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[redacted-email]")
+    .replace(/sk-[A-Za-z0-9_-]{8,}/gi, "[redacted-key]")
+    .replace(/bearer\s+\S+/gi, "bearer [redacted-token]")
+    .replace(/\b[A-Za-z0-9+/_-]{24,}\b/g, "[redacted-token]");
+  return redacted.slice(0, MAX_PROVIDER_MESSAGE_LENGTH);
+}
+
+/** Anthropic's own error body, insofar as this module ever reads it: `{ type: "error", error: { type, message } }`. Read defensively — never assumed. */
+function extractProviderMessage(error: APIError): string {
+  const body = error.error as { error?: { message?: unknown } } | undefined;
+  const nested = body?.error?.message;
+  return typeof nested === "string" && nested.length > 0 ? nested : error.message;
+}
+
+/** A request that never got an HTTP response at all (timeout/connection failure) — no status, type, or request id exist to log. */
+function logProviderConnectionFailure(error: APIConnectionError, errorType: "timeout" | "network_error", context: { model: string; webSearchEnabled: boolean }): void {
+  logger.warn({
+    provider: "anthropic",
+    status: null,
+    errorType,
+    requestId: null,
+    message: redactProviderMessage(error.message),
+    model: context.model,
+    webSearchEnabled: context.webSearchEnabled,
+  }, "KIN search: Anthropic provider error");
+}
+
+/**
+ * Structured, safe diagnostics for a failed Anthropic call — logged
+ * server-side only, never returned to the client (the client always gets
+ * the fixed `{ status: "unavailable", reason: "unavailable" }` shape,
+ * unchanged by this). Only ever reads APIError's own typed fields
+ * (status/type/requestID) or a redacted, truncated message — never the
+ * raw headers, the full request/response body, the prompt, an image, or
+ * the API key.
+ */
+function logProviderError(error: unknown, context: { model: string; webSearchEnabled: boolean }): void {
+  // APIConnectionTimeoutError/APIConnectionError are themselves APIError
+  // subclasses (no HTTP response was ever received, so status/type/
+  // requestID are all unset on them) — checked first so a request that
+  // never reached Anthropic is never mislabeled with a real response's
+  // (absent) error.type.
+  if (error instanceof APIConnectionTimeoutError) {
+    logProviderConnectionFailure(error, "timeout", context);
+    return;
+  }
+  if (error instanceof APIConnectionError) {
+    logProviderConnectionFailure(error, "network_error", context);
+    return;
+  }
+  if (error instanceof APIError) {
+    logger.warn({
+      provider: "anthropic",
+      status: error.status ?? null,
+      errorType: error.type ?? null,
+      requestId: error.requestID ?? null,
+      message: redactProviderMessage(extractProviderMessage(error)),
+      model: context.model,
+      webSearchEnabled: context.webSearchEnabled,
+    }, "KIN search: Anthropic provider error");
+    return;
+  }
+  const isTimeout = error instanceof Error && (error.name === "AbortError" || /timeout/i.test(error.message));
+  const isNetworkError = error instanceof Error && error.name === "TypeError" && /fetch/i.test(error.message);
+  logger.warn({
+    provider: "anthropic",
+    status: null,
+    errorType: isTimeout ? "timeout" : isNetworkError ? "network_error" : "unknown",
+    requestId: null,
+    message: redactProviderMessage(error instanceof Error ? error.message : String(error)),
+    model: context.model,
+    webSearchEnabled: context.webSearchEnabled,
+  }, "KIN search: Anthropic provider error");
 }
 
 // claude-sonnet-5, not an Opus-tier model: KIN search is a routine,
@@ -484,6 +572,7 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
     }
     return { status: "ok", ...normalized };
   } catch (error) {
+    logProviderError(error, { model: kinSearchModel(), webSearchEnabled: maxWebUses() > 0 });
     return { status: "unavailable", reason: sanitizeErrorReason("kin search request failed", error) };
   }
 }
