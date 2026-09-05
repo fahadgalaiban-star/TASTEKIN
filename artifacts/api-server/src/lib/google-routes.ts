@@ -44,12 +44,8 @@ function routesBaseUrl(): string {
   return process.env.GOOGLE_ROUTES_BASE_URL?.trim() || ROUTES_COMPUTE_URL;
 }
 
-/**
- * Routes API, server-side only. travelMode defaults to WALK — KIN Travel's
- * itinerary points are same-destination attractions, not intercity legs.
- * A single short-timeout attempt, no client-side retry.
- */
-export async function computeRoute(origin: LatLng, destination: LatLng, travelMode: "WALK" | "DRIVE" = "WALK"): Promise<GoogleRouteResult> {
+/** Routes API, server-side only. KIN Travel requests verified driving legs. */
+export async function computeRoute(origin: LatLng, destination: LatLng): Promise<GoogleRouteResult> {
   const apiKey = googleMapsApiKey();
   if (!apiKey) return { status: "unavailable", reason: "not configured" };
 
@@ -64,7 +60,7 @@ export async function computeRoute(origin: LatLng, destination: LatLng, travelMo
       body: JSON.stringify({
         origin: { location: { latLng: { latitude: origin.lat, longitude: origin.lng } } },
         destination: { location: { latLng: { latitude: destination.lat, longitude: destination.lng } } },
-        travelMode,
+        travelMode: "DRIVE",
       }),
       signal: AbortSignal.timeout(GOOGLE_ROUTES_TIMEOUT_MS),
     });

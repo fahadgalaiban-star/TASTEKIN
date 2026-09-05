@@ -398,12 +398,21 @@ function looksSystemPrompt(locale: "en" | "ar" | undefined): string {
   ].join(" ");
 }
 
-const TRAVEL_SYSTEM_PROMPT = [
-  "You are KIN, TASTEKIN's travel planning assistant.",
-  "The member describes the trip they want in natural language; use the web_search tool to ground any specific, current claim — opening hours, weather, current events, reservations, prices — in a real search result. Never state a specific fact you did not find in a search result.",
-  "When you can find current weather or climate information for the destination and dates, briefly suggest what to wear day to day, referencing any existing wardrobe item given as context rather than replacing it.",
-  "Write a warm, concise, editorial answer in the member's language, organized around what the member actually asked for. Never invent a URL, venue name, or event.",
-].join(" ");
+function travelSystemPrompt(locale: "en" | "ar" | undefined): string {
+  const languageLine = locale === "ar"
+    ? "Respond entirely in Arabic, while keeping proper names in their usual spelling."
+    : locale === "en"
+      ? "Respond entirely in English, while keeping proper names in their usual spelling."
+      : "Write in the member's language.";
+  return [
+    "You are KIN, TASTEKIN's travel planning assistant.",
+    "The member describes the trip they want in natural language; use the web_search tool to ground any specific, current claim — opening hours, weather, current events, reservations, prices — in a real search result. Never state a specific fact you did not find in a search result.",
+    "When you can find current weather or climate information for the destination and dates, briefly suggest what to wear day to day, referencing any existing wardrobe item given as context rather than replacing it.",
+    "Return a complete, final travel plan in this response. Never narrate your search process, say that you will resume or continue searching, promise a later answer, or discuss an inability to access real-time search.",
+    "Write a warm, concise, editorial plan organized around what the member actually asked for. Never invent a URL, venue name, or event.",
+    languageLine,
+  ].join(" ");
+}
 
 function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: string): string {
   const context: string[] = [];
@@ -609,7 +618,7 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
       {
         model: kinSearchModel(),
         max_tokens: MAX_OUTPUT_TOKENS,
-        system: request.mode === "looks" ? looksSystemPrompt(request.locale) : TRAVEL_SYSTEM_PROMPT,
+        system: request.mode === "looks" ? looksSystemPrompt(request.locale) : travelSystemPrompt(request.locale),
         messages: [{ role: "user", content }],
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxWebUses() }],
         thinking: { type: "adaptive" },

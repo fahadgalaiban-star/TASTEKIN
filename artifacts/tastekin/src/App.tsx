@@ -2586,7 +2586,7 @@ type KinTravelPlace = { placeId: string; name: string; formattedAddress: string 
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
-type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unavailable'; reason: string };
+type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unavailable'; reason: string; reasonCode?: string };
 
 /**
  * The KIN entry experience: a natural-language request, optional context
@@ -2619,6 +2619,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [travelStep, setTravelStep] = useState<1 | 2 | 3 | 4>(1);
+  const [travelReasonCode, setTravelReasonCode] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<KinSearchResponse | null>(null);
@@ -2697,7 +2699,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     const trimmed = query.trim();
     if (!trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
+    if (mode === 'travel' && (!startDate || !endDate)) { setErrorMessage(t('Choose your travel dates.', 'اختر تواريخ سفرك.')); return; }
+    if (mode === 'travel' && endDate < startDate) { setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.')); return; }
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
+    setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
     // Captured now, before anything async — the request that goes out uses
     // exactly these values, and the result is later shown against exactly
@@ -2708,9 +2713,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     const submittedLocale: 'en' | 'ar' = ar ? 'ar' : 'en';
     try {
       if (mode === 'travel') {
-        const body: Record<string, unknown> = { query: trimmed, destination: destination.trim() };
+        const body: Record<string, unknown> = { query: trimmed, destination: destination.trim(), locale: submittedLocale };
         if (selectedItemId) body.myThingsItemId = selectedItemId;
-        if (location.trim()) body.location = location.trim();
         if (budget.trim()) body.budget = Number(budget);
         if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
         if (occasion.trim()) body.occasion = occasion.trim();
@@ -2720,7 +2724,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         if (response.status === 429) { setState('quota-exceeded'); return; }
         if (!response.ok) throw new Error(await describeFailedResponse(response));
         const payload = await response.json() as KinTravelResponse;
-        if (payload.status !== 'ok') { setState('unavailable'); return; }
+        if (payload.status !== 'ok') { setTravelReasonCode(payload.reasonCode ?? ''); setState('unavailable'); return; }
         setTravelPlan(payload.plan);
         const travelReady = payload.plan.narrative.trim() || payload.plan.days.some((day) => day.places.length > 0);
         setState(travelReady ? 'ready' : 'empty');
@@ -2874,6 +2878,26 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
 
   const backToForm = () => { setView('form'); setState('idle'); };
   const openDay = (index: number) => { setSelectedDayIndex(index); setView('travel-day'); };
+  const advanceTravelStep = () => {
+    setErrorMessage('');
+    if (travelStep === 1 && !query.trim()) {
+      setErrorMessage(t('Tell KIN what kind of trip you want.', 'أخبر كين بنوع الرحلة التي تريدها.'));
+      return;
+    }
+    if (travelStep === 2 && !destination.trim()) {
+      setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.'));
+      return;
+    }
+    if (travelStep === 3 && (!startDate || !endDate)) {
+      setErrorMessage(t('Choose your travel dates.', 'اختر تواريخ سفرك.'));
+      return;
+    }
+    if (travelStep === 3 && endDate < startDate) {
+      setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.'));
+      return;
+    }
+    setTravelStep((current) => Math.min(4, current + 1) as 1 | 2 | 3 | 4);
+  };
 
   /**
    * Replaces one itinerary stop with a different real place at the same
@@ -2914,7 +2938,11 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   };
 
   const statusPanel = state === 'loading' ? <p className="settings-note" data-testid="kin-loading">{t('KIN is searching the web…', 'كين يبحث على الويب…')}</p>
-    : state === 'unavailable' ? <div className="workspace-notice" role="alert" data-testid="kin-unavailable">{t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}</div>
+    : state === 'unavailable' ? <div className="workspace-notice" role="alert" data-testid="kin-unavailable">
+      {travelReasonCode
+        ? t(`KIN couldn't create a complete travel plan. Please try again. Reason Code: ${travelReasonCode}`, `لم يتمكن كين من إنشاء خطة سفر مكتملة. حاول مرة أخرى. رمز السبب: ${travelReasonCode}`)
+        : t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}
+    </div>
     : state === 'quota-exceeded' ? <div className="workspace-notice" role="alert" data-testid="kin-quota-exceeded">{t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')}</div>
     : state === 'empty' ? <Empty text={t('No results yet — try rephrasing your request.', 'لا نتائج بعد — حاول إعادة صياغة طلبك.')} />
     : null;
@@ -3043,7 +3071,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <div className="kin-timeline" style={{ marginBottom: 24 }}>
         {activeDay.places.map((place, index) => {
           const key = `${activeDay.dayIndex}:${place.placeId}`;
-          const leg = index > 0 ? activeDay.routes[index - 1] : undefined;
+          const previousPlace = index > 0 ? activeDay.places[index - 1] : undefined;
+          const leg = previousPlace
+            ? activeDay.routes.find((route) => route.fromPlaceId === previousPlace.placeId && route.toPlaceId === place.placeId)
+            : undefined;
           return <div key={place.placeId}>
             {leg && <div className="kin-timeline-item"><span /><div className="kin-timeline-rail" /><div className="kin-transit">{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min', 'دقيقة')}`}</div></div>}
             <div className="kin-timeline-item" data-testid="kin-travel-place">
@@ -3080,16 +3111,16 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     <p className="kin-subline">{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
 
     <div className="kin-tabs">
-      <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => setMode('looks')}>{t('Looks', 'الإطلالات')}</button>
-      <button type="button" data-testid="kin-mode-travel" className={mode === 'travel' ? 'selected' : ''} onClick={() => setMode('travel')}>{t('Travel', 'السفر')}</button>
+      <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Looks', 'الإطلالات')}</button>
+      <button type="button" data-testid="kin-mode-travel" className={mode === 'travel' ? 'selected' : ''} onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
     </div>
 
-    <label className="form-field"><span>{t('What do you need?', 'ماذا تحتاج؟')}</span>
+    {mode === 'looks' && <label className="form-field"><span>{t('What do you need?', 'ماذا تحتاج؟')}</span>
       <textarea data-testid="kin-query" rows={3} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 2000))}
-        placeholder={mode === 'looks' ? t('e.g. a dinner outfit in Paris, 14°C, smart casual', 'مثال: إطلالة عشاء في باريس، ١٤°م، أنيقة غير رسمية') : t('e.g. 4 days in Paris, slow mornings, great food', 'مثال: ٤ أيام في باريس، صباحات هادئة، طعام رائع')} />
-    </label>
+        placeholder={t('e.g. a dinner outfit in Paris, 14°C, smart casual', 'مثال: إطلالة عشاء في باريس، ١٤°م، أنيقة غير رسمية')} />
+    </label>}
 
-    {myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
+    {mode === 'looks' && myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
       <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
         <option value="">{t('None', 'بلا')}</option>
         {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
@@ -3107,32 +3138,61 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       {photoError && <p className="workspace-notice" role="alert" data-testid="kin-photo-error">{photoError}</p>}
     </div>}
 
-    <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
+    {mode === 'looks' && <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
       <label className="form-field"><span>{t('Location / country', 'الموقع / الدولة')}</span><input data-testid="kin-location" type="text" value={location} onChange={(event) => setLocation(event.target.value.slice(0, 200))} /></label>
       <div className="form-two">
         <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
         <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
       </div>
-      {mode === 'looks' && <label className="form-field"><span>{t('Size', 'المقاس')}</span><input data-testid="kin-size" type="text" value={size} onChange={(event) => setSize(event.target.value.slice(0, 50))} /></label>}
+      <label className="form-field"><span>{t('Size', 'المقاس')}</span><input data-testid="kin-size" type="text" value={size} onChange={(event) => setSize(event.target.value.slice(0, 50))} /></label>
       <label className="form-field"><span>{t('Occasion', 'المناسبة')}</span><input data-testid="kin-occasion" type="text" value={occasion} onChange={(event) => setOccasion(event.target.value.slice(0, 200))} /></label>
-      {mode === 'travel' && <>
-        <label className="form-field"><span>{t('Destination', 'الوجهة')}</span><input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))} /></label>
+    </div></details>}
+
+    {mode === 'travel' && <div data-testid="kin-travel-step" data-step={travelStep}>
+      <p className="settings-note">{t(`Step ${travelStep} of 4`, `الخطوة ${travelStep} من 4`)}</p>
+      {travelStep === 1 && <label className="form-field"><span>{t('What kind of trip do you want?', 'ما نوع الرحلة التي تريدها؟')}</span>
+        <textarea data-testid="kin-query" rows={3} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 2000))}
+          placeholder={t('e.g. slow mornings, art, and great local food', 'مثال: صباحات هادئة وفن وطعام محلي رائع')} />
+      </label>}
+      {travelStep === 2 && <label className="form-field"><span>{t('Where are you going?', 'إلى أين ستذهب؟')}</span>
+        <input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))} />
+      </label>}
+      {travelStep === 3 && <div className="form-two">
+        <label className="form-field"><span>{t('Start date', 'تاريخ البدء')}</span><input data-testid="kin-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+        <label className="form-field"><span>{t('End date', 'تاريخ الانتهاء')}</span><input data-testid="kin-end-date" type="date" min={startDate || undefined} value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+      </div>}
+      {travelStep === 4 && <div className="details-body">
+        {myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
+          <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
+            <option value="">{t('None', 'بلا')}</option>
+            {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
+          </select>
+        </label>}
         <div className="form-two">
-          <label className="form-field"><span>{t('Start date', 'تاريخ البدء')}</span><input data-testid="kin-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-          <label className="form-field"><span>{t('End date', 'تاريخ الانتهاء')}</span><input data-testid="kin-end-date" type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
+          <label className="form-field"><span>{t('Budget (optional)', 'الميزانية (اختياري)')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
+          <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
         </div>
-      </>}
-    </div></details>
+        <label className="form-field"><span>{t('Occasion or priorities (optional)', 'المناسبة أو الأولويات (اختياري)')}</span><input data-testid="kin-occasion" type="text" value={occasion} onChange={(event) => setOccasion(event.target.value.slice(0, 200))} /></label>
+      </div>}
+      <div className="kin-card-actions">
+        {travelStep > 1 && <button type="button" className="approved-button" data-testid="kin-travel-back" onClick={() => { setErrorMessage(''); setTravelStep((current) => Math.max(1, current - 1) as 1 | 2 | 3 | 4); }}>{t('Back', 'رجوع')}</button>}
+        {travelStep < 4 && <button type="button" className="approved-button primary" data-testid="kin-travel-next" onClick={advanceTravelStep}>{t('Next', 'التالي')}</button>}
+      </div>
+    </div>}
 
     {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
 
-    <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
+    {(mode === 'looks' || travelStep === 4) && <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
       {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Ask KIN', 'اسأل كين')}
-    </button>
+    </button>}
 
     {state === 'loading' && <p className="settings-note" data-testid="kin-loading">{t('KIN is searching the web…', 'كين يبحث على الويب…')}</p>}
 
-    {state === 'unavailable' && <div className="workspace-notice" role="alert" data-testid="kin-unavailable">{t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}</div>}
+    {state === 'unavailable' && <div className="workspace-notice" role="alert" data-testid="kin-unavailable">
+      {travelReasonCode
+        ? t(`KIN couldn't create a complete travel plan. Please try again. Reason Code: ${travelReasonCode}`, `لم يتمكن كين من إنشاء خطة سفر مكتملة. حاول مرة أخرى. رمز السبب: ${travelReasonCode}`)
+        : t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}
+    </div>}
 
     {state === 'quota-exceeded' && <div className="workspace-notice" role="alert" data-testid="kin-quota-exceeded">{t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')}</div>}
 

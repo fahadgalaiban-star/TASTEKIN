@@ -270,6 +270,10 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel plan unavailable");
     }
+    if (result.reason === "invalid travel narrative") {
+      res.json({ status: "unavailable", reason: "invalid_plan", reasonCode: "KIN_TRAVEL_INVALID_PLAN" });
+      return;
+    }
     res.json({ status: "unavailable", reason: "unavailable" });
     return;
   }
