@@ -184,6 +184,8 @@ async function looksPhotoHandler(req: Request, res: Response) {
     if (size !== undefined) candidate.size = size;
     const occasion = stringQueryParam(req.query.occasion);
     if (occasion !== undefined) candidate.occasion = occasion;
+    const locale = stringQueryParam(req.query.locale);
+    if (locale !== undefined) candidate.locale = locale;
 
     const validated = validateKinSearchRequest(candidate);
     if (!validated.ok) {

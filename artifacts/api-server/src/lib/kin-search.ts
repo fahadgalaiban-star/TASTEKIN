@@ -207,6 +207,16 @@ export type KinSearchRequest = {
   destination?: string;
   startDate?: string;
   endDate?: string;
+  /**
+   * The UI's own displayed locale, sent explicitly by the client rather
+   * than inferred from the query text — so the answer language follows
+   * what the member is reading the app in, not whatever language they
+   * happened to type or paste in this one request. Only ever consumed for
+   * `mode: "looks"` (see looksSystemPrompt below); accepted here on the
+   * shared request shape purely so validation is one codepath, but KIN
+   * Travel's own prompt is untouched by this field.
+   */
+  locale?: "en" | "ar";
 };
 
 export type KinSearchCitation = { title: string | null; url: string };
@@ -242,7 +252,18 @@ export type KinLooksOption = {
 };
 
 export type KinSearchResult =
-  | { status: "ok"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options?: KinLooksOption[] }
+  | {
+      status: "ok"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options?: KinLooksOption[];
+      /**
+       * True only when Anthropic's own web_search tool reported a
+       * structural error on at least one call (rate limited, unavailable,
+       * etc. — see WebSearchToolResultError) — never inferred from the
+       * model's prose. The text answer above is still real and usable;
+       * this only tells the caller that any current-price/availability
+       * grounding it depends on may be incomplete.
+       */
+      webSearchDegraded: boolean;
+    }
   | { status: "unavailable"; reason: string };
 
 // --- input validation --------------------------------------------------
@@ -319,6 +340,11 @@ export function validateKinSearchRequest(body: unknown): KinSearchValidationResu
   if (destination === null) return { ok: false, error: "destination is too long" };
   if (destination) value.destination = destination;
 
+  if (record.locale !== undefined) {
+    if (record.locale !== "en" && record.locale !== "ar") return { ok: false, error: "locale must be 'en' or 'ar'" };
+    value.locale = record.locale;
+  }
+
   if (record.startDate !== undefined) {
     if (typeof record.startDate !== "string" || !DATE_RE.test(record.startDate)) return { ok: false, error: "startDate must be YYYY-MM-DD" };
     value.startDate = record.startDate;
@@ -342,15 +368,35 @@ const LOOKS_OPTION_MARKERS: { marker: string; label: KinLooksOption["label"] }[]
   { marker: "###BOLD###", label: "bold" },
 ];
 
-const LOOKS_SYSTEM_PROMPT = [
-  "You are KIN, TASTEKIN's personal styling assistant.",
-  "The member describes what they need in natural language; use the web_search tool to ground any specific, current claim — prices, availability, what's in season, retailer stock — in a real search result. Never state a specific price, availability, or product detail you did not find in a search result.",
-  "If a photo of a clothing item is attached, actually look at it — its cut, color, fabric, and condition — and combine that with any taxonomy details given, rather than styling from the taxonomy alone.",
-  "If the member gave an existing wardrobe item as context, build the recommendation around it rather than replacing it.",
-  "Always structure your answer as exactly three options, each introduced by one of these exact literal markers on its own line, in this order: ###SIGNATURE### (their classic, reliable self), ###SAFE### (a lower-risk, easy-to-wear option), ###BOLD### (a more daring, statement option).",
-  "Within each option, explain in 1-3 sentences why it matches the request. Then, only if relevant, add a line starting with exactly \"OWNED:\" listing (comma-separated) pieces the member already owns that this option uses, and a line starting with exactly \"MISSING:\" listing pieces they would still need. Omit either line entirely if it doesn't apply — never write a line with nothing after the colon.",
-  "Write in the member's language. Never invent a URL, retailer name, product, or owned/missing item.",
-].join(" ");
+/**
+ * Built per-request (never a shared constant) because the language
+ * instruction depends on the UI's own explicit locale, not on anything
+ * inferable from the query text alone — a member reading the app in
+ * English may still type or paste a request in Arabic (or vice versa),
+ * and the answer should follow what they're reading the app in, not what
+ * they happened to type this once. Falls back to "the member's language"
+ * only for the (should-never-happen from this app's own UI) case of no
+ * locale being sent at all, so this function is still total.
+ */
+function looksSystemPrompt(locale: "en" | "ar" | undefined): string {
+  const languageLine = locale === "ar"
+    ? "Respond entirely in Arabic — regardless of the language the member's own message is written in, or the language of any source you search. Keep product names, brand names, and place names exactly as they are normally spelled; do not translate or transliterate them."
+    : locale === "en"
+      ? "Respond entirely in English — regardless of the language the member's own message is written in, or the language of any source you search. Keep product names, brand names, and place names exactly as they are normally spelled; do not translate or transliterate them."
+      : "Write in the member's language.";
+  return [
+    "You are KIN, TASTEKIN's personal styling assistant.",
+    "The member describes what they need in natural language; use the web_search tool to ground any specific, current claim — prices, availability, what's in season, retailer stock — in a real search result. Never state a specific price, availability, or product detail you did not find in a search result.",
+    "You are only ever given a photo when the member actually attached one to this exact message. If an image is included with this message, actually look at it — its cut, color, fabric, and condition — and combine that with any taxonomy details given, rather than styling from the taxonomy alone. If no image is included, you have not seen a photo — describe your reasoning from the text details given, and never write as if you are looking at, or describing the visual appearance of, a photo that was not sent to you.",
+    "If the member gave an existing wardrobe item as context, build the recommendation around it rather than replacing it.",
+    "Always structure your answer as exactly three options, each introduced by one of these exact literal markers on its own line, in this order: ###SIGNATURE### (their classic, reliable self), ###SAFE### (a lower-risk, easy-to-wear option), ###BOLD### (a more daring, statement option).",
+    "Within each option, explain in 1-3 sentences why it matches the request. Then, only if relevant, add a line starting with exactly \"OWNED:\" listing (comma-separated) pieces the member already owns that this option uses, and a line starting with exactly \"MISSING:\" listing pieces they would still need. Omit either line entirely if it doesn't apply — never write a line with nothing after the colon.",
+    "Give a complete, final answer in this one response — never progress narration (\"searching for...\", \"let me look into...\") and never a promise to keep researching or follow up later.",
+    "When you draw on something a source said, put it in your own words — never copy a sentence or passage verbatim from a search result.",
+    languageLine,
+    "Never invent a URL, retailer name, product, or owned/missing item.",
+  ].join(" ");
+}
 
 const TRAVEL_SYSTEM_PROMPT = [
   "You are KIN, TASTEKIN's travel planning assistant.",
@@ -463,10 +509,14 @@ function hostnameOf(url: string): string {
  * capped independently of max_uses so a client always gets a short,
  * bounded, mobile-appropriate list.
  */
-function normalizeAnthropicResponse(response: Anthropic.Message): { answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[] } {
+function normalizeAnthropicResponse(response: Anthropic.Message): { answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; webSearchDegraded: boolean } {
   let answer = "";
   const citationsByUrl = new Map<string, KinSearchCitation>();
   const resultsByUrl = new Map<string, KinSearchResultCard>();
+  // Set structurally, from the SDK's own typed error variant for this block
+  // (WebSearchToolResultError) — never inferred from anything the model's
+  // own prose says about whether a search worked.
+  let webSearchDegraded = false;
 
   for (const block of response.content) {
     if (block.type === "text") {
@@ -481,7 +531,11 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
           citationsByUrl.set(citation.url, { title: citation.title, url: citation.url });
         }
       }
-    } else if (block.type === "web_search_tool_result" && Array.isArray(block.content)) {
+    } else if (block.type === "web_search_tool_result") {
+      if (!Array.isArray(block.content)) {
+        webSearchDegraded = true;
+        continue;
+      }
       for (const item of block.content) {
         if (
           isValidHttpsUrl(item.url)
@@ -501,7 +555,7 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
     }
   }
 
-  return { answer: answer.trim(), citations: [...citationsByUrl.values()], results: [...resultsByUrl.values()] };
+  return { answer: answer.trim(), citations: [...citationsByUrl.values()], results: [...resultsByUrl.values()], webSearchDegraded };
 }
 
 /**
@@ -555,7 +609,7 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
       {
         model: kinSearchModel(),
         max_tokens: MAX_OUTPUT_TOKENS,
-        system: request.mode === "looks" ? LOOKS_SYSTEM_PROMPT : TRAVEL_SYSTEM_PROMPT,
+        system: request.mode === "looks" ? looksSystemPrompt(request.locale) : TRAVEL_SYSTEM_PROMPT,
         messages: [{ role: "user", content }],
         tools: [{ type: "web_search_20260209", name: "web_search", max_uses: maxWebUses() }],
         thinking: { type: "adaptive" },

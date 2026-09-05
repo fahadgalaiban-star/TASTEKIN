@@ -2528,8 +2528,11 @@ type KinCitation = { title: string | null; url: string };
 type KinResultCard = { title: string; source: string; url: string; price: number | null; currency: string | null; imageUrl: string | null };
 type KinLooksOption = { label: 'signature' | 'safe' | 'bold'; reasoning: string; ownedItems: string[]; missingItems: string[] };
 type KinSearchResponse =
-  | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[] }
+  | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[]; webSearchDegraded: boolean }
   | { status: 'unavailable'; reason: string };
+
+/** What a completed Looks result was actually generated from — captured once, at submit time, from exactly what was sent with that request. Never re-derived from the form's current (possibly since-changed) state. */
+type KinLooksReference = { kind: 'photo'; url: string } | { kind: 'item'; url: string };
 
 const KIN_LOOKS_OPTION_COPY: Record<KinLooksOption['label'], { en: string; ar: string; badgeEn: string; badgeAr: string }> = {
   signature: { en: 'Signature', ar: 'الإطلالة المميزة', badgeEn: 'Very you', badgeAr: 'أنت تمامًا' },
@@ -2619,6 +2622,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<KinSearchResponse | null>(null);
+  const [resultReference, setResultReference] = useState<KinLooksReference | null>(null);
   const [travelPlan, setTravelPlan] = useState<KinTravelPlan | null>(null);
   const [savedNotice, setSavedNotice] = useState('');
   const [tripId, setTripId] = useState<string | null>(null);
@@ -2657,6 +2661,12 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   }, [allowed, myThingsEnabled]);
 
   useEffect(() => () => { if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl); }, [photoPreviewUrl]);
+  // resultReference's photo variant is its own, separate object URL (see
+  // submit() below) — never the same one as photoPreviewUrl, so clearing or
+  // replacing the form's live photo can never invalidate what a completed
+  // result is already showing. Revoked here whenever it's replaced by a
+  // newer result or the screen unmounts.
+  useEffect(() => () => { if (resultReference?.kind === 'photo') URL.revokeObjectURL(resultReference.url); }, [resultReference]);
 
   if (!allowed) return <SimpleScreen kicker="KIN" title="KIN"><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
 
@@ -2689,6 +2699,13 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
+    // Captured now, before anything async — the request that goes out uses
+    // exactly these values, and the result is later shown against exactly
+    // this snapshot, regardless of anything the member does to the form's
+    // live photo/item-selection state while the request is in flight.
+    const submittedPhotoFile = mode === 'looks' && !selectedItemId ? photoFile : null;
+    const submittedItemId = mode === 'looks' ? selectedItemId : '';
+    const submittedLocale: 'en' | 'ar' = ar ? 'ar' : 'en';
     try {
       if (mode === 'travel') {
         const body: Record<string, unknown> = { query: trimmed, destination: destination.trim() };
@@ -2712,19 +2729,19 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       }
 
       let response: Response;
-      if (photoFile && !selectedItemId) {
-        const params = new URLSearchParams({ query: trimmed });
+      if (submittedPhotoFile) {
+        const params = new URLSearchParams({ query: trimmed, locale: submittedLocale });
         if (location.trim()) params.set('location', location.trim());
         if (budget.trim()) params.set('budget', budget.trim());
         if (budget.trim() && currency.trim()) params.set('currency', currency.trim().toUpperCase());
         if (size.trim()) params.set('size', size.trim());
         if (occasion.trim()) params.set('occasion', occasion.trim());
         response = await fetch(`/api/kin/looks/photo?${params.toString()}`, {
-          method: 'POST', credentials: 'include', headers: { 'Content-Type': photoFile.type }, body: photoFile,
+          method: 'POST', credentials: 'include', headers: { 'Content-Type': submittedPhotoFile.type }, body: submittedPhotoFile,
         });
       } else {
-        const body: Record<string, unknown> = { mode: 'looks', query: trimmed };
-        if (selectedItemId) body.myThingsItemId = selectedItemId;
+        const body: Record<string, unknown> = { mode: 'looks', query: trimmed, locale: submittedLocale };
+        if (submittedItemId) body.myThingsItemId = submittedItemId;
         if (location.trim()) body.location = location.trim();
         if (budget.trim()) body.budget = Number(budget);
         if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
@@ -2739,10 +2756,23 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       if (payload.status !== 'ok') { setState('unavailable'); return; }
       const hasOptions = (payload.options?.length ?? 0) > 0;
       const looksReady = payload.answer.trim() || payload.results.length || hasOptions;
+      setResultReference(
+        !looksReady ? null
+          : submittedPhotoFile ? { kind: 'photo', url: URL.createObjectURL(submittedPhotoFile) }
+          : submittedItemId ? { kind: 'item', url: `/api/closet-items/${encodeURIComponent(submittedItemId)}/image` }
+          : null,
+      );
       setState(looksReady ? 'ready' : 'empty');
       if (looksReady) setView('looks-result');
     } catch (err) {
-      setErrorMessage(err instanceof Error ? err.message : String(err));
+      // A real transport/HTTP-level failure reaching our own API (as
+      // opposed to a graceful { status: "unavailable" } response, already
+      // handled above) — never surface the raw technical detail (English,
+      // untranslated, and not meant for a member to read); log it for
+      // diagnosis and show the same clear, localized message KIN already
+      // uses for a provider failure.
+      console.error('KIN request failed', err);
+      setErrorMessage(t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.'));
       setState('error');
     }
   };
@@ -2830,7 +2860,6 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const looksOptions = result && result.status === 'ok' ? result.options ?? [] : [];
   const activeOption = looksOptions[selectedOptionIndex];
   const activeDay = travelPlan?.days[selectedDayIndex];
-  const productImages = result && result.status === 'ok' ? result.results.filter((card) => card.imageUrl).slice(0, 4) : [];
 
   const backToForm = () => { setView('form'); setState('idle'); };
   const openDay = (index: number) => { setSelectedDayIndex(index); setView('travel-day'); };
@@ -2893,10 +2922,14 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
               <span className="kin-card-kicker">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].en, KIN_LOOKS_OPTION_COPY[activeOption.label].ar)}</span>
               <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
             </div>
-            {photoPreviewUrl ? <div className="kin-card-image"><img src={photoPreviewUrl} alt="" /></div>
-              : productImages.length > 0 ? <div className="kin-card-collage" data-testid="kin-look-collage">
-                {productImages.map((card, index) => <img key={`${card.url}-${index}`} src={card.imageUrl!} alt="" />)}
-              </div> : null}
+            {/* Only ever the member's own uploaded photo or their selected My Things
+                item's authorized image — captured at submit time (resultReference),
+                never a web-search product thumbnail. Absent entirely (text-only
+                advice) when no reference image was part of this request. */}
+            {resultReference && <div className="kin-card-image" data-testid="kin-look-reference">
+              <img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} />
+              <span className="kin-reference-label">{t('Your styling reference', 'مرجع أسلوبك')}</span>
+            </div>}
             <p className="kin-card-caption">{activeOption.reasoning}</p>
             {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
               {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
@@ -2907,9 +2940,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
                 className={index === selectedOptionIndex ? 'active' : ''} onClick={() => setSelectedOptionIndex(index)}
                 onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedOptionIndex(index); }} />)}
             </div>}
+            {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
             <div className="kin-card-actions">
               <button className="approved-button primary" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save Look', 'احفظ الإطلالة')}</button>
-              <button className="approved-button" data-testid="kin-swap" onClick={() => void submit()}>{t('Swap a Piece', 'بدّل قطعة')}</button>
+              <button className="approved-button" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Get new suggestions', 'احصل على اقتراحات جديدة')}</button>
             </div>
             <div className="kin-link-row">
               <button type="button" className="kin-link" data-testid="kin-add-look-to-trip" disabled={!tripId || addingLookToTrip || lookAddedToTrip} title={!tripId ? t('Plan a trip first to attach a look to it', 'خطّط لرحلة أولاً لإرفاق إطلالة بها') : undefined} onClick={() => void addLookToTrip(activeOption)}>
@@ -2918,7 +2952,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
             </div>
           </div>
           {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
-        </div> : <div className="kin-card" data-testid="kin-answer"><p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p></div>}
+        </div> : <div className="kin-card" data-testid="kin-answer">
+          <p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p>
+          {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited" style={{ margin: '0 16px 16px' }}>{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
+        </div>}
 
         {result.citations.length > 0 && <div data-testid="kin-citations" style={{ marginTop: 14 }}>
           <span className="form-label">{t('Sources', 'المصادر')}</span>
