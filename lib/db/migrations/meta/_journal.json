@@ -99,6 +99,13 @@
       "when": 1788420000000,
       "tag": "0013_kin_looks_travel",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788574647593,
+      "tag": "0014_kin_ledger_schema_repair",
+      "breakpoints": true
     }
   ]
 }
