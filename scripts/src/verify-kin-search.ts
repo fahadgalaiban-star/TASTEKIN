@@ -82,7 +82,8 @@ type FakeAnthropicMode =
   | { kind: "bad_and_excess_urls" }
   | { kind: "looks_options" }
   | { kind: "looks_product_page" }
-  | { kind: "looks_arabic" };
+  | { kind: "looks_arabic" }
+  | { kind: "web_search_error" };
 
 let fakeAnthropicMode: FakeAnthropicMode = { kind: "ok" };
 let lastAnthropicRequestBody = "";
@@ -190,6 +191,27 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
               { type: "server_tool_use", id: "srvtoolu_1", name: "web_search", input: { query: "fake query" } },
               { type: "web_search_tool_result", tool_use_id: "srvtoolu_1", content: results },
               { type: "text", text: "Several options were found.", citations },
+            ],
+          }));
+          return;
+        }
+        if (mode.kind === "web_search_error") {
+          // The web_search tool itself failing structurally (rate limited,
+          // unavailable, ...) — WebSearchToolResultBlockContent's error
+          // variant, not an array of results. The model still answers in
+          // plain text despite the search failing (a real model degrading
+          // gracefully to general knowledge/reasoning) — this is exactly
+          // the "web enrichment fails, text is still useful" case, and
+          // must be detected from this structural shape, never by
+          // scanning the answer text for phrases like "I couldn't search".
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            ...base,
+            stop_reason: "end_turn",
+            content: [
+              { type: "server_tool_use", id: "srvtoolu_err", name: "web_search", input: { query: "fake query" } },
+              { type: "web_search_tool_result", tool_use_id: "srvtoolu_err", content: { type: "web_search_tool_result_error", error_code: "unavailable" } },
+              { type: "text", text: "###SIGNATURE###\nA tailored navy blazer with a crisp white shirt is a dependable, classic choice for this.", citations: null },
             ],
           }));
           return;
@@ -985,6 +1007,77 @@ async function main() {
       const arabicPattern = /[؀-ۿ]/;
       assert.ok(arabicPattern.test(signature!.reasoning), "the reasoning text for an Arabic query must contain real Arabic content, not the fixed English canned text");
       assert.ok(signature!.ownedItems.some((item) => arabicPattern.test(item)), "owned items for an Arabic query must also be in Arabic");
+      fakeAnthropicMode = { kind: "ok" };
+    });
+
+    // --- KIN Looks: explicit UI locale, independent of the query's own language ---
+    await check("locale: 'ar' with an English-language query instructs the model to answer in Arabic anyway", async () => {
+      fakeAnthropicMode = { kind: "looks_arabic" };
+      const response = await userA.kinSearch({ mode: "looks", query: "a smart casual dinner outfit", locale: "ar" });
+      await expectStatus(response, 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { system: string };
+      assert.ok(parsed.system.includes("Respond entirely in Arabic"), "the system prompt must carry an explicit Arabic instruction, not just 'write in the member's language'");
+      assert.ok(parsed.system.includes("regardless of the language"), "the instruction must say to answer in that locale regardless of the query's own language");
+      fakeAnthropicMode = { kind: "ok" };
+    });
+    await check("locale: 'en' with an Arabic-language query instructs the model to answer in English anyway", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinSearch({ mode: "looks", query: "إطلالة عشاء أنيقة", locale: "en" });
+      await expectStatus(response, 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { system: string };
+      assert.ok(parsed.system.includes("Respond entirely in English"), "the system prompt must carry an explicit English instruction");
+      assert.ok(parsed.system.includes("Keep product names, brand names, and place names exactly as they are normally spelled"), "the instruction must preserve exact product/brand names alongside the language switch");
+    });
+    await check("the same explicit locale is honored on the photo endpoint (query string, not just the JSON body)", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinLooksPhoto(await validJpeg(), { query: "style this", locale: "ar" });
+      await expectStatus(response, 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { system: string };
+      assert.ok(parsed.system.includes("Respond entirely in Arabic"), "the photo endpoint must also carry the explicit locale through to the system prompt");
+    });
+    await check("an invalid locale value is rejected with 400, never silently ignored or passed through", async () => {
+      const response = await userA.kinSearch({ mode: "looks", query: "ok", locale: "fr" });
+      assert.equal(response.status, 400);
+    });
+    await check("the system prompt instructs paraphrasing and a final answer, never copied passages or progress narration", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      await expectStatus(await userA.kinSearch({ mode: "looks", query: "a check on prompt composition", locale: "en" }), 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { system: string };
+      assert.ok(parsed.system.includes("own words"), "the prompt must instruct paraphrasing rather than copying source text");
+      assert.ok(parsed.system.includes("never a promise to keep researching"), "the prompt must forbid progress narration / promises to keep searching");
+    });
+    await check("the system prompt never claims to see a photo that wasn't actually sent", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      await expectStatus(await userA.kinSearch({ mode: "looks", query: "no photo this time", locale: "en" }), 200);
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { system: string; messages: Array<{ content: unknown }> };
+      assert.ok(!Array.isArray(parsed.messages[0].content), "a request with no image must send plain text content, not a content-block array with an image");
+      assert.ok(parsed.system.includes("you have not seen a photo"), "the prompt must explicitly forbid describing a photo when none was attached to this message");
+    });
+
+    // --- KIN Looks: web search failing structurally is distinct from the whole provider call failing ---
+    await check("the web_search tool erroring structurally still returns a usable text answer, flagged as degraded — never inferred from the model's prose", async () => {
+      fakeAnthropicMode = { kind: "web_search_error" };
+      const response = await userA.kinSearch({ mode: "looks", query: "a dinner outfit", locale: "en" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; webSearchDegraded: boolean; options: Array<{ reasoning: string }> };
+      assert.equal(payload.status, "ok", "a web-search-tool-level error must not fail the whole request");
+      assert.equal(payload.webSearchDegraded, true, "the structural search-tool error must be surfaced");
+      assert.ok(payload.options[0]?.reasoning.includes("navy blazer"), "the model's real text answer must still come through");
+      fakeAnthropicMode = { kind: "ok" };
+    });
+    await check("a normal successful search is never flagged as degraded", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinSearch({ mode: "looks", query: "a dinner outfit", locale: "en" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { webSearchDegraded: boolean };
+      assert.equal(payload.webSearchDegraded, false);
+    });
+    await check("a full provider failure still returns the generic unavailable shape (unaffected by the webSearchDegraded field)", async () => {
+      fakeAnthropicMode = { kind: "http_error", status: 500 };
+      const response = await userA.kinSearch({ mode: "looks", query: "a dinner outfit", locale: "en" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string };
+      assert.equal(payload.status, "unavailable");
       fakeAnthropicMode = { kind: "ok" };
     });
 
