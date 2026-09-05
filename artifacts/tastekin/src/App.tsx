@@ -2529,6 +2529,7 @@ type KinResultCard = { title: string; source: string; url: string; price: number
 type KinLooksOption = { label: 'signature' | 'safe' | 'bold'; reasoning: string; ownedItems: string[]; missingItems: string[] };
 type KinSearchResponse =
   | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[] }
+  | { status: 'partial'; reason: 'incomplete_recommendation'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options: KinLooksOption[] }
   | { status: 'unavailable'; reason: string };
 
 const KIN_LOOKS_OPTION_COPY: Record<KinLooksOption['label'], { en: string; ar: string; badgeEn: string; badgeAr: string }> = {
@@ -2616,7 +2617,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
+  const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'partial' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<KinSearchResponse | null>(null);
   const [travelPlan, setTravelPlan] = useState<KinTravelPlan | null>(null);
@@ -2736,7 +2737,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as KinSearchResponse;
       setResult(payload);
-      if (payload.status !== 'ok') { setState('unavailable'); return; }
+      if (payload.status === 'unavailable') { setState('unavailable'); return; }
+      if (payload.status === 'partial') { setState('partial'); setView('looks-result'); return; }
       const hasOptions = (payload.options?.length ?? 0) > 0;
       const looksReady = payload.answer.trim() || payload.results.length || hasOptions;
       setState(looksReady ? 'ready' : 'empty');
@@ -2827,11 +2829,9 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     }
   };
 
-  const looksOptions = result && result.status === 'ok' ? result.options ?? [] : [];
+  const looksOptions = result?.status === 'ok' ? result.options ?? [] : [];
   const activeOption = looksOptions[selectedOptionIndex];
   const activeDay = travelPlan?.days[selectedDayIndex];
-  const productImages = result && result.status === 'ok' ? result.results.filter((card) => card.imageUrl).slice(0, 4) : [];
-
   const backToForm = () => { setView('form'); setState('idle'); };
   const openDay = (index: number) => { setSelectedDayIndex(index); setView('travel-day'); };
 
@@ -2875,6 +2875,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
 
   const statusPanel = state === 'loading' ? <p className="settings-note" data-testid="kin-loading">{t('KIN is searching the web…', 'كين يبحث على الويب…')}</p>
     : state === 'unavailable' ? <div className="workspace-notice" role="alert" data-testid="kin-unavailable">{t('KIN is temporarily unavailable. Please try again shortly.', 'كين غير متاح مؤقتًا. حاول مرة أخرى قريبًا.')}</div>
+    : state === 'partial' ? <div className="workspace-notice" role="status" data-testid="kin-partial">{t('KIN could not complete the outfit, but these verified search results may still help.', 'لم يتمكن كين من إكمال الإطلالة، لكن نتائج البحث الموثقة هذه قد تساعدك.')}</div>
     : state === 'quota-exceeded' ? <div className="workspace-notice" role="alert" data-testid="kin-quota-exceeded">{t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')}</div>
     : state === 'empty' ? <Empty text={t('No results yet — try rephrasing your request.', 'لا نتائج بعد — حاول إعادة صياغة طلبك.')} />
     : null;
@@ -2886,17 +2887,18 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       {statusPanel}
-      {state === 'ready' && result && result.status === 'ok' && <>
-        {activeOption ? <div data-testid="kin-looks-options">
+      {(state === 'ready' || state === 'partial') && result && result.status !== 'unavailable' && <>
+        {result.status === 'ok' && activeOption ? <div data-testid="kin-looks-options">
           <div className="kin-card" data-testid="kin-look-option">
             <div className="kin-card-head">
               <span className="kin-card-kicker">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].en, KIN_LOOKS_OPTION_COPY[activeOption.label].ar)}</span>
               <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
             </div>
             {photoPreviewUrl ? <div className="kin-card-image"><img src={photoPreviewUrl} alt="" /></div>
-              : productImages.length > 0 ? <div className="kin-card-collage" data-testid="kin-look-collage">
-                {productImages.map((card, index) => <img key={`${card.url}-${index}`} src={card.imageUrl!} alt="" />)}
-              </div> : null}
+              : <div className="kin-card-fallback" data-testid="kin-look-image-fallback">
+                <KinRingsMark size={38} />
+                <span>{t('No verified outfit image available', 'لا تتوفر صورة موثقة للإطلالة')}</span>
+              </div>}
             <p className="kin-card-caption">{activeOption.reasoning}</p>
             {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
               {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
@@ -2918,7 +2920,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
             </div>
           </div>
           {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
-        </div> : <div className="kin-card" data-testid="kin-answer"><p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p></div>}
+        </div> : result.status === 'ok' ? <div className="kin-card" data-testid="kin-answer"><p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p></div> : null}
 
         {result.citations.length > 0 && <div data-testid="kin-citations" style={{ marginTop: 14 }}>
           <span className="form-label">{t('Sources', 'المصادر')}</span>
@@ -2928,8 +2930,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         </div>}
 
         {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results" style={{ marginTop: 14, marginBottom: 24 }}>
-          {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
-            <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
+          {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection kin-result-card" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
+            <img className={card.imageUrl ? undefined : 'is-fallback'} src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
             <strong>{card.title}</strong>
             <span>{card.source}{card.price !== null && card.currency ? ` · ${card.currency} ${card.price}` : ''}</span>
           </a>)}

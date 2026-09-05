@@ -130,8 +130,8 @@ router.post("/kin/search", requireUserMw, kinSearchFlagMw, async (req, res) => {
     return;
   }
 
-  const result = await runKinSearch(validated.value, itemContext, imageBuffer);
-  if (result.status !== "ok") {
+  const result = await runKinSearch(validated.value, itemContext, imageBuffer, String(req.id));
+  if (result.status === "unavailable") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id, mode: validated.value.mode }, "KIN search unavailable");
     }
@@ -207,8 +207,8 @@ async function looksPhotoHandler(req: Request, res: Response) {
       return;
     }
 
-    const result = await runKinSearch(validated.value, itemContext, decoded.buffer);
-    if (result.status !== "ok") {
+    const result = await runKinSearch(validated.value, itemContext, decoded.buffer, String(req.id));
+    if (result.status === "unavailable") {
       if (result.reason !== "not configured") {
         req.log.warn({ reason: result.reason, userId: user.id, mode: "looks" }, "KIN Looks photo search unavailable");
       }

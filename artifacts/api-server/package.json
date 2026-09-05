@@ -9,7 +9,8 @@
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test:taste-match": "node ./scripts/test-taste-match.mjs",
-    "test:owner-discovery": "node ./scripts/test-owner-discovery.mjs"
+    "test:owner-discovery": "node ./scripts/test-owner-discovery.mjs",
+    "test:kin-looks-response": "pnpm --filter @workspace/scripts exec tsx ../artifacts/api-server/scripts/test-kin-looks-response.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

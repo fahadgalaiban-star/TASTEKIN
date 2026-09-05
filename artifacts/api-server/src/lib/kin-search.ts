@@ -243,6 +243,7 @@ export type KinLooksOption = {
 
 export type KinSearchResult =
   | { status: "ok"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options?: KinLooksOption[] }
+  | { status: "partial"; reason: "incomplete_recommendation"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options: KinLooksOption[] }
   | { status: "unavailable"; reason: string };
 
 // --- input validation --------------------------------------------------
@@ -345,11 +346,12 @@ const LOOKS_OPTION_MARKERS: { marker: string; label: KinLooksOption["label"] }[]
 const LOOKS_SYSTEM_PROMPT = [
   "You are KIN, TASTEKIN's personal styling assistant.",
   "The member describes what they need in natural language; use the web_search tool to ground any specific, current claim — prices, availability, what's in season, retailer stock — in a real search result. Never state a specific price, availability, or product detail you did not find in a search result.",
+  "You have a strict budget of at most three web searches for the entire request. Plan those searches before using them, combine related products into efficient queries, and never request another search after the third. Once the search budget is exhausted, synthesize the complete recommendation from the successful results already available; do not apologize for the limit or abandon the outfit.",
   "If a photo of a clothing item is attached, actually look at it — its cut, color, fabric, and condition — and combine that with any taxonomy details given, rather than styling from the taxonomy alone.",
   "If the member gave an existing wardrobe item as context, build the recommendation around it rather than replacing it.",
   "Always structure your answer as exactly three options, each introduced by one of these exact literal markers on its own line, in this order: ###SIGNATURE### (their classic, reliable self), ###SAFE### (a lower-risk, easy-to-wear option), ###BOLD### (a more daring, statement option).",
   "Within each option, explain in 1-3 sentences why it matches the request. Then, only if relevant, add a line starting with exactly \"OWNED:\" listing (comma-separated) pieces the member already owns that this option uses, and a line starting with exactly \"MISSING:\" listing pieces they would still need. Omit either line entirely if it doesn't apply — never write a line with nothing after the colon.",
-  "Write in the member's language. Never invent a URL, retailer name, product, or owned/missing item.",
+  "The user message includes a Required response language determined from the member's request. Follow it exactly for all recommendation prose and never switch languages because a search result, retailer page, title, or excerpt uses another language. Never invent a URL, retailer name, product, or owned/missing item.",
 ].join(" ");
 
 const TRAVEL_SYSTEM_PROMPT = [
@@ -359,8 +361,13 @@ const TRAVEL_SYSTEM_PROMPT = [
   "Write a warm, concise, editorial answer in the member's language, organized around what the member actually asked for. Never invent a URL, venue name, or event.",
 ].join(" ");
 
-function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: string): string {
+export function responseLanguageForQuery(query: string): "English" | "Arabic" {
+  return /[\u0600-\u06ff]/.test(query) ? "Arabic" : "English";
+}
+
+export function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: string): string {
   const context: string[] = [];
+  context.push(`Required response language: ${responseLanguageForQuery(request.query)}`);
   if (request.location) context.push(`Location/country: ${request.location}`);
   if (request.budget !== undefined) context.push(`Budget: ${request.budget}${request.currency ? ` ${request.currency}` : ""}`);
   if (request.size) context.push(`Size: ${request.size}`);
@@ -386,7 +393,7 @@ function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: strin
  * folded into the reasoning text as-is. Both item lists are capped
  * independent of anything the model wrote, as defense in depth.
  */
-function parseLooksOptions(answer: string): KinLooksOption[] {
+export function parseLooksOptions(answer: string): KinLooksOption[] {
   const options: KinLooksOption[] = [];
   for (let i = 0; i < LOOKS_OPTION_MARKERS.length; i++) {
     const { marker, label } = LOOKS_OPTION_MARKERS[i];
@@ -419,6 +426,37 @@ function parseLooksOptions(answer: string): KinLooksOption[] {
     });
   }
   return options;
+}
+
+type NormalizedKinResponse = { answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[] };
+
+/**
+ * A Looks response is complete only when it satisfies the existing structured
+ * contract: all three options, in order, each with substantive reasoning.
+ * Search cards or arbitrary non-empty prose are useful partial data, but are
+ * never enough to claim that an outfit recommendation was completed.
+ */
+export function buildKinLooksResult(
+  normalized: NormalizedKinResponse,
+  _toolErrorCodes: readonly string[],
+): Extract<KinSearchResult, { status: "ok" | "partial" }> {
+  const options = parseLooksOptions(normalized.answer);
+  const expectedLabels: KinLooksOption["label"][] = ["signature", "safe", "bold"];
+  const complete = options.length === expectedLabels.length
+    && options.every((option, index) => option.label === expectedLabels[index] && option.reasoning.trim().length >= 20);
+
+  if (!complete) {
+    return {
+      status: "partial",
+      reason: "incomplete_recommendation",
+      ...normalized,
+      options,
+    };
+  }
+
+  // A denied extra search does not invalidate a recommendation that already
+  // fulfilled the complete three-option contract from successful results.
+  return { status: "ok", ...normalized, options };
 }
 
 /**
@@ -463,7 +501,7 @@ function hostnameOf(url: string): string {
  * capped independently of max_uses so a client always gets a short,
  * bounded, mobile-appropriate list.
  */
-function normalizeAnthropicResponse(response: Anthropic.Message): { answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[] } {
+export function normalizeAnthropicResponse(response: Anthropic.Message): NormalizedKinResponse {
   let answer = "";
   const citationsByUrl = new Map<string, KinSearchCitation>();
   const resultsByUrl = new Map<string, KinSearchResultCard>();
@@ -504,6 +542,25 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
   return { answer: answer.trim(), citations: [...citationsByUrl.values()], results: [...resultsByUrl.values()] };
 }
 
+export function webSearchToolErrorCodes(response: Anthropic.Message): string[] {
+  const codes = new Set<string>();
+  for (const block of response.content) {
+    if (block.type !== "web_search_tool_result" || Array.isArray(block.content)) continue;
+    const errorCode = (block.content as { error_code?: unknown }).error_code;
+    if (typeof errorCode === "string" && errorCode) codes.add(errorCode);
+  }
+  return [...codes];
+}
+
+function webSearchRequestCount(response: Anthropic.Message): number | null {
+  const usage = response.usage as Anthropic.Message["usage"] & {
+    server_tool_use?: { web_search_requests?: number };
+  };
+  return typeof usage.server_tool_use?.web_search_requests === "number"
+    ? usage.server_tool_use.web_search_requests
+    : null;
+}
+
 /**
  * Best-effort: attaches a real product photo to up to
  * MAX_PRODUCT_IMAGE_LOOKUPS results by fetching each page's own og:image
@@ -513,7 +570,7 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
  */
 async function attachProductImages(results: KinSearchResultCard[]): Promise<KinSearchResultCard[]> {
   if (results.length === 0) return results;
-  const imagesByUrl = await fetchProductImagesFor(results.map((r) => r.url), MAX_PRODUCT_IMAGE_LOOKUPS);
+  const imagesByUrl = await fetchProductImagesFor(results.map((result) => ({ url: result.url, title: result.title })), MAX_PRODUCT_IMAGE_LOOKUPS);
   return results.map((result) => imagesByUrl.has(result.url) ? { ...result, imageUrl: imagesByUrl.get(result.url)! } : result);
 }
 
@@ -530,7 +587,12 @@ async function attachProductImages(results: KinSearchResultCard[]): Promise<KinS
  * decodes an image itself; it only resizes what it's handed for the
  * Anthropic request.
  */
-export async function runKinSearch(request: KinSearchRequest, myThingsItemContext?: string, imageBuffer?: Buffer): Promise<KinSearchResult> {
+export async function runKinSearch(
+  request: KinSearchRequest,
+  myThingsItemContext?: string,
+  imageBuffer?: Buffer,
+  correlationId?: string,
+): Promise<KinSearchResult> {
   const client = anthropicClient();
   if (!client) return { status: "unavailable", reason: "not configured" };
 
@@ -564,11 +626,23 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
       { timeout: kinSearchTimeoutMs(), maxRetries: 0 },
     );
 
+    const toolErrorCodes = webSearchToolErrorCodes(response);
+    logger.info({
+      provider: "anthropic",
+      correlationId: correlationId ?? null,
+      providerRequestId: response.id,
+      mode: request.mode,
+      model: response.model,
+      stopReason: response.stop_reason,
+      webSearchRequests: webSearchRequestCount(response),
+      toolErrorCodes,
+    }, "KIN search: Anthropic completion");
+
     if (response.stop_reason === "refusal") return { status: "unavailable", reason: "refusal" };
     const normalized = normalizeAnthropicResponse(response);
     if (request.mode === "looks") {
       const withImages = await attachProductImages(normalized.results);
-      return { status: "ok", ...normalized, results: withImages, options: parseLooksOptions(normalized.answer) };
+      return buildKinLooksResult({ ...normalized, results: withImages }, toolErrorCodes);
     }
     return { status: "ok", ...normalized };
   } catch (error) {

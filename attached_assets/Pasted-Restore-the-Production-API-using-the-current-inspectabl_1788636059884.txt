@@ -1,0 +1,16 @@
+Restore the Production API using the current, inspectable project code. The previous report confirmed that production remains in “starting,” while Task #21’s implementation diff and validation results are inaccessible.
+
+Do not apply, discard, or merge Task #21 blindly. Do not create another duplicate background task. Continue this repair in the current project conversation.
+
+1. Verify the current HEAD and working tree. The last reported HEAD was 583d3bbfe32ee5a14f83f92abf3a3189084b8971. If it has advanced, inspect the changes rather than resetting it. Preserve existing fixes and KIN functionality.
+2. Identify the exact startup stage currently blocking readiness using production logs and the startup code. Distinguish an active migration, a lock/wait, an invariant failure, and repeated process restarts. Do not assume that the previously reported schema mismatch is still the only blocker.
+3. Before any production database change, verify that you are inspecting the database used by the live deployed API process—not merely the database shown in Publish UI. Report only redacted identity evidence; never expose credentials.
+4. Recheck the migration ledger and the four expected KIN tables in that database. If the ledger/schema mismatch is confirmed, implement the smallest forward-only, additive repair using the repository’s authoritative schema definitions and migration mechanism. Do not delete or rewrite ledger history, blindly rerun migration 0014, copy the development database, or drop/recreate existing tables.
+5. Validate the repair locally against a representative mismatch before deploying. Inspect the actual deployment schema diff, if applicable. Preserve user data, permissions, feature flags, and existing functionality. Do not bypass schema checks or report “ready” merely to suppress the 503.
+6. Deploy the validated repair if your available permissions allow it. Verify the published API—not just localhost:
+
+* /api/healthz reports the application’s actual ready/healthy state.
+* /api/version returns HTTP 200 with the deployed version.
+* Startup logs show completed initialization, and follow-up checks remain healthy.
+
+Return a concise Arabic execution report with the confirmed cause, exact changes, tests, deployed version, and remaining blockers. If access or a manual publishing action is required, complete all feasible preparation first and identify the precise missing action. Do not claim production is fixed without live verification.

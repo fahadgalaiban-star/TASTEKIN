@@ -1,0 +1,23 @@
+Implement the focused KIN Looks fix based on your completed diagnosis. Work in this project conversation, using the current verified HEAD. Keep the existing search budget and provider settings unchanged.
+
+Scope:
+
+1. Update the Looks instructions to explicitly plan within the three-search budget, combine searches efficiently, and synthesize recommendations from successful results without requesting additional searches after exhaustion. Never invent product availability, prices, or sources.
+2. Inspect structured web-search tool errors, including max_uses_exceeded. Log request correlation, stop_reason, search usage, and error codes without secrets or unnecessary user content.
+3. Validate the actual Looks response against the existing three-option contract before returning a completed result. Nonempty text or product cards alone must not count as a complete outfit. Do not rely solely on detecting apology keywords.
+4. Handle partial results consistently across backend types and frontend rendering. Preserve useful, verified search results, but clearly distinguish them from a completed recommendation. Use the existing unavailable/partial contract where supported; update both sides if a contract change is necessary.
+
+A search-limit error must not automatically discard an otherwise complete, valid recommendation. Conversely, an apology accompanied by search cards must not pass as a completed Look.
+
+Add focused tests for:
+
+* Successful searches followed by max_uses_exceeded and an incomplete answer.
+* A complete, valid recommendation despite an additional search being denied.
+* Empty or malformed options.
+* Normal successful Looks.
+
+Preserve Travel and other consumers of shared search code.
+
+Do not change max_uses, model, timeout, retries, billing, keys, database schema, permissions, feature flags, deployment configuration, or Task #21.
+
+Implement and validate the patch, then provide the changed files, diff summary, test results, and any remaining limitations in Arabic. Do not publish yet. Do not claim the original user scenario works based only on mocked tests.

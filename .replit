@@ -29,3 +29,6 @@ packages = ["glib", "nss", "nspr", "dbus", "atk", "at-spi2-atk", "cups", "libdrm
 
 [userenv.development]
 FHEED_OWNER_ID = ""
+
+[userenv.production]
+RUN_MIGRATIONS_ON_BOOT = "true"

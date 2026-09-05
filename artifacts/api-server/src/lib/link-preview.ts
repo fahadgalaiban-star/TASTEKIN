@@ -79,19 +79,50 @@ async function hostnameResolvesPublicly(hostname: string): Promise<boolean> {
   }
 }
 
-/** Extracts a relative-or-absolute image URL from an og:image/twitter:image meta tag, if present — never guessed. */
-function extractImageMetaUrl(html: string): string | null {
-  const patterns = [
-    /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image(?::secure_url)?["']/i,
-    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
-    /<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i,
-  ];
-  for (const pattern of patterns) {
-    const match = html.match(pattern);
-    if (match?.[1]) return match[1];
+function extractMetaContent(html: string, names: string[]): string | null {
+  for (const name of names) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const patterns = [
+      new RegExp(`<meta[^>]+(?:property|name)=["']${escaped}["'][^>]+content=["']([^"']+)["']`, "i"),
+      new RegExp(`<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["']${escaped}["']`, "i"),
+    ];
+    for (const pattern of patterns) {
+      const match = html.match(pattern);
+      if (match?.[1]) return match[1];
+    }
   }
   return null;
+}
+
+/** Extracts a relative-or-absolute image URL from an og:image/twitter:image meta tag, if present — never guessed. */
+function extractImageMetaUrl(html: string): string | null {
+  return extractMetaContent(html, ["og:image", "og:image:secure_url", "twitter:image"]);
+}
+
+function extractImageMetaAlt(html: string): string | null {
+  return extractMetaContent(html, ["og:image:alt", "twitter:image:alt"]);
+}
+
+/**
+ * Social-preview metadata is not proof that an image depicts the searched
+ * product. Accept it only when its own alt text supplies apparel semantics
+ * or overlaps meaningfully with the result title, and reject common
+ * logo/icon/placeholder signals. False negatives intentionally fall back to
+ * the honest KIN placeholder.
+ */
+export function isSuitableProductPreviewImage(imageUrl: string, altText: string | null, resultTitle: string): boolean {
+  if (!altText || altText.trim().length < 8) return false;
+  const evidence = `${imageUrl} ${altText}`.toLowerCase();
+  if (/\b(logo|logotype|wordmark|brandmark|favicon|icon|placeholder|social[-_ ]?share|default[-_ ]?og)\b/i.test(evidence)) return false;
+  if (/\b(shirt|overshirt|jacket|blazer|coat|trouser|chino|jean|shoe|loafer|trainer|sneaker|derby|boot|outfit|menswear|clothing|apparel|dress|skirt|bag)\b/i.test(altText)) return true;
+
+  const ignored = new Set(["with", "from", "this", "that", "mens", "men's", "women", "womens", "online"]);
+  const words = (value: string) => new Set(
+    value.toLowerCase().match(/[a-z]{4,}/g)?.filter((word) => !ignored.has(word)) ?? [],
+  );
+  const titleWords = words(resultTitle);
+  const altWords = words(altText);
+  return [...titleWords].some((word) => altWords.has(word));
 }
 
 /** Reads at most maxBytes from a response body, then aborts the connection — never buffers an unbounded reply. */
@@ -125,7 +156,7 @@ async function readBounded(response: Response, maxBytes: number): Promise<string
  * response, or missing tag — the caller must treat null as "no image",
  * never retry, and never invent a fallback.
  */
-export async function fetchProductImageUrl(pageUrl: string): Promise<string | null> {
+export async function fetchProductImageUrl(pageUrl: string, resultTitle = ""): Promise<string | null> {
   let currentUrl = pageUrl;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
     if (!isHttpsUrl(currentUrl)) return null;
@@ -163,7 +194,8 @@ export async function fetchProductImageUrl(pageUrl: string): Promise<string | nu
     if (!rawImageUrl) return null;
     try {
       const resolved = new URL(rawImageUrl, currentUrl).toString();
-      return isHttpsUrl(resolved) ? resolved : null;
+      if (!isHttpsUrl(resolved)) return null;
+      return isSuitableProductPreviewImage(resolved, extractImageMetaAlt(html), resultTitle) ? resolved : null;
     } catch {
       return null;
     }
@@ -177,17 +209,17 @@ export async function fetchProductImageUrl(pageUrl: string): Promise<string | nu
  * outbound requests. Failures are independent — one slow/broken page never
  * blocks or nulls out the others.
  */
-export async function fetchProductImagesFor(urls: string[], limit: number): Promise<Map<string, string>> {
-  const targets = urls.slice(0, limit);
+export async function fetchProductImagesFor(resultsToInspect: Array<{ url: string; title: string }>, limit: number): Promise<Map<string, string>> {
+  const targets = resultsToInspect.slice(0, limit);
   const results = new Map<string, string>();
   let cursor = 0;
   async function worker() {
     while (cursor < targets.length) {
       const index = cursor;
       cursor += 1;
-      const url = targets[index];
-      const imageUrl = await fetchProductImageUrl(url).catch(() => null);
-      if (imageUrl) results.set(url, imageUrl);
+      const target = targets[index];
+      const imageUrl = await fetchProductImageUrl(target.url, target.title).catch(() => null);
+      if (imageUrl) results.set(target.url, imageUrl);
     }
   }
   await Promise.all(Array.from({ length: Math.min(MAX_CONCURRENT_LOOKUPS, targets.length) }, worker));
