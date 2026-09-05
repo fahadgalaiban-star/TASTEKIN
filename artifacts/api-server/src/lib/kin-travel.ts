@@ -55,13 +55,62 @@ function dateForDay(startDate: string | undefined, dayIndex: number): string | n
   return date.toISOString().slice(0, 10);
 }
 
-/** Splits places across the trip's days as evenly as possible, never inventing extra places. */
+function coordinateDistanceSquared(a: KinTravelPlace, b: KinTravelPlace): number {
+  if (a.lat === null || a.lng === null || b.lat === null || b.lng === null) return Number.POSITIVE_INFINITY;
+  const latScale = Math.cos(((a.lat + b.lat) / 2) * Math.PI / 180);
+  const lat = a.lat - b.lat;
+  const lng = (a.lng - b.lng) * latScale;
+  return lat * lat + lng * lng;
+}
+
+/** Keeps the first result as the anchor, then follows the nearest unused place. */
+export function orderPlacesNearestNeighbour(places: KinTravelPlace[]): KinTravelPlace[] {
+  if (places.length < 2) return [...places];
+  const remaining = places.slice(1);
+  const ordered = [places[0]];
+  while (remaining.length > 0) {
+    const current = ordered[ordered.length - 1];
+    let nearestIndex = 0;
+    let nearestDistance = coordinateDistanceSquared(current, remaining[0]);
+    for (let index = 1; index < remaining.length; index++) {
+      const distance = coordinateDistanceSquared(current, remaining[index]);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    }
+    ordered.push(remaining.splice(nearestIndex, 1)[0]);
+  }
+  return ordered;
+}
+
+/** Splits one geographically ordered chain into contiguous, balanced day groups. */
 function distributePlaces(places: KinTravelPlace[], dayCount: number): KinTravelPlace[][] {
   const buckets: KinTravelPlace[][] = Array.from({ length: dayCount }, () => []);
-  places.forEach((place, index) => {
-    buckets[index % dayCount].push(place);
-  });
+  const ordered = orderPlacesNearestNeighbour(places);
+  const baseSize = Math.floor(ordered.length / dayCount);
+  const remainder = ordered.length % dayCount;
+  let offset = 0;
+  for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
+    const size = baseSize + (dayIndex < remainder ? 1 : 0);
+    buckets[dayIndex] = ordered.slice(offset, offset + size);
+    offset += size;
+  }
   return buckets;
+}
+
+const PROGRESS_NARRATION_PATTERNS = [
+  /\b(?:i(?:'ll| will)|let me|i need to)\s+(?:resume|continue|start|try|search|look)\b/i,
+  /\b(?:resume|continue|keep)\s+(?:searching|looking)\b/i,
+  /\b(?:cannot|can't|unable to)\s+access\b.*\b(?:real[- ]?time|web|search)\b/i,
+  /\b(?:reanudar[eé]|continuar[eé]|voy a)\b.*\b(?:buscar|b[uú]squeda)\b/i,
+  /\bno puedo acceder\b.*\b(?:tiempo real|b[uú]squeda)\b/i,
+  /\b(?:je vais|je dois)\b.*\b(?:chercher|rechercher)\b/i,
+];
+
+export function isValidTravelNarrative(narrative: string): boolean {
+  const trimmed = narrative.trim();
+  return trimmed.length >= 20 && !PROGRESS_NARRATION_PATTERNS.some((pattern) => pattern.test(trimmed));
 }
 
 /**
@@ -102,8 +151,10 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
 
   const searchResult = await runKinSearch(request, myThingsItemContext);
   if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason };
+  if (!isValidTravelNarrative(searchResult.answer)) return { status: "unavailable", reason: "invalid travel narrative" };
 
   const resolvedPlaces = await Promise.all(placesResult.places.map(resolvePlace));
+  if (resolvedPlaces.length === 0) return { status: "unavailable", reason: "invalid travel narrative" };
   const dayCount = dayCountFor(request.startDate, request.endDate);
   const buckets = distributePlaces(resolvedPlaces, dayCount);
   const days: KinTravelDay[] = [];

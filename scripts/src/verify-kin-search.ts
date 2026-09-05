@@ -83,6 +83,7 @@ type FakeAnthropicMode =
   | { kind: "looks_options" }
   | { kind: "looks_product_page" }
   | { kind: "looks_arabic" }
+  | { kind: "travel_progress" }
   | { kind: "web_search_error" };
 
 let fakeAnthropicMode: FakeAnthropicMode = { kind: "ok" };
@@ -151,6 +152,15 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
           ].join("\n");
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ...base, stop_reason: "end_turn", content: [{ type: "text", text: answer, citations: null }] }));
+          return;
+        }
+        if (mode.kind === "travel_progress") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({
+            ...base,
+            stop_reason: "end_turn",
+            content: [{ type: "text", text: "Continuaré buscando. No puedo acceder a la búsqueda en tiempo real.", citations: null }],
+          }));
           return;
         }
         if (mode.kind === "looks_product_page") {
@@ -256,6 +266,7 @@ let fakeGoogleRoutesMode: FakeGoogleRoutesMode = { kind: "ok" };
 let lastPlacesFieldMask = "";
 let lastPlacesRequestBody = "";
 let lastRoutesFieldMask = "";
+let lastRoutesRequestBody = "";
 let googlePlacesRequestCount = 0;
 let googleRoutesRequestCount = 0;
 
@@ -273,11 +284,12 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
         if (mode.kind === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end("{not json"); return; }
+        const coordinateOffsets = [0, 0.04, 0.001, 0.041, 0.002, 0.042, 0.003];
         const places = Array.from({ length: 7 }, (_, i) => ({
           id: `place-${i}`,
           displayName: { text: `Fake Place ${i}` },
           formattedAddress: i === 2 ? undefined : `${i} Example Street`,
-          location: { latitude: 48.85 + i * 0.001, longitude: 2.35 + i * 0.001 },
+          location: { latitude: 48.85 + coordinateOffsets[i], longitude: 2.35 + coordinateOffsets[i] },
           rating: i % 2 === 0 ? 4.5 : undefined,
           websiteUri: i === 0 ? "https://fakeplace0.example.com" : undefined,
           googleMapsUri: `https://maps.google.com/?cid=${i}`,
@@ -308,6 +320,7 @@ function startFakeGoogleRoutes(): Promise<{ server: http.Server; port: number }>
         if (req.method !== "POST") { res.writeHead(404); res.end(); return; }
         googleRoutesRequestCount += 1;
         lastRoutesFieldMask = String(req.headers["x-goog-fieldmask"] || "");
+        lastRoutesRequestBody = Buffer.concat(chunks).toString("utf8");
         const mode = fakeGoogleRoutesMode;
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
@@ -1181,6 +1194,8 @@ async function main() {
       assert.equal(lastPlan!.days.length, 2, "a 2-day date range must produce 2 days");
       const totalPlaces = lastPlan!.days.reduce((sum, day) => sum + day.places.length, 0);
       assert.equal(totalPlaces, 5, "at most GOOGLE_PLACES_MAX_RESULTS (5) places must ever appear, none fabricated");
+      assert.deepEqual(lastPlan!.days[0].places.map((place) => place.placeId), ["place-0", "place-2", "place-4"], "nearest neighbours must remain together in the first contiguous day group");
+      assert.deepEqual(lastPlan!.days[1].places.map((place) => place.placeId), ["place-1", "place-3"], "places must be geographically ordered, not distributed round-robin");
       assert.ok(lastPlan!.days.some((day) => day.routes.length > 0), "at least one day must have a real route leg between two places");
       for (const day of lastPlan!.days) for (const route of day.routes) {
         assert.equal(route.distanceMeters, 850);
@@ -1196,6 +1211,20 @@ async function main() {
     await check("Google Routes request uses a minimal field mask", async () => {
       assert.ok(lastRoutesFieldMask.includes("distanceMeters") && lastRoutesFieldMask.includes("duration"));
       assert.ok(!lastRoutesFieldMask.includes("polyline"), "the field mask must never request the polyline or turn-by-turn steps");
+      assert.equal((JSON.parse(lastRoutesRequestBody) as { travelMode: string }).travelMode, "DRIVE", "KIN Travel must request driving routes, never walking estimates");
+    });
+    await check("Travel prompt requires a final plan and forbids progress narration", async () => {
+      const parsed = JSON.parse(lastAnthropicRequestBody) as { system: string };
+      assert.match(parsed.system, /complete, final travel plan/i);
+      assert.match(parsed.system, /Never narrate your search process/i);
+      assert.match(parsed.system, /Never.*resume or continue searching/i);
+    });
+    await check("travel progress narration is rejected with a stable reason code and never returned as a plan", async () => {
+      fakeAnthropicMode = { kind: "travel_progress" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Madrid" });
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "invalid_plan", reasonCode: "KIN_TRAVEL_INVALID_PLAN" });
+      fakeAnthropicMode = { kind: "ok" };
     });
     await check("a place missing an address never gets a fabricated one (omitted, not guessed)", async () => {
       assert.ok(lastPlan!.days.some((day) => day.places.some((place) => place.formattedAddress === null)), "the 7th fake place has no address and must surface as null");

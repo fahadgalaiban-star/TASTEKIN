@@ -71,15 +71,31 @@ test('Looks mode: Optional details shows location/budget/size/occasion, not dest
   await expect(page.getByTestId('kin-start-date')).toHaveCount(0);
 });
 
-test('Travel mode: Optional details shows destination/dates, not size', async ({ page }) => {
+test('Travel mode is a sequential request, destination, dates, and optional-details flow with no duplicate location', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-mode-travel').click();
-  await page.getByText('Optional details', { exact: true }).click();
+
+  await expect(page.getByTestId('kin-query')).toBeVisible();
+  await expect(page.getByTestId('kin-destination')).toHaveCount(0);
+  await page.getByTestId('kin-query').fill('A quiet art and food trip');
+  await page.getByTestId('kin-travel-next').click();
+
   await expect(page.getByTestId('kin-destination')).toBeVisible();
+  await expect(page.getByTestId('kin-query')).toHaveCount(0);
+  await page.getByTestId('kin-destination').fill('Madrid');
+  await page.getByTestId('kin-travel-next').click();
+
   await expect(page.getByTestId('kin-start-date')).toBeVisible();
   await expect(page.getByTestId('kin-end-date')).toBeVisible();
+  await page.getByTestId('kin-start-date').fill('2026-10-01');
+  await page.getByTestId('kin-end-date').fill('2026-10-04');
+  await page.getByTestId('kin-travel-next').click();
+
+  await expect(page.getByTestId('kin-budget')).toBeVisible();
+  await expect(page.getByTestId('kin-occasion')).toBeVisible();
+  await expect(page.getByTestId('kin-location')).toHaveCount(0);
   await expect(page.getByTestId('kin-size')).toHaveCount(0);
 });
 
