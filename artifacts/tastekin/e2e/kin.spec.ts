@@ -227,15 +227,24 @@ test('the creator workspace remains reachable from You after the center nav butt
 
 // --- reference image correctness --------------------------------------------
 
-function looksOkBody(overrides: { answer?: string; results?: unknown[]; webSearchDegraded?: boolean } = {}) {
+function looksOkBody(overrides: { answer?: string; results?: unknown[]; options?: unknown[]; webSearchDegraded?: boolean } = {}) {
   return JSON.stringify({
     status: 'ok',
     answer: overrides.answer ?? '',
     citations: [],
     results: overrides.results ?? [],
-    options: [{ label: 'signature', reasoning: 'A tailored navy look for tonight.', ownedItems: [], missingItems: [] }],
+    options: overrides.options ?? [{ label: 'signature', reasoning: 'A tailored navy look for tonight.', ownedItems: [], missingItems: [] }],
     webSearchDegraded: overrides.webSearchDegraded ?? false,
   });
+}
+
+// A successful answer that never got parsed into Signature/Safe/Bold
+// options (e.g. the model didn't use the three-marker format) — KIN falls
+// back to the plain-answer layout (data-testid="kin-answer") instead of
+// the options card (data-testid="kin-looks-options"). The reference image
+// and search-limited notice must both still work in this layout.
+function looksOkPlainAnswerBody(overrides: { answer?: string; webSearchDegraded?: boolean } = {}) {
+  return looksOkBody({ answer: overrides.answer ?? 'A tailored navy look for tonight, worn with minimal accessories.', options: [], webSearchDegraded: overrides.webSearchDegraded });
 }
 
 test('an uploaded photo becomes the styling reference, clearly labeled — even if the photo is removed from the form while the request is still in flight', async ({ page }) => {
@@ -320,6 +329,80 @@ test('a web-search-result thumbnail can never render as the outfit reference, ev
   // b.example.com/2.jpg as if it were the outfit itself.
   const optionCardImages = page.getByTestId('kin-look-option').locator('img');
   await expect(optionCardImages).toHaveCount(0);
+});
+
+// --- reference image correctness when the model's answer has no parsed
+// Signature/Safe/Bold options — KIN renders the plain-answer fallback
+// (data-testid="kin-answer") instead of the options card, and the
+// reference image must still show up there, using the same rules. -------
+
+test('an uploaded photo still becomes the styling reference when the answer has no parsed options (plain-answer layout)', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/looks/photo*', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkPlainAnswerBody() });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('a dinner outfit');
+  await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-answer')).toBeVisible();
+  await expect(page.getByTestId('kin-looks-options')).toHaveCount(0);
+  await expect(page.getByTestId('kin-look-reference')).toBeVisible();
+  await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', /^blob:/);
+  await expect(page.getByText('Your styling reference')).toBeVisible();
+});
+
+test('a selected My Things item still becomes the styling reference when the answer has no parsed options (plain-answer layout)', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', createdAt: new Date().toISOString() }] }),
+      });
+    }
+  });
+  await page.route('**/api/kin/search', async (route) => { await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkPlainAnswerBody() }); });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('style this item');
+  await page.getByTestId('kin-my-things-item').selectOption('item-42');
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-answer')).toBeVisible();
+  await expect(page.getByTestId('kin-looks-options')).toHaveCount(0);
+  await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
+});
+
+test('no photo and no My Things item means no reference image in the plain-answer layout either', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: looksOkPlainAnswerBody(),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('a dinner outfit, no photo');
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-answer')).toBeVisible();
+  await expect(page.getByTestId('kin-looks-options')).toHaveCount(0);
+  await expect(page.getByTestId('kin-look-reference')).toHaveCount(0);
+});
+
+test('the search-limited note still appears in the plain-answer layout when the answer has no parsed options', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkPlainAnswerBody({ webSearchDegraded: true }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('a dinner outfit');
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-answer')).toBeVisible();
+  await expect(page.getByTestId('kin-search-limited')).toBeVisible();
+  await expect(page.getByText('A tailored navy look for tonight, worn with minimal accessories.')).toBeVisible();
 });
 
 test('the search-limited note appears only when the provider reports a structural web-search failure, alongside the real advice', async ({ page }) => {

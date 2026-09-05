@@ -2861,6 +2861,17 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const activeOption = looksOptions[selectedOptionIndex];
   const activeDay = travelPlan?.days[selectedDayIndex];
 
+  // Only ever the member's own uploaded photo or their selected My Things
+  // item's authorized image — captured at submit time (resultReference),
+  // never a web-search product thumbnail. Absent entirely (text-only
+  // advice) when no reference image was part of this request. Shared by
+  // both the parsed-options layout and the plain-answer fallback so a
+  // successful answer with no Signature/Safe/Bold options still shows it.
+  const referenceImage = resultReference && <div className="kin-card-image" data-testid="kin-look-reference">
+    <img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} />
+    <span className="kin-reference-label">{t('Your styling reference', 'مرجع أسلوبك')}</span>
+  </div>;
+
   const backToForm = () => { setView('form'); setState('idle'); };
   const openDay = (index: number) => { setSelectedDayIndex(index); setView('travel-day'); };
 
@@ -2922,14 +2933,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
               <span className="kin-card-kicker">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].en, KIN_LOOKS_OPTION_COPY[activeOption.label].ar)}</span>
               <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
             </div>
-            {/* Only ever the member's own uploaded photo or their selected My Things
-                item's authorized image — captured at submit time (resultReference),
-                never a web-search product thumbnail. Absent entirely (text-only
-                advice) when no reference image was part of this request. */}
-            {resultReference && <div className="kin-card-image" data-testid="kin-look-reference">
-              <img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} />
-              <span className="kin-reference-label">{t('Your styling reference', 'مرجع أسلوبك')}</span>
-            </div>}
+            {referenceImage}
             <p className="kin-card-caption">{activeOption.reasoning}</p>
             {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
               {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
@@ -2953,6 +2957,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           </div>
           {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
         </div> : <div className="kin-card" data-testid="kin-answer">
+          {referenceImage}
           <p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p>
           {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited" style={{ margin: '0 16px 16px' }}>{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
         </div>}
