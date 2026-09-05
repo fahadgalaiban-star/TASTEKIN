@@ -126,6 +126,22 @@ async function dropKinTablesOnly() {
   await db.execute(sql`DROP TABLE IF EXISTS kin_trip_items, kin_trips, kin_saved_recommendations, kin_search_usage CASCADE`);
 }
 
+/**
+ * Re-applies 0014's own SQL directly (not through migrate() — the ledger
+ * may already record 0014 as done, in which case migrate() would see
+ * nothing pending and skip it) to restore a database left in the
+ * ledger-says-done-but-tables-missing state by an earlier check. Safe
+ * because 0014 is itself idempotent (IF NOT EXISTS / duplicate_object
+ * guarded); this never touches the ledger.
+ */
+async function restoreKinTables(): Promise<void> {
+  const fileSql = fs.readFileSync(path.join(realMigrationsFolder, "0014_kin_ledger_schema_repair.sql"), "utf8");
+  for (const statement of fileSql.split("--> statement-breakpoint")) {
+    const trimmed = statement.trim();
+    if (trimmed) await db.execute(sql.raw(trimmed));
+  }
+}
+
 const REQUIRED_KIN_TABLES = ["kin_search_usage", "kin_saved_recommendations", "kin_trips", "kin_trip_items"];
 
 async function missingKinTables(): Promise<string[]> {
@@ -223,48 +239,81 @@ let fakeAnthropicPort = 0;
 
 type Server = { port: number; process: ChildProcess; baseUrl: string; stdout: string };
 
-/** Starts the built server and waits for it to become ready — or, if it never does within the deadline, returns whatever it logged so the caller can assert on the failure. */
-function startServer(extraEnv: Record<string, string | undefined>): Promise<{ ready: true; server: Server } | { ready: false; stdout: string; process: ChildProcess }> {
+type SpawnedServer = { port: number; process: ChildProcess; baseUrl: string; getStdout: () => string };
+
+/** Spawns the built server against the disposable test database, returning immediately (no readiness wait) — callers decide what to poll for and how long to wait. */
+function spawnServer(extraEnv: Record<string, string | undefined>): SpawnedServer {
   const port = nextPort;
   nextPort += 1;
-  return new Promise((resolve) => {
-    const env: Record<string, string> = {
-      ...(process.env as Record<string, string>),
-      PORT: String(port),
-      NODE_ENV: "production",
-      DATABASE_URL: databaseUrl,
-      ANTHROPIC_API_KEY: "fake-test-key",
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${fakeAnthropicPort}`,
-      PRIVATE_OBJECT_DIR: "/closet-test-bucket/my-things",
-      KIN_SEARCH_DAILY_LIMIT: "1000",
-    };
-    for (const [key, value] of Object.entries(extraEnv)) {
-      if (value === undefined) delete env[key];
-      else env[key] = value;
-    }
-    const child = spawn("node", [serverEntry], { env, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-    child.stderr.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-    const baseUrl = `http://127.0.0.1:${port}`;
-    const deadline = Date.now() + 15_000;
-    let settled = false;
-    child.on("exit", () => {
-      if (!settled) { settled = true; resolve({ ready: false, stdout, process: child }); }
-    });
-    (async () => {
-      while (Date.now() < deadline && !settled) {
-        try {
-          const response = await fetch(`${baseUrl}/api/healthz`);
-          if (response.ok) { settled = true; resolve({ ready: true, server: { port, process: child, baseUrl, stdout } }); return; }
-        } catch {
-          // not up yet
-        }
-        await new Promise((r) => setTimeout(r, 200));
+  const env: Record<string, string> = {
+    ...(process.env as Record<string, string>),
+    PORT: String(port),
+    NODE_ENV: "production",
+    DATABASE_URL: databaseUrl,
+    ANTHROPIC_API_KEY: "fake-test-key",
+    ANTHROPIC_BASE_URL: `http://127.0.0.1:${fakeAnthropicPort}`,
+    PRIVATE_OBJECT_DIR: "/closet-test-bucket/my-things",
+    KIN_SEARCH_DAILY_LIMIT: "1000",
+  };
+  for (const [key, value] of Object.entries(extraEnv)) {
+    if (value === undefined) delete env[key];
+    else env[key] = value;
+  }
+  const child = spawn("node", [serverEntry], { env, stdio: ["ignore", "pipe", "pipe"] });
+  let stdout = "";
+  child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+  child.stderr.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
+  return { port, process: child, baseUrl: `http://127.0.0.1:${port}`, getStdout: () => stdout };
+}
+
+/** Polls until `check` returns true, the process exits, or `deadlineMs` elapses. Returns which of those happened. */
+async function pollUntil(server: SpawnedServer, check: () => Promise<boolean>, deadlineMs = 15_000): Promise<"met" | "exited" | "timeout"> {
+  const deadline = Date.now() + deadlineMs;
+  let exited = false;
+  const onExit = () => { exited = true; };
+  server.process.on("exit", onExit);
+  try {
+    while (Date.now() < deadline) {
+      if (exited) return "exited";
+      try {
+        if (await check()) return "met";
+      } catch {
+        // not up yet / transient — keep polling
       }
-      if (!settled) { settled = true; resolve({ ready: false, stdout, process: child }); }
-    })();
-  });
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    return exited ? "exited" : "timeout";
+  } finally {
+    server.process.off("exit", onExit);
+  }
+}
+
+async function healthzBody(baseUrl: string): Promise<{ status?: string } | undefined> {
+  const response = await fetch(`${baseUrl}/api/healthz`);
+  if (!response.ok) return undefined;
+  return (await response.json()) as { status?: string };
+}
+
+/**
+ * Starts the built server and waits for it to become truly ready — or, if
+ * it never does within the deadline, returns whatever it logged so the
+ * caller can assert on the failure.
+ *
+ * "Ready" here means GET /api/healthz's body reports { status: "ok" } —
+ * not merely that the request succeeded. The port opens (and /api/healthz
+ * starts answering 200) immediately, before migrations run, with a
+ * { status: "starting" } body (see readiness-middleware.ts); this waits
+ * past that to the point migrations have actually finished and the app is
+ * really serving. Phase 13 below drives spawnServer/pollUntil directly to
+ * observe the earlier "starting" window instead.
+ */
+async function startServer(extraEnv: Record<string, string | undefined>): Promise<{ ready: true; server: Server } | { ready: false; stdout: string; process: ChildProcess }> {
+  const server = spawnServer(extraEnv);
+  const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl))?.status === "ok");
+  if (outcome === "met") {
+    return { ready: true, server: { port: server.port, process: server.process, baseUrl: server.baseUrl, stdout: server.getStdout() } };
+  }
+  return { ready: false, stdout: server.getStdout(), process: server.process };
 }
 
 function stopServer(proc: ChildProcess) {
@@ -340,12 +389,21 @@ async function main() {
       assert.ok(started.ready, "server must start once migrations complete");
       const server = (started as { ready: true; server: Server }).server;
       try {
-        await check("the migration log line appears, and completes before 'Server listening'", async () => {
+        await check("the migration log line appears, and the port opens well before migrations finish", async () => {
+          const listeningAt = server.stdout.indexOf("Server listening");
           const runningAt = server.stdout.indexOf("Running pending database migrations");
           const upToDateAt = server.stdout.indexOf("Database migrations up to date");
-          const listeningAt = server.stdout.indexOf("Server listening");
-          assert.ok(runningAt !== -1 && upToDateAt !== -1 && listeningAt !== -1, "all three log lines must appear");
-          assert.ok(runningAt < upToDateAt && upToDateAt < listeningAt, "must complete migrating strictly before opening the HTTP listener");
+          assert.ok(listeningAt !== -1 && runningAt !== -1 && upToDateAt !== -1, "all three log lines must appear");
+          // Not asserting listeningAt < runningAt here: app.listen()'s own
+          // "listening" event is asynchronous, so the synchronous log line
+          // that immediately follows the (synchronous) listen() call can
+          // legitimately appear first in the log even though the listener
+          // was registered first in the code — log order across a sync/
+          // async boundary isn't proof of execution order. What actually
+          // matters (the port answering real HTTP requests before
+          // migrations run) is proven directly over HTTP in Phase 13, not
+          // inferred from log text here.
+          assert.ok(listeningAt < upToDateAt, "the port must be open well before migrations finish");
         });
         await check("the ledger records exactly one row per migration file", async () => {
           assert.equal(await ledgerRowCount(), 15);
@@ -398,15 +456,54 @@ async function main() {
       }
     }
 
-    console.log("\nPhase 5: a migration failure is fatal — never start accepting traffic with a schema the app doesn't match.");
+    console.log("\nPhase 5: a migration failure is fatal, but the port still opens immediately — never accepting traffic with a schema the app doesn't match, while never holding up the Replit port-open check either.");
     {
+      // Bad credentials fail authentication near-instantly (single-digit
+      // milliseconds) — too fast to reliably win an HTTP race against from
+      // outside the process, so this checks the log for what actually
+      // happened rather than trying to catch the "starting" window live.
+      // The meaningful, previously-broken behavior this proves: the port
+      // opens at all (the log line is present) even for a failure this
+      // fast — under the old before-listen migration order, it never did.
       const brokenUrl = databaseUrl.replace(/:\/\/[^@]*@/, "://baduser:badpass@");
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true", DATABASE_URL: brokenUrl });
-      await check("an unreachable database during migration prevents the server from ever listening", async () => {
-        assert.equal(started.ready, false, "the server must not report ready");
-        assert.doesNotMatch(started.stdout, /Server listening/);
-        assert.match(started.stdout, /Database migration failed/);
-      });
+      const server = spawnServer({ RUN_MIGRATIONS_ON_BOOT: "true", DATABASE_URL: brokenUrl });
+      try {
+        await check("even a near-instant migration failure still opens the port first, then exits non-zero with the structured error logged, never reaching ready", async () => {
+          const outcome = await pollUntil(server, async () => false, 15_000);
+          assert.equal(outcome, "exited", "the process must exit");
+          assert.match(server.getStdout(), /Server listening/, "the port opens unconditionally, before migrations are even attempted");
+          assert.doesNotMatch(server.getStdout(), /"status":"ok"/, "no response ever reported real readiness");
+          assert.match(server.getStdout(), /Database migration failed/);
+          assert.match(server.getStdout(), /password authentication failed/);
+        });
+      } finally {
+        stopServer(server.process);
+      }
+    }
+    {
+      // A slower, non-timeout failure (an explicit divide-by-zero, not a
+      // wedged statement) — long enough to observe the "starting" window
+      // live over real HTTP, proving the port-open fix holds for an
+      // ordinary migration failure too, not just the fast auth-rejection
+      // case above or the timeout/termination cases in Phases 11-12.
+      const fixture = writeSingleMigrationFolder("SELECT pg_sleep(2);\n--> statement-breakpoint\nSELECT 1/0;");
+      const server = spawnServer({ RUN_MIGRATIONS_ON_BOOT: "true", MIGRATIONS_FOLDER_OVERRIDE: fixture });
+      try {
+        await check("the port answers 'starting' during a slow migration that will ultimately fail", async () => {
+          const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl))?.status === "starting", 2_000);
+          assert.equal(outcome, "met");
+        });
+        await check("once the migration's SQL error surfaces, the process exits non-zero, having never reached ready", async () => {
+          const outcome = await pollUntil(server, async () => false, 15_000);
+          assert.equal(outcome, "exited", "the process must exit");
+          assert.doesNotMatch(server.getStdout(), /"status":"ok"/, "no response ever reported real readiness");
+          assert.match(server.getStdout(), /Database migration failed/);
+          assert.match(server.getStdout(), /division by zero/);
+        });
+      } finally {
+        stopServer(server.process);
+        fs.rmSync(fixture, { recursive: true, force: true });
+      }
     }
 
     console.log("\nPhase 6: the reported Production incident — ledger records 0012/0013 as applied (real hashes, via Drizzle's own migrate()), but the tables those migrations create are absent. Migration 0014 repairs this additively.");
@@ -423,11 +520,11 @@ async function main() {
       assert.ok(started.ready, "server must start once 0014 repairs the missing tables");
       const server = (started as { ready: true; server: Server }).server;
       try {
-        await check("startup applies migration 0014 (the only one pending) before opening the HTTP listener", async () => {
+        await check("the port opens before migration 0014 (the only one pending) applies", async () => {
           assert.match(server.stdout, /Database migrations up to date/);
           const listeningAt = server.stdout.indexOf("Server listening");
           const upToDateAt = server.stdout.indexOf("Database migrations up to date");
-          assert.ok(upToDateAt !== -1 && listeningAt !== -1 && upToDateAt < listeningAt);
+          assert.ok(upToDateAt !== -1 && listeningAt !== -1 && listeningAt < upToDateAt, "the port must open before the repair migration runs, not after");
         });
         await check("every required KIN table now exists", async () => {
           assert.deepEqual(await missingKinTables(), []);
@@ -520,9 +617,10 @@ async function main() {
         assert.deepEqual(await missingKinTables(), REQUIRED_KIN_TABLES);
       });
       const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      await check("startup fails with an explicit ledger/schema mismatch diagnostic, and never opens the HTTP listener", async () => {
+      await check("the port still opens (the listener line appears), but startup fails with an explicit ledger/schema mismatch diagnostic and never becomes ready", async () => {
         assert.equal(started.ready, false, "the server must not report ready");
-        assert.doesNotMatch(started.stdout, /Server listening/);
+        assert.match(started.stdout, /Server listening/, "the port opens immediately regardless of what migrations later find");
+        assert.doesNotMatch(started.stdout, /"status":"ok"/, "no response ever reported real readiness");
         assert.match(started.stdout, /Database migration failed/);
         assert.match(started.stdout, /ledger reports every migration applied/);
         assert.match(started.stdout, /kin_search_usage/);
@@ -617,6 +715,44 @@ async function main() {
         delete process.env.MIGRATION_STATEMENT_TIMEOUT_MS;
         delete process.env.MIGRATION_RUN_TIMEOUT_MS;
         delete process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS;
+      }
+    }
+
+    console.log("\nPhase 13: the Replit port-open timeout fix — the HTTP listener opens, and GET /api and GET /api/healthz answer immediately, before migrations run; every other /api route 503s until they finish; then the app serves normally.");
+    await restoreKinTables(); // undo Phase 9's fixture so this phase starts from a healthy database
+    {
+      const fixture = writeSingleMigrationFolder("SELECT pg_sleep(3);");
+      const server = spawnServer({ RUN_MIGRATIONS_ON_BOOT: "true", MIGRATIONS_FOLDER_OVERRIDE: fixture });
+      try {
+        await check("the port opens immediately — well before the 3s migration could possibly finish", async () => {
+          const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl)) !== undefined, 2_000);
+          assert.equal(outcome, "met", "GET /api/healthz must answer almost immediately, not after migrations");
+        });
+        await check("starting: GET /api/healthz and GET /api answer 200 with status 'starting'", async () => {
+          const healthz = await fetch(`${server.baseUrl}/api/healthz`);
+          assert.equal(healthz.status, 200);
+          assert.deepEqual(await healthz.json(), { status: "starting" });
+          const bare = await fetch(`${server.baseUrl}/api`);
+          assert.equal(bare.status, 200);
+          assert.deepEqual(await bare.json(), { status: "starting" });
+        });
+        await check("starting: every other /api route answers 503, never touching the database", async () => {
+          const health = await fetch(`${server.baseUrl}/api/health`);
+          assert.equal(health.status, 503);
+          const me = await fetch(`${server.baseUrl}/api/me`);
+          assert.equal(me.status, 503);
+        });
+        await check("ready: once migrations finish, GET /api/healthz reports 'ok' and normal routing resumes", async () => {
+          const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl))?.status === "ok", 15_000);
+          assert.equal(outcome, "met", "the server must eventually become ready");
+          const bare = await fetch(`${server.baseUrl}/api`);
+          assert.equal(bare.status, 404, "the bare /api 404 must be restored once ready");
+          const me = await fetch(`${server.baseUrl}/api/me`);
+          assert.equal(me.status, 200, "real routes must serve normally once ready");
+        });
+      } finally {
+        stopServer(server.process);
+        fs.rmSync(fixture, { recursive: true, force: true });
       }
     }
   } finally {

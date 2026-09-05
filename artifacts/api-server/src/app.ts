@@ -6,6 +6,7 @@ import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/auth-middleware";
+import { readinessMiddleware } from "./middlewares/readiness-middleware";
 
 declare const __dirname: string;
 
@@ -79,6 +80,12 @@ app.use(cors(corsOptionsDelegate));
 app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Gates every /api request on startup readiness before anything below ever
+// touches the database (authMiddleware's session lookup, then the real
+// routes) — see readiness-middleware.ts. A no-op once startup completes.
+app.use("/api", readinessMiddleware);
+
 app.use(authMiddleware);
 
 app.use("/api", router);
