@@ -38,7 +38,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { db } from "@workspace/db";
+import { db, pool, runPendingMigrations } from "@workspace/db";
 import { sql } from "drizzle-orm";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 
@@ -172,6 +172,50 @@ async function migrationRowCountFor(tag: string): Promise<number> {
   const hash = crypto.createHash("sha256").update(query).digest("hex");
   const result = await db.execute(sql`select count(*)::int as count from drizzle.__drizzle_migrations where hash = ${hash}`);
   return (result.rows[0] as { count: number }).count;
+}
+
+/**
+ * A throwaway single-file migration folder containing exactly `sqlBody` —
+ * used only to fabricate wedged-statement fixtures for the cancellation
+ * tests below. Caller must fs.rmSync the returned path.
+ *
+ * Drizzle's migrate() decides whether to run a migration by comparing its
+ * journal `when` against the newest `created_at` already in
+ * drizzle.__drizzle_migrations — a ledger shared by every migrationsFolder
+ * against the same database, real ones included. `when` here is set far
+ * beyond any realistic real value so this fixture is never mistaken for
+ * "already applied" by a database this suite has already migrated.
+ */
+function writeSingleMigrationFolder(sqlBody: string): string {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kin-cancellation-fixture-"));
+  fs.mkdirSync(path.join(tempDir, "meta"));
+  fs.writeFileSync(path.join(tempDir, "0000_fixture.sql"), sqlBody);
+  fs.writeFileSync(
+    path.join(tempDir, "meta/_journal.json"),
+    JSON.stringify({ version: "7", dialect: "postgresql", entries: [{ idx: 0, version: "7", when: 9_999_999_999_999, tag: "0000_fixture", breakpoints: true }] }),
+  );
+  return tempDir;
+}
+
+const MIGRATION_ADVISORY_LOCK_KEY = 727_273_001_001;
+
+/** True if the migration advisory lock is currently free — acquires it non-blockingly (pg_try_advisory_lock) and immediately releases it if so. */
+async function migrationLockIsFree(): Promise<boolean> {
+  const client = await pool.connect();
+  try {
+    const result = await client.query("SELECT pg_try_advisory_lock($1) AS acquired", [MIGRATION_ADVISORY_LOCK_KEY]);
+    const acquired = (result.rows[0] as { acquired: boolean }).acquired;
+    if (acquired) await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_ADVISORY_LOCK_KEY]);
+    return acquired;
+  } finally {
+    client.release();
+  }
+}
+
+/** Count of backends still actively running a pg_sleep — proof (or disproof) that migration SQL is really still executing server-side, independent of whatever the client-side promise did. */
+async function activeSleepBackendCount(): Promise<number> {
+  const result = await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE query LIKE 'SELECT pg_sleep%' AND state = 'active'");
+  return (result.rows[0] as { n: number }).n;
 }
 
 let nextPort = 24900;
@@ -483,6 +527,97 @@ async function main() {
         assert.match(started.stdout, /ledger reports every migration applied/);
         assert.match(started.stdout, /kin_search_usage/);
       });
+    }
+
+    console.log("\nPhase 10: lock_timeout reliably bounds pg_advisory_lock (the mechanism runPendingMigrations relies on to bound lock acquisition) — proven directly at the Postgres level, not left as an assumption.");
+    {
+      const holder = await pool.connect();
+      try {
+        await holder.query("SELECT pg_advisory_lock($1)", [MIGRATION_ADVISORY_LOCK_KEY]);
+        await check("a session blocked on pg_advisory_lock with lock_timeout set is canceled at the configured bound, not left hanging", async () => {
+          const waiter = await pool.connect();
+          try {
+            await waiter.query("SET lock_timeout = 1500");
+            const start = Date.now();
+            await assert.rejects(
+              waiter.query("SELECT pg_advisory_lock($1)", [MIGRATION_ADVISORY_LOCK_KEY]),
+              /lock timeout/i,
+            );
+            const elapsed = Date.now() - start;
+            assert.ok(elapsed >= 1000 && elapsed < 5000, `expected cancellation near the 1500ms bound, took ${elapsed}ms`);
+          } finally {
+            waiter.release();
+          }
+        });
+      } finally {
+        await holder.query("SELECT pg_advisory_unlock($1)", [MIGRATION_ADVISORY_LOCK_KEY]);
+        holder.release();
+      }
+    }
+
+    console.log("\nPhase 11: a wedged migration statement is canceled server-side (statement_timeout), not merely abandoned client-side — the previous Promise.race-only approach left the SQL running and the lock held.");
+    {
+      process.env.MIGRATION_STATEMENT_TIMEOUT_MS = "1500";
+      process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS = "5000";
+      const fixture = writeSingleMigrationFolder("SELECT pg_sleep(300);");
+      try {
+        const start = Date.now();
+        let caught: unknown;
+        try {
+          await runPendingMigrations(fixture);
+        } catch (error) {
+          caught = error;
+        }
+        const elapsed = Date.now() - start;
+        await check("runPendingMigrations rejects near the statement_timeout bound, not after the full wedged duration", async () => {
+          assert.ok(caught, "runPendingMigrations must reject");
+          assert.ok(elapsed < 10_000, `took ${elapsed}ms — statement_timeout (1500ms) should have canceled this long before pg_sleep(300)'s 300000ms`);
+        });
+        await check("the advisory lock is immediately free afterward — the failed statement did not leave it held", async () => {
+          assert.equal(await migrationLockIsFree(), true);
+        });
+        await check("no backend is left actually running the sleep — the statement was truly canceled server-side, not just abandoned", async () => {
+          assert.equal(await activeSleepBackendCount(), 0);
+        });
+      } finally {
+        fs.rmSync(fixture, { recursive: true, force: true });
+        delete process.env.MIGRATION_STATEMENT_TIMEOUT_MS;
+        delete process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS;
+      }
+    }
+
+    console.log("\nPhase 12: many individually-fast statements whose sum exceeds the whole-run bound force-terminate the backend — the one case statement_timeout alone can't cover.");
+    {
+      process.env.MIGRATION_STATEMENT_TIMEOUT_MS = "10000"; // no single 1s sleep trips this
+      process.env.MIGRATION_RUN_TIMEOUT_MS = "3000"; // ten of them cumulatively will
+      process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS = "5000";
+      const fixture = writeSingleMigrationFolder(Array(10).fill("SELECT pg_sleep(1);").join("\n--> statement-breakpoint\n"));
+      try {
+        const start = Date.now();
+        let caught: unknown;
+        try {
+          await runPendingMigrations(fixture);
+        } catch (error) {
+          caught = error;
+        }
+        const elapsed = Date.now() - start;
+        await check("runPendingMigrations rejects near the whole-run bound, not after the full ~10s cumulative duration", async () => {
+          assert.ok(caught instanceof Error, "runPendingMigrations must reject");
+          assert.equal((caught as Error).name, "MigrationTimeoutError");
+          assert.ok(elapsed < 6000, `took ${elapsed}ms — the 3000ms run timeout should have force-terminated this well before the full ~10s`);
+        });
+        await check("the advisory lock is immediately free afterward — forced termination released it as a side effect of ending the session", async () => {
+          assert.equal(await migrationLockIsFree(), true);
+        });
+        await check("no backend is left actually running any of the sleeps — the connection was truly terminated, not merely abandoned", async () => {
+          assert.equal(await activeSleepBackendCount(), 0);
+        });
+      } finally {
+        fs.rmSync(fixture, { recursive: true, force: true });
+        delete process.env.MIGRATION_STATEMENT_TIMEOUT_MS;
+        delete process.env.MIGRATION_RUN_TIMEOUT_MS;
+        delete process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS;
+      }
     }
   } finally {
     anthropic.server.close();
