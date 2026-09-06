@@ -2305,6 +2305,7 @@ type AnalyticsWindow = {
   eventCounts: Record<string, number>;
   onboarding: { started: number; completed: number; rate: number };
   funnel: Array<{ step: string; count: number }>;
+  kin: { requests: number; looksSaved: number };
 };
 
 const ANALYTICS_EVENT_LABELS: Record<string, { en: string; ar: string }> = {
@@ -2367,6 +2368,10 @@ function AdminAnalyticsScreen({ ar }: { ar: boolean }) {
         <div className="settings-row"><span>{t('Started', 'بدأ')}</span><strong>{summary.onboarding.started}</strong></div>
         <div className="settings-row"><span>{t('Completed', 'اكتمل')}</span><strong>{summary.onboarding.completed}</strong></div>
         <div className="settings-row"><span>{t('Completion rate', 'معدل الإكمال')}</span><strong>{Math.round(summary.onboarding.rate * 100)}%</strong></div>
+      </div>
+      <div className="approved-panel"><h3>KIN</h3>
+        <div className="settings-row"><span>{t('Requests', 'الطلبات')}</span><strong>{summary.kin.requests}</strong></div>
+        <div className="settings-row"><span>{t('Looks saved', 'الإطلالات المحفوظة')}</span><strong>{summary.kin.looksSaved}</strong></div>
       </div>
       <div className="approved-panel"><h3>{t('Key funnel counts', 'أعداد قمع التحويل الرئيسية')}</h3>
         {summary.funnel.map((step) => <div key={step.step} className="settings-row"><span>{ANALYTICS_EVENT_LABELS[step.step] ? (ar ? ANALYTICS_EVENT_LABELS[step.step].ar : ANALYTICS_EVENT_LABELS[step.step].en) : step.step}</span><strong>{step.count}</strong></div>)}
