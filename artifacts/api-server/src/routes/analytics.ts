@@ -1,5 +1,5 @@
-import { analyticsEvents, db } from "@workspace/db";
-import { countDistinct, gte, sql } from "drizzle-orm";
+import { analyticsEvents, db, kinSavedRecommendations, kinSearchUsage } from "@workspace/db";
+import { and, countDistinct, eq, gte, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 
 import { isCurrentUserAdmin } from "../lib/creator-account";
@@ -40,15 +40,25 @@ const WINDOW_DAYS = { last7Days: 7, last30Days: 30 } as const;
 async function summarizeWindow(days: number) {
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-  const [totals] = await db.select({
-    totalEvents: sql<number>`count(*)`.mapWith(Number),
-    uniqueActiveUsers: countDistinct(analyticsEvents.userId),
-  }).from(analyticsEvents).where(gte(analyticsEvents.createdAt, since));
-
-  const eventCountRows = await db.select({
-    name: analyticsEvents.name,
-    count: sql<number>`count(*)`.mapWith(Number),
-  }).from(analyticsEvents).where(gte(analyticsEvents.createdAt, since)).groupBy(analyticsEvents.name);
+  const [[totals], eventCountRows, [kinRequests], [kinLooksSaved]] = await Promise.all([
+    db.select({
+      totalEvents: sql<number>`count(*)`.mapWith(Number),
+      uniqueActiveUsers: countDistinct(analyticsEvents.userId),
+    }).from(analyticsEvents).where(gte(analyticsEvents.createdAt, since)),
+    db.select({
+      name: analyticsEvents.name,
+      count: sql<number>`count(*)`.mapWith(Number),
+    }).from(analyticsEvents).where(gte(analyticsEvents.createdAt, since)).groupBy(analyticsEvents.name),
+    db.select({
+      count: sql<number>`count(*)`.mapWith(Number),
+    }).from(kinSearchUsage).where(gte(kinSearchUsage.createdAt, since)),
+    db.select({
+      count: sql<number>`count(*)`.mapWith(Number),
+    }).from(kinSavedRecommendations).where(and(
+      eq(kinSavedRecommendations.mode, "looks"),
+      gte(kinSavedRecommendations.createdAt, since),
+    )),
+  ]);
   const eventCounts = Object.fromEntries(eventCountRows.map((row) => [row.name, row.count]));
 
   const started = eventCounts.onboarding_started ?? 0;
@@ -72,6 +82,10 @@ async function summarizeWindow(days: number) {
       rate: started > 0 ? completed / started : 0,
     },
     funnel,
+    kin: {
+      requests: kinRequests?.count ?? 0,
+      looksSaved: kinLooksSaved?.count ?? 0,
+    },
   };
 }
 

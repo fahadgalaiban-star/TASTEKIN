@@ -11,8 +11,8 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { analyticsEvents, db } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { analyticsEvents, db, kinSavedRecommendations, kinSearchUsage } from "@workspace/db";
+import { eq, inArray } from "drizzle-orm";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, "../..");
@@ -20,6 +20,10 @@ const serverEntry = path.join(repoRoot, "artifacts/api-server/dist/index.mjs");
 
 if (!process.env.DATABASE_URL) {
   console.error("DATABASE_URL is required — point this at a disposable test database, never production.");
+  process.exit(1);
+}
+if (process.env.PROD_DB_URL && process.env.DATABASE_URL === process.env.PROD_DB_URL) {
+  console.error("Refusing to run analytics verification against the production database.");
   process.exit(1);
 }
 
@@ -102,6 +106,8 @@ async function runScript(scriptPath: string, args: string[]) {
 const suffix = Date.now();
 const PASSWORD = "regression-test-1234";
 const results: Array<{ name: string; ok: boolean; error?: string }> = [];
+const insertedKinUsageIds: string[] = [];
+const insertedKinSavedIds: string[] = [];
 
 async function check(name: string, fn: () => Promise<void>) {
   try {
@@ -282,7 +288,49 @@ async function main() {
       assert.ok(window7.funnel.some((step) => step.step === "home_viewed"));
       assert.ok(payload.periods.last30Days.totalEvents >= window7.totalEvents, "the 30-day window must be a superset of the 7-day window");
     });
+    await check("the admin dashboard counts existing KIN requests and saved Looks in the correct time windows", async () => {
+      const before = await admin.summary();
+      await expectStatus(before, 200);
+      const baseline = (await before.json()) as {
+        periods: {
+          last7Days: { kin: { requests: number; looksSaved: number } };
+          last30Days: { kin: { requests: number; looksSaved: number } };
+        };
+      };
+
+      const now = new Date();
+      const tenDaysAgo = new Date(now.getTime() - 10 * 24 * 60 * 60 * 1000);
+      const fortyDaysAgo = new Date(now.getTime() - 40 * 24 * 60 * 60 * 1000);
+      const usageRows = await db.insert(kinSearchUsage).values([
+        { ownerUserId: userAccount.user.id, createdAt: now },
+        { ownerUserId: userAccount.user.id, createdAt: tenDaysAgo },
+        { ownerUserId: userAccount.user.id, createdAt: fortyDaysAgo },
+      ]).returning({ id: kinSearchUsage.id });
+      insertedKinUsageIds.push(...usageRows.map((row) => row.id));
+
+      const savedRows = await db.insert(kinSavedRecommendations).values([
+        { ownerUserId: userAccount.user.id, mode: "looks", query: "recent", answer: "recent", options: [], citations: [], results: [], createdAt: now },
+        { ownerUserId: userAccount.user.id, mode: "looks", query: "ten days", answer: "ten days", options: [], citations: [], results: [], createdAt: tenDaysAgo },
+        { ownerUserId: userAccount.user.id, mode: "looks", query: "old", answer: "old", options: [], citations: [], results: [], createdAt: fortyDaysAgo },
+        { ownerUserId: userAccount.user.id, mode: "travel", query: "travel", answer: "travel", options: null, citations: [], results: [], createdAt: now },
+      ]).returning({ id: kinSavedRecommendations.id });
+      insertedKinSavedIds.push(...savedRows.map((row) => row.id));
+
+      const response = await admin.summary();
+      await expectStatus(response, 200);
+      const payload = (await response.json()) as typeof baseline;
+      assert.equal(payload.periods.last7Days.kin.requests, baseline.periods.last7Days.kin.requests + 1);
+      assert.equal(payload.periods.last30Days.kin.requests, baseline.periods.last30Days.kin.requests + 2);
+      assert.equal(payload.periods.last7Days.kin.looksSaved, baseline.periods.last7Days.kin.looksSaved + 1);
+      assert.equal(payload.periods.last30Days.kin.looksSaved, baseline.periods.last30Days.kin.looksSaved + 2);
+    });
   } finally {
+    if (insertedKinSavedIds.length > 0) {
+      await db.delete(kinSavedRecommendations).where(inArray(kinSavedRecommendations.id, insertedKinSavedIds));
+    }
+    if (insertedKinUsageIds.length > 0) {
+      await db.delete(kinSearchUsage).where(inArray(kinSearchUsage.id, insertedKinUsageIds));
+    }
     stopServer(server);
   }
 
