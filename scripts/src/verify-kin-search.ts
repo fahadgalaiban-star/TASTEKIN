@@ -265,6 +265,7 @@ let fakeGooglePlacesMode: FakeGooglePlacesMode = { kind: "ok" };
 let fakeGoogleRoutesMode: FakeGoogleRoutesMode = { kind: "ok" };
 let lastPlacesFieldMask = "";
 let lastPlacesRequestBody = "";
+let placesRequestBodies: string[] = [];
 let lastRoutesFieldMask = "";
 let lastRoutesRequestBody = "";
 let googlePlacesRequestCount = 0;
@@ -280,6 +281,8 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         googlePlacesRequestCount += 1;
         lastPlacesFieldMask = String(req.headers["x-goog-fieldmask"] || "");
         lastPlacesRequestBody = Buffer.concat(chunks).toString("utf8");
+        placesRequestBodies.push(lastPlacesRequestBody);
+        const parsedRequest = JSON.parse(lastPlacesRequestBody) as { includedType?: string };
         const mode = fakeGooglePlacesMode;
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
@@ -291,6 +294,14 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
           formattedAddress: i === 2 ? undefined : `${i} Example Street`,
           location: { latitude: 48.85 + coordinateOffsets[i], longitude: 2.35 + coordinateOffsets[i] },
           rating: i % 2 === 0 ? 4.5 : undefined,
+          primaryType: parsedRequest.includedType ?? "tourist_attraction",
+          types: [parsedRequest.includedType ?? "tourist_attraction"],
+          regularOpeningHours: {
+            periods: Array.from({ length: 7 }, (_, day) => ({
+              open: { day, hour: 8, minute: 0 },
+              close: { day, hour: 23, minute: 0 },
+            })),
+          },
           websiteUri: i === 0 ? "https://fakeplace0.example.com" : undefined,
           googleMapsUri: `https://maps.google.com/?cid=${i}`,
           photos: i === 3 ? undefined : [{
@@ -1188,7 +1199,7 @@ async function main() {
     await check("travel plan without a destination is rejected with 400", async () => {
       assert.equal((await userA.kinTravelPlan({ query: "plan my trip" })).status, 400);
     });
-    let lastPlan: { destination: string; narrative: string; citations: unknown[]; days: Array<{ dayIndex: number; date: string | null; places: Array<{ placeId: string; name: string; rating: number | null; formattedAddress: string | null }>; routes: Array<{ distanceMeters: number; durationSeconds: number }> }> } | null = null;
+    let lastPlan: { destination: string; narrative: string; citations: unknown[]; days: Array<{ dayIndex: number; date: string | null; places: Array<{ placeId: string; name: string; rating: number | null; formattedAddress: string | null; slot: string | null; suggestedTime: string | null }>; routes: Array<{ distanceMeters: number; durationSeconds: number }> }> } | null = null;
     await check("a valid travel plan combines real Places results, Routes legs, and the Anthropic narrative into day-by-day itinerary", async () => {
       fakeAnthropicMode = { kind: "ok" };
       fakeGooglePlacesMode = { kind: "ok" };
@@ -1216,6 +1227,57 @@ async function main() {
       assert.ok(!lastPlacesFieldMask.includes("*"), "the field mask must never be a wildcard");
       const parsedBody = JSON.parse(lastPlacesRequestBody) as { maxResultCount: number };
       assert.equal(parsedBody.maxResultCount, 5);
+    });
+    await check("food and drink intent uses typed Places searches and never asks for tourist attractions", async () => {
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({
+        query: "nice places for coffee and great restaurants for breakfast and dinner",
+        destination: "London",
+        startDate: "2026-10-01",
+        endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ slot: string; suggestedTime: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string; strictTypeFiltering?: boolean });
+      assert.deepEqual(requests.map((request) => request.includedType), ["cafe", "bakery", "restaurant"]);
+      assert.ok(requests.every((request) => request.strictTypeFiltering === true));
+      assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)));
+      const stops = payload.plan.days.flatMap((day) => day.places);
+      assert.deepEqual(new Set(stops.map((stop) => stop.slot)), new Set(["COFFEE", "BREAKFAST", "DINNER"]));
+      assert.ok(stops.every((stop) => /^\d{2}:\d{2}$/.test(stop.suggestedTime)));
+    });
+    await check("ordinary food, dining, tea, and cuisine wording never falls back to attractions", async () => {
+      for (const query of ["a food tour", "places to eat", "local dining", "afternoon tea", "sushi spots", "where for a drink?"]) {
+        placesRequestBodies = [];
+        const response = await userA.kinTravelPlan({ query, destination: "London", startDate: "2026-10-01", endDate: "2026-10-01" });
+        await expectStatus(response, 200);
+        assert.ok(placesRequestBodies.length > 0);
+        const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string; strictTypeFiltering?: boolean });
+        assert.ok(requests.every((request) => request.includedType && request.strictTypeFiltering === true));
+        assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)));
+      }
+    });
+    await check("suggested slot times stay within known Google opening hours", async () => {
+      const response = await userA.kinTravelPlan({
+        query: "coffee and dinner",
+        destination: "London",
+        startDate: "2026-10-01",
+        endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ suggestedTime: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      for (const stop of payload.plan.days.flatMap((day) => day.places)) {
+        const hour = Number(stop.suggestedTime.slice(0, 2));
+        assert.ok(hour >= 8 && hour < 23);
+      }
     });
     await check("Google Routes request uses a minimal field mask", async () => {
       assert.ok(lastRoutesFieldMask.includes("distanceMeters") && lastRoutesFieldMask.includes("duration"));

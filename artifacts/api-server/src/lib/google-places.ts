@@ -15,6 +15,9 @@ const FIELD_MASK = [
   "places.formattedAddress",
   "places.location",
   "places.rating",
+  "places.primaryType",
+  "places.types",
+  "places.regularOpeningHours.periods",
   "places.websiteUri",
   "places.googleMapsUri",
   "places.photos",
@@ -48,6 +51,12 @@ function isValidHttpsUrl(url: string): boolean {
  */
 export type GooglePlacePhotoRef = { name: string; attributionText: string | null; attributionUri: string | null };
 
+export type GooglePlaceTypeFilter = "cafe" | "restaurant" | "bakery";
+export type GooglePlaceOpeningPeriod = {
+  open: { day: number; hour: number; minute: number };
+  close: { day: number; hour: number; minute: number } | null;
+};
+
 export type GooglePlace = {
   placeId: string;
   name: string;
@@ -55,6 +64,9 @@ export type GooglePlace = {
   lat: number | null;
   lng: number | null;
   rating: number | null;
+  primaryType: string | null;
+  types: string[];
+  openingPeriods: GooglePlaceOpeningPeriod[];
   websiteUrl: string | null;
   mapsUrl: string | null;
   photoRef: GooglePlacePhotoRef | null;
@@ -76,6 +88,30 @@ function firstPhotoRef(item: Record<string, unknown>): GooglePlacePhotoRef | nul
     attributionText: first && typeof first.displayName === "string" ? first.displayName : null,
     attributionUri: first && typeof first.uri === "string" && isValidHttpsUrl(first.uri) ? first.uri : null,
   };
+}
+
+function normalizeOpeningPeriods(item: Record<string, unknown>): GooglePlaceOpeningPeriod[] {
+  const openingHours = item.regularOpeningHours as { periods?: unknown } | undefined;
+  if (!Array.isArray(openingHours?.periods)) return [];
+  const periods: GooglePlaceOpeningPeriod[] = [];
+  for (const raw of openingHours.periods) {
+    if (!raw || typeof raw !== "object") continue;
+    const record = raw as Record<string, unknown>;
+    const open = record.open as Record<string, unknown> | undefined;
+    const close = record.close as Record<string, unknown> | undefined;
+    if (!open || typeof open.day !== "number" || typeof open.hour !== "number") continue;
+    periods.push({
+      open: {
+        day: open.day,
+        hour: open.hour,
+        minute: typeof open.minute === "number" ? open.minute : 0,
+      },
+      close: close && typeof close.day === "number" && typeof close.hour === "number"
+        ? { day: close.day, hour: close.hour, minute: typeof close.minute === "number" ? close.minute : 0 }
+        : null,
+    });
+  }
+  return periods;
 }
 
 /**
@@ -104,6 +140,9 @@ function normalizePlacesResponse(payload: unknown, maxResults: number): GooglePl
       lat: location && typeof location.latitude === "number" ? location.latitude : null,
       lng: location && typeof location.longitude === "number" ? location.longitude : null,
       rating: typeof item.rating === "number" ? item.rating : null,
+      primaryType: typeof item.primaryType === "string" ? item.primaryType : null,
+      types: Array.isArray(item.types) ? item.types.filter((type): type is string => typeof type === "string") : [],
+      openingPeriods: normalizeOpeningPeriods(item),
       websiteUrl: typeof item.websiteUri === "string" ? item.websiteUri : null,
       mapsUrl: typeof item.googleMapsUri === "string" ? item.googleMapsUri : null,
       photoRef: firstPhotoRef(item),
@@ -133,7 +172,11 @@ function placesPhotoBaseUrl(): string {
  * still never shows the member more than 5 places at once; the itinerary
  * itself is never rendered with more than its original 5.
  */
-export async function searchPlaces(query: string, maxResults: number = GOOGLE_PLACES_MAX_RESULTS): Promise<GooglePlacesResult> {
+export async function searchPlaces(
+  query: string,
+  maxResults: number = GOOGLE_PLACES_MAX_RESULTS,
+  includedType?: GooglePlaceTypeFilter,
+): Promise<GooglePlacesResult> {
   const apiKey = googleMapsApiKey();
   if (!apiKey) return { status: "unavailable", reason: "not configured" };
   const trimmed = query.trim().slice(0, MAX_QUERY_LENGTH);
@@ -147,7 +190,11 @@ export async function searchPlaces(query: string, maxResults: number = GOOGLE_PL
         "X-Goog-Api-Key": apiKey,
         "X-Goog-FieldMask": FIELD_MASK,
       },
-      body: JSON.stringify({ textQuery: trimmed, maxResultCount: maxResults }),
+      body: JSON.stringify({
+        textQuery: trimmed,
+        maxResultCount: maxResults,
+        ...(includedType ? { includedType, strictTypeFiltering: true } : {}),
+      }),
       signal: AbortSignal.timeout(GOOGLE_PLACES_TIMEOUT_MS),
     });
     if (!response.ok) return { status: "unavailable", reason: `HTTP ${response.status}` };
