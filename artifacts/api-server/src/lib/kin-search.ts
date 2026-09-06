@@ -51,7 +51,7 @@ function extractProviderMessage(error: APIError): string {
 }
 
 /** A request that never got an HTTP response at all (timeout/connection failure) — no status, type, or request id exist to log. */
-function logProviderConnectionFailure(error: APIConnectionError, errorType: "timeout" | "network_error", context: { model: string; webSearchEnabled: boolean }): void {
+function logProviderConnectionFailure(error: APIConnectionError, errorType: "timeout" | "network_error", context: { model: string; webSearchEnabled: boolean; correlationId?: string }): void {
   logger.warn({
     provider: "anthropic",
     status: null,
@@ -60,6 +60,7 @@ function logProviderConnectionFailure(error: APIConnectionError, errorType: "tim
     message: redactProviderMessage(error.message),
     model: context.model,
     webSearchEnabled: context.webSearchEnabled,
+    correlationId: context.correlationId ?? null,
   }, "KIN search: Anthropic provider error");
 }
 
@@ -72,7 +73,7 @@ function logProviderConnectionFailure(error: APIConnectionError, errorType: "tim
  * raw headers, the full request/response body, the prompt, an image, or
  * the API key.
  */
-function logProviderError(error: unknown, context: { model: string; webSearchEnabled: boolean }): void {
+function logProviderError(error: unknown, context: { model: string; webSearchEnabled: boolean; correlationId?: string }): void {
   // APIConnectionTimeoutError/APIConnectionError are themselves APIError
   // subclasses (no HTTP response was ever received, so status/type/
   // requestID are all unset on them) — checked first so a request that
@@ -95,6 +96,7 @@ function logProviderError(error: unknown, context: { model: string; webSearchEna
       message: redactProviderMessage(extractProviderMessage(error)),
       model: context.model,
       webSearchEnabled: context.webSearchEnabled,
+      correlationId: context.correlationId ?? null,
     }, "KIN search: Anthropic provider error");
     return;
   }
@@ -108,6 +110,7 @@ function logProviderError(error: unknown, context: { model: string; webSearchEna
     message: redactProviderMessage(error instanceof Error ? error.message : String(error)),
     model: context.model,
     webSearchEnabled: context.webSearchEnabled,
+    correlationId: context.correlationId ?? null,
   }, "KIN search: Anthropic provider error");
 }
 
@@ -253,7 +256,8 @@ export type KinLooksOption = {
 
 export type KinSearchResult =
   | {
-      status: "ok"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options?: KinLooksOption[];
+      status: "ok" | "partial"; answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; options?: KinLooksOption[];
+      reason?: "incomplete_recommendation";
       /**
        * True only when Anthropic's own web_search tool reported a
        * structural error on at least one call (rate limited, unavailable,
@@ -476,6 +480,16 @@ function parseLooksOptions(answer: string): KinLooksOption[] {
   return options;
 }
 
+export function buildKinLooksResult(normalized: { answer: string; citations: KinSearchCitation[]; results: KinSearchResultCard[]; webSearchDegraded: boolean }): KinSearchResult {
+  const options = parseLooksOptions(normalized.answer);
+  const expected: KinLooksOption["label"][] = ["signature", "safe", "bold"];
+  const complete = options.length === expected.length
+    && options.every((option, index) => option.label === expected[index] && option.reasoning.trim().length >= 20);
+  return complete
+    ? { status: "ok", ...normalized, options }
+    : { status: "partial", reason: "incomplete_recommendation", ...normalized, options };
+}
+
 /**
  * Resizes an already-validated (decodeAndReencodeClosetImage'd) image
  * buffer down to a size appropriate for a single Anthropic request. Callers
@@ -576,7 +590,7 @@ function normalizeAnthropicResponse(response: Anthropic.Message): { answer: stri
  */
 async function attachProductImages(results: KinSearchResultCard[]): Promise<KinSearchResultCard[]> {
   if (results.length === 0) return results;
-  const imagesByUrl = await fetchProductImagesFor(results.map((r) => r.url), MAX_PRODUCT_IMAGE_LOOKUPS);
+  const imagesByUrl = await fetchProductImagesFor(results.map((result) => ({ url: result.url, title: result.title })), MAX_PRODUCT_IMAGE_LOOKUPS);
   return results.map((result) => imagesByUrl.has(result.url) ? { ...result, imageUrl: imagesByUrl.get(result.url)! } : result);
 }
 
@@ -593,7 +607,7 @@ async function attachProductImages(results: KinSearchResultCard[]): Promise<KinS
  * decodes an image itself; it only resizes what it's handed for the
  * Anthropic request.
  */
-export async function runKinSearch(request: KinSearchRequest, myThingsItemContext?: string, imageBuffer?: Buffer): Promise<KinSearchResult> {
+export async function runKinSearch(request: KinSearchRequest, myThingsItemContext?: string, imageBuffer?: Buffer, correlationId?: string): Promise<KinSearchResult> {
   const client = anthropicClient();
   if (!client) return { status: "unavailable", reason: "not configured" };
 
@@ -627,15 +641,16 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
       { timeout: kinSearchTimeoutMs(), maxRetries: 0 },
     );
 
+    logger.info({ correlationId: correlationId ?? null, providerRequestId: response.id, mode: request.mode, model: response.model, stopReason: response.stop_reason }, "KIN search: Anthropic completion");
     if (response.stop_reason === "refusal") return { status: "unavailable", reason: "refusal" };
     const normalized = normalizeAnthropicResponse(response);
     if (request.mode === "looks") {
       const withImages = await attachProductImages(normalized.results);
-      return { status: "ok", ...normalized, results: withImages, options: parseLooksOptions(normalized.answer) };
+      return buildKinLooksResult({ ...normalized, results: withImages });
     }
     return { status: "ok", ...normalized };
   } catch (error) {
-    logProviderError(error, { model: kinSearchModel(), webSearchEnabled: maxWebUses() > 0 });
+    logProviderError(error, { model: kinSearchModel(), webSearchEnabled: maxWebUses() > 0, correlationId });
     return { status: "unavailable", reason: sanitizeErrorReason("kin search request failed", error) };
   }
 }

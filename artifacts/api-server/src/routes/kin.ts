@@ -130,8 +130,8 @@ router.post("/kin/search", requireUserMw, kinSearchFlagMw, async (req, res) => {
     return;
   }
 
-  const result = await runKinSearch(validated.value, itemContext, imageBuffer);
-  if (result.status !== "ok") {
+  const result = await runKinSearch(validated.value, itemContext, imageBuffer, String(req.id));
+  if (result.status === "unavailable") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id, mode: validated.value.mode }, "KIN search unavailable");
     }
@@ -209,8 +209,8 @@ async function looksPhotoHandler(req: Request, res: Response) {
       return;
     }
 
-    const result = await runKinSearch(validated.value, itemContext, decoded.buffer);
-    if (result.status !== "ok") {
+    const result = await runKinSearch(validated.value, itemContext, decoded.buffer, String(req.id));
+    if (result.status === "unavailable") {
       if (result.reason !== "not configured") {
         req.log.warn({ reason: result.reason, userId: user.id, mode: "looks" }, "KIN Looks photo search unavailable");
       }
@@ -265,7 +265,7 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     return;
   }
 
-  const result = await runKinTravelPlan(validated.value, itemContext);
+  const result = await runKinTravelPlan(validated.value, itemContext, String(req.id));
   if (result.status !== "ok") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel plan unavailable");
@@ -386,6 +386,12 @@ function validateOptions(value: unknown): KinLooksOption[] | null {
   return options;
 }
 
+function isCompleteLooksOptions(options: KinLooksOption[] | null): options is KinLooksOption[] {
+  const expected: KinLooksOption["label"][] = ["signature", "safe", "bold"];
+  return options?.length === expected.length
+    && options.every((option, index) => option.label === expected[index] && option.reasoning.trim().length >= 20);
+}
+
 type ValidatedSave = {
   mode: "looks" | "travel";
   query: string;
@@ -398,6 +404,7 @@ type ValidatedSave = {
 function validateSaveBody(body: unknown): ValidatedSave | null {
   if (!body || typeof body !== "object") return null;
   const record = body as Record<string, unknown>;
+  if (record.completionStatus !== "ok") return null;
   if (record.mode !== "looks" && record.mode !== "travel") return null;
   if (typeof record.query !== "string" || !record.query.trim() || record.query.length > 2000) return null;
   if (typeof record.answer !== "string" || !record.answer.trim() || record.answer.length > MAX_ANSWER_LENGTH) return null;
@@ -410,6 +417,7 @@ function validateSaveBody(body: unknown): ValidatedSave | null {
     options = validateOptions(record.options);
     if (options === null && record.options !== null) return null;
   }
+  if (record.mode === "looks" && !isCompleteLooksOptions(options)) return null;
   return { mode: record.mode, query: record.query.trim(), answer: record.answer.trim(), options, citations, results };
 }
 

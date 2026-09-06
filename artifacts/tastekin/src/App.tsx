@@ -2528,7 +2528,7 @@ type KinCitation = { title: string | null; url: string };
 type KinResultCard = { title: string; source: string; url: string; price: number | null; currency: string | null; imageUrl: string | null };
 type KinLooksOption = { label: 'signature' | 'safe' | 'bold'; reasoning: string; ownedItems: string[]; missingItems: string[] };
 type KinSearchResponse =
-  | { status: 'ok'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[]; webSearchDegraded: boolean }
+  | { status: 'ok' | 'partial'; reason?: 'incomplete_recommendation'; answer: string; citations: KinCitation[]; results: KinResultCard[]; options?: KinLooksOption[]; webSearchDegraded: boolean }
   | { status: 'unavailable'; reason: string };
 
 /** What a completed Looks result was actually generated from — captured once, at submit time, from exactly what was sent with that request. Never re-derived from the form's current (possibly since-changed) state. */
@@ -2757,7 +2757,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as KinSearchResponse;
       setResult(payload);
-      if (payload.status !== 'ok') { setState('unavailable'); return; }
+      if (payload.status === 'unavailable') { setState('unavailable'); return; }
       const hasOptions = (payload.options?.length ?? 0) > 0;
       const looksReady = payload.answer.trim() || payload.results.length || hasOptions;
       setResultReference(
@@ -2786,7 +2786,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     try {
       const response = await fetch('/api/kin/saved', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'looks', query: query.trim(), answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
+        body: JSON.stringify({ completionStatus: 'ok', mode: 'looks', query: query.trim(), answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       setSavedNotice(t('Saved to your KIN history.', 'تم الحفظ في سجل كين.'));
@@ -2954,7 +2954,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       {statusPanel}
-      {state === 'ready' && result && result.status === 'ok' && <>
+      {state === 'ready' && result && result.status !== 'unavailable' && <>
+        {result.status === 'partial' && <div className="workspace-notice" role="status" data-testid="kin-partial">{t('KIN found verified pieces, but the recommendation is incomplete. Try again for Signature, Safe, and Bold options.', 'وجد كين قطعًا موثقة، لكن التوصية غير مكتملة. حاول مرة أخرى للحصول على خيارات الإطلالة المميزة والآمنة والجريئة.')}</div>}
         {activeOption ? <div data-testid="kin-looks-options">
           <div className="kin-card" data-testid="kin-look-option">
             <div className="kin-card-head">
@@ -2974,7 +2975,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
             </div>}
             {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
             <div className="kin-card-actions">
-              <button className="approved-button primary" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save Look', 'احفظ الإطلالة')}</button>
+              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save Look', 'احفظ الإطلالة')}</button>}
               <button className="approved-button" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Get new suggestions', 'احصل على اقتراحات جديدة')}</button>
             </div>
             <div className="kin-link-row">

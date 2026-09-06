@@ -142,15 +142,15 @@ async function routesForDay(places: KinTravelPlace[]): Promise<KinTravelRoute[]>
  * nothing genuine to add over plain KIN Travel search, so it reports
  * unavailable rather than fabricating an itinerary.
  */
-export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemContext?: string): Promise<KinTravelResult> {
+export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemContext?: string, correlationId?: string): Promise<KinTravelResult> {
   if (!request.destination) return { status: "unavailable", reason: "destination required" };
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
 
   const placesResult = await searchPlaces(`top attractions and things to do in ${request.destination}`);
   if (placesResult.status !== "ok") return { status: "unavailable", reason: placesResult.reason };
 
-  const searchResult = await runKinSearch(request, myThingsItemContext);
-  if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason };
+  const searchResult = await runKinSearch(request, myThingsItemContext, undefined, correlationId);
+  if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason ?? "incomplete recommendation" };
   if (!isValidTravelNarrative(searchResult.answer)) return { status: "unavailable", reason: "invalid travel narrative" };
 
   const resolvedPlaces = await Promise.all(placesResult.places.map(resolvePlace));
