@@ -10,6 +10,7 @@ import {
 import { runKinSearch, type KinSearchCitation, type KinSearchRequest } from "./kin-search";
 
 const MAX_TRIP_DAYS = 10;
+const MAX_FOOD_CANDIDATES_PER_SLOT = 20;
 
 export type KinTravelSlot = "COFFEE" | "BREAKFAST" | "LUNCH" | "DINNER";
 
@@ -124,32 +125,52 @@ export function suggestedTimeForSlot(slot: KinTravelSlot, date: string | null, p
   return null;
 }
 
-async function placesForRequest(request: KinSearchRequest): Promise<{ status: "ok"; places: TravelPlaceCandidate[] } | { status: "unavailable"; reason: string }> {
+async function placeBucketsForRequest(
+  request: KinSearchRequest,
+  dayCount: number,
+): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][]; expectedSlots: KinTravelSlot[] | null } | { status: "unavailable"; reason: string }> {
   const intents = foodIntentsForRequest(request.query);
   if (intents.length === 0) {
     const result = await searchPlaces(`top attractions and things to do in ${request.destination}`);
     return result.status === "ok"
-      ? { status: "ok", places: result.places.map((place) => ({ ...place, requestedSlot: null })) }
+      ? {
+          status: "ok",
+          buckets: distributePlaces(result.places.map((place) => ({ ...place, requestedSlot: null })), dayCount),
+          expectedSlots: null,
+        }
       : result;
   }
 
   const results = await Promise.all(intents.map((intent) =>
-    searchPlaces(`${intent.query} in ${request.destination}`, 5, intent.type)
+    searchPlaces(`${intent.query} in ${request.destination}`, MAX_FOOD_CANDIDATES_PER_SLOT, intent.type, false)
       .then((result) => ({ intent, result })),
   ));
-  const places: TravelPlaceCandidate[] = [];
-  const used = new Set<string>();
-  for (const { intent, result } of results) {
-    if (result.status !== "ok") continue;
-    const place = result.places.find((candidate) =>
-      !used.has(candidate.placeId)
-      && (candidate.primaryType === intent.type || candidate.types.includes(intent.type)),
-    );
-    if (!place) continue;
-    used.add(place.placeId);
-    places.push({ ...place, requestedSlot: intent.slot });
+  if (results.some(({ result }) => result.status !== "ok")) {
+    return { status: "unavailable", reason: "food places unavailable" };
   }
-  return places.length > 0 ? { status: "ok", places } : { status: "unavailable", reason: "no matching food places" };
+
+  const buckets: TravelPlaceCandidate[][] = [];
+  const usedAcrossTrip = new Set<string>();
+  for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
+    const date = dateForDay(request.startDate, dayIndex);
+    const usedToday = new Set<string>();
+    const dayPlaces: TravelPlaceCandidate[] = [];
+    for (const { intent, result } of results) {
+      if (result.status !== "ok") continue;
+      const eligible = result.places.filter((candidate) =>
+        !usedToday.has(candidate.placeId)
+        && suggestedTimeForSlot(intent.slot, date, candidate.openingPeriods) !== null,
+      );
+      const place = eligible.find((candidate) => !usedAcrossTrip.has(candidate.placeId)) ?? eligible[0];
+      if (!place) return { status: "unavailable", reason: `no place available for ${intent.slot.toLowerCase()}` };
+      usedToday.add(place.placeId);
+      usedAcrossTrip.add(place.placeId);
+      dayPlaces.push({ ...place, requestedSlot: intent.slot });
+    }
+    if (dayPlaces.length !== intents.length) return { status: "unavailable", reason: "incomplete food schedule" };
+    buckets.push(orderPlacesNearestNeighbour(dayPlaces));
+  }
+  return { status: "ok", buckets, expectedSlots: intents.map((intent) => intent.slot) };
 }
 
 type LocatedPlace = { lat: number | null; lng: number | null };
@@ -215,8 +236,8 @@ export function isValidTravelNarrative(narrative: string): boolean {
 /**
  * Sequential, not parallel — each leg is one Routes API call with its own
  * short timeout and no retry, and a same-destination itinerary never has
- * more than a handful of legs (at most GOOGLE_PLACES_MAX_RESULTS - 1 per
- * day), so there is no latency benefit worth the added request-spike risk.
+ * more than a handful of legs (at most one fewer than the requested slots
+ * per food day), so there is no latency benefit worth the request spike.
  * A leg Google can't resolve is omitted entirely — never a guessed distance
  * or duration.
  */
@@ -245,21 +266,28 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
   if (!request.destination) return { status: "unavailable", reason: "destination required" };
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
 
-  const placesResult = await placesForRequest(request);
+  const dayCount = dayCountFor(request.startDate, request.endDate);
+  const placesResult = await placeBucketsForRequest(request, dayCount);
   if (placesResult.status !== "ok") return { status: "unavailable", reason: placesResult.reason };
 
   const searchResult = await runKinSearch(request, myThingsItemContext, undefined, correlationId);
   if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason ?? "incomplete recommendation" };
   if (!isValidTravelNarrative(searchResult.answer)) return { status: "unavailable", reason: "invalid travel narrative" };
 
-  const candidates = placesResult.places;
-  const dayCount = dayCountFor(request.startDate, request.endDate);
-  const buckets = distributePlaces(candidates, dayCount);
   const days: KinTravelDay[] = [];
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
     const date = dateForDay(request.startDate, dayIndex);
-    const resolved = await Promise.all(buckets[dayIndex].map((place) => resolvePlace(place, date)));
+    const resolved = await Promise.all(placesResult.buckets[dayIndex].map((place) => resolvePlace(place, date)));
     const dayPlaces = resolved.filter((place): place is KinTravelPlace => place !== null);
+    if (
+      placesResult.expectedSlots
+      && (
+        dayPlaces.length !== placesResult.expectedSlots.length
+        || placesResult.expectedSlots.some((slot) => !dayPlaces.some((place) => place.slot === slot))
+      )
+    ) {
+      return { status: "unavailable", reason: "incomplete food schedule" };
+    }
     days.push({
       dayIndex,
       date,

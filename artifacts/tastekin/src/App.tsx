@@ -2603,14 +2603,21 @@ type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unav
  */
 function FormattedText({ text }: { text: string }) {
   if (!text) return null;
-  return <>{text.split('\n').map((line, i) => (
-    <Fragment key={i}>
-      {i > 0 && <br />}
-      {line.split(/(\*\*.*?\*\*)/g).map((part, j) => (
-        part.startsWith('**') && part.endsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part
-      ))}
-    </Fragment>
-  ))}</>;
+  return <>{text.split('\n').map((line, i) => {
+    let content = line;
+    let isHeading = false;
+    if (/^##(?:\s|$)/.test(content)) {
+      isHeading = true;
+      content = content.replace(/^##\s*/, '');
+    }
+    const elements = content.split(/(\*\*.*?\*\*)/g).map((part, j) => (
+      part.startsWith('**') && part.endsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part
+    ));
+    return <Fragment key={i}>
+      {i > 0 && !isHeading && <br />}
+      {isHeading ? <h3 className="kin-markdown-heading">{elements}</h3> : elements}
+    </Fragment>;
+  })}</>;
 }
 
 const KIN_SLOT_LABELS: Record<string, { en: string; ar: string }> = {
@@ -2987,7 +2994,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
               <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
             </div>
             {referenceImage}
-            <p className="kin-card-caption"><FormattedText text={activeOption.reasoning} /></p>
+            <div className="kin-card-caption"><FormattedText text={activeOption.reasoning} /></div>
             {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
               {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
               {activeOption.missingItems.map((item, index) => <span key={`missing-${index}`} className="kin-tag">{t('Find similar', 'ابحث عن مثيل')} · {item}</span>)}
@@ -3011,7 +3018,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
         </div> : <div className="kin-card" data-testid="kin-answer">
           {referenceImage}
-          <p className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={result.answer} /></p>
+          <div className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={result.answer} /></div>
           {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited" style={{ margin: '0 16px 16px' }}>{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
         </div>}
 
@@ -3064,17 +3071,41 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         <span className="kin-day-kicker">{(activeDay.date ? new Date(`${activeDay.date}T00:00:00Z`).toLocaleDateString(ar ? 'ar' : 'en-US', { weekday: 'long', timeZone: 'UTC' }) : `${t('Day', 'اليوم')} ${activeDay.dayIndex + 1}`)} · {travelPlan.destination}</span>
         <h2 className="kin-day-title">{t('Your day in ', 'يومك في ')}{travelPlan.destination}</h2>
         {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <>
-          {activeDay.places.map((place) => <div key={place.placeId} className="kin-day-preview-row">
-            <div className="kin-day-preview-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={16} />}</div>
-            <span className="kin-day-preview-name">{place.name}</span>
-            {place.rating !== null && <span className="kin-day-preview-category">★ {place.rating}</span>}
-          </div>)}
-          <button className="approved-button primary wide" style={{ marginTop: 14 }} data-testid="kin-open-day" onClick={() => openDay(activeDay.dayIndex)}>{t('Open Day', 'افتح اليوم')} {activeDay.dayIndex + 1}</button>
+          {activeDay.places.map((place, index) => {
+            const previousPlace = index > 0 ? activeDay.places[index - 1] : undefined;
+            const leg = previousPlace
+              ? activeDay.routes.find((route) => route.fromPlaceId === previousPlace.placeId && route.toPlaceId === place.placeId)
+              : undefined;
+            const slotLabel = place.slot ? (KIN_SLOT_LABELS[place.slot] ? (ar ? KIN_SLOT_LABELS[place.slot].ar : KIN_SLOT_LABELS[place.slot].en) : place.slot) : null;
+            return <Fragment key={place.placeId}>
+              {leg && <div className="kin-day-preview-transit">
+                <div className="kin-day-preview-rail" />
+                <div className="kin-day-preview-transit-spacer">
+                  <span />
+                </div>
+                <span className="kin-day-preview-transit-label">
+                  {`${Math.round(leg.durationSeconds / 60)} ${t('min drive', 'دقيقة بالسيارة')}`}
+                </span>
+              </div>}
+              <div className="kin-day-preview-row">
+                <div className="kin-day-preview-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={16} />}</div>
+                <div className="kin-day-preview-body">
+                  <div className="kin-day-preview-head">
+                    <span className="kin-day-preview-time">{place.suggestedTime || (index + 1)}</span>
+                    <span className="kin-day-preview-sep">·</span>
+                    <span className="kin-day-preview-name">{place.name}</span>
+                  </div>
+                  <span className="kin-day-preview-slot">{slotLabel || place.slot}</span>
+                </div>
+              </div>
+            </Fragment>;
+          })}
+          <button className="approved-button primary wide" style={{ marginTop: 20 }} data-testid="kin-open-day" onClick={() => openDay(activeDay.dayIndex)}>{t('OPEN DAY', 'افتح اليوم')} {activeDay.dayIndex + 1}</button>
         </>}
       </div>}
 
       {travelPlan.narrative && <div className="kin-card" data-testid="kin-answer" style={{ marginBottom: 24 }}>
-        <p className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={travelPlan.narrative} /></p>
+        <div className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={travelPlan.narrative} /></div>
         {travelPlan.citations.length > 0 && <div data-testid="kin-citations" style={{ padding: '0 16px 16px' }}>
           <span className="form-label">{t('Sources', 'المصادر')}</span>
           <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
@@ -3102,7 +3133,13 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
             : undefined;
           const slotLabel = place.slot ? (KIN_SLOT_LABELS[place.slot] ? (ar ? KIN_SLOT_LABELS[place.slot].ar : KIN_SLOT_LABELS[place.slot].en) : place.slot) : null;
           return <div key={place.placeId}>
-            {leg && <div className="kin-timeline-item"><span /><div className="kin-timeline-rail" /><div className="kin-transit">{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min', 'دقيقة')}`}</div></div>}
+            {leg && <div className="kin-transit">
+              <span />
+              <div className="kin-timeline-rail" />
+              <div className="kin-transit-label">
+                {`${Math.round(leg.durationSeconds / 60)} ${t('min drive', 'دقيقة بالسيارة')}`}
+              </div>
+            </div>}
             <div className="kin-timeline-item" data-testid="kin-travel-place">
               <span className="kin-timeline-time">{place.suggestedTime || (index + 1)}</span>
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
@@ -3117,15 +3154,15 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
                   {place.formattedAddress && <span className="kin-timeline-note">{place.formattedAddress}</span>}
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0 }}>{t('Photo', 'صورة')}: {place.photoAttribution}</span>}
                   <div className="kin-timeline-actions">
-                    {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open', 'فتح')}</a>}
-                    <button className="approved-button" data-testid="kin-swap-place" disabled={swappingPlaceKey === key} onClick={() => void swapTravelPlace(activeDay, place)}>
-                      {swappingPlaceKey === key ? t('Swapping…', 'جارٍ التبديل…') : t('Swap', 'تبديل')}
-                    </button>
-                    <button className="approved-button primary" data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
-                      {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add', 'أضف')}
+                    {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Maps', 'خرائط')}</a>}
+                    <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
+                      {addedTripItems.has(key) ? t('Added to trip', 'أُضيف للرحلة') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to trip', 'أضف للرحلة')}
                     </button>
                   </div>
                 </div>
+                <button className="kin-timeline-swap" data-testid="kin-swap-place" disabled={swappingPlaceKey === key} onClick={() => void swapTravelPlace(activeDay, place)}>
+                  {swappingPlaceKey === key ? t('SWAPPING…', 'جارٍ التبديل…') : t('SWAP', 'تبديل')}
+                </button>
               </div>
             </div>
           </div>;

@@ -165,17 +165,15 @@ function placesPhotoBaseUrl(): string {
  * a single short-timeout attempt; a failure or timeout is surfaced as
  * "unavailable" rather than silently retried at multiplied cost/latency.
  *
- * maxResults defaults to GOOGLE_PLACES_MAX_RESULTS (5) for every itinerary
- * -building call. swapPlace (kin-travel.ts) is the one exception — it asks
- * for a larger pool so it has real, distinct candidates to offer instead of
- * only ever re-seeing the same 5 places already in the itinerary — but it
- * still never shows the member more than 5 places at once; the itinerary
- * itself is never rendered with more than its original 5.
+ * maxResults defaults to GOOGLE_PLACES_MAX_RESULTS (5). Food schedules and
+ * swapPlace may request a larger candidate pool so every requested slot can
+ * be filled with real, distinct Google places.
  */
 export async function searchPlaces(
   query: string,
   maxResults: number = GOOGLE_PLACES_MAX_RESULTS,
   includedType?: GooglePlaceTypeFilter,
+  strictTypeFiltering: boolean = true,
 ): Promise<GooglePlacesResult> {
   const apiKey = googleMapsApiKey();
   if (!apiKey) return { status: "unavailable", reason: "not configured" };
@@ -193,7 +191,7 @@ export async function searchPlaces(
       body: JSON.stringify({
         textQuery: trimmed,
         maxResultCount: maxResults,
-        ...(includedType ? { includedType, strictTypeFiltering: true } : {}),
+        ...(includedType ? { includedType, strictTypeFiltering } : {}),
       }),
       signal: AbortSignal.timeout(GOOGLE_PLACES_TIMEOUT_MS),
     });
