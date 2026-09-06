@@ -109,7 +109,7 @@ test('Travel renders food stops as a timed schedule with driving legs and format
         status: 'ok',
         plan: {
           destination: 'London',
-          narrative: '**Coffee first**, then dinner nearby.',
+          narrative: '## Day plan\n**Coffee first**, then dinner nearby.',
           citations: [],
           days: [{
             dayIndex: 0,
@@ -148,16 +148,21 @@ test('Travel renders food stops as a timed schedule with driving legs and format
   await page.getByTestId('kin-submit').click();
 
   const narrative = page.getByTestId('kin-answer');
+  await expect(narrative.getByText('Day plan', { exact: true })).toBeVisible();
+  await expect(narrative).not.toContainText('##');
   await expect(narrative.getByText('Coffee first', { exact: true })).toHaveCSS('font-weight', /^(700|bold)$/);
   await expect(narrative).not.toContainText('**');
   await page.getByTestId('kin-open-day').click();
+  await expect(page.locator('svg.kin-map')).toBeVisible();
   await expect(page.getByTestId('kin-travel-place')).toHaveCount(2);
   await expect(page.getByText('10:30', { exact: true })).toBeVisible();
   await expect(page.getByText('Coffee', { exact: true })).toBeVisible();
   await expect(page.getByText('19:30', { exact: true })).toBeVisible();
   await expect(page.getByText('Dinner', { exact: true })).toBeVisible();
   await expect(page.getByText('★ 4.8', { exact: true })).toBeVisible();
-  await expect(page.getByText(/10 min/)).toBeVisible();
+  await expect(page.getByText('1 Test Street', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Swap' }).first()).toHaveClass(/kin-timeline-swap/);
+  await expect(page.getByText(/10 min drive/)).toBeVisible();
 });
 
 test('submitting a blank query shows an inline error and never calls the endpoint', async ({ page }) => {

@@ -258,7 +258,12 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
 
 // --- fake Google Places / Routes providers ---------------------------------
 
-type FakeGooglePlacesMode = { kind: "ok" } | { kind: "malformed" } | { kind: "http_error"; status: number } | { kind: "timeout" };
+type FakeGooglePlacesMode =
+  | { kind: "ok" }
+  | { kind: "empty_type"; includedType: string }
+  | { kind: "malformed" }
+  | { kind: "http_error"; status: number }
+  | { kind: "timeout" };
 type FakeGoogleRoutesMode = { kind: "ok" } | { kind: "malformed" } | { kind: "http_error"; status: number } | { kind: "timeout" };
 
 let fakeGooglePlacesMode: FakeGooglePlacesMode = { kind: "ok" };
@@ -287,6 +292,11 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
         if (mode.kind === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end("{not json"); return; }
+        if (mode.kind === "empty_type" && parsedRequest.includedType === mode.includedType) {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ places: [] }));
+          return;
+        }
         const coordinateOffsets = [0, 0.04, 0.001, 0.041, 0.002, 0.042, 0.003];
         const places = Array.from({ length: 7 }, (_, i) => ({
           id: `place-${i}`,
@@ -1234,7 +1244,7 @@ async function main() {
         query: "nice places for coffee and great restaurants for breakfast and dinner",
         destination: "London",
         startDate: "2026-10-01",
-        endDate: "2026-10-01",
+        endDate: "2026-10-02",
       });
       await expectStatus(response, 200);
       const payload = await response.json() as {
@@ -1244,11 +1254,14 @@ async function main() {
       assert.equal(payload.status, "ok");
       const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string; strictTypeFiltering?: boolean });
       assert.deepEqual(requests.map((request) => request.includedType), ["cafe", "bakery", "restaurant"]);
-      assert.ok(requests.every((request) => request.strictTypeFiltering === true));
+      assert.ok(requests.every((request) => request.strictTypeFiltering === false));
       assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)));
-      const stops = payload.plan.days.flatMap((day) => day.places);
-      assert.deepEqual(new Set(stops.map((stop) => stop.slot)), new Set(["COFFEE", "BREAKFAST", "DINNER"]));
-      assert.ok(stops.every((stop) => /^\d{2}:\d{2}$/.test(stop.suggestedTime)));
+      assert.equal(payload.plan.days.length, 2);
+      for (const day of payload.plan.days) {
+        assert.equal(day.places.length, 3, "every day must contain one stop for every requested slot");
+        assert.deepEqual(new Set(day.places.map((stop) => stop.slot)), new Set(["COFFEE", "BREAKFAST", "DINNER"]));
+        assert.ok(day.places.every((stop) => /^\d{2}:\d{2}$/.test(stop.suggestedTime)));
+      }
     });
     await check("ordinary food, dining, tea, and cuisine wording never falls back to attractions", async () => {
       for (const query of ["a food tour", "places to eat", "local dining", "afternoon tea", "sushi spots", "where for a drink?"]) {
@@ -1257,7 +1270,7 @@ async function main() {
         await expectStatus(response, 200);
         assert.ok(placesRequestBodies.length > 0);
         const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string; strictTypeFiltering?: boolean });
-        assert.ok(requests.every((request) => request.includedType && request.strictTypeFiltering === true));
+        assert.ok(requests.every((request) => request.includedType && request.strictTypeFiltering === false));
         assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)));
       }
     });
@@ -1278,6 +1291,18 @@ async function main() {
         const hour = Number(stop.suggestedTime.slice(0, 2));
         assert.ok(hour >= 8 && hour < 23);
       }
+    });
+    await check("a missing requested food slot rejects the whole multi-day plan instead of returning partial days", async () => {
+      fakeGooglePlacesMode = { kind: "empty_type", includedType: "bakery" };
+      const response = await userA.kinTravelPlan({
+        query: "coffee, breakfast and dinner",
+        destination: "London",
+        startDate: "2026-10-01",
+        endDate: "2026-10-02",
+      });
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "ok" };
     });
     await check("Google Routes request uses a minimal field mask", async () => {
       assert.ok(lastRoutesFieldMask.includes("distanceMeters") && lastRoutesFieldMask.includes("duration"));
