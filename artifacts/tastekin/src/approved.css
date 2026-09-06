@@ -491,8 +491,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-map path.route { fill:none; stroke:var(--tk-wine); stroke-width:1.6; }
 
 .kin-timeline { position:relative; }
-.kin-timeline-item { position:relative; display:grid; grid-template-columns:24px 20px 1fr; gap:8px; }
-.kin-timeline-time { padding-top:14px; color:var(--tk-wine); font-size:11px; font-weight:800; text-align:end; }
+.kin-timeline-item { position:relative; display:grid; grid-template-columns:48px 20px 1fr; gap:8px; }
+.kin-timeline-time { padding-top:14px; color:var(--tk-wine); font-size:10px; font-weight:800; text-align:end; line-height:1.2; }
 .kin-timeline-rail { position:relative; display:flex; justify-content:center; }
 .kin-timeline-rail::before { content:''; position:absolute; top:20px; bottom:-14px; width:1px; background:var(--tk-border); }
 .kin-timeline-item:last-child .kin-timeline-rail::before { display:none; }
@@ -502,8 +502,10 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-timeline-thumb img { width:100%; height:100%; object-fit:cover; }
 .kin-timeline-thumb svg { width:22px; height:22px; color:var(--tk-wine); opacity:.5; }
 .kin-timeline-body { flex:1; min-width:0; }
-.kin-timeline-category { display:block; color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-.kin-timeline-name { display:block; margin:2px 0 0; color:var(--tk-ink); font-size:14px; font-weight:700; }
+.kin-timeline-meta { display:flex; align-items:center; gap:6px; margin-bottom:2px; }
+.kin-timeline-slot { color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+.kin-timeline-rating { color:var(--tk-stone); font-size:10px; font-weight:700; }
+.kin-timeline-name { display:block; color:var(--tk-ink); font-size:14px; font-weight:700; }
 .kin-timeline-note { display:block; margin:2px 0 0; color:var(--tk-stone); font-size:11px; font-style:italic; }
 .kin-timeline-actions { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .kin-timeline-actions .approved-button { padding:6px 12px; font-size:10px; }

@@ -18,7 +18,7 @@ import {
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { runKinTravelPlan, swapPlace } from "../lib/kin-travel";
+import { runKinTravelPlan, swapPlace, type KinTravelSlot } from "../lib/kin-travel";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -299,6 +299,15 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
   const excludePlaceIds = Array.isArray(body.excludePlaceIds)
     ? body.excludePlaceIds.filter((id): id is string => typeof id === "string").slice(0, 20)
     : [];
+  const slot = typeof body.slot === "string" && ["COFFEE", "BREAKFAST", "LUNCH", "DINNER"].includes(body.slot)
+    ? body.slot as KinTravelSlot
+    : null;
+  const rawDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null;
+  const date = rawDate && new Date(`${rawDate}T00:00:00Z`).toISOString().slice(0, 10) === rawDate ? rawDate : null;
+  if (slot && !date) {
+    res.status(400).json({ error: "A valid date is required for a scheduled stop" });
+    return;
+  }
 
   const reservation = await reserveKinSearchAttempt(user.id);
   if ("rateLimited" in reservation) {
@@ -306,7 +315,7 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     return;
   }
 
-  const result = await swapPlace(destination, excludePlaceIds);
+  const result = await swapPlace(destination, excludePlaceIds, slot, date);
   if (result.status !== "ok") {
     if (result.reason !== "not configured" && result.reason !== "no alternative available") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel swap-place unavailable");

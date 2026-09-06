@@ -99,6 +99,67 @@ test('Travel mode is a sequential request, destination, dates, and optional-deta
   await expect(page.getByTestId('kin-size')).toHaveCount(0);
 });
 
+test('Travel renders food stops as a timed schedule with driving legs and formatted bold copy', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        plan: {
+          destination: 'London',
+          narrative: '**Coffee first**, then dinner nearby.',
+          citations: [],
+          days: [{
+            dayIndex: 0,
+            date: '2026-10-01',
+            places: [
+              {
+                placeId: 'coffee-1', name: 'Morning Cup', formattedAddress: '1 Test Street',
+                lat: 51.5, lng: -0.1, rating: 4.8, websiteUrl: null,
+                mapsUrl: 'https://maps.google.com/?cid=coffee-1', photoUrl: null,
+                photoAttribution: null, slot: 'COFFEE', suggestedTime: '10:30',
+              },
+              {
+                placeId: 'dinner-1', name: 'Evening Table', formattedAddress: '2 Test Street',
+                lat: 51.51, lng: -0.11, rating: 4.6, websiteUrl: null,
+                mapsUrl: 'https://maps.google.com/?cid=dinner-1', photoUrl: null,
+                photoAttribution: null, slot: 'DINNER', suggestedTime: '19:30',
+              },
+            ],
+            routes: [{ fromPlaceId: 'coffee-1', toPlaceId: 'dinner-1', distanceMeters: 1850, durationSeconds: 600 }],
+          }],
+        },
+      }),
+    });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-query').fill('Coffee and dinner');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-destination').fill('London');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-start-date').fill('2026-10-01');
+  await page.getByTestId('kin-end-date').fill('2026-10-01');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-submit').click();
+
+  const narrative = page.getByTestId('kin-answer');
+  await expect(narrative.getByText('Coffee first', { exact: true })).toHaveCSS('font-weight', /^(700|bold)$/);
+  await expect(narrative).not.toContainText('**');
+  await page.getByTestId('kin-open-day').click();
+  await expect(page.getByTestId('kin-travel-place')).toHaveCount(2);
+  await expect(page.getByText('10:30', { exact: true })).toBeVisible();
+  await expect(page.getByText('Coffee', { exact: true })).toBeVisible();
+  await expect(page.getByText('19:30', { exact: true })).toBeVisible();
+  await expect(page.getByText('Dinner', { exact: true })).toBeVisible();
+  await expect(page.getByText('★ 4.8', { exact: true })).toBeVisible();
+  await expect(page.getByText(/10 min/)).toBeVisible();
+});
+
 test('submitting a blank query shows an inline error and never calls the endpoint', async ({ page }) => {
   let searchCalls = 0;
   await mockMe(page, { kinSearch: true });

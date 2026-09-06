@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
@@ -2587,7 +2587,7 @@ function KinRouteMap({ places }: { places: KinTravelPlace[] }) {
 // KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
 // is either something Google's Places/Routes APIs genuinely returned or
 // null/omitted; the UI never invents a rating, address, or route.
-type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null };
+type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; suggestedTime: string | null };
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
@@ -2601,6 +2601,25 @@ type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unav
  * on next — this PR renders the request form and the normalized answer/
  * results, not a full itinerary or outfit-builder UI.
  */
+function FormattedText({ text }: { text: string }) {
+  if (!text) return null;
+  return <>{text.split('\n').map((line, i) => (
+    <Fragment key={i}>
+      {i > 0 && <br />}
+      {line.split(/(\*\*.*?\*\*)/g).map((part, j) => (
+        part.startsWith('**') && part.endsWith('**') ? <strong key={j}>{part.slice(2, -2)}</strong> : part
+      ))}
+    </Fragment>
+  ))}</>;
+}
+
+const KIN_SLOT_LABELS: Record<string, { en: string; ar: string }> = {
+  COFFEE: { en: 'Coffee', ar: 'قهوة' },
+  BREAKFAST: { en: 'Breakfast', ar: 'إفطار' },
+  LUNCH: { en: 'Lunch', ar: 'غداء' },
+  DINNER: { en: 'Dinner', ar: 'عشاء' }
+};
+
 function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
@@ -2920,7 +2939,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       const excludePlaceIds = travelPlan.days.flatMap((d) => d.places.map((p) => p.placeId));
       const response = await fetch('/api/kin/travel/swap-place', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ destination: travelPlan.destination, excludePlaceIds }),
+        body: JSON.stringify({ destination: travelPlan.destination, excludePlaceIds, slot: place.slot, date: day.date }),
       });
       if (response.status === 429) { window.alert(t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')); return; }
       if (!response.ok) throw new Error(await describeFailedResponse(response));
@@ -2968,7 +2987,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
               <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
             </div>
             {referenceImage}
-            <p className="kin-card-caption">{activeOption.reasoning}</p>
+            <p className="kin-card-caption"><FormattedText text={activeOption.reasoning} /></p>
             {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
               {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
               {activeOption.missingItems.map((item, index) => <span key={`missing-${index}`} className="kin-tag">{t('Find similar', 'ابحث عن مثيل')} · {item}</span>)}
@@ -2992,7 +3011,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
         </div> : <div className="kin-card" data-testid="kin-answer">
           {referenceImage}
-          <p className="kin-card-caption" style={{ margin: 16 }}>{result.answer}</p>
+          <p className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={result.answer} /></p>
           {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited" style={{ margin: '0 16px 16px' }}>{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
         </div>}
 
@@ -3055,7 +3074,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       </div>}
 
       {travelPlan.narrative && <div className="kin-card" data-testid="kin-answer" style={{ marginBottom: 24 }}>
-        <p className="kin-card-caption" style={{ margin: 16 }}>{travelPlan.narrative}</p>
+        <p className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={travelPlan.narrative} /></p>
         {travelPlan.citations.length > 0 && <div data-testid="kin-citations" style={{ padding: '0 16px 16px' }}>
           <span className="form-label">{t('Sources', 'المصادر')}</span>
           <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
@@ -3081,25 +3100,29 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           const leg = previousPlace
             ? activeDay.routes.find((route) => route.fromPlaceId === previousPlace.placeId && route.toPlaceId === place.placeId)
             : undefined;
+          const slotLabel = place.slot ? (KIN_SLOT_LABELS[place.slot] ? (ar ? KIN_SLOT_LABELS[place.slot].ar : KIN_SLOT_LABELS[place.slot].en) : place.slot) : null;
           return <div key={place.placeId}>
             {leg && <div className="kin-timeline-item"><span /><div className="kin-timeline-rail" /><div className="kin-transit">{`~${Math.round(leg.distanceMeters / 1000)} km · ${Math.round(leg.durationSeconds / 60)} ${t('min', 'دقيقة')}`}</div></div>}
             <div className="kin-timeline-item" data-testid="kin-travel-place">
-              <span className="kin-timeline-time">{index + 1}</span>
+              <span className="kin-timeline-time">{place.suggestedTime || (index + 1)}</span>
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
               <div className="kin-timeline-card">
                 <div className="kin-timeline-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={22} />}</div>
                 <div className="kin-timeline-body">
-                  {place.rating !== null && <span className="kin-timeline-category">★ {place.rating}</span>}
+                  <div className="kin-timeline-meta">
+                    {slotLabel && <span className="kin-timeline-slot">{slotLabel}</span>}
+                    {place.rating !== null && <span className="kin-timeline-rating">★ {place.rating}</span>}
+                  </div>
                   <span className="kin-timeline-name">{place.name}</span>
                   {place.formattedAddress && <span className="kin-timeline-note">{place.formattedAddress}</span>}
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0 }}>{t('Photo', 'صورة')}: {place.photoAttribution}</span>}
                   <div className="kin-timeline-actions">
-                    {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open in Maps', 'فتح في الخرائط')}</a>}
+                    {place.mapsUrl && <a className="approved-button" href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open', 'فتح')}</a>}
                     <button className="approved-button" data-testid="kin-swap-place" disabled={swappingPlaceKey === key} onClick={() => void swapTravelPlace(activeDay, place)}>
                       {swappingPlaceKey === key ? t('Swapping…', 'جارٍ التبديل…') : t('Swap', 'تبديل')}
                     </button>
                     <button className="approved-button primary" data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
-                      {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
+                      {addedTripItems.has(key) ? t('Added', 'أُضيف') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add', 'أضف')}
                     </button>
                   </div>
                 </div>
