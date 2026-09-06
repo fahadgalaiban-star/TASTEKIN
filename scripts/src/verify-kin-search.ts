@@ -261,6 +261,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
 type FakeGooglePlacesMode =
   | { kind: "ok" }
   | { kind: "empty_type"; includedType: string }
+  | { kind: "overnight" }
   | { kind: "malformed" }
   | { kind: "http_error"; status: number }
   | { kind: "timeout" };
@@ -307,7 +308,10 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
           primaryType: parsedRequest.includedType ?? "tourist_attraction",
           types: [parsedRequest.includedType ?? "tourist_attraction"],
           regularOpeningHours: {
-            periods: Array.from({ length: 7 }, (_, day) => ({
+            periods: mode.kind === "overnight" ? [
+              { open: { day: 3, hour: 20, minute: 0 }, close: { day: 4, hour: 9, minute: 0 } },
+              { open: { day: 4, hour: 18, minute: 0 }, close: { day: 5, hour: 2, minute: 0 } },
+            ] : Array.from({ length: 7 }, (_, day) => ({
               open: { day, hour: 8, minute: 0 },
               close: { day, hour: 23, minute: 0 },
             })),
@@ -1209,7 +1213,7 @@ async function main() {
     await check("travel plan without a destination is rejected with 400", async () => {
       assert.equal((await userA.kinTravelPlan({ query: "plan my trip" })).status, 400);
     });
-    let lastPlan: { destination: string; narrative: string; citations: unknown[]; days: Array<{ dayIndex: number; date: string | null; places: Array<{ placeId: string; name: string; rating: number | null; formattedAddress: string | null; slot: string | null; suggestedTime: string | null }>; routes: Array<{ distanceMeters: number; durationSeconds: number }> }> } | null = null;
+    let lastPlan: { destination: string; narrative: string; citations: unknown[]; days: Array<{ dayIndex: number; date: string | null; places: Array<{ placeId: string; name: string; rating: number | null; formattedAddress: string | null; slot: string | null; openingHours: string | null }>; routes: Array<{ distanceMeters: number; durationSeconds: number }> }> } | null = null;
     await check("a valid travel plan combines real Places results, Routes legs, and the Anthropic narrative into day-by-day itinerary", async () => {
       fakeAnthropicMode = { kind: "ok" };
       fakeGooglePlacesMode = { kind: "ok" };
@@ -1249,18 +1253,24 @@ async function main() {
       await expectStatus(response, 200);
       const payload = await response.json() as {
         status: string;
-        plan: { days: Array<{ places: Array<{ slot: string; suggestedTime: string }> }> };
+        plan: { days: Array<{ places: Array<{ slot: string; openingHours: string | null; suggestedTime?: string }> }> };
       };
       assert.equal(payload.status, "ok");
       const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string; strictTypeFiltering?: boolean });
-      assert.deepEqual(requests.map((request) => request.includedType), ["cafe", "bakery", "restaurant"]);
+      assert.deepEqual(requests.map((request) => request.includedType).sort(), ["bakery", "cafe", "restaurant"]);
       assert.ok(requests.every((request) => request.strictTypeFiltering === false));
       assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)));
       assert.equal(payload.plan.days.length, 2);
-      for (const day of payload.plan.days) {
+      for (const [dayIndex, day] of payload.plan.days.entries()) {
         assert.equal(day.places.length, 3, "every day must contain one stop for every requested slot");
-        assert.deepEqual(new Set(day.places.map((stop) => stop.slot)), new Set(["COFFEE", "BREAKFAST", "DINNER"]));
-        assert.ok(day.places.every((stop) => /^\d{2}:\d{2}$/.test(stop.suggestedTime)));
+        assert.deepEqual(day.places.map((stop) => stop.slot), ["BREAKFAST", "COFFEE", "DINNER"]);
+        assert.deepEqual(day.places.map((stop) => stop.openingHours), ["08:00–23:00", "08:00–23:00", "08:00–23:00"]);
+        assert.ok(day.places.every((stop) => !("suggestedTime" in stop)), "invented stop times must not be returned");
+        assert.deepEqual(
+          day.places.map((stop) => (stop as { placeId?: string }).placeId),
+          dayIndex === 0 ? ["place-0", "place-2", "place-4"] : ["place-1", "place-3", "place-5"],
+          "each next slot must select the nearest unused Google candidate",
+        );
       }
     });
     await check("ordinary food, dining, tea, and cuisine wording never falls back to attractions", async () => {
@@ -1274,7 +1284,7 @@ async function main() {
         assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)));
       }
     });
-    await check("suggested slot times stay within known Google opening hours", async () => {
+    await check("travel stops expose Google's opening hours for that day instead of an invented visit time", async () => {
       const response = await userA.kinTravelPlan({
         query: "coffee and dinner",
         destination: "London",
@@ -1284,13 +1294,31 @@ async function main() {
       await expectStatus(response, 200);
       const payload = await response.json() as {
         status: string;
-        plan: { days: Array<{ places: Array<{ suggestedTime: string }> }> };
+        plan: { days: Array<{ places: Array<{ openingHours: string | null; suggestedTime?: string }> }> };
       };
       assert.equal(payload.status, "ok");
       for (const stop of payload.plan.days.flatMap((day) => day.places)) {
-        const hour = Number(stop.suggestedTime.slice(0, 2));
-        assert.ok(hour >= 8 && hour < 23);
+        assert.equal(stop.openingHours, "08:00–23:00");
+        assert.ok(!("suggestedTime" in stop));
       }
+    });
+    await check("opening hours include Google periods carried over from the previous day", async () => {
+      fakeGooglePlacesMode = { kind: "overnight" };
+      const response = await userA.kinTravelPlan({
+        query: "breakfast",
+        destination: "London",
+        startDate: "2026-10-01",
+        endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ slot: string; openingHours: string | null }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.plan.days[0].places[0].slot, "BREAKFAST");
+      assert.equal(payload.plan.days[0].places[0].openingHours, "00:00–09:00, 18:00–24:00");
+      fakeGooglePlacesMode = { kind: "ok" };
     });
     await check("a missing requested food slot rejects the whole multi-day plan instead of returning partial days", async () => {
       fakeGooglePlacesMode = { kind: "empty_type", includedType: "bakery" };
@@ -1405,13 +1433,27 @@ async function main() {
       assert.equal(firstTripPlaceIds.length, 5, "fixture returns exactly 5 places to fill the trip");
       const response = await userA.request("/api/kin/travel/swap-place", {
         method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ destination: "Paris", excludePlaceIds: firstTripPlaceIds }),
+        body: JSON.stringify({
+          destination: "Paris",
+          excludePlaceIds: firstTripPlaceIds,
+          previousPlace: { placeId: "before", lat: 48.84, lng: 2.34 },
+          nextPlace: { placeId: "after", lat: 48.9, lng: 2.4 },
+        }),
       });
       await expectStatus(response, 200);
-      const payload = await response.json() as { status: string; place: { placeId: string; photoUrl: string | null } };
+      const payload = await response.json() as {
+        status: string;
+        place: { placeId: string; photoUrl: string | null };
+        routes: Array<{ fromPlaceId: string; toPlaceId: string; durationSeconds: number }>;
+      };
       assert.equal(payload.status, "ok");
       assert.ok(!firstTripPlaceIds.includes(payload.place.placeId), "the swap result must never duplicate a place already in the trip");
       assert.equal(payload.place.placeId, "place-5", "with 7 fake places and 5 excluded, the first non-excluded one must be chosen — never invented");
+      assert.deepEqual(
+        payload.routes.map((route) => [route.fromPlaceId, route.toPlaceId, route.durationSeconds]),
+        [["before", "place-5", 600], ["place-5", "after", 600]],
+        "the swap must return fresh DRIVE legs to both displayed neighbours",
+      );
     });
     await check("swap-place reports unavailable (never fabricates a place) when every real result is already in use", async () => {
       const allSevenIds = Array.from({ length: 7 }, (_, i) => `place-${i}`);

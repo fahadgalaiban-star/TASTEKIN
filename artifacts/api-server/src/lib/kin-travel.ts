@@ -18,7 +18,7 @@ export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "
   photoUrl: string | null;
   photoAttribution: string | null;
   slot: KinTravelSlot | null;
-  suggestedTime: string | null;
+  openingHours: string | null;
 };
 
 type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null };
@@ -31,10 +31,15 @@ type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null 
  */
 async function resolvePlace(place: TravelPlaceCandidate, date: string | null): Promise<KinTravelPlace | null> {
   const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, requestedSlot, ...rest } = place;
-  const suggestedTime = requestedSlot ? suggestedTimeForSlot(requestedSlot, date, openingPeriods) : null;
-  if (requestedSlot && openingPeriods.length > 0 && suggestedTime === null) return null;
+  if (requestedSlot && !isOpenForSlot(requestedSlot, date, openingPeriods)) return null;
   const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
-  return { ...rest, photoUrl, photoAttribution: photoUrl ? photoRef!.attributionText : null, slot: requestedSlot, suggestedTime };
+  return {
+    ...rest,
+    photoUrl,
+    photoAttribution: photoUrl ? photoRef!.attributionText : null,
+    slot: requestedSlot,
+    openingHours: openingHoursForDate(date, openingPeriods),
+  };
 }
 
 export type KinTravelRoute = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
@@ -75,6 +80,7 @@ function dateForDay(startDate: string | undefined, dayIndex: number): string | n
 }
 
 type FoodIntent = { slot: KinTravelSlot; type: GooglePlaceTypeFilter; query: string };
+const SLOT_ORDER: Record<KinTravelSlot, number> = { BREAKFAST: 0, COFFEE: 1, LUNCH: 2, DINNER: 3 };
 
 export function foodIntentsForRequest(query: string): FoodIntent[] {
   const intents: FoodIntent[] = [];
@@ -94,11 +100,11 @@ export function foodIntentsForRequest(query: string): FoodIntent[] {
   return intents;
 }
 
-const SLOT_TIME: Record<KinTravelSlot, { defaultMinutes: number; windowStart: number; windowEnd: number }> = {
-  BREAKFAST: { defaultMinutes: 9 * 60, windowStart: 7 * 60, windowEnd: 11 * 60 },
-  COFFEE: { defaultMinutes: 10 * 60 + 30, windowStart: 8 * 60, windowEnd: 17 * 60 },
-  LUNCH: { defaultMinutes: 13 * 60, windowStart: 12 * 60, windowEnd: 15 * 60 + 30 },
-  DINNER: { defaultMinutes: 19 * 60 + 30, windowStart: 17 * 60 + 30, windowEnd: 22 * 60 + 30 },
+const SLOT_WINDOW: Record<KinTravelSlot, { start: number; end: number }> = {
+  BREAKFAST: { start: 7 * 60, end: 11 * 60 },
+  COFFEE: { start: 8 * 60, end: 17 * 60 },
+  LUNCH: { start: 12 * 60, end: 15 * 60 + 30 },
+  DINNER: { start: 17 * 60 + 30, end: 22 * 60 + 30 },
 };
 
 function formatMinutes(minutes: number): string {
@@ -107,22 +113,45 @@ function formatMinutes(minutes: number): string {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-export function suggestedTimeForSlot(slot: KinTravelSlot, date: string | null, periods: GooglePlaceOpeningPeriod[]): string | null {
-  const timing = SLOT_TIME[slot];
-  if (periods.length === 0 || !date) return formatMinutes(timing.defaultMinutes);
+export function openingHoursForDate(date: string | null, periods: GooglePlaceOpeningPeriod[]): string | null {
+  if (periods.length === 0 || !date) return null;
   const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-  const dayPeriods = periods.filter((period) => period.open.day === weekday);
-  if (dayPeriods.length === 0) return null;
-  for (const period of dayPeriods) {
-    const open = period.open.hour * 60 + period.open.minute;
-    const close = period.close
-      ? (period.close.day === weekday ? period.close.hour * 60 + period.close.minute : 24 * 60)
-      : 24 * 60;
-    if (timing.defaultMinutes >= open && timing.defaultMinutes < close) return formatMinutes(timing.defaultMinutes);
-    const adjusted = Math.max(open, timing.windowStart);
-    if (adjusted < Math.min(close, timing.windowEnd)) return formatMinutes(adjusted);
+  const intervals = openingIntervalsForWeekday(weekday, periods);
+  if (intervals.length === 0) return null;
+  if (intervals.some((interval) => interval.start === 0 && interval.end === 24 * 60)) return "Open 24 hours";
+  return intervals.map((interval) => `${formatMinutes(interval.start)}–${formatMinutes(interval.end)}`).join(", ");
+}
+
+function isOpenForSlot(slot: KinTravelSlot, date: string | null, periods: GooglePlaceOpeningPeriod[]): boolean {
+  if (periods.length === 0 || !date) return true;
+  const window = SLOT_WINDOW[slot];
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return openingIntervalsForWeekday(weekday, periods).some((interval) =>
+    Math.max(interval.start, window.start) < Math.min(interval.end, window.end),
+  );
+}
+
+function openingIntervalsForWeekday(
+  weekday: number,
+  periods: GooglePlaceOpeningPeriod[],
+): Array<{ start: number; end: number }> {
+  if (periods.some((period) => period.close === null)) return [{ start: 0, end: 24 * 60 }];
+  const intervals: Array<{ start: number; end: number }> = [];
+  for (const period of periods) {
+    if (!period.close) continue;
+    if (period.open.day === weekday) {
+      const start = period.open.hour * 60 + period.open.minute;
+      const end = period.close.day === weekday
+        ? period.close.hour * 60 + period.close.minute
+        : 24 * 60;
+      if (end > start) intervals.push({ start, end });
+    }
+    if (period.close.day === weekday && period.open.day !== weekday) {
+      const end = period.close.hour * 60 + period.close.minute;
+      if (end > 0) intervals.push({ start: 0, end });
+    }
   }
-  return null;
+  return intervals.sort((a, b) => a.start - b.start);
 }
 
 async function placeBucketsForRequest(
@@ -141,7 +170,8 @@ async function placeBucketsForRequest(
       : result;
   }
 
-  const results = await Promise.all(intents.map((intent) =>
+  const orderedIntents = [...intents].sort((a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot]);
+  const results = await Promise.all(orderedIntents.map((intent) =>
     searchPlaces(`${intent.query} in ${request.destination}`, MAX_FOOD_CANDIDATES_PER_SLOT, intent.type, false)
       .then((result) => ({ intent, result })),
   ));
@@ -159,18 +189,23 @@ async function placeBucketsForRequest(
       if (result.status !== "ok") continue;
       const eligible = result.places.filter((candidate) =>
         !usedToday.has(candidate.placeId)
-        && suggestedTimeForSlot(intent.slot, date, candidate.openingPeriods) !== null,
+        && isOpenForSlot(intent.slot, date, candidate.openingPeriods),
       );
-      const place = eligible.find((candidate) => !usedAcrossTrip.has(candidate.placeId)) ?? eligible[0];
+      const unused = eligible.filter((candidate) => !usedAcrossTrip.has(candidate.placeId));
+      const candidates = unused.length > 0 ? unused : eligible;
+      const previous = dayPlaces.at(-1);
+      const place = previous && candidates.length > 0
+        ? orderPlacesNearestNeighbour([previous, ...candidates])[1]
+        : candidates[0];
       if (!place) return { status: "unavailable", reason: `no place available for ${intent.slot.toLowerCase()}` };
       usedToday.add(place.placeId);
       usedAcrossTrip.add(place.placeId);
       dayPlaces.push({ ...place, requestedSlot: intent.slot });
     }
     if (dayPlaces.length !== intents.length) return { status: "unavailable", reason: "incomplete food schedule" };
-    buckets.push(orderPlacesNearestNeighbour(dayPlaces));
+    buckets.push(dayPlaces);
   }
-  return { status: "ok", buckets, expectedSlots: intents.map((intent) => intent.slot) };
+  return { status: "ok", buckets, expectedSlots: orderedIntents.map((intent) => intent.slot) };
 }
 
 type LocatedPlace = { lat: number | null; lng: number | null };
@@ -244,15 +279,20 @@ export function isValidTravelNarrative(narrative: string): boolean {
 async function routesForDay(places: KinTravelPlace[]): Promise<KinTravelRoute[]> {
   const routes: KinTravelRoute[] = [];
   for (let i = 0; i < places.length - 1; i++) {
-    const from = places[i];
-    const to = places[i + 1];
-    if (from.lat === null || from.lng === null || to.lat === null || to.lng === null) continue;
-    const result = await computeRoute({ lat: from.lat, lng: from.lng }, { lat: to.lat, lng: to.lng });
-    if (result.status === "ok" && result.route) {
-      routes.push({ fromPlaceId: from.placeId, toPlaceId: to.placeId, distanceMeters: result.route.distanceMeters, durationSeconds: result.route.durationSeconds });
-    }
+    const route = await routeBetween(places[i], places[i + 1]);
+    if (route) routes.push(route);
   }
   return routes;
+}
+
+type KinTravelNeighbour = { placeId: string; lat: number | null; lng: number | null };
+
+async function routeBetween(from: KinTravelNeighbour, to: KinTravelNeighbour): Promise<KinTravelRoute | null> {
+  if (from.lat === null || from.lng === null || to.lat === null || to.lng === null) return null;
+  const result = await computeRoute({ lat: from.lat, lng: from.lng }, { lat: to.lat, lng: to.lng });
+  return result.status === "ok" && result.route
+    ? { fromPlaceId: from.placeId, toPlaceId: to.placeId, distanceMeters: result.route.distanceMeters, durationSeconds: result.route.durationSeconds }
+    : null;
 }
 
 /**
@@ -304,7 +344,7 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
 }
 
 export type KinTravelSwapResult =
-  | { status: "ok"; place: KinTravelPlace }
+  | { status: "ok"; place: KinTravelPlace; routes: KinTravelRoute[] }
   | { status: "unavailable"; reason: string };
 
 /**
@@ -321,6 +361,8 @@ export async function swapPlace(
   excludePlaceIds: string[],
   slot: KinTravelSlot | null = null,
   date: string | null = null,
+  previousPlace: KinTravelNeighbour | null = null,
+  nextPlace: KinTravelNeighbour | null = null,
 ): Promise<KinTravelSwapResult> {
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
   // A larger candidate pool than the itinerary's own 5 — otherwise every
@@ -344,7 +386,18 @@ export async function swapPlace(
   for (const alternative of alternatives) {
     if (intent && alternative.primaryType !== intent.type && !alternative.types.includes(intent.type)) continue;
     const place = await resolvePlace({ ...alternative, requestedSlot: slot }, date);
-    if (place) return { status: "ok", place };
+    if (place) {
+      const routes: KinTravelRoute[] = [];
+      if (previousPlace) {
+        const previousRoute = await routeBetween(previousPlace, place);
+        if (previousRoute) routes.push(previousRoute);
+      }
+      if (nextPlace) {
+        const nextRoute = await routeBetween(place, nextPlace);
+        if (nextRoute) routes.push(nextRoute);
+      }
+      return { status: "ok", place, routes };
+    }
   }
   return { status: "unavailable", reason: "no alternative available" };
 }
