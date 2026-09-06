@@ -308,6 +308,20 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     res.status(400).json({ error: "A valid date is required for a scheduled stop" });
     return;
   }
+  const parseNeighbour = (value: unknown): { placeId: string; lat: number | null; lng: number | null } | null => {
+    if (!value || typeof value !== "object") return null;
+    const candidate = value as Record<string, unknown>;
+    const placeId = typeof candidate.placeId === "string" ? candidate.placeId.trim() : "";
+    const lat = candidate.lat === null || (typeof candidate.lat === "number" && Number.isFinite(candidate.lat) && candidate.lat >= -90 && candidate.lat <= 90)
+      ? candidate.lat as number | null
+      : null;
+    const lng = candidate.lng === null || (typeof candidate.lng === "number" && Number.isFinite(candidate.lng) && candidate.lng >= -180 && candidate.lng <= 180)
+      ? candidate.lng as number | null
+      : null;
+    return placeId ? { placeId: placeId.slice(0, MAX_TEXT_LENGTH), lat, lng } : null;
+  };
+  const previousPlace = parseNeighbour(body.previousPlace);
+  const nextPlace = parseNeighbour(body.nextPlace);
 
   const reservation = await reserveKinSearchAttempt(user.id);
   if ("rateLimited" in reservation) {
@@ -315,7 +329,7 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     return;
   }
 
-  const result = await swapPlace(destination, excludePlaceIds, slot, date);
+  const result = await swapPlace(destination, excludePlaceIds, slot, date, previousPlace, nextPlace);
   if (result.status !== "ok") {
     if (result.reason !== "not configured" && result.reason !== "no alternative available") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel swap-place unavailable");
@@ -323,7 +337,7 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     res.json({ status: "unavailable", reason: "unavailable" });
     return;
   }
-  res.json({ status: "ok", place: result.place });
+  res.json({ status: "ok", place: result.place, routes: result.routes });
 });
 
 // --- persistence: saved recommendations, trips, trip items ----------------

@@ -504,8 +504,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-map path.route { fill:none; stroke:var(--tk-wine); stroke-width:1.6; }
 
 .kin-timeline { position:relative; }
-.kin-timeline-item { position:relative; display:grid; grid-template-columns:46px 24px 1fr; gap:0px; margin-bottom:12px; }
-.kin-timeline-time { padding-top:16px; color:var(--tk-wine); font-size:14px; text-align:end; line-height:1; }
+.kin-timeline-item { position:relative; display:grid; grid-template-columns:72px 24px 1fr; gap:0px; margin-bottom:12px; }
+.kin-timeline-hours { padding-top:15px; color:var(--tk-wine); font-size:10px; text-align:end; line-height:1.25; }
 .kin-timeline-rail { position:relative; display:flex; justify-content:center; }
 .kin-timeline-rail::before { content:''; position:absolute; top:20px; bottom:-28px; width:1px; border-inline-start:1px dashed #d1c8bb; }
 .kin-timeline-item:last-child .kin-timeline-rail::before { display:none; }
@@ -530,7 +530,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-timeline-actions a, .kin-timeline-actions button { display:inline-flex; border:0; background:transparent; color:var(--tk-stone); font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; cursor:pointer; padding:0; text-decoration:underline; }
 .kin-timeline-actions button:disabled { opacity:0.5; cursor:not-allowed; }
 
-.kin-transit { display:grid; grid-template-columns:46px 24px 1fr; gap:0px; margin-bottom:12px; min-height:16px; align-items:center; }
+.kin-transit { display:grid; grid-template-columns:72px 24px 1fr; gap:0px; margin-bottom:12px; min-height:16px; align-items:center; }
 .kin-transit-label { color:var(--tk-stone); font-size:11px; }
 .kin-transit .kin-timeline-rail::before { top:-12px; bottom:-12px; }
 .kin-freetime { grid-column:3; margin:6px 0; padding:8px 12px; border:1px dashed var(--tk-border); border-radius:999px; color:var(--tk-stone); font-size:10px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; text-align:center; }

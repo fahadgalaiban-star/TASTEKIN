@@ -99,7 +99,7 @@ test('Travel mode is a sequential request, destination, dates, and optional-deta
   await expect(page.getByTestId('kin-size')).toHaveCount(0);
 });
 
-test('Travel renders food stops as a timed schedule with driving legs and formatted bold copy', async ({ page }) => {
+test('Travel renders slot-ordered food stops with Google opening hours and driving legs', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/travel/plan', async (route) => {
     await route.fulfill({
@@ -116,21 +116,55 @@ test('Travel renders food stops as a timed schedule with driving legs and format
             date: '2026-10-01',
             places: [
               {
+                placeId: 'breakfast-1', name: 'Morning Bakery', formattedAddress: '1 Breakfast Street',
+                lat: 51.49, lng: -0.09, rating: 4.7, websiteUrl: null,
+                mapsUrl: 'https://maps.google.com/?cid=breakfast-1', photoUrl: null,
+                photoAttribution: null, slot: 'BREAKFAST', openingHours: '07:30–14:00',
+              },
+              {
                 placeId: 'coffee-1', name: 'Morning Cup', formattedAddress: '1 Test Street',
                 lat: 51.5, lng: -0.1, rating: 4.8, websiteUrl: null,
                 mapsUrl: 'https://maps.google.com/?cid=coffee-1', photoUrl: null,
-                photoAttribution: null, slot: 'COFFEE', suggestedTime: '10:30',
+                photoAttribution: null, slot: 'COFFEE', openingHours: '08:00–18:00',
               },
               {
                 placeId: 'dinner-1', name: 'Evening Table', formattedAddress: '2 Test Street',
                 lat: 51.51, lng: -0.11, rating: 4.6, websiteUrl: null,
                 mapsUrl: 'https://maps.google.com/?cid=dinner-1', photoUrl: null,
-                photoAttribution: null, slot: 'DINNER', suggestedTime: '19:30',
+                photoAttribution: null, slot: 'DINNER', openingHours: null,
               },
             ],
-            routes: [{ fromPlaceId: 'coffee-1', toPlaceId: 'dinner-1', distanceMeters: 1850, durationSeconds: 600 }],
+            routes: [
+              { fromPlaceId: 'breakfast-1', toPlaceId: 'coffee-1', distanceMeters: 900, durationSeconds: 360 },
+              { fromPlaceId: 'coffee-1', toPlaceId: 'dinner-1', distanceMeters: 1850, durationSeconds: 600 },
+            ],
           }],
         },
+      }),
+    });
+  });
+  await page.route('**/api/kin/travel/swap-place', async (route) => {
+    const body = route.request().postDataJSON() as {
+      previousPlace: { placeId: string };
+      nextPlace: { placeId: string };
+    };
+    expect(body.previousPlace.placeId).toBe('breakfast-1');
+    expect(body.nextPlace.placeId).toBe('dinner-1');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        place: {
+          placeId: 'coffee-2', name: 'Second Cup', formattedAddress: '3 Test Street',
+          lat: 51.505, lng: -0.105, rating: 4.9, websiteUrl: null,
+          mapsUrl: 'https://maps.google.com/?cid=coffee-2', photoUrl: null,
+          photoAttribution: null, slot: 'COFFEE', openingHours: '09:00–19:00',
+        },
+        routes: [
+          { fromPlaceId: 'breakfast-1', toPlaceId: 'coffee-2', distanceMeters: 950, durationSeconds: 420 },
+          { fromPlaceId: 'coffee-2', toPlaceId: 'dinner-1', distanceMeters: 1500, durationSeconds: 480 },
+        ],
       }),
     });
   });
@@ -154,15 +188,25 @@ test('Travel renders food stops as a timed schedule with driving legs and format
   await expect(narrative).not.toContainText('**');
   await page.getByTestId('kin-open-day').click();
   await expect(page.locator('svg.kin-map')).toBeVisible();
-  await expect(page.getByTestId('kin-travel-place')).toHaveCount(2);
-  await expect(page.getByText('10:30', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kin-travel-place')).toHaveCount(3);
+  await expect(page.getByTestId('kin-travel-place').nth(0)).toContainText('Breakfast');
+  await expect(page.getByTestId('kin-travel-place').nth(1)).toContainText('Coffee');
+  await expect(page.getByTestId('kin-travel-place').nth(2)).toContainText('Dinner');
+  await expect(page.getByText('07:30–14:00', { exact: true })).toBeVisible();
+  await expect(page.getByText('08:00–18:00', { exact: true })).toBeVisible();
+  await expect(page.getByText('10:30', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Coffee', { exact: true })).toBeVisible();
-  await expect(page.getByText('19:30', { exact: true })).toBeVisible();
+  await expect(page.getByText('19:30', { exact: true })).toHaveCount(0);
   await expect(page.getByText('Dinner', { exact: true })).toBeVisible();
   await expect(page.getByText('★ 4.8', { exact: true })).toBeVisible();
   await expect(page.getByText('1 Test Street', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Swap' }).first()).toHaveClass(/kin-timeline-swap/);
   await expect(page.getByText(/10 min drive/)).toBeVisible();
+  await page.getByTestId('kin-swap-place').nth(1).click();
+  await expect(page.getByTestId('kin-travel-place').nth(1)).toContainText('Second Cup');
+  await expect(page.getByText('09:00–19:00', { exact: true })).toBeVisible();
+  await expect(page.getByText(/7 min drive/)).toBeVisible();
+  await expect(page.getByText(/8 min drive/)).toBeVisible();
 });
 
 test('submitting a blank query shows an inline error and never calls the endpoint', async ({ page }) => {

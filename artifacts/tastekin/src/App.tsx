@@ -2587,7 +2587,7 @@ function KinRouteMap({ places }: { places: KinTravelPlace[] }) {
 // KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
 // is either something Google's Places/Routes APIs genuinely returned or
 // null/omitted; the UI never invents a rating, address, or route.
-type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; suggestedTime: string | null };
+type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; openingHours: string | null };
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
@@ -2933,10 +2933,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   /**
    * Replaces one itinerary stop with a different real place at the same
    * destination (one additional Google Places lookup, excluding every
-   * placeId already used anywhere in the trip). Routes touching the
-   * replaced place are dropped rather than kept — a distance/duration for
-   * a pairing that no longer exists would be an invented value, not real
-   * data, so it's simply not shown until the next full plan regenerates it.
+   * placeId already used anywhere in the trip). The server also returns
+   * fresh Google DRIVE legs to the replacement's displayed neighbours.
    */
   const swapTravelPlace = async (day: KinTravelDay, place: KinTravelPlace) => {
     if (!travelPlan) return;
@@ -2944,13 +2942,23 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     setSwappingPlaceKey(key);
     try {
       const excludePlaceIds = travelPlan.days.flatMap((d) => d.places.map((p) => p.placeId));
+      const placeIndex = day.places.findIndex((candidate) => candidate.placeId === place.placeId);
+      const previousPlace = placeIndex > 0 ? day.places[placeIndex - 1] : null;
+      const nextPlace = placeIndex >= 0 && placeIndex < day.places.length - 1 ? day.places[placeIndex + 1] : null;
       const response = await fetch('/api/kin/travel/swap-place', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ destination: travelPlan.destination, excludePlaceIds, slot: place.slot, date: day.date }),
+        body: JSON.stringify({
+          destination: travelPlan.destination,
+          excludePlaceIds,
+          slot: place.slot,
+          date: day.date,
+          previousPlace: previousPlace && { placeId: previousPlace.placeId, lat: previousPlace.lat, lng: previousPlace.lng },
+          nextPlace: nextPlace && { placeId: nextPlace.placeId, lat: nextPlace.lat, lng: nextPlace.lng },
+        }),
       });
       if (response.status === 429) { window.alert(t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')); return; }
       if (!response.ok) throw new Error(await describeFailedResponse(response));
-      const payload = await response.json() as { status: 'ok'; place: KinTravelPlace } | { status: 'unavailable'; reason: string };
+      const payload = await response.json() as { status: 'ok'; place: KinTravelPlace; routes: KinTravelRouteLeg[] } | { status: 'unavailable'; reason: string };
       if (payload.status !== 'ok') { window.alert(t('No alternative place is available right now.', 'لا يوجد بديل متاح الآن.')); return; }
       const newPlace = payload.place;
       setTravelPlan((current) => current && ({
@@ -2958,7 +2966,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         days: current.days.map((d) => d.dayIndex !== day.dayIndex ? d : {
           ...d,
           places: d.places.map((p) => p.placeId === place.placeId ? newPlace : p),
-          routes: d.routes.filter((r) => r.fromPlaceId !== place.placeId && r.toPlaceId !== place.placeId),
+          routes: [
+            ...d.routes.filter((r) => r.fromPlaceId !== place.placeId && r.toPlaceId !== place.placeId),
+            ...payload.routes,
+          ],
         }),
       }));
     } catch (err) {
@@ -3091,8 +3102,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
                 <div className="kin-day-preview-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={16} />}</div>
                 <div className="kin-day-preview-body">
                   <div className="kin-day-preview-head">
-                    <span className="kin-day-preview-time">{place.suggestedTime || (index + 1)}</span>
-                    <span className="kin-day-preview-sep">·</span>
+                    {place.openingHours && <><span className="kin-day-preview-time">{place.openingHours}</span><span className="kin-day-preview-sep">·</span></>}
                     <span className="kin-day-preview-name">{place.name}</span>
                   </div>
                   <span className="kin-day-preview-slot">{slotLabel || place.slot}</span>
@@ -3141,7 +3151,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
               </div>
             </div>}
             <div className="kin-timeline-item" data-testid="kin-travel-place">
-              <span className="kin-timeline-time">{place.suggestedTime || (index + 1)}</span>
+              <span className="kin-timeline-hours">{place.openingHours}</span>
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
               <div className="kin-timeline-card">
                 <div className="kin-timeline-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={22} />}</div>
