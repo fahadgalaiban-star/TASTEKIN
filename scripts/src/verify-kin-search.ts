@@ -1078,6 +1078,15 @@ async function main() {
       assert.ok(payload.options[0]?.reasoning.includes("navy blazer"), "the model's real text answer must still come through");
       fakeAnthropicMode = { kind: "ok" };
     });
+    await check("an incomplete Looks recommendation with verified results is partial and remains search-degraded", async () => {
+      fakeAnthropicMode = { kind: "travel_progress" };
+      const response = await userA.kinSearch({ mode: "looks", query: "find verified pieces", locale: "en" });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; reason: string; webSearchDegraded: boolean };
+      assert.equal(payload.status, "partial");
+      assert.equal(payload.reason, "incomplete_recommendation");
+      fakeAnthropicMode = { kind: "ok" };
+    });
     await check("a normal successful search is never flagged as degraded", async () => {
       fakeAnthropicMode = { kind: "ok" };
       const response = await userA.kinSearch({ mode: "looks", query: "a dinner outfit", locale: "en" });
@@ -1392,8 +1401,13 @@ async function main() {
     let savedId = "";
     await check("saving a recommendation persists exactly what was passed, scoped to the owner", async () => {
       const response = await userA.saveRecommendation({
+        completionStatus: "ok",
         mode: "looks", query: "a dinner outfit", answer: "Wear the navy blazer.",
-        options: [{ label: "signature", reasoning: "classic", ownedItems: ["blazer"], missingItems: [] }],
+        options: [
+          { label: "signature", reasoning: "A complete signature recommendation with balanced proportions.", ownedItems: ["blazer"], missingItems: [] },
+          { label: "safe", reasoning: "A complete safe recommendation with versatile neutral layers.", ownedItems: [], missingItems: [] },
+          { label: "bold", reasoning: "A complete bold recommendation with deliberate visual contrast.", ownedItems: [], missingItems: [] },
+        ],
         citations: [{ title: "Store", url: "https://example.com/a" }],
         results: [{ title: "Item", source: "example.com", url: "https://example.com/a", price: null, currency: null, imageUrl: null }],
       });
@@ -1404,9 +1418,13 @@ async function main() {
       assert.equal(rows.length, 1);
       assert.equal(rows[0].ownerUserId, userAAccount.user.id);
     });
+    await check("a recommendation without an explicit completed-result marker cannot be saved", async () => {
+      const response = await userA.saveRecommendation({ mode: "looks", query: "partial", answer: "incomplete" });
+      assert.equal(response.status, 400);
+    });
     await check("a saved recommendation with a non-https citation URL is rejected with 400", async () => {
       const response = await userA.saveRecommendation({
-        mode: "looks", query: "ok", answer: "ok", citations: [{ title: null, url: "http://insecure.example.com" }], results: [],
+        completionStatus: "ok", mode: "looks", query: "ok", answer: "ok", citations: [{ title: null, url: "http://insecure.example.com" }], results: [],
       });
       assert.equal(response.status, 400);
     });
