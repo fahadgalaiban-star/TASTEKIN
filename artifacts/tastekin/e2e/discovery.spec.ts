@@ -14,12 +14,6 @@ const categoryIds = [
   'Vlogs',
 ] as const;
 
-async function switchToConsumer(page: Page) {
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('identity-consumer').click();
-  await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
-}
-
 async function openConsumerProfile(page: Page) {
   await page.getByTestId('nav-explore').click();
   await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
@@ -41,6 +35,22 @@ const quietTailoringFeed = {
   access: 'public',
   status: 'published',
   collectionIds: [],
+};
+
+const privateHotelFeed = {
+  id: 'private-hotel',
+  category: 'Travel',
+  title: 'Private hotel weekend',
+  titleAr: 'عطلة فندقية خاصة',
+  caption: 'The stay, the packing list, and where I ate.',
+  captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.',
+  image: '/tastekin-media/private-hotel-preview.webp',
+  location: 'Kuwait City, Kuwait',
+  locationAr: 'مدينة الكويت، الكويت',
+  altText: 'Private hotel preview.',
+  access: 'locked',
+  status: 'published',
+  collectionIds: ['coastal-edit'],
 };
 
 test.beforeEach(async ({ page }) => {
@@ -79,6 +89,51 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route('**/api/relationships', async (route) => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ active: true }) });
+  });
+  await page.route('**/api/creator-workspace', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        creatorId: 'fheed',
+        revision: 1,
+        edits: [
+          { ...quietTailoringFeed, collectionIds: ['quiet-luxury'] },
+          privateHotelFeed,
+        ],
+        collections: [
+          { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+        ],
+      }),
+    });
+  });
+  await page.route('**/api/creator-featured-collections', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ collectionIds: ['quiet-luxury', 'coastal-edit'] }) });
+  });
+  await page.route('**/api/creator-profile', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        displayName: 'Fheed Alaiban', username: 'fheed', bio: 'A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.',
+        city: 'Kuwait City', country: 'Kuwait', interests: ['Fashion', 'Travel', 'Places'], avatar: '/tastekin-media/fheed-profile.webp',
+        avatarObjectPath: null, age: 34, dateOfBirth: '1992-01-01', showAge: true, verified: true, revision: 1,
+      }),
+    });
+  });
+  await page.route('**/api/creators/noura.studio/profile', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        displayName: 'Noura Studio', username: 'noura.studio', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: ['Restaurants', 'Places'],
+        avatar: '', avatarObjectPath: null, age: 31, dateOfBirth: '1995-01-01', showAge: true, verified: false, revision: 1,
+      }),
+    });
+  });
+  await page.route('**/api/creators/noura.studio/workspace', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ edits: [], collections: [] }) });
+  });
+  await page.route('**/api/creators/noura.studio/featured-collections', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ collectionIds: [] }) });
   });
   await page.goto('/');
 });
@@ -135,7 +190,7 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'ltr');
 });
 
-test('filters each creator profile independently of Home and Explore', async ({ page }) => {
+test('renders the default creator feed without profile category filters', async ({ page }) => {
   await page.route('**/api/public-feed', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -152,33 +207,19 @@ test('filters each creator profile independently of Home and Explore', async ({ 
     });
   });
   await page.reload();
-  await switchToConsumer(page);
   await openConsumerProfile(page);
 
-  await expect(page.getByTestId('profile-category-All')).toBeVisible();
-  await expect(page.getByTestId('profile-category-Fashion')).toContainText('Fashion & Outfits');
-  await expect(page.getByTestId('profile-category-DailyRoutine')).toContainText('Daily Routine');
-  await expect(page.getByTestId('profile-category-DailyRoutine')).not.toContainText('DailyRoutine');
-  await page.getByTestId('profile-category-Fashion').click();
-  await expect(page.getByTestId('profile-category-Fashion')).toHaveClass(/active/);
-  await expect(page.locator('.approved-grid-card')).toHaveCount(2);
+  await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
+  await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'All');
+  await expect(page.locator('.approved-logo')).toHaveCount(0);
+  await expect(page.getByText(/^Age \d+$/)).toHaveCount(0);
+  await expect(page.locator('.approved-grid-card')).not.toHaveCount(0);
 
-  await page.getByRole('button', { name: 'Follow' }).click();
   await page.getByTestId('nav-home').click();
-  await page.getByTestId('home-tab-following').click();
-  await expect(page.getByTestId('edit-card-quiet-tailoring')).toBeVisible();
-  await page.getByTestId('home-tab-subscribed').click();
-  await expect(page.getByText('No subscriber edits yet.')).toBeVisible();
-
-  await page.getByTestId('nav-you').click();
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('identity-owner').click();
-  await page.getByRole('button', { name: 'View profile' }).click();
-  await page.getByTestId('profile-category-Fashion').click();
-  await expect(page.locator('.approved-grid-card')).toHaveCount(2);
+  await expect(page.locator('.approved-logo')).toBeVisible();
 });
 
-test('keeps Home, Explore, and creator filter state isolated at mobile width', async ({ page }) => {
+test('keeps Home and Explore state while the profile stays uncluttered at mobile width', async ({ page }) => {
   const homeTabs = page.locator('.approved-feed-tabs');
   const homeTabsBox = await homeTabs.boundingBox();
   expect(homeTabsBox?.x).toBeGreaterThanOrEqual(0);
@@ -188,8 +229,8 @@ test('keeps Home, Explore, and creator filter state isolated at mobile width', a
   await page.getByTestId('category-Travel').click();
   await expect(page.getByTestId('category-Travel')).toHaveClass(/active/);
   await page.getByTestId('fheed-profile-mini').click();
-  await page.getByTestId('profile-category-Fashion').click();
-  await expect(page.getByTestId('profile-category-Fashion')).toHaveClass(/active/);
+  await expect(page.locator('.profile-edit-filters')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
   await page.getByTestId('nav-home').click();
   await page.getByTestId('home-tab-following').click();
   await expect(page.getByTestId('home-tab-following')).toHaveClass(/active/);
@@ -197,18 +238,11 @@ test('keeps Home, Explore, and creator filter state isolated at mobile width', a
   await expect(page.getByTestId('category-Travel')).toHaveClass(/active/);
 
   await page.getByTestId('fheed-profile-mini').click();
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('language-ar').click();
-  const profileFilters = page.locator('.profile-edit-filters');
-  await expect(profileFilters).toBeVisible();
-  const filtersScrollHorizontally = await profileFilters.evaluate((element) => {
-    const style = window.getComputedStyle(element);
-    return style.overflowX === 'auto' && element.scrollWidth > element.clientWidth;
-  });
-  expect(filtersScrollHorizontally).toBe(true);
+  await expect(page.locator('.profile-edit-filters')).toHaveCount(0);
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
 
-test('keeps profile media edge-to-edge and resets the selected category for another creator', async ({ page }) => {
+test('keeps profile media edge-to-edge and shows the default feed for another creator', async ({ page }) => {
   await page.route('**/api/explore**', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -239,19 +273,12 @@ test('keeps profile media edge-to-edge and resets the selected category for anot
       }),
     });
   });
-  await switchToConsumer(page);
   await openConsumerProfile(page);
 
   const profileGrid = page.getByTestId('profile-edits-grid');
   await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
 
-  for (const category of ['Fashion', 'Travel', 'Places', 'Restaurants'] as const) {
-    await page.getByTestId(`profile-category-${category}`).click();
-    await expect(page.getByTestId(`profile-category-${category}`)).toHaveClass(/active/);
-    await expect(profileGrid.locator('.approved-grid-card')).not.toHaveCount(0);
-  }
-
-  await page.getByTestId('profile-category-All').click();
+  await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
   const photoCards = profileGrid.locator('.photo-grid-card');
   await expect(photoCards).not.toHaveCount(0);
   const mediaLayout = await photoCards.evaluateAll((cards) => cards.map((card) => {
@@ -289,15 +316,15 @@ test('keeps profile media edge-to-edge and resets the selected category for anot
   }
   expect(mediaLayout.some((item) => item.captions.some((caption) => caption.truncated))).toBe(true);
 
-  await page.getByTestId('profile-category-Restaurants').click();
-  await expect(profileGrid).toHaveAttribute('data-active-category', 'Restaurants');
   await page.getByTestId('nav-explore').click();
   await page.getByRole('button', { name: 'New' }).click();
   await page.getByTestId('creator-noura.studio').click();
   await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Message' })).toHaveCount(0);
+  await expect(page.locator('.approved-logo')).toHaveCount(0);
+  await expect(page.getByText(/^Age \d+$/)).toHaveCount(0);
   await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
-  await expect(page.getByTestId('profile-category-All')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
   await expect(page.getByText('No published Edits yet.')).toBeVisible();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
@@ -305,28 +332,18 @@ test('keeps profile media edge-to-edge and resets the selected category for anot
 test('keeps locked profile edits protected for visitor and owner preview', async ({ page }) => {
   const lockedEdit = () => page.locator('.approved-grid-card').filter({ hasText: 'The stay, the packing list, and where I ate.' });
 
-  await switchToConsumer(page);
-  await openConsumerProfile(page);
-  await page.getByTestId('profile-category-Travel').click();
-  await lockedEdit().click();
-  await expect(page.locator('.approved-detail-art')).toHaveClass(/locked/);
-  await expect(page.getByText('This edit is for subscribers')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Subscribe/ })).toBeVisible();
-
   await page.getByTestId('nav-you').click();
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('identity-owner').click();
   await page.getByRole('button', { name: 'View profile' }).click();
   await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
-  await page.getByRole('button', { name: 'View as visitor' }).click();
+  await page.getByRole('button', { name: 'More options' }).click();
+  await page.getByTestId('profile-view-public').click();
   await expect(page.getByRole('button', { name: 'Follow' })).toBeDisabled();
-  await page.getByTestId('profile-category-Travel').click();
   await lockedEdit().click();
   await expect(page.locator('.approved-detail-art')).toHaveClass(/locked/);
   await expect(page.getByText('This edit is for subscribers')).toBeVisible();
 });
 
-test('persists saves, follow state, collections, and the owner profile entry point', async ({ page }) => {
+test('persists saves, collections, and the owner profile entry point', async ({ page }) => {
   await page.route('**/api/public-feed', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -351,30 +368,23 @@ test('persists saves, follow state, collections, and the owner profile entry poi
   await page.getByTestId('save-quiet-tailoring').click();
   await expect(page.getByText('Nothing saved yet. Explore creators and keep what speaks to you.')).toBeVisible();
 
-  await switchToConsumer(page);
-  await openConsumerProfile(page);
-  await page.getByRole('button', { name: 'Follow' }).click();
-  await expect(page.getByRole('button', { name: 'Following' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeVisible();
-  await expect(page.getByText(/followers/i)).toHaveCount(0);
-  await page.getByTestId('profile-category-Travel').click();
-  await expect(page.locator('.approved-grid-card')).toHaveCount(2);
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'All');
   await page.getByRole('button', { name: 'Collections' }).click();
   await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
   await expect(page.locator('.approved-collection')).toHaveCount(2);
   await page.getByRole('button', { name: /Quiet Luxury/ }).click();
   await expect(page.getByRole('heading', { name: 'Quiet Luxury' })).toBeVisible();
-  await expect(page.getByText('Included edits')).toBeVisible();
 
   await page.getByTestId('nav-you').click();
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('identity-owner').click();
   await page.getByRole('button', { name: 'View profile' }).click();
    await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
    await expect(page.getByRole('button', { name: 'Open inbox' })).toBeVisible();
-   await expect(page.getByRole('button', { name: 'View as visitor' })).toBeVisible();
+   await expect(page.getByRole('button', { name: 'View as visitor' })).toHaveCount(0);
    await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
-   await page.getByRole('button', { name: 'View as visitor' }).click();
+   await page.getByRole('button', { name: 'More options' }).click();
+   await page.getByTestId('profile-view-public').click();
    await expect(page.getByRole('button', { name: 'Follow' })).toBeDisabled();
    await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeDisabled();
    await page.getByRole('button', { name: 'Exit visitor preview' }).click();
@@ -384,7 +394,7 @@ test('persists saves, follow state, collections, and the owner profile entry poi
   await expect(page.getByRole('button', { name: 'Save profile' })).toBeVisible();
 });
 
-test('keeps owner controls compact and persists featured collection choices', async ({ page }) => {
+test('keeps owner controls compact without a standalone preview button and persists featured collection choices', async ({ page }) => {
   let featuredIds = ['quiet-luxury', 'coastal-edit'];
   await page.route('**/api/creator-workspace', async (route) => {
     await route.fulfill({
@@ -414,10 +424,10 @@ test('keeps owner controls compact and persists featured collection choices', as
   await page.getByRole('button', { name: 'View profile' }).click();
 
   await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
-  const visitorPreview = page.getByRole('button', { name: 'View as visitor' });
-  await expect(visitorPreview).toBeVisible();
-  const previewBox = await visitorPreview.boundingBox();
-  expect(previewBox?.width).toBeLessThanOrEqual(52);
+  await expect(page.getByRole('button', { name: 'View as visitor' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'More options' }).click();
+  await expect(page.getByTestId('profile-view-public')).toContainText('View public profile');
+  await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Insights' })).toBeVisible();
 
   const featuredCards = page.locator('[data-testid^="featured-collection-"]');

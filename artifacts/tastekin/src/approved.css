@@ -127,7 +127,6 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-tabs button.active { color:var(--tk-wine); }
 .approved-tabs button.active::after { content:""; position:absolute; inset-inline:8px; bottom:-1px; height:3px; border-radius:3px; background:var(--tk-wine); }
 .approved-feed-tabs { margin-top:10px; margin-bottom:8px; }
-.profile-edit-filters { margin:0 0 17px; }
 .approved-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .approved-grid-card, .approved-collection { overflow:hidden; padding:0; border:0; border-radius:16px; background:var(--tk-card); color:var(--tk-ink); text-align:start; box-shadow:0 6px 20px rgba(38,25,23,.06); }
 .profile-edits-grid .approved-grid-card { aspect-ratio:4 / 5; display:flex; flex-direction:column; min-width:0; }

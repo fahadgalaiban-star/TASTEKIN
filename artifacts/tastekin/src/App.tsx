@@ -926,7 +926,7 @@ function TastekinApp() {
   };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'kin' as const, icon: Link2, en: 'KIN', ar: 'كين' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
-    <header className="approved-topbar">{!['home', 'you', 'kin', 'onboarding'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}<img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
+    <header className="approved-topbar">{!['home', 'you', 'kin', 'onboarding'].includes(screen) ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}{screen !== 'profile' && <img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" />}<div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
@@ -1450,7 +1450,7 @@ type ReportStep = 'menu' | 'reason' | 'details' | 'submitting' | 'done' | 'error
  * profile that is about to become inaccessible — muting never does that,
  * since a muted profile stays fully visible to the muter.
  */
-function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string }) {
+function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; showReport?: boolean }) {
   const session = useTasteSession();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ReportStep>('menu');
@@ -1528,7 +1528,8 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
         <Drawer.Content className="approved-drawer-content report-drawer" aria-label={ar ? 'الإبلاغ' : 'Report'}>
           <div className="approved-drawer-handle" />
           {step === 'menu' && <div className="report-menu">
-            <button type="button" className="report-menu-item" onClick={() => setStep('reason')}><Flag size={16} /> {label || (ar ? 'إبلاغ' : 'Report')}</button>
+            {onViewPublicProfile && <button type="button" className="report-menu-item" data-testid="profile-view-public" onClick={() => { setOpen(false); onViewPublicProfile(); }}><Eye size={16} /> {ar ? 'عرض الملف العام' : 'View public profile'}</button>}
+            {showReport && <button type="button" className="report-menu-item" onClick={() => setStep('reason')}><Flag size={16} /> {label || (ar ? 'إبلاغ' : 'Report')}</button>}
             {muteUsername && (muted
               ? <button type="button" className="report-menu-item" onClick={() => void toggleMute()}><Volume2 size={16} /> {ar ? 'إلغاء كتم هذا المستخدم' : 'Unmute this user'}</button>
               : <button type="button" className="report-menu-item" onClick={() => setStep('mute-confirm')}><VolumeX size={16} /> {ar ? 'كتم هذا المستخدم' : 'Mute this user'}</button>)}
@@ -3689,16 +3690,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
   const session = useTasteSession();
   const ownerView = owner && !visitorPreview;
   const [sealOpen, setSealOpen] = useState(false);
-  const [editCategory, setEditCategory] = useState<Category>('All');
   const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
-  const profileCategoryItems = useMemo(() => categories.filter((item) => item.id === 'All' || publishedEdits.some((edit) => edit.category === item.id)), [publishedEdits]);
-  const profileFilteredEdits = useMemo(() => editCategory === 'All' ? publishedEdits : publishedEdits.filter((edit) => edit.category === editCategory), [editCategory, publishedEdits]);
-  useEffect(() => {
-    if (!profileCategoryItems.some((item) => item.id === editCategory)) setEditCategory('All');
-  }, [editCategory, profileCategoryItems]);
-  useEffect(() => {
-    setEditCategory('All');
-  }, [profile.username]);
   useEffect(() => {
     if (ownerView || !profile.username) return;
     void fetch(`/api/creators/${encodeURIComponent(profile.username)}/views`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId: null }) });
@@ -3706,7 +3698,6 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
 
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
-  const publicAge = profile.age ? (ar ? `العمر ${profile.age}` : `Age ${profile.age}`) : '';
   const { data: matchData } = useGetTasteMatch(profile.username, {
     query: { queryKey: getGetTasteMatchQueryKey(profile.username), enabled: session.status !== 'loading' && Boolean(profile.username), refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
     request: { credentials: 'include', cache: 'no-store' },
@@ -3795,9 +3786,9 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
      </button>
    )}
 
-    {(tasteSummary || publicAge) && <p className="profile-taste-meta">{[tasteSummary, publicAge].filter(Boolean).join(' · ')}</p>}
+    {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
     {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
-    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><button className="profile-visitor-button" type="button" onClick={onViewAsVisitor} aria-label={ar ? 'عرض كزائر' : 'View as visitor'} title={ar ? 'عرض كزائر' : 'View as visitor'}><Eye size={19} /></button></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{profile.verified && <button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
+    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{profile.verified && <button className="approved-button primary" onClick={onSubscribe} disabled={visitorPreview}>{subscribed ? (ar ? 'مشترك' : 'Subscribed') : <Price ar={ar} />}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
@@ -3812,10 +3803,9 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
         })}
       </div>
     </section>}
-    <div className="approved-tabs"><button className="active" onClick={() => setEditCategory('All')}>{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
-    {profileCategoryItems.length > 1 && <CategoryChips ar={ar} active={editCategory} onSelect={setEditCategory} items={profileCategoryItems} testIdPrefix="profile-category" ariaLabel={ar ? 'فلاتر تعديلات المبدع' : 'Creator edit categories'} className="profile-edit-filters" />}
-    <div className="approved-grid profile-edits-grid" data-testid="profile-edits-grid" data-active-category={editCategory}>
-      {profileFilteredEdits.map((edit) => {
+    <div className="approved-tabs"><button className="active">{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
+    <div className="approved-grid profile-edits-grid" data-testid="profile-edits-grid" data-active-category="All">
+      {publishedEdits.map((edit) => {
         const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
         return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
@@ -3834,7 +3824,7 @@ function Profile({ ar, owner, visitorPreview, following, subscribed, profile, ed
           </span>}
         </button>;
       })}
-      {!profileFilteredEdits.length && <div className="profile-edits-empty">{publishedEdits.length === 0 ? (ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.') : (ar ? 'لا توجد تعديلات منشورة في هذه الفئة بعد.' : 'No published Edits in this category yet.')}</div>}
+      {!publishedEdits.length && <div className="profile-edits-empty">{ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.'}</div>}
     </div>
   </section>;
 }
