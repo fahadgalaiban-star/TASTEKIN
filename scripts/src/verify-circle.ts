@@ -144,6 +144,7 @@ try {
     captionAr: "", location: "", locationAr: "", altText: "", collectionIds: [],
   };
   const publicEdit = { ...edit, id: "circle-public", access: "public", image: "/objects/uploads/public.webp", previewImage: undefined };
+  const privateAvatarPath = "/objects/uploads/private-avatar-key";
   for (const [id, username, userId, edits] of [
     ["owner", "circle-owner", owner.id, []],
     ["other", "circle-other", other.id, []],
@@ -153,7 +154,7 @@ try {
     await scoped.query(
       `INSERT INTO creator_workspaces (creator_id, owner_user_id, edits, collections, profile)
        VALUES ($1, $2, $3::jsonb, '[]'::jsonb, $4::jsonb)`,
-      [id, userId, JSON.stringify(edits), JSON.stringify({ username, displayName: username, bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatar: "/avatar.webp" })],
+      [id, userId, JSON.stringify(edits), JSON.stringify({ username, displayName: username, bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatar: id === "creator" ? privateAvatarPath : "/avatar.webp" })],
     );
   }
   assert.equal((await api(admin.cookie, "PUT", "/api/admin/feature-flags/my_circle", { enabled: false })).status, 200);
@@ -173,7 +174,11 @@ try {
 
   const list = await api(owner.cookie, "GET", "/api/circle/members");
   assert.equal(list.status, 200);
-  assert.equal(((await list.json()) as Array<{ username: string }>).map((x) => x.username).join(","), "circlecreator");
+  const listedMembers = await list.json() as Array<{ username: string; avatar: string }>;
+  assert.equal(listedMembers.map((x) => x.username).join(","), "circlecreator");
+  assert.equal(listedMembers[0]?.avatar, "/api/public-profile-media/circlecreator");
+  assert.equal(JSON.stringify(listedMembers).includes("/objects/"), false);
+  assert.equal(JSON.stringify(listedMembers).includes("private-avatar-key"), false);
   assert.deepEqual(await (await api(other.cookie, "GET", "/api/circle/members")).json(), []);
   assert.equal((await api(other.cookie, "DELETE", "/api/circle/members/circlecreator")).status, 204);
   const ownerStatusAfterOtherDelete = await api(owner.cookie, "GET", "/api/circle/members/circlecreator");

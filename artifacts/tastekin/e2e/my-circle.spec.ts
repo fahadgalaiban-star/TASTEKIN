@@ -4,7 +4,7 @@ const VISITOR = {
   username: 'noura.studio',
   displayName: 'Noura Studio',
 };
-const NOURA_AVATAR = '/tastekin-media/quiet-tailoring.webp';
+const NOURA_AVATAR = `/api/public-profile-media/${encodeURIComponent(VISITOR.username)}`;
 const LAYLA_AVATAR = '/tastekin-media/private-hotel-preview.webp';
 
 const edit = (id: string, access: 'public' | 'locked') => ({
@@ -24,6 +24,10 @@ const edit = (id: string, access: 'public' | 'locked') => ({
 });
 
 async function session(page: Page, authenticated: boolean, language: 'en' | 'ar' = 'en', owner = false, myCircle = true) {
+  await page.route('**/api/public-profile-media/*', async (route) => route.fulfill({
+    contentType: 'image/svg+xml',
+    body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+  }));
   await page.route('**/api/circle/members', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -118,6 +122,7 @@ test('authenticated Home exposes My Circle, renders protected feed safely, and s
   await expect(page.getByTestId(`circle-member-${VISITOR.username}`).locator('img')).toHaveAttribute('src', NOURA_AVATAR);
   await expect(page.getByTestId('circle-member-layla').locator('img')).toHaveAttribute('src', LAYLA_AVATAR);
   await expect(page.getByTestId('edit-card-circle-public').first().locator('.feed-creator-avatar img')).toHaveAttribute('src', NOURA_AVATAR);
+  await expect(page.locator('img[src*="/objects/"]')).toHaveCount(0);
   await expect(page.getByTestId('edit-title-circle-public').first()).toBeVisible();
   await expect(page.getByTestId('edit-title-circle-locked')).toBeVisible();
   await expect(page.getByText('/objects/private-hotel-source')).toHaveCount(0);
@@ -160,7 +165,14 @@ test('creator identity, media, and Save keep separate navigation across every Ho
     contentType: 'application/json',
     body: JSON.stringify([{ creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('circle-navigation', 'public') }]),
   }));
-  await page.route('**/api/saved-edits/**', async (route) => route.fulfill({ status: 204, body: '' }));
+  let saveRequest: { method: string; body: unknown } | null = null;
+  await page.route('**/api/edits/circle-navigation/save', async (route) => {
+    saveRequest = {
+      method: route.request().method(),
+      body: route.request().postDataJSON(),
+    };
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ active: true }) });
+  });
   await page.goto('/');
 
   for (const tab of ['for-you', 'following'] as const) {
@@ -179,13 +191,49 @@ test('creator identity, media, and Save keep separate navigation across every Ho
   await page.getByRole('button', { name: 'Back' }).click();
   await expect(page.getByTestId('home-tab-my-circle')).toHaveClass(/active/);
 
-  await circleCard.getByTestId('save-circle-navigation').click();
+  const saveButton = circleCard.getByTestId('save-circle-navigation');
+  await saveButton.click();
+  await expect(saveButton).toHaveAttribute('aria-pressed', 'true');
+  await expect(saveButton).toHaveAttribute('aria-label', 'Remove from saved');
+  expect(saveRequest).toEqual({ method: 'PUT', body: { active: true } });
+  await expect(page.getByRole('heading', { name: VISITOR.displayName })).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: 'A quiet uniform for an everyday city.' })).toHaveCount(0);
   await expect(circleCard).toBeVisible();
   await circleCard.locator('.approved-art').click();
   await expect(page.getByRole('heading', { name: 'A quiet uniform for an everyday city.' })).toBeVisible();
   await page.getByRole('button', { name: 'Back' }).click();
   await expect(page.getByTestId('home-tab-my-circle')).toHaveClass(/active/);
   await expect(page.getByTestId('edit-card-circle-navigation')).toBeVisible();
+});
+
+test('My Circle keeps its loading state until members and feed are both ready', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await session(page, true);
+  await discovery(page);
+  let releaseMembers: (() => void) | undefined;
+  const membersReady = new Promise<void>((resolve) => { releaseMembers = resolve; });
+  await page.route('**/api/circle/members', async (route) => {
+    await membersReady;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { creatorId: VISITOR.username, username: VISITOR.username, displayName: VISITOR.displayName, avatar: NOURA_AVATAR, verified: true, addedAt: '2026-09-09T08:00:00.000Z' },
+      ]),
+    });
+  });
+  await page.route('**/api/circle/feed', async (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify([{ creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('loading-complete', 'public') }]),
+  }));
+  await page.goto('/');
+  await page.getByTestId('home-tab-my-circle').click();
+  await expect(page.getByText('Loading...')).toBeVisible();
+  await expect(page.getByTestId(`circle-member-${VISITOR.username}`)).toHaveCount(0);
+  releaseMembers?.();
+  await expect(page.getByText('Loading...')).toHaveCount(0);
+  await expect(page.getByTestId(`circle-member-${VISITOR.username}`).locator('img')).toHaveAttribute('src', NOURA_AVATAR);
+  await expect(page.getByTestId('edit-card-loading-complete').locator('.feed-creator-avatar img')).toHaveAttribute('src', NOURA_AVATAR);
+  await expect(page.locator('img[src*="/objects/"]')).toHaveCount(0);
 });
 
 test('My Circle OFF hides Home, You, and verified profile actions without Circle requests', async ({ page }) => {
