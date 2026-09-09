@@ -18,10 +18,12 @@ function noStore(res: import("express").Response) {
 
 function profileOf(value: unknown) {
   const profile = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const username = typeof profile.username === "string" ? profile.username : "";
+  const avatar = typeof profile.avatar === "string" ? profile.avatar : "";
   return {
-    username: typeof profile.username === "string" ? profile.username : "",
+    username,
     displayName: typeof profile.displayName === "string" ? profile.displayName : "",
-    avatar: typeof profile.avatar === "string" ? profile.avatar : "",
+    avatar: avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(username)}` : avatar,
   };
 }
 

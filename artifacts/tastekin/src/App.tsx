@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
+import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, useListCircleMembers, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
 import {
@@ -33,7 +33,7 @@ type HomeFeedTab = 'for-you' | 'following' | 'my-circle';
 const homeFeedHeaderCopy: Record<HomeFeedTab, { en: string; ar: string; enSub: string; arSub: string }> = {
   'for-you': { en: 'For you', ar: 'لك', enSub: 'People, places and edits matched to your taste.', arSub: 'أشخاص وأماكن وتعديلات تناسب ذوقك.' },
   following: { en: 'Following', ar: 'تتابعهم', enSub: 'Updates from people you follow.', arSub: 'تحديثات من الأشخاص الذين تتابعهم.' },
-  'my-circle': { en: 'My Circle', ar: 'دائرتي', enSub: 'A shortlist of verified creators.', arSub: 'قائمة مختصرة لمنشئي المحتوى الموثقين.' },
+  'my-circle': { en: 'My Circle', ar: 'دائرتي', enSub: 'The creators you keep close', arSub: 'المبدعون الأقرب إليك' },
 };
 type EditStatus = 'draft' | 'published' | 'archived';
 type Access = 'public' | 'locked';
@@ -309,8 +309,10 @@ function TastekinApp() {
   const [passwordResetToken] = useState<string | null>(() => window.location.pathname === '/reset-password' ? new URLSearchParams(location.search).get('token') : null);
   const [authError] = useState<string | null>(() => new URLSearchParams(location.search).get('authError'));
   const [screen, setScreen] = useState<Screen>(() => passwordResetToken || authError ? 'auth' : 'home');
+  const editReturnScreenRef = useRef<Screen>('home');
   const [exploreCategory, setExploreCategory] = useState<Category>('All');
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
+  const [circleFilterCreator, setCircleFilterCreator] = useState<string | null>(null);
   useEffect(() => {
     if (!myCircleEnabled && homeFeedTab === 'my-circle') setHomeFeedTab('for-you');
   }, [homeFeedTab, myCircleEnabled]);
@@ -644,6 +646,12 @@ function TastekinApp() {
     const source = publicFeedEdits.length ? publicFeedEdits : published;
     return exploreCategory === 'All' ? source : source.filter((item) => item.category === exploreCategory);
   }, [exploreCategory, publicFeedEdits, published]);
+  const { data: circleMembers = [], isLoading: circleMembersLoading, error: circleMembersError, refetch: refetchCircleMembers } = useListCircleMembers({
+    query: {
+      enabled: myCircleEnabled && session.status === 'authenticated' && homeFeedTab === 'my-circle',
+      queryKey: getListCircleMembersQueryKey()
+    }
+  });
   const { data: circleFeedItems = [], isLoading: circleFeedLoading, error: circleFeedError, refetch: refetchCircleFeed } = useGetCircleFeed({
     query: {
       enabled: myCircleEnabled && session.status === 'authenticated' && homeFeedTab === 'my-circle',
@@ -651,19 +659,32 @@ function TastekinApp() {
     }
   });
 
-  const circleFeedEdits: CreatorEdit[] = useMemo(() => circleFeedItems.map(item => ({
-    ...item.edit,
-    creatorUsername: item.creatorUsername,
-    creatorName: item.creatorName,
-    creatorVerified: item.creatorVerified,
-    following: true
-  } as CreatorEdit)), [circleFeedItems]);
+  const circleFeedEdits: CreatorEdit[] = useMemo(() => circleFeedItems.map(item => {
+    const member = circleMembers.find((m) => m.username === item.creatorUsername);
+    return {
+      ...item.edit,
+      creatorUsername: item.creatorUsername,
+      creatorName: member?.displayName || item.creatorName,
+      creatorVerified: item.creatorVerified,
+      creatorAvatar: member?.avatar,
+      following: true
+    } as CreatorEdit;
+  }), [circleFeedItems, circleMembers]);
+  const circleLoading = circleMembersLoading || circleFeedLoading;
+  const circleError = circleMembersError || circleFeedError;
+  useEffect(() => {
+    if (circleFilterCreator && !circleMembers.some((member) => member.username === circleFilterCreator)) {
+      setCircleFilterCreator(null);
+    }
+  }, [circleFilterCreator, circleMembers]);
 
   const homeFeed = useMemo(() => {
     if (homeFeedTab === 'following') return publicFeedEdits.filter((item) => item.following);
-    if (myCircleEnabled && homeFeedTab === 'my-circle') return circleFeedEdits;
+    if (myCircleEnabled && homeFeedTab === 'my-circle') {
+      return circleFilterCreator ? circleFeedEdits.filter(edit => edit.creatorUsername === circleFilterCreator) : circleFeedEdits;
+    }
     return publicFeedEdits.length ? publicFeedEdits : published;
-  }, [homeFeedTab, publicFeedEdits, published, circleFeedEdits, myCircleEnabled]);
+  }, [homeFeedTab, publicFeedEdits, published, circleFeedEdits, myCircleEnabled, circleFilterCreator]);
   const selectedEdit = [...circleFeedEdits, ...creatorEdits, ...publicCreatorEdits, ...publicFeedEdits]
     .find((item) => item.id === selectedEditId && (!item.creatorUsername || item.creatorUsername === selectedCreatorUsername))
     || published[0]
@@ -758,7 +779,12 @@ function TastekinApp() {
     [next[index], next[destination]] = [next[destination], next[index]];
     saveFeaturedCollections(next);
   };
-  const openEdit = (item: CreatorEdit) => { if (item.creatorUsername) setSelectedCreatorUsername(item.creatorUsername); setSelectedEditId(item.id); go('edit'); };
+  const openEdit = (item: CreatorEdit) => {
+    editReturnScreenRef.current = screen;
+    if (item.creatorUsername) setSelectedCreatorUsername(item.creatorUsername);
+    setSelectedEditId(item.id);
+    go('edit');
+  };
   const startMessage = async () => {
     if (session.status !== 'authenticated') { go('auth'); return; }
     try {
@@ -959,7 +985,7 @@ function TastekinApp() {
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
   const goBack = () => {
     if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
-    go(screen === 'edit' || screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'add' ? 'you' : screen === 'settings' ? settingsReturnScreenRef.current : screen === 'myThingsAdd' || screen === 'myThingsEdit' ? 'myThings' : screen === 'myThings' ? 'you' : 'home');
+    go(screen === 'edit' ? editReturnScreenRef.current : screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'add' ? 'you' : screen === 'settings' ? settingsReturnScreenRef.current : screen === 'myThingsAdd' || screen === 'myThingsEdit' ? 'myThings' : screen === 'myThings' ? 'you' : 'home');
   };
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'kin' as const, icon: Link2, en: 'KIN', ar: 'كين' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
@@ -967,7 +993,34 @@ function TastekinApp() {
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
-    {screen === 'home' && <><section className="home-feed-header"><h1>{ar ? homeFeedHeaderCopy[homeFeedTab].ar : homeFeedHeaderCopy[homeFeedTab].en}</h1><p>{ar ? homeFeedHeaderCopy[homeFeedTab].arSub : homeFeedHeaderCopy[homeFeedTab].enSub}</p></section><HomeFeedTabs ar={ar} active={homeFeedTab} onSelect={setHomeFeedTab} /><div className="approved-feed">{homeFeedTab === 'my-circle' && circleFeedLoading && <div className="approved-empty">{ar ? 'جارٍ التحميل...' : 'Loading...'}</div>}{homeFeedTab === 'my-circle' && circleFeedError && <div className="workspace-notice" role="alert">{ar ? 'تعذر تحميل دائرتك.' : 'Could not load your circle.'}<button type="button" onClick={() => void refetchCircleFeed()}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}{!(homeFeedTab === 'my-circle' && (circleFeedLoading || circleFeedError)) && homeFeed.map((item) => <EditCard key={`${item.creatorUsername || 'self'}:${item.id}`} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!(homeFeedTab === 'my-circle' && (circleFeedLoading || circleFeedError)) && homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}</div></>}
+    {screen === 'home' && <><section className="home-feed-header"><h1>{ar ? homeFeedHeaderCopy[homeFeedTab].ar : homeFeedHeaderCopy[homeFeedTab].en}</h1><p>{ar ? homeFeedHeaderCopy[homeFeedTab].arSub : homeFeedHeaderCopy[homeFeedTab].enSub}</p></section><HomeFeedTabs ar={ar} active={homeFeedTab} onSelect={setHomeFeedTab} />
+      {homeFeedTab === 'my-circle' && !circleLoading && !circleError && circleMembers.length > 0 && (
+        <>
+          <div className="circle-rail" aria-label={ar ? 'أعضاء دائرتك' : 'Your circle members'} role="list">
+            {circleMembers.map((member) => (
+              <button key={member.creatorId} className="circle-rail-member" role="listitem" data-testid={`circle-member-${member.username}`} onClick={() => { setSelectedCreatorUsername(member.username); go('profile'); }} aria-label={ar ? `عرض ملف ${member.displayName}` : `View ${member.displayName}'s profile`}>
+                <Avatar profile={{ avatar: member.avatar, displayName: member.displayName } as any} />
+                <span>{member.displayName}</span>
+              </button>
+            ))}
+          </div>
+          <div className="circle-filter">
+            <select aria-label={ar ? 'تصفية المبدعين' : 'Filter creators'} value={circleFilterCreator || ''} onChange={(e) => setCircleFilterCreator(e.target.value || null)}>
+              <option value="">{ar ? 'أحدث التعديلات' : 'Latest'}</option>
+              {circleMembers.map((member) => (
+                <option key={member.creatorId} value={member.username}>{member.displayName}</option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
+      <div className="approved-feed">
+        {homeFeedTab === 'my-circle' && circleLoading && <div className="approved-empty">{ar ? 'جارٍ التحميل...' : 'Loading...'}</div>}
+        {homeFeedTab === 'my-circle' && circleError && <div className="workspace-notice" role="alert">{ar ? 'تعذر تحميل دائرتك.' : 'Could not load your circle.'}<button type="button" onClick={() => void Promise.all([refetchCircleMembers(), refetchCircleFeed()])}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
+        {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeed.map((item) => <EditCard key={`${item.creatorUsername || 'self'}:${item.id}`} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}
+        {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}
+      </div>
+    </>}
     {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
@@ -975,7 +1028,7 @@ function TastekinApp() {
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
-    {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
+    {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('add')}>{t('Creator workspace', 'مساحة المبدع')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
@@ -1022,7 +1075,9 @@ function CategoryChips({ ar, active, onSelect, items = categories, testIdPrefix 
 function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorProfile; src?: string }) {
   const image = src || profile.avatar;
   const initials = (profile.displayName || '?').trim().slice(0, 1).toUpperCase();
-  return <div className="approved-avatar">{image ? <img src={image} alt={profile.displayName} /> : <span aria-hidden="true">{initials}</span>}</div>;
+  const [imageFailed, setImageFailed] = useState(false);
+  useEffect(() => setImageFailed(false), [image]);
+  return <div className="approved-avatar">{image && !imageFailed ? <img src={image} alt={profile.displayName} onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{initials}</span>}</div>;
 }
 function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, onOpenProfile, onOpenEdit, onSignIn }: { ar: boolean; category: Category; setCategory: (c: Category) => void; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void; onSignIn: () => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
@@ -1110,7 +1165,7 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
         ))}
 
         {visibleEdits.map(item => (
-          <EditCard key={item.id} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => onOpenEdit(item)} />
+          <EditCard key={item.id} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => onOpenEdit(item)} onOpenProfile={() => { if(item.creatorUsername) onOpenProfile(item.creatorUsername); }} />
         ))}
       </div>
       {searchTerm && !creatorResults.length && !visibleEdits.length && !isLoading && <Empty text={t('No results for this search.', 'لا توجد نتائج لهذا البحث.')} />}
@@ -1462,9 +1517,10 @@ function PlaceDetails({ edit, ar, compact = false, showName = true }: { edit: Cr
   </div>;
 }
 function SaveButton({ edit, ar, saved, onSave }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void }) { return <button className={`approved-save ${saved ? 'saved' : ''}`} data-testid={`save-${edit.id}`} onClick={onSave} aria-label={saved ? (ar ? 'إزالة من المحفوظات' : 'Remove from saved') : (ar ? 'حفظ التعديل' : 'Save Edit')} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>; }
-function CreatorAttribution({ edit }: { edit: CreatorEdit }) {
+function CreatorAttribution({ edit, ar, onOpenProfile }: { edit: CreatorEdit; ar: boolean; onOpenProfile?: () => void }) {
   if (!edit.creatorUsername) return null;
-  return <div className="feed-creator"><span className="feed-creator-avatar">{edit.creatorAvatar ? <img src={imageSrc(edit.creatorAvatar)} alt="" /> : edit.creatorName?.slice(0, 1)}</span><span><strong>{edit.creatorName || edit.creatorUsername}</strong><small>@{edit.creatorUsername}</small></span>{edit.creatorVerified && <img className="feed-taste-seal" src={TASTE_SEAL_IMAGE} alt="Verified by TASTEKIN" />}</div>;
+  const content = <><span className="feed-creator-avatar">{edit.creatorAvatar ? <img src={imageSrc(edit.creatorAvatar)} alt="" /> : edit.creatorName?.slice(0, 1)}</span><span><strong>{edit.creatorName || edit.creatorUsername}</strong><small>@{edit.creatorUsername}</small></span>{edit.creatorVerified && <img className="feed-taste-seal" src={TASTE_SEAL_IMAGE} alt="Verified by TASTEKIN" />}</>;
+  return onOpenProfile ? <button type="button" className="feed-creator feed-creator-button" data-testid={`creator-link-${edit.creatorUsername}`} onClick={onOpenProfile} aria-label={ar ? `عرض ملف ${edit.creatorName || edit.creatorUsername}` : `View ${edit.creatorName || edit.creatorUsername}'s profile`}>{content}</button> : <div className="feed-creator">{content}</div>;
 }
 const REPORT_REASONS: { id: string; en: string; ar: string }[] = [
   { id: 'spam', en: 'Spam', ar: 'محتوى غير مرغوب فيه' },
@@ -1632,11 +1688,11 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
   </>;
 }
 
-function EditCard({ edit, ar, saved, onSave, onOpen }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void }) {
+function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void; onOpenProfile?: () => void }) {
   const caption = publicCaptionLine(edit, ar);
   const noPhoto = !edit.image;
-  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
-  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} /><button className="approved-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
+  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
+  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
 function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSubscribe, onSignIn }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void; onSignIn: () => void }) {
   const locked = edit.access === 'locked';
