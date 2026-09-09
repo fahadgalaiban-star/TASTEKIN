@@ -218,6 +218,144 @@ export type CreatorProfile = Creator & {
   collections: Collection[];
 };
 
+export interface CircleMember {
+  creatorId: string;
+  username: string;
+  displayName: string;
+  avatar: string;
+  verified: boolean;
+  addedAt: string;
+}
+
+export interface CircleMemberStatus {
+  creatorId: string;
+  active: boolean;
+}
+
+export type CircleEditAccess = typeof CircleEditAccess[keyof typeof CircleEditAccess];
+
+
+export const CircleEditAccess = {
+  public: 'public',
+  locked: 'locked',
+} as const;
+
+export type CircleEditStatus = typeof CircleEditStatus[keyof typeof CircleEditStatus];
+
+
+export const CircleEditStatus = {
+  draft: 'draft',
+  published: 'published',
+  archived: 'archived',
+} as const;
+
+export type CreatorCropAspect = typeof CreatorCropAspect[keyof typeof CreatorCropAspect];
+
+
+export const CreatorCropAspect = {
+  square: 'square',
+  portrait: 'portrait',
+  story: 'story',
+} as const;
+
+export type CreatorCrop = ({
+  aspect?: 'portrait';
+  outputWidth?: 1080;
+  outputHeight?: 1350;
+} | {
+  aspect?: 'square';
+  outputWidth?: 1080;
+  outputHeight?: 1080;
+} | {
+  aspect?: 'story';
+  outputWidth?: 1080;
+  outputHeight?: 1920;
+}) & {
+  aspect: CreatorCropAspect;
+  /**
+     * @minimum 0.001
+     * @maximum 3840
+     */
+  zoom: number;
+  /**
+     * @minimum -50
+     * @maximum 50
+     */
+  x: number;
+  /**
+     * @minimum -50
+     * @maximum 50
+     */
+  y: number;
+  /**
+     * @minimum -360
+     * @maximum 360
+     */
+  rotation: number;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  sourceWidth: number;
+  /**
+     * @minimum 1
+     * @maximum 10000
+     */
+  sourceHeight: number;
+  outputWidth: number;
+  outputHeight: number;
+};
+
+export interface CreatorOutfitItem {
+  /** @maxLength 100 */
+  type: string;
+  /** @maxLength 160 */
+  brand: string;
+  /** @maxLength 240 */
+  name: string;
+  /** @maxLength 1024 */
+  link: string;
+}
+
+export interface CircleEdit {
+  id: string;
+  category: string;
+  title: string;
+  titleAr: string;
+  caption: string;
+  captionAr: string;
+  location: string;
+  locationAr: string;
+  altText: string;
+  access: CircleEditAccess;
+  status: CircleEditStatus;
+  /** @nullable */
+  image?: string | null;
+  crop?: CreatorCrop;
+  outfitItems?: CreatorOutfitItem[];
+  showOutfitDetails?: boolean;
+  /** @nullable */
+  placeName?: string | null;
+  /** @nullable */
+  locationLabel?: string | null;
+  /** @nullable */
+  mapsUrl?: string | null;
+  /** @nullable */
+  tasteRating?: number | null;
+  /** @nullable */
+  creatorReview?: string | null;
+  tags?: string[];
+  collectionIds: string[];
+  publishedAt?: string;
+}
+
+export interface CircleFeedItem {
+  creatorUsername: string;
+  creatorName: string;
+  creatorVerified: boolean;
+  edit: CircleEdit;
+}
+
 export type ExploreResultsSort = typeof ExploreResultsSort[keyof typeof ExploreResultsSort];
 
 
@@ -444,74 +582,6 @@ export interface CreatorProfileInput {
      * @pattern ^/objects/uploads/[0-9a-fA-F-]{36}$
      */
   avatarObjectPath: string | null;
-}
-
-export type CreatorCropAspect = typeof CreatorCropAspect[keyof typeof CreatorCropAspect];
-
-
-export const CreatorCropAspect = {
-  square: 'square',
-  portrait: 'portrait',
-  story: 'story',
-} as const;
-
-export type CreatorCrop = ({
-  aspect?: 'portrait';
-  outputWidth?: 1080;
-  outputHeight?: 1350;
-} | {
-  aspect?: 'square';
-  outputWidth?: 1080;
-  outputHeight?: 1080;
-} | {
-  aspect?: 'story';
-  outputWidth?: 1080;
-  outputHeight?: 1920;
-}) & {
-  aspect: CreatorCropAspect;
-  /**
-     * @minimum 0.001
-     * @maximum 3840
-     */
-  zoom: number;
-  /**
-     * @minimum -50
-     * @maximum 50
-     */
-  x: number;
-  /**
-     * @minimum -50
-     * @maximum 50
-     */
-  y: number;
-  /**
-     * @minimum -360
-     * @maximum 360
-     */
-  rotation: number;
-  /**
-     * @minimum 1
-     * @maximum 10000
-     */
-  sourceWidth: number;
-  /**
-     * @minimum 1
-     * @maximum 10000
-     */
-  sourceHeight: number;
-  outputWidth: number;
-  outputHeight: number;
-};
-
-export interface CreatorOutfitItem {
-  /** @maxLength 100 */
-  type: string;
-  /** @maxLength 160 */
-  brand: string;
-  /** @maxLength 240 */
-  name: string;
-  /** @maxLength 1024 */
-  link: string;
 }
 
 export type CreatorEditCategory = typeof CreatorEditCategory[keyof typeof CreatorEditCategory];

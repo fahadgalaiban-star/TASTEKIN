@@ -20,6 +20,9 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  CircleFeedItem,
+  CircleMember,
+  CircleMemberStatus,
   Conversation,
   ConversationInput,
   ConversationMessage,
@@ -2227,3 +2230,339 @@ export const useCleanupCreatorMedia = <TError = ErrorType<void>,
       return useMutation(getCleanupCreatorMediaMutationOptions(options));
     }
 
+export const getListCircleMembersUrl = () => {
+
+
+
+
+  return `/api/circle/members`
+}
+
+export const listCircleMembers = async ( options?: Parameters<typeof customFetch>[1]): Promise<CircleMember[]> => {
+
+  return customFetch<CircleMember[]>(getListCircleMembersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListCircleMembersQueryKey = () => {
+    return [
+    `/api/circle/members`
+    ] as const;
+    }
+
+
+export const getListCircleMembersQueryOptions = <TData = Awaited<ReturnType<typeof listCircleMembers>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCircleMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListCircleMembersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listCircleMembers>>> = ({ signal }) => listCircleMembers({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listCircleMembers>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListCircleMembersQueryResult = NonNullable<Awaited<ReturnType<typeof listCircleMembers>>>
+export type ListCircleMembersQueryError = ErrorType<void>
+
+
+
+export function useListCircleMembers<TData = Awaited<ReturnType<typeof listCircleMembers>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listCircleMembers>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListCircleMembersQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetCircleMemberStatusUrl = (targetId: string,) => {
+
+
+
+
+  return `/api/circle/members/${targetId}`
+}
+
+export const getCircleMemberStatus = async (targetId: string, options?: Parameters<typeof customFetch>[1]): Promise<CircleMemberStatus> => {
+
+  return customFetch<CircleMemberStatus>(getGetCircleMemberStatusUrl(targetId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCircleMemberStatusQueryKey = (targetId: string,) => {
+    return [
+    `/api/circle/members/${targetId}`
+    ] as const;
+    }
+
+
+export const getGetCircleMemberStatusQueryOptions = <TData = Awaited<ReturnType<typeof getCircleMemberStatus>>, TError = ErrorType<void>>(targetId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCircleMemberStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCircleMemberStatusQueryKey(targetId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCircleMemberStatus>>> = ({ signal }) => getCircleMemberStatus(targetId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: targetId !== null && targetId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCircleMemberStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCircleMemberStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getCircleMemberStatus>>>
+export type GetCircleMemberStatusQueryError = ErrorType<void>
+
+
+
+export function useGetCircleMemberStatus<TData = Awaited<ReturnType<typeof getCircleMemberStatus>>, TError = ErrorType<void>>(
+ targetId: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCircleMemberStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCircleMemberStatusQueryOptions(targetId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddCircleMemberUrl = (targetId: string,) => {
+
+
+
+
+  return `/api/circle/members/${targetId}`
+}
+
+export const addCircleMember = async (targetId: string, options?: Parameters<typeof customFetch>[1]): Promise<CircleMemberStatus> => {
+
+  return customFetch<CircleMemberStatus>(getAddCircleMemberUrl(targetId),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+);}
+
+
+
+
+
+export const getAddCircleMemberMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCircleMember>>, TError,{targetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addCircleMember>>, TError,{targetId: string}, TContext> => {
+
+const mutationKey = ['addCircleMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addCircleMember>>, {targetId: string}> = (props) => {
+          const {targetId} = props ?? {};
+
+          return  addCircleMember(targetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddCircleMemberMutationResult = NonNullable<Awaited<ReturnType<typeof addCircleMember>>>
+
+    export type AddCircleMemberMutationError = ErrorType<void>
+
+    export const useAddCircleMember = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addCircleMember>>, TError,{targetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addCircleMember>>,
+        TError,
+        {targetId: string},
+        TContext
+      > => {
+      return useMutation(getAddCircleMemberMutationOptions(options));
+    }
+
+export const getRemoveCircleMemberUrl = (targetId: string,) => {
+
+
+
+
+  return `/api/circle/members/${targetId}`
+}
+
+export const removeCircleMember = async (targetId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getRemoveCircleMemberUrl(targetId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getRemoveCircleMemberMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeCircleMember>>, TError,{targetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof removeCircleMember>>, TError,{targetId: string}, TContext> => {
+
+const mutationKey = ['removeCircleMember'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeCircleMember>>, {targetId: string}> = (props) => {
+          const {targetId} = props ?? {};
+
+          return  removeCircleMember(targetId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveCircleMemberMutationResult = NonNullable<Awaited<ReturnType<typeof removeCircleMember>>>
+
+    export type RemoveCircleMemberMutationError = ErrorType<void>
+
+    export const useRemoveCircleMember = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeCircleMember>>, TError,{targetId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof removeCircleMember>>,
+        TError,
+        {targetId: string},
+        TContext
+      > => {
+      return useMutation(getRemoveCircleMemberMutationOptions(options));
+    }
+
+export const getGetCircleFeedUrl = () => {
+
+
+
+
+  return `/api/circle/feed`
+}
+
+export const getCircleFeed = async ( options?: Parameters<typeof customFetch>[1]): Promise<CircleFeedItem[]> => {
+
+  return customFetch<CircleFeedItem[]>(getGetCircleFeedUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCircleFeedQueryKey = () => {
+    return [
+    `/api/circle/feed`
+    ] as const;
+    }
+
+
+export const getGetCircleFeedQueryOptions = <TData = Awaited<ReturnType<typeof getCircleFeed>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCircleFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCircleFeedQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCircleFeed>>> = ({ signal }) => getCircleFeed({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCircleFeed>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCircleFeedQueryResult = NonNullable<Awaited<ReturnType<typeof getCircleFeed>>>
+export type GetCircleFeedQueryError = ErrorType<void>
+
+
+
+export function useGetCircleFeed<TData = Awaited<ReturnType<typeof getCircleFeed>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCircleFeed>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCircleFeedQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

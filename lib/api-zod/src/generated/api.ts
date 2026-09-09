@@ -1376,3 +1376,139 @@ export const CleanupCreatorMediaBody = zod.object({
 export const CleanupCreatorMediaResponse = zod.void()
 
 
+export const ListCircleMembersResponseItem = zod.object({
+  "creatorId": zod.string(),
+  "username": zod.string(),
+  "displayName": zod.string(),
+  "avatar": zod.string(),
+  "verified": zod.boolean(),
+  "addedAt": zod.coerce.date()
+})
+export const ListCircleMembersResponse = zod.array(ListCircleMembersResponseItem)
+
+
+export const getCircleMemberStatusPathTargetIdMax = 160;
+
+
+
+export const GetCircleMemberStatusParams = zod.object({
+  "targetId": zod.coerce.string().min(1).max(getCircleMemberStatusPathTargetIdMax)
+})
+
+export const GetCircleMemberStatusResponse = zod.object({
+  "creatorId": zod.string(),
+  "active": zod.boolean()
+})
+
+
+export const addCircleMemberPathTargetIdMax = 160;
+
+
+
+export const AddCircleMemberParams = zod.object({
+  "targetId": zod.coerce.string().min(1).max(addCircleMemberPathTargetIdMax)
+})
+
+export const AddCircleMemberResponse = zod.object({
+  "creatorId": zod.string(),
+  "active": zod.boolean()
+})
+
+
+export const removeCircleMemberPathTargetIdMax = 160;
+
+
+
+export const RemoveCircleMemberParams = zod.object({
+  "targetId": zod.coerce.string().min(1).max(removeCircleMemberPathTargetIdMax)
+})
+
+export const RemoveCircleMemberResponse = zod.void()
+
+
+export const getCircleFeedResponseEditCropOneZoomMin = 0.001;
+export const getCircleFeedResponseEditCropOneZoomMax = 3840;
+
+export const getCircleFeedResponseEditCropOneXMin = -50;
+export const getCircleFeedResponseEditCropOneXMax = 50;
+
+export const getCircleFeedResponseEditCropOneYMin = -50;
+export const getCircleFeedResponseEditCropOneYMax = 50;
+
+export const getCircleFeedResponseEditCropOneRotationMin = -360;
+export const getCircleFeedResponseEditCropOneRotationMax = 360;
+
+export const getCircleFeedResponseEditCropOneSourceWidthMax = 10000;
+
+export const getCircleFeedResponseEditCropOneSourceHeightMax = 10000;
+
+export const getCircleFeedResponseEditOutfitItemsItemTypeMax = 100;
+
+export const getCircleFeedResponseEditOutfitItemsItemBrandMax = 160;
+
+export const getCircleFeedResponseEditOutfitItemsItemNameMax = 240;
+
+export const getCircleFeedResponseEditOutfitItemsItemLinkMax = 1024;
+
+
+
+export const GetCircleFeedResponseItem = zod.object({
+  "creatorUsername": zod.string(),
+  "creatorName": zod.string(),
+  "creatorVerified": zod.boolean(),
+  "edit": zod.object({
+  "id": zod.string(),
+  "category": zod.string(),
+  "title": zod.string(),
+  "titleAr": zod.string(),
+  "caption": zod.string(),
+  "captionAr": zod.string(),
+  "location": zod.string(),
+  "locationAr": zod.string(),
+  "altText": zod.string(),
+  "access": zod.enum(['public', 'locked']),
+  "status": zod.enum(['draft', 'published', 'archived']),
+  "image": zod.string().nullish(),
+  "crop": zod.object({
+  "aspect": zod.enum(['square', 'portrait', 'story']),
+  "zoom": zod.number().min(getCircleFeedResponseEditCropOneZoomMin).max(getCircleFeedResponseEditCropOneZoomMax),
+  "x": zod.number().min(getCircleFeedResponseEditCropOneXMin).max(getCircleFeedResponseEditCropOneXMax),
+  "y": zod.number().min(getCircleFeedResponseEditCropOneYMin).max(getCircleFeedResponseEditCropOneYMax),
+  "rotation": zod.number().min(getCircleFeedResponseEditCropOneRotationMin).max(getCircleFeedResponseEditCropOneRotationMax),
+  "sourceWidth": zod.number().min(1).max(getCircleFeedResponseEditCropOneSourceWidthMax),
+  "sourceHeight": zod.number().min(1).max(getCircleFeedResponseEditCropOneSourceHeightMax),
+  "outputWidth": zod.number(),
+  "outputHeight": zod.number()
+}).and(zod.union([zod.object({
+  "aspect": zod.enum(['portrait']).optional(),
+  "outputWidth": zod.literal(1080).optional(),
+  "outputHeight": zod.literal(1350).optional()
+}),zod.object({
+  "aspect": zod.enum(['square']).optional(),
+  "outputWidth": zod.literal(1080).optional(),
+  "outputHeight": zod.literal(1080).optional()
+}),zod.object({
+  "aspect": zod.enum(['story']).optional(),
+  "outputWidth": zod.literal(1080).optional(),
+  "outputHeight": zod.literal(1920).optional()
+})])).optional(),
+  "outfitItems": zod.array(zod.object({
+  "type": zod.string().max(getCircleFeedResponseEditOutfitItemsItemTypeMax),
+  "brand": zod.string().max(getCircleFeedResponseEditOutfitItemsItemBrandMax),
+  "name": zod.string().max(getCircleFeedResponseEditOutfitItemsItemNameMax),
+  "link": zod.string().max(getCircleFeedResponseEditOutfitItemsItemLinkMax)
+})).optional(),
+  "showOutfitDetails": zod.boolean().optional(),
+  "placeName": zod.string().nullish(),
+  "locationLabel": zod.string().nullish(),
+  "mapsUrl": zod.string().nullish(),
+  "tasteRating": zod.number().nullish(),
+  "creatorReview": zod.string().nullish(),
+  "tags": zod.array(zod.string()).optional(),
+  "collectionIds": zod.array(zod.string()),
+  "publishedAt": zod.string().optional()
+})
+})
+export const GetCircleFeedResponse = zod.array(GetCircleFeedResponseItem)
+
+

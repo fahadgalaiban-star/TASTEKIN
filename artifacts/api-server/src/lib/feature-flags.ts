@@ -43,6 +43,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "KIN: the central nav entry point for natural-language Looks/Travel requests. KIN Looks analyzes a new photo, an owned My Things item's real image, or text alone via Claude with live web search, returning signature/safe/bold styling options. KIN Travel combines real Google Places/Routes data with a grounded Claude answer into a day-by-day itinerary. A member may explicitly save a recommendation or build a trip; everything else (the search itself) is never persisted. Gated by a durable per-user daily quota on every attempted Claude request (kin_search_usage), independent of this flag.",
     defaultEnabled: false,
   },
+  {
+    key: "my_circle",
+    description: "Private Circle of verified creators and their published edits.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];

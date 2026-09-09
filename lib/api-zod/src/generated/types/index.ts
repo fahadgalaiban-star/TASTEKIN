@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './circleEdit';
+export * from './circleEditAccess';
+export * from './circleEditStatus';
+export * from './circleFeedItem';
+export * from './circleMember';
+export * from './circleMemberStatus';
 export * from './collection';
 export * from './collectionAccess';
 export * from './conversation';

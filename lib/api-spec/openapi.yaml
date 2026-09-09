@@ -22,6 +22,8 @@ tags:
     description: Private taste preferences and transparent creator matching
   - name: storage
     description: Protected creator media storage
+  - name: my-circle
+    description: Private verified creator circle
 paths:
   /healthz:
     get:
@@ -529,6 +531,67 @@ paths:
           description: Invalid private media paths
         "403":
           description: Creator owner preview required
+  /circle/members:
+    get:
+      operationId: listCircleMembers
+      tags: [my-circle]
+      responses:
+        "200":
+          description: Active verified circle members
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CircleMember" }
+        "401": { description: Authentication required }
+  /circle/members/{targetId}:
+    get:
+      operationId: getCircleMemberStatus
+      tags: [my-circle]
+      parameters:
+        - $ref: "#/components/parameters/CircleTargetId"
+      responses:
+        "200":
+          description: Circle membership status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircleMemberStatus" }
+        "401": { description: Authentication required }
+    put:
+      operationId: addCircleMember
+      tags: [my-circle]
+      parameters:
+        - $ref: "#/components/parameters/CircleTargetId"
+      responses:
+        "200":
+          description: Circle membership status
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CircleMemberStatus" }
+        "401": { description: Authentication required }
+        "403": { description: Creator is not eligible or is the owner }
+        "404": { description: Creator not found }
+    delete:
+      operationId: removeCircleMember
+      tags: [my-circle]
+      parameters:
+        - $ref: "#/components/parameters/CircleTargetId"
+      responses:
+        "204": { description: Circle membership removed }
+        "401": { description: Authentication required }
+  /circle/feed:
+    get:
+      operationId: getCircleFeed
+      tags: [my-circle]
+      responses:
+        "200":
+          description: Private public-safe circle feed
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CircleFeedItem" }
+        "401": { description: Authentication required }
 components:
   securitySchemes:
     SessionCookie:
@@ -546,6 +609,11 @@ components:
       name: conversationId
       required: true
       schema: { type: string, minLength: 1, maxLength: 100 }
+    CircleTargetId:
+      in: path
+      name: targetId
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 160 }
   schemas:
     EditEngagementInput:
       type: object
@@ -715,6 +783,57 @@ components:
           items: { type: string }
         saved: { type: boolean }
         sponsored: { type: boolean }
+        publishedAt: { type: string }
+    CircleMember:
+      type: object
+      required: [creatorId, username, displayName, avatar, verified, addedAt]
+      properties:
+        creatorId: { type: string }
+        username: { type: string }
+        displayName: { type: string }
+        avatar: { type: string }
+        verified: { type: boolean }
+        addedAt: { type: string, format: date-time }
+    CircleMemberStatus:
+      type: object
+      required: [creatorId, active]
+      properties:
+        creatorId: { type: string }
+        active: { type: boolean }
+    CircleFeedItem:
+      type: object
+      required: [creatorUsername, creatorName, creatorVerified, edit]
+      properties:
+        creatorUsername: { type: string }
+        creatorName: { type: string }
+        creatorVerified: { type: boolean }
+        edit: { $ref: "#/components/schemas/CircleEdit" }
+    CircleEdit:
+      type: object
+      required: [id, category, title, titleAr, caption, captionAr, location, locationAr, altText, access, status, collectionIds]
+      properties:
+        id: { type: string }
+        category: { type: string }
+        title: { type: string }
+        titleAr: { type: string }
+        caption: { type: string }
+        captionAr: { type: string }
+        location: { type: string }
+        locationAr: { type: string }
+        altText: { type: string }
+        access: { type: string, enum: [public, locked] }
+        status: { type: string, enum: [draft, published, archived] }
+        image: { type: ["string", "null"] }
+        crop: { $ref: "#/components/schemas/CreatorCrop" }
+        outfitItems: { type: array, items: { $ref: "#/components/schemas/CreatorOutfitItem" } }
+        showOutfitDetails: { type: boolean }
+        placeName: { type: ["string", "null"] }
+        locationLabel: { type: ["string", "null"] }
+        mapsUrl: { type: ["string", "null"] }
+        tasteRating: { type: ["number", "null"] }
+        creatorReview: { type: ["string", "null"] }
+        tags: { type: array, items: { type: string } }
+        collectionIds: { type: array, items: { type: string } }
         publishedAt: { type: string }
     Collection:
       type: object
