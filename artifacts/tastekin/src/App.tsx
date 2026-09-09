@@ -41,8 +41,8 @@ type ImageMetadata = { name: string; size: number; contentType: string };
 
 const CircleSparkleIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" className={className} style={style}>
-    <path d="M20.5 13a8.5 8.5 0 1 1-8.5-8.5c1.8 0 3.5.5 4.9 1.4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
-    <path d="M18 3 Q 18 6 21 6 Q 18 6 18 9 Q 18 6 15 6 Q 18 6 18 3 Z" fill="currentColor"/>
+    <path d="M17.8 5.7a8.5 8.5 0 1 0 0 12.6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+    <path d="M19 6.4c.2 1.2.9 1.9 2.1 2.1-1.2.2-1.9.9-2.1 2.1-.2-1.2-.9-1.9-2.1-2.1 1.2-.2 1.9-.9 2.1-2.1Z" fill="currentColor"/>
   </svg>
 );
 
@@ -312,7 +312,6 @@ function TastekinApp() {
   const editReturnScreenRef = useRef<Screen>('home');
   const [exploreCategory, setExploreCategory] = useState<Category>('All');
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
-  const [circleFilterCreator, setCircleFilterCreator] = useState<string | null>(null);
   useEffect(() => {
     if (!myCircleEnabled && homeFeedTab === 'my-circle') setHomeFeedTab('for-you');
   }, [homeFeedTab, myCircleEnabled]);
@@ -672,19 +671,12 @@ function TastekinApp() {
   }), [circleFeedItems, circleMembers]);
   const circleLoading = circleMembersLoading || circleFeedLoading;
   const circleError = circleMembersError || circleFeedError;
-  useEffect(() => {
-    if (circleFilterCreator && !circleMembers.some((member) => member.username === circleFilterCreator)) {
-      setCircleFilterCreator(null);
-    }
-  }, [circleFilterCreator, circleMembers]);
 
   const homeFeed = useMemo(() => {
     if (homeFeedTab === 'following') return publicFeedEdits.filter((item) => item.following);
-    if (myCircleEnabled && homeFeedTab === 'my-circle') {
-      return circleFilterCreator ? circleFeedEdits.filter(edit => edit.creatorUsername === circleFilterCreator) : circleFeedEdits;
-    }
+    if (myCircleEnabled && homeFeedTab === 'my-circle') return circleFeedEdits;
     return publicFeedEdits.length ? publicFeedEdits : published;
-  }, [homeFeedTab, publicFeedEdits, published, circleFeedEdits, myCircleEnabled, circleFilterCreator]);
+  }, [homeFeedTab, publicFeedEdits, published, circleFeedEdits, myCircleEnabled]);
   const selectedEdit = [...circleFeedEdits, ...creatorEdits, ...publicCreatorEdits, ...publicFeedEdits]
     .find((item) => item.id === selectedEditId && (!item.creatorUsername || item.creatorUsername === selectedCreatorUsername))
     || published[0]
@@ -1003,14 +995,6 @@ function TastekinApp() {
                 <span>{member.displayName}</span>
               </button>
             ))}
-          </div>
-          <div className="circle-filter">
-            <select aria-label={ar ? 'تصفية المبدعين' : 'Filter creators'} value={circleFilterCreator || ''} onChange={(e) => setCircleFilterCreator(e.target.value || null)}>
-              <option value="">{ar ? 'أحدث التعديلات' : 'Latest'}</option>
-              {circleMembers.map((member) => (
-                <option key={member.creatorId} value={member.username}>{member.displayName}</option>
-              ))}
-            </select>
           </div>
         </>
       )}
@@ -3883,7 +3867,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
 
     {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
     {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
-    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button className="approved-button" onClick={onFollow} disabled={visitorPreview}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{myCircleEnabled && !owner && profile.verified && <button data-testid="profile-circle-action" className="approved-button profile-circle-button" onClick={onToggleCircle} disabled={circleBusy}><CircleSparkleIcon />{inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
+    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{myCircleEnabled && !owner && profile.verified && <button data-testid="profile-circle-action" className={`approved-button profile-circle-button ${inCircle ? 'active' : ''}`} onClick={onToggleCircle} disabled={circleBusy} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <CircleSparkleIcon className="circle-orbit-icon" />}{inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}</button>}{onMessage && <button className="profile-visitor-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'} title={ar ? 'مراسلة' : 'Message'}><MessageCircle size={19} /></button>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
