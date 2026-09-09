@@ -6,7 +6,6 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { CreatorCollectionAccess } from './creatorCollectionAccess';
-import type { CreatorCollectionUploadsItem } from './creatorCollectionUploadsItem';
 
 export interface CreatorCollection {
   /**
@@ -23,7 +22,10 @@ export interface CreatorCollection {
   /** @maxLength 2000 */
   descriptionAr: string;
   access: CreatorCollectionAccess;
-  /** @maxLength 120 */
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
   coverEditId: string;
   /**
      * @maxItems 100
@@ -31,19 +33,4 @@ export interface CreatorCollection {
      * @items.maxLength 120
      */
   editIds: string[];
-  /** @maxLength 2000 */
-  coverImage?: string;
-  /**
-     * @maxLength 2000
-     * @nullable
-     */
-  coverImageObjectPath?: string | null;
-  /** @maxItems 60 */
-  uploads?: CreatorCollectionUploadsItem[];
-  /**
-     * @maxItems 260
-     * @items.minLength 1
-     * @items.maxLength 200
-     */
-  itemOrder?: string[];
 }

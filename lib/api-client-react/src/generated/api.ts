@@ -155,6 +155,13 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetFeedUrl = () => {
 
 
@@ -225,6 +232,13 @@ export function useGetFeed<TData = Awaited<ReturnType<typeof getFeed>>, TError =
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getListCreatorsUrl = (params?: ListCreatorsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -296,6 +310,13 @@ export function useListCreators<TData = Awaited<ReturnType<typeof listCreators>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetCreatorUrl = (username: string,) => {
 
 
@@ -360,6 +381,13 @@ export function useGetCreator<TData = Awaited<ReturnType<typeof getCreator>>, TE
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getExploreUrl = (params?: ExploreParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -431,6 +459,13 @@ export function useExplore<TData = Awaited<ReturnType<typeof explore>>, TError =
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetTasteCatalogUrl = () => {
 
 
@@ -501,6 +536,13 @@ export function useGetTasteCatalog<TData = Awaited<ReturnType<typeof getTasteCat
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetTastePreferencesUrl = () => {
 
 

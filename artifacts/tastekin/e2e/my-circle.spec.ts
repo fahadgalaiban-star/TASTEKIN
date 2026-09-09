@@ -21,7 +21,7 @@ const edit = (id: string, access: 'public' | 'locked') => ({
   collectionIds: [],
 });
 
-async function session(page: Page, authenticated: boolean, language: 'en' | 'ar' = 'en', owner = false) {
+async function session(page: Page, authenticated: boolean, language: 'en' | 'ar' = 'en', owner = false, myCircle = true) {
   await page.route('**/api/me', async (route) => route.fulfill({
     contentType: 'application/json',
     body: JSON.stringify(authenticated ? {
@@ -29,11 +29,11 @@ async function session(page: Page, authenticated: boolean, language: 'en' | 'ar'
       creator: owner ? { id: 'owner', handle: 'owner', displayName: 'Owner', verified: true, ownsWorkspace: true } : null,
       isAdmin: false, language, notifyPush: true, notifyEmail: true, subscribed: false,
       supportEmail: null, needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false,
-      featureFlags: {},
+      featureFlags: { my_circle: myCircle },
     } : {
       user: null, role: 'consumer', creator: null, isAdmin: false, language: null,
       notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null,
-      needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: {},
+      needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: { my_circle: myCircle },
     }),
   }));
 }
@@ -94,7 +94,9 @@ test('authenticated Home exposes My Circle, renders protected feed safely, and s
   await page.goto('/');
   await expect(page.getByTestId('primary-navigation').getByRole('button')).toHaveCount(5);
   await expect(page.getByTestId('home-tab-my-circle')).toBeVisible();
-  await page.getByTestId('home-tab-my-circle').click();
+  await page.getByTestId('nav-you').click();
+  await expect(page.getByTestId('open-my-circle')).toBeVisible();
+  await page.getByTestId('open-my-circle').click();
   await expect(page.getByTestId('edit-title-circle-public').first()).toBeVisible();
   await expect(page.getByTestId('edit-title-circle-locked')).toBeVisible();
   await expect(page.getByText('/objects/private-hotel-source')).toHaveCount(0);
@@ -105,6 +107,24 @@ test('authenticated Home exposes My Circle, renders protected feed safely, and s
   await expect(page.getByTestId('edit-title-circle-public')).toHaveCount(1);
   await page.getByTestId('edit-title-circle-public').click();
   await expect(page.getByRole('heading', { name: 'Layla owns this duplicate edit ID.' })).toBeVisible();
+});
+
+test('My Circle OFF hides Home, You, and verified profile actions without Circle requests', async ({ page }) => {
+  await session(page, true, 'en', false, false);
+  await discovery(page, true);
+  let circleRequests = 0;
+  await page.route('**/api/circle/**', async (route) => {
+    circleRequests += 1;
+    await route.abort();
+  });
+  await page.goto('/');
+  await expect(page.getByTestId('home-tab-my-circle')).toHaveCount(0);
+  await page.getByTestId('nav-you').click();
+  await expect(page.getByTestId('open-my-circle')).toHaveCount(0);
+  await page.getByTestId('nav-home').click();
+  await openVisitor(page);
+  await expect(page.getByTestId('profile-circle-action')).toHaveCount(0);
+  expect(circleRequests).toBe(0);
 });
 
 test('empty Circle is localized and failed Circle feed can retry', async ({ page }) => {

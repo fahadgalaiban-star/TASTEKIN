@@ -6,6 +6,7 @@ import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
 import { creatorByUsername } from "../lib/creator-account";
 import { circleAddDecision, circleFeedVisible, sanitizeCircleEdit } from "../lib/circle-policy";
 import { addCircleMember, createDrizzleCircleRepository, removeCircleMember } from "../lib/circle-service";
+import { isFeatureEnabled } from "../lib/feature-flags";
 
 const router: IRouter = Router();
 const circleRepository = createDrizzleCircleRepository(db, { memberships: myCircleMemberships, follows: creatorFollows });
@@ -50,8 +51,18 @@ async function requireUser(req: import("express").Request, res: import("express"
   return req.user!;
 }
 
-router.get("/circle/members", async (req, res): Promise<void> => {
+async function requireCircle(req: import("express").Request, res: import("express").Response) {
   const user = await requireUser(req, res);
+  if (!user) return null;
+  if (!(await isFeatureEnabled("my_circle"))) {
+    res.status(403).json({ error: "My Circle is not available right now" });
+    return null;
+  }
+  return user;
+}
+
+router.get("/circle/members", async (req, res): Promise<void> => {
+  const user = await requireCircle(req, res);
   if (!user) return;
   const rows = await db.select({ membership: myCircleMemberships, workspace: creatorWorkspaces })
     .from(myCircleMemberships)
@@ -68,7 +79,7 @@ router.get("/circle/members", async (req, res): Promise<void> => {
 });
 
 router.get("/circle/members/:targetId", async (req, res): Promise<void> => {
-  const user = await requireUser(req, res);
+  const user = await requireCircle(req, res);
   if (!user) return;
   const target = await creatorByUsername(String(req.params.targetId));
   const creatorId = target?.creatorId;
@@ -83,7 +94,7 @@ router.get("/circle/members/:targetId", async (req, res): Promise<void> => {
 });
 
 router.put("/circle/members/:targetId", async (req, res): Promise<void> => {
-  const user = await requireUser(req, res);
+  const user = await requireCircle(req, res);
   if (!user) return;
   const target = await creatorByUsername(String(req.params.targetId));
   const creatorId = target?.creatorId;
@@ -99,7 +110,7 @@ router.put("/circle/members/:targetId", async (req, res): Promise<void> => {
 });
 
 router.delete("/circle/members/:targetId", async (req, res): Promise<void> => {
-  const user = await requireUser(req, res);
+  const user = await requireCircle(req, res);
   if (!user) return;
   const target = await creatorByUsername(String(req.params.targetId));
   if (target) await removeCircleMember(circleRepository, user.id, target.creatorId);
@@ -107,7 +118,7 @@ router.delete("/circle/members/:targetId", async (req, res): Promise<void> => {
 });
 
 router.get("/circle/feed", async (req, res): Promise<void> => {
-  const user = await requireUser(req, res);
+  const user = await requireCircle(req, res);
   if (!user) return;
   const memberships = await db.select({ creatorId: myCircleMemberships.creatorId }).from(myCircleMemberships)
     .innerJoin(creatorWorkspaces, eq(myCircleMemberships.creatorId, creatorWorkspaces.creatorId))

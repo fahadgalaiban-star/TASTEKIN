@@ -997,7 +997,7 @@ components:
           type: array
           maxItems: 12
           items: { type: string, minLength: 1, maxLength: 60 }
-        avatar: { type: string, maxLength: 1024 }
+        avatar: { type: string, minLength: 1, maxLength: 1024 }
         avatarObjectPath: { type: ["string", "null"], maxLength: 1024 }
         age: { type: ["number", "null"], format: int32, minimum: 13, maximum: 120 }
         dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
@@ -1105,28 +1105,11 @@ components:
         description: { type: string, maxLength: 2000 }
         descriptionAr: { type: string, maxLength: 2000 }
         access: { type: string, enum: [public, locked] }
-        coverEditId: { type: string, maxLength: 120 }
+        coverEditId: { type: string, minLength: 1, maxLength: 120 }
         editIds:
           type: array
           maxItems: 100
           items: { type: string, minLength: 1, maxLength: 120 }
-        coverImage: { type: string, maxLength: 2000 }
-        coverImageObjectPath: { type: ["string", "null"], maxLength: 2000 }
-        uploads:
-          type: array
-          maxItems: 60
-          items:
-            type: object
-            required: [id, type, image]
-            properties:
-              id: { type: string, minLength: 1, maxLength: 200 }
-              type: { type: string, enum: [photo] }
-              image: { type: string, maxLength: 2000 }
-              imageObjectPath: { type: ["string", "null"], maxLength: 2000 }
-        itemOrder:
-          type: array
-          maxItems: 260
-          items: { type: string, minLength: 1, maxLength: 200 }
     CreatorWorkspaceInput:
       type: object
       required: [edits, collections]
