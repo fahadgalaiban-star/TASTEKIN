@@ -1141,7 +1141,7 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
                 <ChevronRight />
               </div>
               {creator.matchReasons && creator.matchReasons.length > 0 && (
-                <div style={{ marginTop: 12, padding: '10px 12px', background: '#eef7f3', borderRadius: 12, fontSize: 11, color: '#296657' }}>
+                <div className="approved-success-note" style={{ marginTop: 12, padding: '10px 12px', borderRadius: 12, fontSize: 11 }}>
                   {creator.matchReasons.map((r, i) => <p key={i} style={{ margin: '0 0 4px', lineHeight: 1.4 }}>{r}</p>)}
                 </div>
               )}
@@ -2035,7 +2035,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
       <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
       <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       {mode === 'signup' && <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>}
-      {error && <p className="settings-note" role="alert" style={{ color: '#b3261e' }}>{error}</p>}
+      {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : mode === 'signup' ? t('Create account', 'إنشاء حساب') : t('Sign in', 'تسجيل الدخول')}</button>
       <div className="auth-links">
         {mode === 'signin' ? (
@@ -2049,7 +2049,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     {mode === 'forgot' && <form onSubmit={(event) => void submitForgotPassword(event)}>
       <p className="settings-note">{t('Enter your email and we’ll send you a link to reset your password.', 'أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.')}</p>
       <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-      {error && <p className="settings-note" role="alert" style={{ color: '#b3261e' }}>{error}</p>}
+      {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : t('Send reset link', 'إرسال رابط إعادة التعيين')}</button>
       <div className="auth-links"><button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); setNotice(''); }}>{t('Back to sign in', 'العودة لتسجيل الدخول')}</button></div>
@@ -2057,7 +2057,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     {mode === 'reset' && <form onSubmit={(event) => void submitReset(event)}>
       <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>
-      {error && <p className="settings-note" role="alert" style={{ color: '#b3261e' }}>{error}</p>}
+      {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : t('Reset password', 'إعادة تعيين كلمة المرور')}</button>
     </form>}
