@@ -108,6 +108,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .composer-actions .approved-button.primary:disabled { opacity:1; background:var(--tk-wine); color:#fff; cursor:wait; }
 .approved-actions.profile-visitor-actions { grid-template-columns:1fr 1.35fr 48px 48px; }
 .profile-insights-button { min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.profile-circle-button { color:var(--tk-wine); }
+.profile-circle-button svg { width:20px; height:20px; flex:0 0 20px; }
 .profile-visitor-button { width:48px; min-height:46px; display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
 .profile-visitor-button:hover { background:#f1e7e5; }
 .profile-featured { margin:0 0 18px; }

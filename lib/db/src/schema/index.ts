@@ -8,4 +8,5 @@ export * from "./feature-flags";
 export * from "./kin";
 export * from "./moderation";
 export * from "./mutes";
+export * from "./my-circle";
 export * from "./taste-preferences";

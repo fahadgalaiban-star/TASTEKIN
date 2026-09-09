@@ -6,6 +6,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
+export * from './circleEdit';
+export * from './circleEditAccess';
+export * from './circleEditStatus';
+export * from './circleFeedItem';
+export * from './circleMember';
+export * from './circleMemberStatus';
 export * from './collection';
 export * from './collectionAccess';
 export * from './conversation';
@@ -16,6 +22,8 @@ export * from './conversationPreview';
 export * from './creator';
 export * from './creatorCollection';
 export * from './creatorCollectionAccess';
+export * from './creatorCollectionUploadsItem';
+export * from './creatorCollectionUploadsItemType';
 export * from './creatorCrop';
 export * from './creatorCropAspect';
 export * from './creatorEdit';

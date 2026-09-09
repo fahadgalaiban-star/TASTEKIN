@@ -15,6 +15,7 @@ import featureFlagsRouter from "./feature-flags";
 import analyticsRouter from "./analytics";
 import closetItemsRouter from "./closet-items";
 import kinRouter from "./kin";
+import circleRouter from "./circle";
 
 const router: IRouter = Router();
 
@@ -34,5 +35,6 @@ router.use(featureFlagsRouter);
 router.use(analyticsRouter);
 router.use(closetItemsRouter);
 router.use(kinRouter);
+router.use(circleRouter);
 
 export default router;

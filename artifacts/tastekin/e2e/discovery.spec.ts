@@ -150,7 +150,8 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
 
   await expect(page.getByTestId('home-tab-for-you')).toHaveClass(/active/);
   await expect(page.getByTestId('home-tab-following')).toBeVisible();
-  await expect(page.getByTestId('home-tab-subscribed')).toBeVisible();
+   await expect(page.getByTestId('home-tab-my-circle')).toBeVisible();
+   await expect(page.getByTestId('home-tab-subscribed')).toHaveCount(0);
   await expect(page.getByTestId('category-All')).toHaveCount(0);
   await page.getByTestId('home-tab-following').click();
   await expect(page.getByText('No edits from people you follow yet.')).toBeVisible();
