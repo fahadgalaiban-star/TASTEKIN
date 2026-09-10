@@ -2,12 +2,14 @@ import {
   CLOSET_CONFIRMATION_STATUSES,
   CLOSET_ITEM_TYPES,
   CLOSET_OCCASIONS,
+  CLOSET_OWNERSHIP_STATUSES,
   CLOSET_PRIMARY_COLORS,
   CLOSET_SEASONS,
   CLOSET_STYLES,
   type ClosetConfirmationStatus,
   type ClosetItemType,
   type ClosetOccasion,
+  type ClosetOwnershipStatus,
   type ClosetPrimaryColor,
   type ClosetSeason,
   type ClosetStyle,
@@ -19,6 +21,7 @@ const STYLES = new Set<string>(CLOSET_STYLES);
 const OCCASIONS = new Set<string>(CLOSET_OCCASIONS);
 const SEASONS = new Set<string>(CLOSET_SEASONS);
 const CONFIRMATION_STATUSES = new Set<string>(CLOSET_CONFIRMATION_STATUSES);
+const OWNERSHIP_STATUSES = new Set<string>(CLOSET_OWNERSHIP_STATUSES);
 
 export function isClosetItemType(value: unknown): value is ClosetItemType {
   return typeof value === "string" && ITEM_TYPES.has(value);
@@ -37,6 +40,9 @@ export function isClosetSeason(value: unknown): value is ClosetSeason {
 }
 export function isClosetConfirmationStatus(value: unknown): value is ClosetConfirmationStatus {
   return typeof value === "string" && CONFIRMATION_STATUSES.has(value);
+}
+export function isClosetOwnershipStatus(value: unknown): value is ClosetOwnershipStatus {
+  return typeof value === "string" && OWNERSHIP_STATUSES.has(value);
 }
 
 const MAX_BRAND_LENGTH = 100;

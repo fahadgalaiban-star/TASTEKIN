@@ -454,6 +454,77 @@ async function main() {
       assert.equal(updated.confirmationStatus, "confirmed");
     });
 
+    // --- 5b. ownershipStatus (My Things organization: My Wardrobe / Considering) ---
+    await check("a pre-existing row inserted without an explicit ownershipStatus behaves as owned (additive migration default)", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const [upload] = await db.select().from(closetMediaUploads).where(eq(closetMediaUploads.id, uploadId));
+      assert.ok(upload?.imageObjectKey);
+      const [inserted] = await db.insert(closetItems).values({
+        ownerUserId: userAAccount.user.id,
+        imageObjectKey: upload!.imageObjectKey!,
+        itemType: "shirt",
+        primaryColor: "black",
+      }).returning();
+      await db.update(closetMediaUploads).set({ state: "attached", closetItemId: inserted.id }).where(eq(closetMediaUploads.id, uploadId));
+      const fetched = await (await userA.getItem(inserted.id)).json() as { ownershipStatus: string };
+      assert.equal(fetched.ownershipStatus, "owned", "a row with no explicit ownershipStatus must serialize as owned");
+    });
+    await check("POST /closet-items with no ownershipStatus in the body defaults to owned", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black" });
+      await expectStatus(response, 201);
+      const item = await response.json() as { ownershipStatus: string };
+      assert.equal(item.ownershipStatus, "owned");
+    });
+    await check("POST /closet-items with ownershipStatus: considering persists and round-trips as considering", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", ownershipStatus: "considering" });
+      await expectStatus(response, 201);
+      const item = await response.json() as { id: string; ownershipStatus: string };
+      assert.equal(item.ownershipStatus, "considering");
+      const fetched = await (await userA.getItem(item.id)).json() as { ownershipStatus: string };
+      assert.equal(fetched.ownershipStatus, "considering");
+    });
+    await check("create rejects an invalid ownershipStatus with 400", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const response = await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", ownershipStatus: "wishlist" });
+      assert.equal(response.status, 400);
+    });
+    await check("update rejects an invalid ownershipStatus with 400, leaving the row's ownershipStatus unchanged", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const created = await (await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", ownershipStatus: "considering" })).json() as { id: string };
+      const response = await userA.updateItem(created.id, { itemType: "shirt", primaryColor: "black", ownershipStatus: "wishlist" });
+      assert.equal(response.status, 400);
+      const stillConsidering = await (await userA.getItem(created.id)).json() as { ownershipStatus: string };
+      assert.equal(stillConsidering.ownershipStatus, "considering");
+    });
+    await check("moving a considering item to owned via PUT persists, and never creates a duplicate item", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const created = await (await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", ownershipStatus: "considering" })).json() as { id: string };
+      const before = (await (await userA.listItems()).json() as { items: unknown[] }).items.length;
+      const response = await userA.updateItem(created.id, { itemType: "shirt", primaryColor: "black", ownershipStatus: "owned" });
+      await expectStatus(response, 200);
+      const updated = await response.json() as { ownershipStatus: string };
+      assert.equal(updated.ownershipStatus, "owned");
+      const after = (await (await userA.listItems()).json() as { items: unknown[] }).items.length;
+      assert.equal(after, before, "moving an item to My Wardrobe must never create a duplicate item");
+    });
+    await check("cross-user: B cannot move/update A's ownershipStatus", async () => {
+      const uploadResponse = await userA.uploadMedia(await validJpeg());
+      const { uploadId } = await uploadResponse.json() as { uploadId: string };
+      const created = await (await userA.createItem(uploadId, { itemType: "shirt", primaryColor: "black", ownershipStatus: "considering" })).json() as { id: string };
+      const response = await userB.updateItem(created.id, { itemType: "shirt", primaryColor: "black", ownershipStatus: "owned" });
+      assert.equal(response.status, 404);
+      const stillA = await (await userA.getItem(created.id)).json() as { ownershipStatus: string };
+      assert.equal(stillA.ownershipStatus, "considering", "B's rejected attempt must not have changed A's row");
+    });
+
     // --- 6. cross-user denial (every case) ---
     await check("cross-user: B cannot list A's items", async () => {
       const payload = await (await userB.listItems()).json() as { items: Array<{ id: string }> };

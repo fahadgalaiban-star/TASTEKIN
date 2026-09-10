@@ -6,7 +6,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -2600,6 +2600,7 @@ type ClosetItem = {
   season: string | null;
   brand: string | null;
   confirmationStatus: 'confirmed' | 'pending_review';
+  ownershipStatus: 'owned' | 'considering';
   createdAt: string;
 };
 
@@ -3356,6 +3357,45 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   </section>;
 }
 
+type ClosetItemMenuStep = 'menu' | 'confirm-delete';
+
+/**
+ * Per-card overflow menu — modeled directly on ReportMenu's Drawer pattern
+ * so it needs zero new CSS. Delete keeps its confirmation step (now inside
+ * the drawer instead of inline on the card); the parent still owns the
+ * actual DELETE request, its error handling, and its media-cleanup notice.
+ */
+function ClosetItemMenu({ ar, deleting, canMove, onEdit, onMove, onDelete }: { ar: boolean; deleting: boolean; canMove: boolean; onEdit: () => void; onMove: () => void; onDelete: () => void }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<ClosetItemMenuStep>('menu');
+  const close = () => { setOpen(false); setStep('menu'); };
+
+  return <>
+    <button type="button" className="approved-icon report-trigger" data-testid="my-things-menu-trigger" aria-label={t('More options', 'مزيد من الخيارات')} onClick={() => setOpen(true)}><MoreVertical size={18} /></button>
+    <Drawer.Root open={open} onOpenChange={(next) => { setOpen(next); if (!next) setStep('menu'); }}>
+      <Drawer.Portal>
+        <Drawer.Overlay className="approved-drawer-overlay" />
+        <Drawer.Content className="approved-drawer-content report-drawer" aria-label={t('Item options', 'خيارات الغرض')}>
+          <div className="approved-drawer-handle" />
+          {step === 'menu' && <div className="report-menu">
+            {canMove && <button type="button" className="report-menu-item" data-testid="my-things-move" onClick={() => { close(); onMove(); }}><Check size={16} /> {t('Move to My Wardrobe', 'انقل إلى خزانتي')}</button>}
+            <button type="button" className="report-menu-item" data-testid="my-things-edit" onClick={() => { close(); onEdit(); }}><Pencil size={16} /> {t('Edit', 'تعديل')}</button>
+            <button type="button" className="report-menu-item report-menu-item-danger" data-testid="my-things-delete" onClick={() => setStep('confirm-delete')}><Trash2 size={16} /> {t('Delete', 'حذف')}</button>
+          </div>}
+          {step === 'confirm-delete' && <div className="report-menu">
+            <p className="settings-note">{t('Delete this item? This can’t be undone.', 'هل تريد حذف هذا الغرض؟ لا يمكن التراجع عن هذا الإجراء.')}</p>
+            <div className="admin-confirm-actions">
+              <button className="approved-button" onClick={() => setStep('menu')} disabled={deleting}>{t('Cancel', 'إلغاء')}</button>
+              <button className="approved-button primary" data-testid="my-things-confirm-delete" onClick={onDelete} disabled={deleting}>{deleting ? t('Removing…', 'جارٍ الإزالة…') : t('Delete', 'حذف')}</button>
+            </div>
+          </div>}
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
+  </>;
+}
+
 /**
  * My Things (KIN) — the signed-in user's private closet. Images are never
  * loaded via a stored object key; the browser is only ever given the
@@ -3368,7 +3408,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
   const [items, setItems] = useState<ClosetItem[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [tab, setTab] = useState<'wardrobe' | 'considering'>('wardrobe');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteNotice, setDeleteNotice] = useState('');
 
@@ -3397,7 +3437,6 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json().catch(() => null) as { physicalDeletion?: string } | null;
       setItems((current) => current.filter((item) => item.id !== id));
-      setConfirmDeleteId(null);
       setDeleteNotice(payload?.physicalDeletion === 'pending'
         ? t('Removed. Final cleanup is finishing in the background.', 'تمت الإزالة. التنظيف النهائي يجري في الخلفية.')
         : t('Removed.', 'تمت الإزالة.'));
@@ -3408,16 +3447,50 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
     }
   };
 
+  const moveToWardrobe = async (id: string) => {
+    const previous = items;
+    const target = items.find((item) => item.id === id);
+    if (!target) return;
+    setItems((current) => current.map((item) => item.id === id ? { ...item, ownershipStatus: 'owned' } : item));
+    try {
+      // PUT is a full replace (see EditClosetItemScreen), so every organized
+      // field is resent unchanged alongside the new ownershipStatus —
+      // confirmationStatus is omitted so it is left exactly as it was.
+      const response = await fetch(`/api/closet-items/${encodeURIComponent(id)}`, {
+        method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemType: target.itemType, primaryColor: target.primaryColor,
+          style: target.style, occasion: target.occasion, season: target.season, brand: target.brand,
+          ownershipStatus: 'owned',
+        }),
+      });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+    } catch (err) {
+      setItems(previous);
+      window.alert(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   if (!allowed) return <SimpleScreen kicker={t('You', 'أنت')} title={t('My Things', 'أغراضي')}><Empty text={t('Loading…', 'جارٍ التحميل…')} /></SimpleScreen>;
+
+  const wardrobeItems = items.filter((item) => item.ownershipStatus !== 'considering');
+  const consideringItems = items.filter((item) => item.ownershipStatus === 'considering');
+  const visibleItems = tab === 'wardrobe' ? wardrobeItems : consideringItems;
 
   return <SimpleScreen kicker={t('You', 'أنت')} title={t('My Things', 'أغراضي')}>
     <button data-testid="my-things-add" className="approved-button primary wide" style={{ marginBottom: 16 }} onClick={onAdd}><Plus size={16} /> {t('Add item', 'أضف غرضًا')}</button>
+    <div className="approved-segment" data-testid="my-things-tabs">
+      <button className={tab === 'wardrobe' ? 'selected' : ''} data-testid="my-things-tab-wardrobe" onClick={() => setTab('wardrobe')}>{t('My Wardrobe', 'خزانتي')}</button>
+      <button className={tab === 'considering' ? 'selected' : ''} data-testid="my-things-tab-considering" onClick={() => setTab('considering')}>{t('Considering', 'أفكر بشرائها')}</button>
+    </div>
     {deleteNotice && <p className="settings-note">{deleteNotice}</p>}
     {state === 'loading' && <Empty text={t('Loading…', 'جارٍ التحميل…')} />}
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{t('Try again', 'حاول مجددًا')}</button></div>}
-    {state === 'ready' && !items.length && <Empty text={t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')} />}
-    {state === 'ready' && items.length > 0 && <div className="approved-grid profile-edits-grid" data-testid="my-things-grid">
-      {items.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
+    {state === 'ready' && !visibleItems.length && <Empty text={tab === 'wardrobe'
+      ? t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')
+      : t('Nothing you’re considering yet. Save a piece here while you decide.', 'لا يوجد شيء تفكر بشرائه بعد. احفظ قطعة هنا أثناء اتخاذ القرار.')} />}
+    {state === 'ready' && visibleItems.length > 0 && <div className="approved-grid profile-edits-grid" data-testid="my-things-grid">
+      {visibleItems.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
         <button type="button" data-testid="my-things-open" aria-label={t('Edit item', 'تعديل الغرض')} onClick={() => onEdit(item)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
           <div className="profile-grid-media">
             <img src={`/api/closet-items/${item.id}/image`} alt="" />
@@ -3425,13 +3498,11 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
           </div>
           <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
         </button>
-        <div style={{ padding: '0 10px 10px' }}>
-          {confirmDeleteId === item.id ? <div className="admin-confirm-actions">
-            <button className="approved-button" onClick={() => setConfirmDeleteId(null)} disabled={deletingId === item.id}>{t('Cancel', 'إلغاء')}</button>
-            <button className="approved-button primary" data-testid="my-things-confirm-delete" onClick={() => void confirmedDelete(item.id)} disabled={deletingId === item.id}>{deletingId === item.id ? t('Removing…', 'جارٍ الإزالة…') : t('Delete', 'حذف')}</button>
-          </div> : <div className="admin-detail-actions">
-            <button className="approved-button" data-testid="my-things-delete" onClick={() => setConfirmDeleteId(item.id)}>{t('Delete', 'حذف')}</button>
-          </div>}
+        <div style={{ padding: '0 10px 10px', display: 'flex', justifyContent: 'flex-end' }}>
+          <ClosetItemMenu ar={ar} deleting={deletingId === item.id} canMove={item.ownershipStatus === 'considering'}
+            onEdit={() => onEdit(item)}
+            onMove={() => void moveToWardrobe(item.id)}
+            onDelete={() => void confirmedDelete(item.id)} />
         </div>
       </div>)}
     </div>}
@@ -3496,6 +3567,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
   const [occasion, setOccasion] = useState('');
   const [season, setSeason] = useState('');
   const [brand, setBrand] = useState('');
+  const [ownershipStatus, setOwnershipStatus] = useState<'owned' | 'considering'>('owned');
   const [phase, setPhase] = useState<ClosetSubmitPhase>('idle');
   const [uploadId, setUploadId] = useState<string | null>(null);
   const [itemId, setItemId] = useState<string | null>(null);
@@ -3606,6 +3678,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     occasion: occasion || undefined,
     season: season || undefined,
     brand: brand.trim() ? brand.trim().slice(0, CLOSET_MAX_BRAND_LENGTH) : undefined,
+    ownershipStatus,
   });
   const createClosetItem = async (forUploadId: string): Promise<string> => {
     const response = await fetch('/api/closet-items', {
@@ -3674,6 +3747,13 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
 
     <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={chooseItemType} disabled={fieldsLocked} />
     <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={choosePrimaryColor} disabled={fieldsLocked} />
+
+    <div className="form-field"><span>{t('Ownership', 'الملكية')}</span>
+      <div className="approved-segment" data-testid="my-things-ownership" style={{ marginTop: 8 }}>
+        <button type="button" className={ownershipStatus === 'owned' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-owned" onClick={() => setOwnershipStatus('owned')}>{t('I own this', 'أملك هذه القطعة')}</button>
+        <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => setOwnershipStatus('considering')}>{t('I’m considering it', 'أفكر بشرائها')}</button>
+      </div>
+    </div>
 
     <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
       <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={chooseStyle} disabled={fieldsLocked} />

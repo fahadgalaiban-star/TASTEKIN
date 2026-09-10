@@ -54,6 +54,16 @@ export type ClosetSeason = (typeof CLOSET_SEASONS)[number];
 export const CLOSET_CONFIRMATION_STATUSES = ["confirmed", "pending_review"] as const;
 export type ClosetConfirmationStatus = (typeof CLOSET_CONFIRMATION_STATUSES)[number];
 
+/**
+ * Purchase-ownership state — entirely separate from confirmationStatus
+ * (which is the AI-classification review/confidence gate and keeps its
+ * existing meaning unchanged). "owned" is the closet as it exists today
+ * for every pre-existing row; "considering" is a piece the member
+ * photographed or saved while still deciding whether to buy it.
+ */
+export const CLOSET_OWNERSHIP_STATUSES = ["owned", "considering"] as const;
+export type ClosetOwnershipStatus = (typeof CLOSET_OWNERSHIP_STATUSES)[number];
+
 export const closetItems = pgTable("closet_items", {
   id: uuid("id").primaryKey().defaultRandom(),
   ownerUserId: varchar("owner_user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
@@ -69,6 +79,7 @@ export const closetItems = pgTable("closet_items", {
   season: text("season"),
   brand: text("brand"),
   confirmationStatus: text("confirmation_status").notNull().default("pending_review"),
+  ownershipStatus: text("ownership_status").notNull().default("owned"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("closet_items_owner_user_id_idx").on(table.ownerUserId),

@@ -1,14 +1,14 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-type MeOptions = { authenticated?: boolean; myThings?: boolean; closetAnalysis?: boolean };
+type MeOptions = { authenticated?: boolean; myThings?: boolean; closetAnalysis?: boolean; language?: 'en' | 'ar' };
 
-function meBody({ authenticated = true, myThings = true, closetAnalysis = false }: MeOptions = {}) {
+function meBody({ authenticated = true, myThings = true, closetAnalysis = false, language = 'en' }: MeOptions = {}) {
   return JSON.stringify({
     user: authenticated ? { id: 'my-things-e2e-user', email: 'my-things-e2e@tastekin.test' } : null,
     role: 'consumer',
     creator: null,
     isAdmin: false,
-    language: 'en',
+    language,
     notifyPush: true,
     notifyEmail: true,
     subscribed: false,
@@ -35,6 +35,7 @@ const SAMPLE_ITEM = {
   season: null,
   brand: null,
   confirmationStatus: 'confirmed' as const,
+  ownershipStatus: 'owned' as const,
   createdAt: new Date().toISOString(),
 };
 
@@ -151,11 +152,13 @@ test('delete: 200 completed and 202 pending are both treated as removed', async 
   await expect(page.getByTestId('my-things-item')).toHaveCount(2);
 
   const cards = page.getByTestId('my-things-item');
-  await cards.nth(0).getByTestId('my-things-delete').click();
-  await cards.nth(0).getByTestId('my-things-confirm-delete').click();
+  await cards.nth(0).getByTestId('my-things-menu-trigger').click();
+  await page.getByTestId('my-things-delete').click();
+  await page.getByTestId('my-things-confirm-delete').click();
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByText('Removed.', { exact: true })).toBeVisible();
 
+  await page.getByTestId('my-things-menu-trigger').click();
   await page.getByTestId('my-things-delete').click();
   await page.getByTestId('my-things-confirm-delete').click();
   await expect(page.getByTestId('my-things-item')).toHaveCount(0);
@@ -350,6 +353,7 @@ const FULL_ITEM = {
   season: 'summer',
   brand: 'Acme',
   confirmationStatus: 'confirmed' as const,
+  ownershipStatus: 'owned' as const,
   createdAt: new Date().toISOString(),
 };
 
@@ -508,6 +512,7 @@ test('Edit Item: existing delete confirmation still works alongside the new open
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
 
+  await page.getByTestId('my-things-menu-trigger').click();
   await page.getByTestId('my-things-delete').click();
   await page.getByTestId('my-things-confirm-delete').click();
   await expect(page.getByTestId('my-things-item')).toHaveCount(0);
@@ -686,4 +691,208 @@ test('Add item analysis regression: a manual chip pick before a delayed analyze 
   await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Everyday', exact: true })).toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Summer', exact: true })).toHaveClass(/selected/);
+});
+
+// --- My Wardrobe / Considering organization ---------------------------------
+
+const OWNED_ITEM = { ...SAMPLE_ITEM, id: 'item-owned', itemType: 'shirt', primaryColor: 'blue', ownershipStatus: 'owned' as const };
+const CONSIDERING_ITEM = { ...SAMPLE_ITEM, id: 'item-considering', itemType: 'jacket', primaryColor: 'navy', ownershipStatus: 'considering' as const };
+
+test('My Wardrobe is selected by default and shows only owned items; Considering shows only considering items', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM, CONSIDERING_ITEM] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+
+  await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-tab-considering')).not.toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Shirt · Blue');
+
+  await page.getByTestId('my-things-tab-considering').click();
+  await expect(page.getByTestId('my-things-tab-considering')).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Jacket · Navy');
+
+  // Switching back to My Wardrobe still shows only the owned item — the
+  // selected tab persists correctly during normal interaction.
+  await page.getByTestId('my-things-tab-wardrobe').click();
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Shirt · Blue');
+});
+
+test('each tab has its own empty state', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await expect(page.getByText('Nothing added yet.', { exact: false })).toHaveCount(0);
+
+  await page.getByTestId('my-things-tab-considering').click();
+  await expect(page.getByText('Nothing you', { exact: false })).toBeVisible();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+});
+
+test('a considering item exposes Move to My Wardrobe in its overflow menu; an owned item does not', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-menu-trigger').click();
+  await expect(page.getByTestId('my-things-move')).toHaveCount(0);
+  await expect(page.getByTestId('my-things-edit')).toBeVisible();
+  await expect(page.getByTestId('my-things-delete')).toBeVisible();
+});
+
+test('Moving a Considering item to My Wardrobe persists via PUT, moves it immediately, and never creates a duplicate card', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  let putBody: Record<string, unknown> | null = null;
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CONSIDERING_ITEM] }) });
+  });
+  await page.route('**/api/closet-items/item-considering', async (route) => {
+    if (route.request().method() !== 'PUT') return;
+    putBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...CONSIDERING_ITEM, ownershipStatus: 'owned' }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-tab-considering').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+
+  await page.getByTestId('my-things-menu-trigger').click();
+  await page.getByTestId('my-things-move').click();
+
+  expect(putBody).not.toBeNull();
+  expect((putBody as Record<string, unknown>).ownershipStatus).toBe('owned');
+  // Gone from Considering immediately, no duplicate left behind.
+  await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+
+  await page.getByTestId('my-things-tab-wardrobe').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+});
+
+test('Delete remains fully functional through the overflow menu for a Considering item', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CONSIDERING_ITEM] }) });
+  });
+  await page.route('**/api/closet-items/item-considering', async (route) => {
+    if (route.request().method() === 'DELETE') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'removed', physicalDeletion: 'completed' }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-tab-considering').click();
+
+  await page.getByTestId('my-things-menu-trigger').click();
+  await page.getByTestId('my-things-delete').click();
+  await page.getByTestId('my-things-confirm-delete').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+});
+
+test('Add item: ownership choice defaults to "I own this" and a new item persists as owned', async ({ page }) => {
+  let createBody: Record<string, unknown> | null = null;
+  await gotoAddScreen(page);
+  await expect(page.getByTestId('my-things-ownership-owned')).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-ownership-considering')).not.toHaveClass(/selected/);
+
+  await page.route('**/api/closet-items/media', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) }); });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() !== 'POST') return;
+    createBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', confirmationStatus: 'pending_review' }) });
+  });
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', confirmationStatus: 'confirmed' }) });
+  });
+
+  await fillRequiredFields(page);
+  await page.getByTestId('my-things-submit').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+  expect((createBody as Record<string, unknown> | null)?.ownershipStatus).toBe('owned');
+});
+
+test('Add item: choosing "I\'m considering it" persists the new item as considering', async ({ page }) => {
+  let createBody: Record<string, unknown> | null = null;
+  await gotoAddScreen(page);
+  await page.route('**/api/closet-items/media', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) }); });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() !== 'POST') return;
+    createBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', ownershipStatus: 'considering', confirmationStatus: 'pending_review' }) });
+  });
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', ownershipStatus: 'considering', confirmationStatus: 'confirmed' }) });
+  });
+
+  await fillRequiredFields(page);
+  await page.getByTestId('my-things-ownership-considering').click();
+  await expect(page.getByTestId('my-things-ownership-considering')).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-ownership-owned')).not.toHaveClass(/selected/);
+  await page.getByTestId('my-things-submit').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+  expect((createBody as Record<string, unknown> | null)?.ownershipStatus).toBe('considering');
+});
+
+test('Arabic labels: tabs, ownership choice, and overflow menu render in Arabic with RTL', async ({ page }) => {
+  await mockMe(page, { myThings: true, language: 'ar' });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [CONSIDERING_ITEM] }) });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+
+  await expect(page.getByRole('heading', { name: 'أغراضي' })).toBeVisible();
+  await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveText('خزانتي');
+  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('أفكر بشرائها');
+
+  await page.getByTestId('my-things-tab-considering').click();
+  await page.getByTestId('my-things-menu-trigger').click();
+  await expect(page.getByTestId('my-things-move')).toHaveText('انقل إلى خزانتي');
+  await expect(page.getByTestId('my-things-edit')).toHaveText('تعديل');
+  await expect(page.getByTestId('my-things-delete')).toHaveText('حذف');
+});
+
+test('Arabic labels: Add item ownership choice', async ({ page }) => {
+  await mockMe(page, { myThings: true, language: 'ar' });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-add').click();
+
+  await expect(page.getByTestId('my-things-ownership-owned')).toHaveText('أملك هذه القطعة');
+  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('أفكر بشرائها');
+});
+
+test('390x844 mobile layout: My Things renders with no document-level horizontal overflow, in both tabs', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM, CONSIDERING_ITEM] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+
+  await page.getByTestId('my-things-tab-considering').click();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+
+  await page.getByTestId('my-things-menu-trigger').click();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
