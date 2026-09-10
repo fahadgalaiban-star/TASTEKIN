@@ -5,6 +5,7 @@ import express, { Router, type IRouter, type NextFunction, type Request, type Re
 import { isFeatureEnabled } from "../lib/feature-flags";
 import {
   isClosetConfirmationStatus,
+  isClosetOwnershipStatus,
   validateClosetItemFields,
 } from "../lib/closet-items";
 import {
@@ -212,6 +213,7 @@ function serializeClosetItem(item: SerializableClosetItem) {
     season: item.season,
     brand: item.brand,
     confirmationStatus: item.confirmationStatus,
+    ownershipStatus: item.ownershipStatus,
     createdAt: item.createdAt,
   };
 }
@@ -222,6 +224,11 @@ router.post("/closet-items", requireUserMw, myThingsFlagMw, async (req, res) => 
   if (!UUID_RE.test(uploadId)) { res.status(400).json({ error: "uploadId is required" }); return; }
   const fields = validateClosetItemFields(req.body);
   if (!fields) { res.status(400).json({ error: "Invalid item fields" }); return; }
+  let ownershipStatus: "owned" | "considering" = "owned";
+  if (req.body?.ownershipStatus !== undefined) {
+    if (!isClosetOwnershipStatus(req.body.ownershipStatus)) { res.status(400).json({ error: "Invalid ownership status" }); return; }
+    ownershipStatus = req.body.ownershipStatus;
+  }
 
   try {
     const result = await db.transaction(async (tx) => {
@@ -242,6 +249,7 @@ router.post("/closet-items", requireUserMw, myThingsFlagMw, async (req, res) => 
         occasion: fields.occasion,
         season: fields.season,
         brand: fields.brand,
+        ownershipStatus,
       }).returning();
 
       await tx.update(closetMediaUploads)
@@ -289,12 +297,18 @@ router.put("/closet-items/:id", requireUserMw, myThingsFlagMw, async (req, res) 
     if (!isClosetConfirmationStatus(req.body.confirmationStatus)) { res.status(400).json({ error: "Invalid confirmation status" }); return; }
     confirmationStatus = req.body.confirmationStatus;
   }
+  let ownershipStatus: string | undefined;
+  if (req.body?.ownershipStatus !== undefined) {
+    if (!isClosetOwnershipStatus(req.body.ownershipStatus)) { res.status(400).json({ error: "Invalid ownership status" }); return; }
+    ownershipStatus = req.body.ownershipStatus;
+  }
 
   const [updated] = await db.update(closetItems)
     .set({
       itemType: fields.itemType, primaryColor: fields.primaryColor, style: fields.style,
       occasion: fields.occasion, season: fields.season, brand: fields.brand,
       ...(confirmationStatus ? { confirmationStatus } : {}),
+      ...(ownershipStatus ? { ownershipStatus } : {}),
     })
     .where(and(eq(closetItems.id, itemId), eq(closetItems.ownerUserId, user.id)))
     .returning();
