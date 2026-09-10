@@ -43,6 +43,8 @@ button { font:inherit; cursor:pointer; }
 .approved-icon { width:44px; height:44px; display:grid; place-items:center; border:0; border-radius:50%; background:transparent; color:var(--tk-ink); }
 .approved-icon:hover { background:var(--tk-surface-muted); }
 .approved-icon.settings-icon { color:var(--tk-wine); }
+.approved-icon.primary { background:var(--tk-wine); color:var(--tk-text-inverse); }
+.approved-icon.primary:hover { background:var(--tk-wine); opacity:.92; }
 .approved-kicker { display:block; margin:18px 0 8px; color:var(--tk-wine); font-size:11px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
 .approved-title + p, .approved-panel p, section > p { margin:10px 0 18px; color:var(--tk-stone); font-size:13px; line-height:1.55; }
 .home-feed-header { padding:12px 0 2px; }
@@ -459,6 +461,15 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .report-menu-item-danger:hover { color:#8a1c15; }
 .report-status { display:grid; gap:14px; padding:8px 0 4px; text-align:center; }
 .report-status p { margin:0; color:var(--tk-stone); font-size:13px; line-height:1.5; }
+
+.closet-summary { display:grid; margin:8px 0 16px; border:1px solid var(--tk-border); border-radius:16px; overflow:hidden; background:var(--tk-card); }
+.closet-summary-row { display:flex; align-items:center; justify-content:space-between; gap:10px; min-height:56px; padding:0 14px; border-bottom:1px solid var(--tk-border); }
+.closet-summary-row:last-child { border-bottom:0; }
+.closet-summary-row-text { display:flex; flex-direction:column; min-width:0; }
+.closet-summary-row-label { color:var(--tk-stone); font-size:10px; font-weight:800; text-transform:uppercase; letter-spacing:.05em; }
+.closet-summary-row-value { color:var(--tk-ink); font-size:13px; font-weight:700; margin-top:2px; }
+.closet-editor-sheet { max-height:70vh; overflow-y:auto; }
+.closet-editor-sheet-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .admin-filter-row { display:flex; gap:7px; margin:0 0 10px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
 .admin-filter-row button { flex:0 0 auto; min-height:38px; padding:0 14px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:700; white-space:nowrap; }
 .admin-filter-row button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }

@@ -3396,6 +3396,32 @@ function ClosetItemMenu({ ar, deleting, canMove, onEdit, onMove, onDelete }: { a
   </>;
 }
 
+// Client-side-only grouping for the My Things category filter chips. Every
+// value here is an existing itemType token from closet-taxonomy.ts — this
+// never introduces a new stored value or backend taxonomy entry. dress,
+// bag, accessory, and other are deliberately absent from every bucket: they
+// only ever match "All" (and search), exactly as specified.
+type ClosetCategoryFilter = 'all' | 'tops' | 'bottoms' | 'shoes' | 'outerwear';
+const CLOSET_CATEGORY_ITEM_TYPES: Record<Exclude<ClosetCategoryFilter, 'all'>, string[]> = {
+  tops: ['t_shirt', 'shirt', 'polo', 'blouse', 'top', 'sweater', 'hoodie'],
+  bottoms: ['pants', 'jeans', 'shorts', 'skirt'],
+  shoes: ['sneakers', 'shoes', 'boots', 'sandals', 'heels'],
+  outerwear: ['jacket', 'coat', 'blazer', 'suit'],
+};
+const CLOSET_CATEGORY_FILTERS: { value: ClosetCategoryFilter; en: string; ar: string }[] = [
+  { value: 'all', en: 'All', ar: 'الكل' },
+  { value: 'tops', en: 'Tops', ar: 'قطع علوية' },
+  { value: 'bottoms', en: 'Bottoms', ar: 'قطع سفلية' },
+  { value: 'shoes', en: 'Shoes', ar: 'أحذية' },
+  { value: 'outerwear', en: 'Outerwear', ar: 'ملابس خارجية' },
+];
+function closetCategoryOf(itemType: string): ClosetCategoryFilter | null {
+  for (const category of Object.keys(CLOSET_CATEGORY_ITEM_TYPES) as Exclude<ClosetCategoryFilter, 'all'>[]) {
+    if (CLOSET_CATEGORY_ITEM_TYPES[category].includes(itemType)) return category;
+  }
+  return null;
+}
+
 /**
  * My Things (KIN) — the signed-in user's private closet. Images are never
  * loaded via a stored object key; the browser is only ever given the
@@ -3411,6 +3437,8 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
   const [tab, setTab] = useState<'wardrobe' | 'considering'>('wardrobe');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [deleteNotice, setDeleteNotice] = useState('');
+  const [search, setSearch] = useState('');
+  const [category, setCategory] = useState<ClosetCategoryFilter>('all');
 
   const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
   useEffect(() => {
@@ -3475,20 +3503,46 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
 
   const wardrobeItems = items.filter((item) => item.ownershipStatus !== 'considering');
   const consideringItems = items.filter((item) => item.ownershipStatus === 'considering');
-  const visibleItems = tab === 'wardrobe' ? wardrobeItems : consideringItems;
+  const tabItems = tab === 'wardrobe' ? wardrobeItems : consideringItems;
+  const categoryItems = category === 'all' ? tabItems : tabItems.filter((item) => closetCategoryOf(item.itemType) === category);
+  const query = search.trim().toLowerCase();
+  const visibleItems = query
+    ? categoryItems.filter((item) => `${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} ${closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}`.toLowerCase().includes(query))
+    : categoryItems;
+  const hasAnyItemsInTab = tabItems.length > 0;
 
-  return <SimpleScreen kicker={t('You', 'أنت')} title={t('My Things', 'أغراضي')}>
-    <button data-testid="my-things-add" className="approved-button primary wide" style={{ marginBottom: 16 }} onClick={onAdd}><Plus size={16} /> {t('Add item', 'أضف غرضًا')}</button>
+  return <section>
+    <span className="approved-kicker">{t('My Things', 'أغراضي')}</span>
+    <div className="workspace-head">
+      <div>
+        <h1 className="approved-title">{t('My Things', 'أغراضي')}</h1>
+        <p>{t('Your wardrobe, ready for KIN.', 'خزانتك جاهزة لـ KIN.')}</p>
+      </div>
+      <button type="button" className="approved-icon primary" data-testid="my-things-add" aria-label={t('Add item', 'إضافة قطعة')} onClick={onAdd}><Plus size={20} /></button>
+    </div>
+
     <div className="approved-segment" data-testid="my-things-tabs">
       <button className={tab === 'wardrobe' ? 'selected' : ''} data-testid="my-things-tab-wardrobe" onClick={() => setTab('wardrobe')}>{t('My Wardrobe', 'خزانتي')}</button>
-      <button className={tab === 'considering' ? 'selected' : ''} data-testid="my-things-tab-considering" onClick={() => setTab('considering')}>{t('Considering', 'أفكر بشرائها')}</button>
+      <button className={tab === 'considering' ? 'selected' : ''} data-testid="my-things-tab-considering" onClick={() => setTab('considering')}>{t('Thinking of Buying', 'أفكر أشتريها')}</button>
     </div>
+
+    <label className="approved-search" data-testid="my-things-search">
+      <Search size={14} />
+      <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في قطعك')} aria-label={t('Search your items', 'ابحث في قطعك')} data-testid="my-things-search-input" />
+    </label>
+
+    <div className="admin-filter-row" data-testid="my-things-categories">
+      {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} className={category === filter.value ? 'selected' : ''} data-testid={`my-things-category-${filter.value}`} onClick={() => setCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
+    </div>
+
     {deleteNotice && <p className="settings-note">{deleteNotice}</p>}
     {state === 'loading' && <Empty text={t('Loading…', 'جارٍ التحميل…')} />}
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{t('Try again', 'حاول مجددًا')}</button></div>}
-    {state === 'ready' && !visibleItems.length && <Empty text={tab === 'wardrobe'
-      ? t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')
-      : t('Nothing you’re considering yet. Save a piece here while you decide.', 'لا يوجد شيء تفكر بشرائه بعد. احفظ قطعة هنا أثناء اتخاذ القرار.')} />}
+    {state === 'ready' && !visibleItems.length && <Empty text={!hasAnyItemsInTab
+      ? (tab === 'wardrobe'
+        ? t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')
+        : t('Nothing you’re thinking of buying yet. Save a piece here while you decide.', 'لا يوجد شيء تفكر في شرائه بعد. احفظ قطعة هنا أثناء اتخاذ القرار.'))
+      : t('No items match your search or filter.', 'لا توجد عناصر تطابق البحث أو الفلتر.')} />}
     {state === 'ready' && visibleItems.length > 0 && <div className="approved-grid profile-edits-grid" data-testid="my-things-grid">
       {visibleItems.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
         <button type="button" data-testid="my-things-open" aria-label={t('Edit item', 'تعديل الغرض')} onClick={() => onEdit(item)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
@@ -3506,7 +3560,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
         </div>
       </div>)}
     </div>}
-  </SimpleScreen>;
+  </section>;
 }
 
 const CLOSET_ACCEPTED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -3531,6 +3585,46 @@ function ClosetChoiceField({ label, options, value, onSelect, disabled }: { labe
   return <div className="form-field"><span>{label}</span><div className="profile-interests" style={{ marginTop: 8 }}>
     {options.map((option) => <button type="button" key={option.value} className={value === option.value ? 'selected' : ''} disabled={disabled} onClick={() => onSelect(option.value)}>{option.label}</button>)}
   </div></div>;
+}
+
+/**
+ * One compact row inside the post-analysis summary — a label, the single
+ * currently-selected value (or a placeholder), and a pencil that opens the
+ * full chooser. Replaces showing every possible chip by default once AI
+ * classification has already supplied a value.
+ */
+function ClosetSummaryRow({ label, value, placeholder, onEdit, editLabel, disabled, testId, editTestId }: { label: string; value: string; placeholder: string; onEdit: () => void; editLabel: string; disabled?: boolean; testId: string; editTestId: string }) {
+  return <div className="closet-summary-row" data-testid={testId}>
+    <div className="closet-summary-row-text">
+      <span className="closet-summary-row-label">{label}</span>
+      <span className="closet-summary-row-value">{value || placeholder}</span>
+    </div>
+    <button type="button" className="approved-icon" data-testid={editTestId} aria-label={editLabel} disabled={disabled} onClick={onEdit}><Pencil size={16} /></button>
+  </div>;
+}
+
+/**
+ * Compact bottom-sheet chooser for a single taxonomy field (Item type or
+ * Primary color), opened from a ClosetSummaryRow's pencil. Picking an
+ * option applies it and closes the sheet immediately — there is no
+ * separate "Done" step, matching a compact editor rather than a form.
+ */
+function ClosetFieldEditorSheet({ open, title, options, value, onSelect, onClose, closeLabel }: { open: boolean; title: string; options: TaxonomyOption[]; value: string; onSelect: (value: string) => void; onClose: () => void; closeLabel: string }) {
+  return <Drawer.Root open={open} onOpenChange={(next) => { if (!next) onClose(); }}>
+    <Drawer.Portal>
+      <Drawer.Overlay className="approved-drawer-overlay" />
+      <Drawer.Content className="approved-drawer-content closet-editor-sheet" aria-label={title}>
+        <div className="approved-drawer-handle" />
+        <div className="closet-editor-sheet-head">
+          <h2 className="approved-title" style={{ margin: 0, fontSize: 16 }}>{title}</h2>
+          <button type="button" className="approved-icon" aria-label={closeLabel} onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="profile-interests">
+          {options.map((option) => <button type="button" key={option.value} className={value === option.value ? 'selected' : ''} onClick={() => { onSelect(option.value); onClose(); }}>{option.label}</button>)}
+        </div>
+      </Drawer.Content>
+    </Drawer.Portal>
+  </Drawer.Root>;
 }
 
 type ClosetSubmitPhase = 'idle' | 'uploading' | 'creating' | 'confirming';
@@ -3574,6 +3668,15 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
   const [submitError, setSubmitError] = useState('');
   const [touchedFields, setTouchedFields] = useState<Set<ClosetTouchableField>>(new Set());
   const [analyzing, setAnalyzing] = useState(false);
+  // True once a successful (non-null) analysis response has been applied
+  // without the user already having started picking itemType/primaryColor
+  // manually. This is what switches the required fields from the full chip
+  // walls to the compact editable summary — a user who was already editing
+  // when a delayed suggestion lands stays on the manual walls, unchanged.
+  const [compactMode, setCompactMode] = useState(false);
+  const [editingField, setEditingField] = useState<'itemType' | 'primaryColor' | null>(null);
+  const [ownershipEditorOpen, setOwnershipEditorOpen] = useState(false);
+  const retakeInputRef = useRef<HTMLInputElement>(null);
 
   const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
   const analysisEnabled = session.featureFlags.closet_item_analysis === true;
@@ -3616,15 +3719,34 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     if (analysisEnabled) void autoUploadAndAnalyze(selected);
   };
 
+  // Discards the in-progress upload/item entirely and returns the screen to
+  // its pristine starting state so a fresh photo can go through the normal
+  // upload -> (analyze) -> create -> confirm sequence from scratch — never
+  // reuses a stale uploadId/itemId tied to the old photo. Already-chosen
+  // itemType/primaryColor/etc are deliberately left as-is: retaking is for
+  // a better photo of the same item, not for starting over on a different
+  // one, and this is never the only path back to a photo — the pre-compact
+  // walls view keeps its own always-available "Change photo" affordance.
+  const retakePhoto = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setFile(null); setPreviewUrl(null); setPhotoError('');
+    setUploadId(null); setItemId(null); setSubmitError('');
+    setCompactMode(false);
+    setPhase('idle');
+    retakeInputRef.current?.click();
+  };
+
   const applySuggestions = (suggestions: ClosetSuggestions | null) => {
     if (!suggestions) return;
     const guard = latestGuardRef.current;
     if (guard.itemId !== null || guard.phase !== 'idle') return;
+    const alreadyEditingManually = guard.touchedFields.has('itemType') || guard.touchedFields.has('primaryColor');
     if (!guard.touchedFields.has('itemType') && suggestions.itemType) setItemType(suggestions.itemType);
     if (!guard.touchedFields.has('primaryColor') && suggestions.primaryColor) setPrimaryColor(suggestions.primaryColor);
     if (!guard.touchedFields.has('style') && suggestions.style) setStyle(suggestions.style);
     if (!guard.touchedFields.has('occasion') && suggestions.occasion) setOccasion(suggestions.occasion);
     if (!guard.touchedFields.has('season') && suggestions.season) setSeason(suggestions.season);
+    if (!alreadyEditingManually) setCompactMode(true);
   };
 
   const autoUploadAndAnalyze = async (selected: File) => {
@@ -3730,32 +3852,57 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     : phase === 'confirming' ? t('Confirming…', 'جارٍ التأكيد…')
     : itemId ? t('Retry confirmation', 'إعادة محاولة التأكيد')
     : uploadId ? t('Retry save', 'إعادة المحاولة')
-    : t('Confirm & Add', 'تأكيد وإضافة');
+    : t('Add to My Things', 'أضف إلى أغراضي');
 
-  return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Add item', 'أضف غرضًا')}>
-    {file && previewUrl ? <label className="image-uploader" style={{ aspectRatio: 1 }}>
+  const ownershipLabel = ownershipStatus === 'owned' ? t('I own this', 'أملك هذه القطعة') : t('Thinking of buying it', 'أفكر أشتريها');
+
+  return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Add to My Things', 'أضف إلى أغراضي')}>
+    {file && previewUrl ? (compactMode ? <div className="image-uploader" style={{ aspectRatio: 1, cursor: 'default' }}>
+      <img src={previewUrl} alt="" />
+    </div> : <label className="image-uploader" style={{ aspectRatio: 1 }}>
       <img src={previewUrl} alt="" />
       <span><ImagePlus size={18} /> {t('Change photo', 'تغيير الصورة')}</span>
       <input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} disabled={photoLocked} data-testid="my-things-photo-input" />
-    </label> : <label className="no-photo-uploader">
+    </label>) : <label className="no-photo-uploader">
       <ImagePlus size={22} />
       <span><strong>{t('Add a photo', 'أضف صورة')}</strong><small>{t('JPEG, PNG, or WebP · up to 10MB', 'JPEG أو PNG أو WebP · حتى 10 ميجابايت')}</small></span>
       <input aria-label={t('Add a photo', 'أضف صورة')} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} disabled={photoLocked} data-testid="my-things-photo-input" />
     </label>}
+    <input ref={retakeInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={selectFile} style={{ display: 'none' }} data-testid="my-things-retake-input" />
     {photoError && <p className="workspace-notice" role="alert" data-testid="my-things-photo-error">{photoError}</p>}
     {analyzing && <p className="settings-note" data-testid="my-things-analyzing">{t('Analyzing photo…', 'جارٍ تحليل الصورة…')}</p>}
+    {compactMode && <p className="settings-note" data-testid="my-things-analysis-status">{t('KIN found one item', 'عثر KIN على قطعة واحدة')}</p>}
 
-    <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={chooseItemType} disabled={fieldsLocked} />
-    <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={choosePrimaryColor} disabled={fieldsLocked} />
+    {!compactMode && file && <>
+      <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={chooseItemType} disabled={fieldsLocked} />
+      <ClosetChoiceField label={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={choosePrimaryColor} disabled={fieldsLocked} />
+    </>}
 
-    <div className="form-field"><span>{t('Ownership', 'الملكية')}</span>
+    {!compactMode && <div className="form-field"><span>{t('Ownership', 'الملكية')}</span>
       <div className="approved-segment" data-testid="my-things-ownership" style={{ marginTop: 8 }}>
         <button type="button" className={ownershipStatus === 'owned' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-owned" onClick={() => setOwnershipStatus('owned')}>{t('I own this', 'أملك هذه القطعة')}</button>
-        <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => setOwnershipStatus('considering')}>{t('I’m considering it', 'أفكر بشرائها')}</button>
+        <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => setOwnershipStatus('considering')}>{t('Thinking of buying it', 'أفكر أشتريها')}</button>
       </div>
-    </div>
+    </div>}
 
-    <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
+    {compactMode && <div className="closet-summary" data-testid="my-things-summary">
+      <ClosetSummaryRow label={t('Item type', 'نوع الغرض')} value={closetTaxonomyLabel(CLOSET_ITEM_TYPES, itemType)} placeholder={t('Not set', 'لم يُحدد')}
+        onEdit={() => setEditingField('itemType')} editLabel={t('Edit item type', 'تعديل نوع الغرض')} disabled={fieldsLocked} testId="my-things-summary-itemtype" editTestId="my-things-summary-itemtype-edit" />
+      <ClosetSummaryRow label={t('Primary color', 'اللون الأساسي')} value={closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, primaryColor)} placeholder={t('Not set', 'لم يُحدد')}
+        onEdit={() => setEditingField('primaryColor')} editLabel={t('Edit primary color', 'تعديل اللون الأساسي')} disabled={fieldsLocked} testId="my-things-summary-color" editTestId="my-things-summary-color-edit" />
+      {ownershipEditorOpen ? <div className="closet-summary-row" data-testid="my-things-summary-ownership">
+        <div className="approved-segment" style={{ flex: 1, margin: 0 }}>
+          <button type="button" className={ownershipStatus === 'owned' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-owned" onClick={() => { setOwnershipStatus('owned'); setOwnershipEditorOpen(false); }}>{t('I own this', 'أملك هذه القطعة')}</button>
+          <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => { setOwnershipStatus('considering'); setOwnershipEditorOpen(false); }}>{t('Thinking of buying it', 'أفكر أشتريها')}</button>
+        </div>
+      </div> : <ClosetSummaryRow label={t('Ownership', 'الملكية')} value={ownershipLabel} placeholder={ownershipLabel}
+        onEdit={() => setOwnershipEditorOpen(true)} editLabel={t('Edit ownership', 'تعديل الملكية')} disabled={fieldsLocked} testId="my-things-summary-ownership" editTestId="my-things-summary-ownership-edit" />}
+    </div>}
+
+    <ClosetFieldEditorSheet open={editingField === 'itemType'} title={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={chooseItemType} onClose={() => setEditingField(null)} closeLabel={t('Close', 'إغلاق')} />
+    <ClosetFieldEditorSheet open={editingField === 'primaryColor'} title={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={choosePrimaryColor} onClose={() => setEditingField(null)} closeLabel={t('Close', 'إغلاق')} />
+
+    <details className="nested-details"><summary>{t('Adjust details', 'تعديل التفاصيل')}</summary><div className="details-body">
       <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={chooseStyle} disabled={fieldsLocked} />
       <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={chooseOccasion} disabled={fieldsLocked} />
       <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={chooseSeason} disabled={fieldsLocked} />
@@ -3767,6 +3914,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     {submitError && <p className="workspace-notice" role="alert" data-testid="my-things-submit-error">{submitError}</p>}
 
     <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="my-things-submit" onClick={() => void submit()} disabled={submitDisabled}>{submitLabel}</button>
+    {compactMode && <button type="button" className="approved-button wide" style={{ marginTop: 8 }} data-testid="my-things-retake" disabled={phase !== 'idle'} onClick={retakePhoto}>{t('Retake photo', 'أعد التقاط الصورة')}</button>}
   </SimpleScreen>;
 }
 
