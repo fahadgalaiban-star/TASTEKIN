@@ -176,6 +176,18 @@ async function gotoAddScreen(page: Page) {
   await page.getByTestId('my-things-add').click();
 }
 
+test('the circular Add button opens Add to My Things', async ({ page }) => {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-add').click();
+  await expect(page.getByRole('heading', { name: 'Add to My Things' })).toBeVisible();
+});
+
 test('Add item: file type and size validation reject before any upload', async ({ page }) => {
   const uploadCalls: string[] = [];
   await gotoAddScreen(page);
@@ -211,7 +223,7 @@ test('Add item: Confirm & Add stays disabled until a photo, item type, and prima
   await expect(submit).toBeEnabled();
 });
 
-test('Add item: style remains available but optional inside Optional details, and can be picked without blocking the others', async ({ page }) => {
+test('Add item: style remains available but optional inside Adjust details, and can be picked without blocking the others', async ({ page }) => {
   await gotoAddScreen(page);
   await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
   await page.getByRole('button', { name: 'Shirt', exact: true }).click();
@@ -219,10 +231,17 @@ test('Add item: style remains available but optional inside Optional details, an
   const submit = page.getByTestId('my-things-submit');
   await expect(submit).toBeEnabled();
 
-  await page.getByText('Optional details', { exact: true }).click();
+  await page.getByText('Adjust details', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Casual', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Casual', exact: true }).click();
   await expect(submit).toBeEnabled();
+});
+
+test('Add item: item type and primary color option walls are absent before a photo is selected', async ({ page }) => {
+  await gotoAddScreen(page);
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Blue', exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('my-things-ownership-owned')).toBeVisible();
 });
 
 async function fillRequiredFields(page: Page) {
@@ -550,7 +569,7 @@ test('Add item analysis: flag off — selecting a photo never triggers an analyz
   await expect(page.getByText('Your photo was uploaded.', { exact: false })).toHaveCount(0);
 });
 
-test('Add item analysis: a successful response preselects the returned chips, and every chip stays tappable/clearable', async ({ page }) => {
+test('Add item analysis: a successful response appears as compact summary rows, with no chip wall by default', async ({ page }) => {
   await gotoAddScreenWithAnalysis(page);
   await page.route('**/api/closet-items/media', async (route) => {
     if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
@@ -567,23 +586,62 @@ test('Add item analysis: a successful response preselects the returned chips, an
   await expect(page.getByTestId('my-things-analyzing')).toBeVisible();
   await expect(page.getByTestId('my-things-analyzing')).toHaveCount(0);
 
-  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
-  await expect(page.getByRole('button', { name: 'Blue', exact: true })).toHaveClass(/selected/);
-  await page.getByText('Optional details', { exact: true }).click();
+  await expect(page.getByTestId('my-things-analysis-status')).toHaveText('KIN found one item');
+  await expect(page.getByTestId('my-things-summary')).toBeVisible();
+  await expect(page.getByTestId('my-things-summary-itemtype')).toContainText('Shirt');
+  await expect(page.getByTestId('my-things-summary-color')).toContainText('Blue');
+  // No chip wall by default once AI has already supplied the values.
+  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Blue', exact: true })).toHaveCount(0);
+
+  await page.getByText('Adjust details', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
   // occasion/season came back null — left unselected, not defaulted to anything.
   await expect(occasionField(page).locator('button.selected')).toHaveCount(0);
   await expect(seasonField(page).locator('button.selected')).toHaveCount(0);
 
-  // Confirm & Add is already reachable — nothing about analysis blocks it.
+  // Add to My Things is already reachable — nothing about analysis blocks it.
   await expect(page.getByTestId('my-things-submit')).toBeEnabled();
 
-  // Every preselected chip remains tappable and clearable, same as manual entry.
+  // The pencil on each row opens the full chooser; picking a value applies
+  // it and returns to the compact summary.
+  await page.getByTestId('my-things-summary-itemtype-edit').click();
+  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Jacket', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toHaveClass(/selected/);
-  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).not.toHaveClass(/selected/);
-  await page.getByRole('button', { name: 'Casual', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Casual', exact: true })).not.toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-summary-itemtype')).toContainText('Jacket');
+  await expect(page.getByTestId('my-things-summary-itemtype')).not.toContainText('Shirt');
+  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toHaveCount(0);
+});
+
+test('Add item analysis: edited values from the compact summary are sent correctly on submit', async ({ page }) => {
+  let createBody: Record<string, unknown> | null = null;
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }) });
+  });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() !== 'POST') return;
+    createBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', itemType: 'jacket', primaryColor: 'navy', confirmationStatus: 'pending_review' }) });
+  });
+  await page.route('**/api/closet-items/item-1', async (route) => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-1', itemType: 'jacket', primaryColor: 'navy', confirmationStatus: 'confirmed' }) });
+  });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByTestId('my-things-summary')).toBeVisible();
+
+  await page.getByTestId('my-things-summary-itemtype-edit').click();
+  await page.getByRole('button', { name: 'Jacket', exact: true }).click();
+  await page.getByTestId('my-things-summary-color-edit').click();
+  await page.getByRole('button', { name: 'Navy', exact: true }).click();
+
+  await page.getByTestId('my-things-submit').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+  expect(createBody).toMatchObject({ itemType: 'jacket', primaryColor: 'navy' });
 });
 
 test('Add item analysis: confidence numbers are never rendered anywhere in the DOM', async ({ page }) => {
@@ -598,7 +656,7 @@ test('Add item analysis: confidence numbers are never rendered anywhere in the D
     });
   });
   await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
-  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-summary-itemtype')).toContainText('Shirt');
   const html = await page.content();
   expect(html).not.toContain('confidence');
 });
@@ -634,7 +692,7 @@ test('Add item analysis: the analyze response never triggers an automatic POST /
   });
 
   await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
-  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-summary-itemtype')).toContainText('Shirt');
   await page.waitForTimeout(300);
   expect(createCalls).toBe(0);
 });
@@ -648,7 +706,7 @@ test('Add item analysis: never exposes imageObjectKey anywhere reachable from th
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }) });
   });
   await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
-  await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-summary-itemtype')).toContainText('Shirt');
   const html = await page.content();
   expect(html).not.toContain('imageObjectKey');
   expect(html).not.toContain('/objects/closet/');
@@ -686,8 +744,11 @@ test('Add item analysis regression: a manual chip pick before a delayed analyze 
   await expect(page.getByRole('button', { name: 'Navy', exact: true })).toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Shirt', exact: true })).not.toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Blue', exact: true })).not.toHaveClass(/selected/);
+  // Having already started editing manually, the screen never switches to
+  // the compact summary once the suggestion lands — the walls stay put.
+  await expect(page.getByTestId('my-things-summary')).toHaveCount(0);
 
-  await page.getByText('Optional details', { exact: true }).click();
+  await page.getByText('Adjust details', { exact: true }).click();
   await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Everyday', exact: true })).toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Summer', exact: true })).toHaveClass(/selected/);
@@ -709,6 +770,10 @@ test('My Wardrobe is selected by default and shows only owned items; Considering
 
   await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveClass(/selected/);
   await expect(page.getByTestId('my-things-tab-considering')).not.toHaveClass(/selected/);
+  // "Thinking of Buying" replaces the old "Considering" label; the
+  // persisted value/testid stay exactly "considering".
+  await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveText('My Wardrobe');
+  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('Thinking of Buying');
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Shirt · Blue');
 
@@ -822,7 +887,7 @@ test('Add item: ownership choice defaults to "I own this" and a new item persist
   expect((createBody as Record<string, unknown> | null)?.ownershipStatus).toBe('owned');
 });
 
-test('Add item: choosing "I\'m considering it" persists the new item as considering', async ({ page }) => {
+test('Add item: choosing "Thinking of buying it" persists the new item as considering', async ({ page }) => {
   let createBody: Record<string, unknown> | null = null;
   await gotoAddScreen(page);
   await page.route('**/api/closet-items/media', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) }); });
@@ -836,6 +901,7 @@ test('Add item: choosing "I\'m considering it" persists the new item as consider
   });
 
   await fillRequiredFields(page);
+  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('Thinking of buying it');
   await page.getByTestId('my-things-ownership-considering').click();
   await expect(page.getByTestId('my-things-ownership-considering')).toHaveClass(/selected/);
   await expect(page.getByTestId('my-things-ownership-owned')).not.toHaveClass(/selected/);
@@ -856,7 +922,7 @@ test('Arabic labels: tabs, ownership choice, and overflow menu render in Arabic 
 
   await expect(page.getByRole('heading', { name: 'أغراضي' })).toBeVisible();
   await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveText('خزانتي');
-  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('أفكر بشرائها');
+  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('أفكر أشتريها');
 
   await page.getByTestId('my-things-tab-considering').click();
   await page.getByTestId('my-things-menu-trigger').click();
@@ -876,7 +942,7 @@ test('Arabic labels: Add item ownership choice', async ({ page }) => {
   await page.getByTestId('my-things-add').click();
 
   await expect(page.getByTestId('my-things-ownership-owned')).toHaveText('أملك هذه القطعة');
-  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('أفكر بشرائها');
+  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('أفكر أشتريها');
 });
 
 test('390x844 mobile layout: My Things renders with no document-level horizontal overflow, in both tabs', async ({ page }) => {
@@ -890,9 +956,176 @@ test('390x844 mobile layout: My Things renders with no document-level horizontal
   await page.getByTestId('open-my-things').click();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 
+  await page.getByTestId('my-things-search-input').fill('shirt');
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+  await page.getByTestId('my-things-search-input').fill('');
+
+  await page.getByTestId('my-things-category-tops').click();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+  await page.getByTestId('my-things-category-all').click();
+
   await page.getByTestId('my-things-tab-considering').click();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 
   await page.getByTestId('my-things-menu-trigger').click();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+});
+
+test('390x844 mobile layout: Add to My Things compact summary and its edit sheet have no horizontal overflow', async ({ page }) => {
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => {
+    if (route.request().method() === 'POST') await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) });
+  });
+  await page.route('**/api/closet-items/media/up-1/analyze', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }) });
+  });
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByTestId('my-things-summary')).toBeVisible();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+
+  await page.getByTestId('my-things-summary-itemtype-edit').click();
+  await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toBeVisible();
+  await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
+});
+
+// --- Search and category filters -------------------------------------------
+
+const TOPS_ITEM = { ...SAMPLE_ITEM, id: 'item-tshirt', itemType: 't_shirt', primaryColor: 'white' };
+const BOTTOMS_ITEM = { ...SAMPLE_ITEM, id: 'item-jeans', itemType: 'jeans', primaryColor: 'blue' };
+const SHOES_ITEM = { ...SAMPLE_ITEM, id: 'item-boots', itemType: 'boots', primaryColor: 'brown' };
+const OUTERWEAR_ITEM = { ...SAMPLE_ITEM, id: 'item-coat', itemType: 'coat', primaryColor: 'black' };
+const DRESS_ITEM = { ...SAMPLE_ITEM, id: 'item-dress', itemType: 'dress', primaryColor: 'red' };
+const BAG_ITEM = { ...SAMPLE_ITEM, id: 'item-bag', itemType: 'bag', primaryColor: 'gold' };
+const ACCESSORY_ITEM = { ...SAMPLE_ITEM, id: 'item-accessory', itemType: 'accessory', primaryColor: 'silver' };
+const OTHER_ITEM = { ...SAMPLE_ITEM, id: 'item-other', itemType: 'other', primaryColor: 'multicolor' };
+const ALL_CATEGORY_ITEMS = [TOPS_ITEM, BOTTOMS_ITEM, SHOES_ITEM, OUTERWEAR_ITEM, DRESS_ITEM, BAG_ITEM, ACCESSORY_ITEM, OTHER_ITEM];
+
+async function gotoMyThingsWithItems(page: Page, items: unknown[]) {
+  await mockMe(page, { myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+}
+
+test('search filters the currently active ownership tab using existing item data', async ({ page }) => {
+  await gotoMyThingsWithItems(page, [OWNED_ITEM, CONSIDERING_ITEM]);
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+
+  await page.getByTestId('my-things-search-input').fill('navy');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+
+  await page.getByTestId('my-things-search-input').fill('blue');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Shirt · Blue');
+
+  // Switching tabs searches the newly active tab, not the one the query was typed in.
+  await page.getByTestId('my-things-tab-considering').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(0);
+  await page.getByTestId('my-things-search-input').fill('navy');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Jacket · Navy');
+});
+
+test('each category filter maps only to its intended existing item types', async ({ page }) => {
+  await gotoMyThingsWithItems(page, ALL_CATEGORY_ITEMS);
+  await expect(page.getByTestId('my-things-item')).toHaveCount(8);
+
+  await page.getByTestId('my-things-category-tops').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('T-Shirt · White');
+
+  await page.getByTestId('my-things-category-bottoms').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Jeans · Blue');
+
+  await page.getByTestId('my-things-category-shoes').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Boots · Brown');
+
+  await page.getByTestId('my-things-category-outerwear').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Coat · Black');
+});
+
+test('Dress, Bag, Accessory, and Other remain available under All and through search, never mis-bucketed into a category', async ({ page }) => {
+  await gotoMyThingsWithItems(page, ALL_CATEGORY_ITEMS);
+  await expect(page.getByTestId('my-things-category-all')).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-item')).toHaveCount(8);
+
+  // None of the four bucketed categories ever match dress/bag/accessory/other.
+  for (const category of ['tops', 'bottoms', 'shoes', 'outerwear']) {
+    await page.getByTestId(`my-things-category-${category}`).click();
+    const captions = await page.getByTestId('my-things-item').locator('.profile-grid-caption').allTextContents();
+    expect(captions.some((caption) => /Dress|Bag|Accessory|Other/.test(caption))).toBe(false);
+  }
+
+  await page.getByTestId('my-things-category-all').click();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(8);
+
+  await page.getByTestId('my-things-search-input').fill('dress');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Dress · Red');
+
+  await page.getByTestId('my-things-search-input').fill('bag');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Bag · Gold');
+
+  await page.getByTestId('my-things-search-input').fill('accessory');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Accessory · Silver');
+
+  await page.getByTestId('my-things-search-input').fill('other');
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Other · Multicolor');
+});
+
+test('category filter labels render correctly in Arabic', async ({ page }) => {
+  await mockMe(page, { myThings: true, language: 'ar' });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+
+  await expect(page.getByTestId('my-things-category-all')).toHaveText('الكل');
+  await expect(page.getByTestId('my-things-category-tops')).toHaveText('قطع علوية');
+  await expect(page.getByTestId('my-things-category-bottoms')).toHaveText('قطع سفلية');
+  await expect(page.getByTestId('my-things-category-shoes')).toHaveText('أحذية');
+  await expect(page.getByTestId('my-things-category-outerwear')).toHaveText('ملابس خارجية');
+  await expect(page.getByTestId('my-things-search-input')).toHaveAttribute('placeholder', 'ابحث في قطعك');
+});
+
+test('Retake photo resets the upload state and lets a new photo go through the same analyze/create/confirm sequence', async ({ page }) => {
+  let uploadCalls = 0;
+  let createCalls = 0;
+  await gotoAddScreenWithAnalysis(page);
+  await page.route('**/api/closet-items/media', async (route) => { uploadCalls += 1; await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: `up-${uploadCalls}` }) }); });
+  await page.route('**/api/closet-items/media/*/analyze', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ suggestions: { itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null } }) });
+  });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() !== 'POST') return;
+    createCalls += 1;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: `item-${createCalls}`, confirmationStatus: 'pending_review' }) });
+  });
+  await page.route('**/api/closet-items/item-*', async (route) => {
+    if (route.request().method() === 'PUT') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...SAMPLE_ITEM, id: 'item-2', confirmationStatus: 'confirmed' }) });
+  });
+
+  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
+  await expect(page.getByTestId('my-things-summary')).toBeVisible();
+  expect(uploadCalls).toBe(1);
+
+  await page.getByTestId('my-things-retake').click();
+  await page.getByTestId('my-things-retake-input').setInputFiles({ name: 'shirt2.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes-2') });
+  await expect(page.getByTestId('my-things-summary')).toBeVisible();
+  expect(uploadCalls).toBe(2);
+
+  await page.getByTestId('my-things-submit').click();
+  await expect(page.getByTestId('my-things-add')).toBeVisible();
+  expect(createCalls).toBe(1);
 });
