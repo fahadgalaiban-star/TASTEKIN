@@ -32,6 +32,7 @@ if (!process.env.DATABASE_URL) {
 // works for the "existing My Things item as context" fixture) -------------
 
 const store = new Map<string, Buffer>();
+const FAKE_SIDECAR_PORT = 1116;
 
 function startFakeSidecar(): Promise<http.Server> {
   return new Promise((resolve, reject) => {
@@ -44,7 +45,7 @@ function startFakeSidecar(): Promise<http.Server> {
           const parsed = JSON.parse(body.toString("utf8")) as { bucket_name: string; object_name: string };
           const key = encodeURIComponent(`${parsed.bucket_name}/${parsed.object_name}`);
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ signed_url: `http://127.0.0.1:1106/storage-object/${key}` }));
+          res.end(JSON.stringify({ signed_url: `http://127.0.0.1:${FAKE_SIDECAR_PORT}/storage-object/${key}` }));
           return;
         }
         const match = req.url?.match(/^\/storage-object\/(.+)$/);
@@ -61,7 +62,7 @@ function startFakeSidecar(): Promise<http.Server> {
         res.writeHead(404); res.end();
       });
     });
-    server.listen(1106, "127.0.0.1", () => resolve(server));
+    server.listen(FAKE_SIDECAR_PORT, "127.0.0.1", () => resolve(server));
     server.on("error", reject);
   });
 }
@@ -646,6 +647,7 @@ async function resetData() {
 async function main() {
   await resetData();
   const sidecar = await startFakeSidecar();
+  process.env.OBJECT_STORAGE_SIDECAR_ENDPOINT = `http://127.0.0.1:${FAKE_SIDECAR_PORT}`;
   const fakeAnthropic = await startFakeAnthropic();
   const anthropicBaseUrl = `http://127.0.0.1:${fakeAnthropic.port}`;
   const fakeGooglePlaces = await startFakeGooglePlaces();
@@ -1198,7 +1200,11 @@ async function main() {
 
     // --- KIN Travel: Google Places + Routes day-by-day plan ---
     await check("without GOOGLE_MAPS_API_KEY configured, travel plan reports unavailable rather than fabricating places", async () => {
-      const noGoogleServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl });
+      const noGoogleServer = await startServer({
+        ANTHROPIC_API_KEY: "fake-test-key",
+        ANTHROPIC_BASE_URL: anthropicBaseUrl,
+        GOOGLE_MAPS_API_KEY: undefined,
+      });
       try {
         const session = new Session(noGoogleServer.baseUrl);
         await session.signup(`kin-nogoogle-${suffix}@example.com`, PASSWORD);
@@ -1465,6 +1471,35 @@ async function main() {
       assert.ok(requests.some((request) => /pilates/i.test(request.textQuery)));
       assert.ok(requests.some((request) => /walking|promenade/i.test(request.textQuery)));
     });
+    await check("combined guided days deduplicate by Google placeId while keeping breakfast first, dinner last, and coffee before dinner", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "London",
+        interests: ["breakfast", "cafes", "dinner", "museums"],
+        startDate: "2026-10-01",
+        endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ placeId: string; slot: string | null; activityInterest?: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      const places = payload.plan.days[0].places;
+      assert.equal(new Set(places.map((place) => place.placeId)).size, places.length, "one day must never return the same stable Google placeId twice");
+      assert.equal(places[0].slot, "BREAKFAST", "breakfast must remain the first stop");
+      assert.equal(places.at(-1)?.slot, "DINNER", "dinner must remain the last stop");
+      assert.ok(places.findIndex((place) => place.slot === "COFFEE") < places.findIndex((place) => place.slot === "DINNER"), "coffee must never be ordered after dinner");
+      assert.ok(places.some((place) => place.activityInterest === "museums"), "activity stops must retain their originating server category");
+    });
+    await check("an activity provider failure makes the guided plan honestly unavailable", async () => {
+      fakeGooglePlacesMode = { kind: "http_error", status: 503 };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Rome", interests: ["parks"] });
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "ok" };
+    });
     await check("with no dates supplied, a structured-interests plan still returns a single sensible day, never inventing a duration", async () => {
       fakeGooglePlacesMode = { kind: "ok" };
       const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Lisbon", interests: ["parks"] });
@@ -1573,6 +1608,36 @@ async function main() {
       });
       await expectStatus(response, 200);
       assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+    });
+    await check("activity swaps use only the seven validated server-controlled category searches", async () => {
+      const cases = [
+        ["museums", /museums/i, "museum"],
+        ["parks", /parks/i, "park"],
+        ["shopping", /shopping areas|markets/i, undefined],
+        ["hidden_gems", /hidden gems|local favorite/i, undefined],
+        ["gyms", /gyms|fitness centers/i, "gym"],
+        ["pilates", /pilates studios/i, undefined],
+        ["walking_places", /walking areas|promenades/i, undefined],
+      ] as const;
+      for (const [activityInterest, queryPattern, includedType] of cases) {
+        placesRequestBodies = [];
+        const response = await userA.request("/api/kin/travel/swap-place", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ destination: "Paris", activityInterest }),
+        });
+        await expectStatus(response, 200);
+        assert.equal((await response.json() as { status: string }).status, "ok");
+        const request = JSON.parse(placesRequestBodies.at(-1)!) as { textQuery: string; includedType?: string };
+        assert.match(request.textQuery, queryPattern);
+        assert.equal(request.includedType, includedType);
+      }
+      const invalid = await userA.request("/api/kin/travel/swap-place", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ destination: "Paris", activityInterest: "user supplied arbitrary query" }),
+      });
+      assert.equal(invalid.status, 400);
     });
     await check("swap-place is auth+flag gated and consumes the daily KIN quota like every other action", async () => {
       const anon = new Session(server.baseUrl);

@@ -18,7 +18,7 @@ import {
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { runKinTravelPlan, swapPlace, type KinTravelSlot } from "../lib/kin-travel";
+import { runKinTravelPlan, swapPlace, type ActivityInterest, type KinTravelSlot } from "../lib/kin-travel";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -343,6 +343,14 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
   const slot = typeof body.slot === "string" && ["COFFEE", "BREAKFAST", "LUNCH", "DINNER"].includes(body.slot)
     ? body.slot as KinTravelSlot
     : null;
+  const activityInterest = typeof body.activityInterest === "string"
+    && ["museums", "parks", "shopping", "hidden_gems", "gyms", "pilates", "walking_places"].includes(body.activityInterest)
+    ? body.activityInterest as ActivityInterest
+    : null;
+  if (body.activityInterest !== undefined && activityInterest === null) {
+    res.status(400).json({ error: "invalid activity interest" });
+    return;
+  }
   const rawDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null;
   const date = rawDate && new Date(`${rawDate}T00:00:00Z`).toISOString().slice(0, 10) === rawDate ? rawDate : null;
   if (slot && !date) {
@@ -370,7 +378,7 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     return;
   }
 
-  const result = await swapPlace(destination, excludePlaceIds, slot, date, previousPlace, nextPlace);
+  const result = await swapPlace(destination, excludePlaceIds, slot, date, previousPlace, nextPlace, activityInterest);
   if (result.status !== "ok") {
     if (result.reason !== "not configured" && result.reason !== "no alternative available") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel swap-place unavailable");

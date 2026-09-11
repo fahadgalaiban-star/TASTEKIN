@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 
-const SIDE_CAR_ENDPOINT = "http://127.0.0.1:1106";
+const SIDE_CAR_ENDPOINT = process.env.OBJECT_STORAGE_SIDECAR_ENDPOINT || "http://127.0.0.1:1106";
 
 function privateObjectDirectory() {
   const directory = process.env.PRIVATE_OBJECT_DIR;

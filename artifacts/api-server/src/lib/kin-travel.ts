@@ -19,10 +19,11 @@ export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "
   photoUrl: string | null;
   photoAttribution: string | null;
   slot: KinTravelSlot | null;
+  activityInterest?: ActivityInterest;
   openingHours: string | null;
 };
 
-type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null };
+type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null; activityInterest?: ActivityInterest };
 
 /**
  * Resolves at most one real photo per place (Google's photos[0]) to an
@@ -31,7 +32,7 @@ type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null 
  * alongside the URL since Google's ToS requires it be shown with the photo.
  */
 async function resolvePlace(place: TravelPlaceCandidate, date: string | null): Promise<KinTravelPlace | null> {
-  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, requestedSlot, ...rest } = place;
+  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, requestedSlot, activityInterest, ...rest } = place;
   if (requestedSlot && !isOpenForSlot(requestedSlot, date, openingPeriods)) return null;
   const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
   return {
@@ -39,6 +40,7 @@ async function resolvePlace(place: TravelPlaceCandidate, date: string | null): P
     photoUrl,
     photoAttribution: photoUrl ? photoRef!.attributionText : null,
     slot: requestedSlot,
+    ...(activityInterest ? { activityInterest } : {}),
     openingHours: openingHoursForDate(date, openingPeriods),
   };
 }
@@ -117,7 +119,7 @@ function foodIntentsForInterests(interests: KinTravelInterest[]): FoodIntent[] {
   return intents;
 }
 
-type ActivityInterest = Exclude<KinTravelInterest, "breakfast" | "dinner" | "cafes">;
+export type ActivityInterest = Exclude<KinTravelInterest, "breakfast" | "dinner" | "cafes">;
 const ACTIVITY_INTEREST_QUERY: Record<ActivityInterest, { query: string; type?: GooglePlaceTypeFilter }> = {
   museums: { query: "museums", type: "museum" },
   parks: { query: "parks", type: "park" },
@@ -258,14 +260,17 @@ async function activityBucketsForInterests(
     return { status: "unavailable", reason: "activity places unavailable" };
   }
   const seen = new Set<string>();
-  const merged: GooglePlace[] = [];
-  for (const result of results) {
+  const merged: TravelPlaceCandidate[] = [];
+  for (const [index, result] of results.entries()) {
     if (result.status !== "ok") continue;
     for (const place of result.places) {
-      if (!seen.has(place.placeId)) { seen.add(place.placeId); merged.push(place); }
+      if (!seen.has(place.placeId)) {
+        seen.add(place.placeId);
+        merged.push({ ...place, requestedSlot: null, activityInterest: activityInterests[index] });
+      }
     }
   }
-  return { status: "ok", buckets: distributePlaces(merged.map((place) => ({ ...place, requestedSlot: null })), dayCount) };
+  return { status: "ok", buckets: distributePlaces(merged, dayCount) };
 }
 
 /**
@@ -302,11 +307,16 @@ async function placeBucketsForInterests(
   const buckets: TravelPlaceCandidate[][] = [];
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
     const dayFood = foodResult.buckets[dayIndex] ?? [];
-    const breakfast = dayFood.filter((place) => place.requestedSlot === "BREAKFAST");
-    const coffee = dayFood.filter((place) => place.requestedSlot === "COFFEE");
-    const dinner = dayFood.filter((place) => place.requestedSlot === "DINNER");
-    const dayActivities = activityResult.buckets[dayIndex] ?? [];
-    buckets.push(orderPlacesNearestNeighbour([...breakfast, ...dayActivities, ...coffee, ...dinner]));
+    const breakfast = dayFood.find((place) => place.requestedSlot === "BREAKFAST");
+    const dinner = dayFood.find((place) => place.requestedSlot === "DINNER");
+    const foodIds = new Set(dayFood.map((place) => place.placeId));
+    const seen = new Set<string>();
+    const middle = [...(activityResult.buckets[dayIndex] ?? []).filter((place) => !foodIds.has(place.placeId)), ...dayFood.filter((place) => place.requestedSlot !== "BREAKFAST" && place.requestedSlot !== "DINNER")]
+      .filter((place) => !seen.has(place.placeId) && Boolean(seen.add(place.placeId)));
+    const orderedMiddle = breakfast
+      ? orderPlacesNearestNeighbour([breakfast, ...middle]).slice(1)
+      : orderPlacesNearestNeighbour(middle);
+    buckets.push([...(breakfast ? [breakfast] : []), ...orderedMiddle, ...(dinner ? [dinner] : [])]);
   }
   return { status: "ok", buckets, expectedSlots: foodResult.orderedSlots };
 }
@@ -448,7 +458,10 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
     const date = dateForDay(request.startDate, dayIndex);
     const resolved = await Promise.all(placesResult.buckets[dayIndex].map((place) => resolvePlace(place, date)));
-    const dayPlaces = resolved.filter((place): place is KinTravelPlace => place !== null);
+    const seenPlaceIds = new Set<string>();
+    const dayPlaces = resolved
+      .filter((place): place is KinTravelPlace => place !== null)
+      .filter((place) => !seenPlaceIds.has(place.placeId) && Boolean(seenPlaceIds.add(place.placeId)));
     // A day combining a meal schedule with activity interests legitimately
     // has more places than expectedSlots — this only verifies every
     // requested meal slot resolved to a real, open place, never that the
@@ -494,6 +507,7 @@ export async function swapPlace(
   date: string | null = null,
   previousPlace: KinTravelNeighbour | null = null,
   nextPlace: KinTravelNeighbour | null = null,
+  activityInterest: ActivityInterest | null = null,
 ): Promise<KinTravelSwapResult> {
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
   // A larger candidate pool than the itinerary's own 5 — otherwise every
@@ -505,7 +519,7 @@ export async function swapPlace(
     BREAKFAST: { query: "breakfast and bakeries", type: "bakery" },
     LUNCH: { query: "restaurants for lunch", type: "restaurant" },
     DINNER: { query: "restaurants for dinner", type: "restaurant" },
-  }[slot] : null;
+  }[slot] : activityInterest ? ACTIVITY_INTEREST_QUERY[activityInterest] : null;
   const placesResult = await searchPlaces(
     intent ? `${intent.query} in ${destination}` : `top attractions and things to do in ${destination}`,
     SWAP_CANDIDATE_POOL_SIZE,
@@ -515,8 +529,8 @@ export async function swapPlace(
   const excluded = new Set(excludePlaceIds);
   const alternatives = placesResult.places.filter((place) => !excluded.has(place.placeId));
   for (const alternative of alternatives) {
-    if (intent && alternative.primaryType !== intent.type && !alternative.types.includes(intent.type)) continue;
-    const place = await resolvePlace({ ...alternative, requestedSlot: slot }, date);
+    if (intent?.type && alternative.primaryType !== intent.type && !alternative.types.includes(intent.type)) continue;
+    const place = await resolvePlace({ ...alternative, requestedSlot: slot, ...(activityInterest ? { activityInterest } : {}) }, date);
     if (place) {
       const routes: KinTravelRoute[] = [];
       if (previousPlace) {

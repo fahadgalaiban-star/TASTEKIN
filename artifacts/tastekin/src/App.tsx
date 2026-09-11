@@ -2668,7 +2668,7 @@ function KinRouteMap({ places }: { places: KinTravelPlace[] }) {
 // KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
 // is either something Google's Places/Routes APIs genuinely returned or
 // null/omitted; the UI never invents a rating, address, or route.
-type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; openingHours: string | null };
+type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; activityInterest?: KinMainInterest | KinSportSubchoice; openingHours: string | null };
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
@@ -2760,6 +2760,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [wardrobeSearch, setWardrobeSearch] = useState('');
   const [wardrobeCategory, setWardrobeCategory] = useState<ClosetCategoryFilter>('all');
   const [selectedWardrobeIds, setSelectedWardrobeIds] = useState<Set<string>>(new Set());
+  const [wardrobeLimitMessage, setWardrobeLimitMessage] = useState('');
   const [travelReasonCode, setTravelReasonCode] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -2869,7 +2870,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           : t(`Plan a trip to ${trimmedDestination}`, `خطط لرحلة إلى ${trimmedDestination}`);
         const body: Record<string, unknown> = { query: syntheticQuery, destination: trimmedDestination, locale: submittedLocale };
         if (interestList.length) body.interests = interestList;
-        const submittedWardrobeIds = overrideWardrobeIds ?? [...selectedWardrobeIds];
+        const submittedWardrobeIds = (overrideWardrobeIds ?? [...selectedWardrobeIds]).slice(0, MAX_TRAVEL_ITEMS);
         if (submittedWardrobeIds.length) body.myThingsItemIds = submittedWardrobeIds;
         if (startDate) body.startDate = startDate;
         if (endDate) body.endDate = endDate;
@@ -3064,8 +3065,15 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   });
   const toggleWardrobeItem = (id: string) => setSelectedWardrobeIds((prev) => {
     const next = new Set(prev);
-    if (next.has(id)) next.delete(id);
-    else if (next.size < MAX_TRAVEL_ITEMS) next.add(id);
+    if (next.has(id)) {
+      next.delete(id);
+      setWardrobeLimitMessage('');
+    } else if (next.size < MAX_TRAVEL_ITEMS) {
+      next.add(id);
+      setWardrobeLimitMessage('');
+    } else {
+      setWardrobeLimitMessage(t('You can select up to 6 items.', 'يمكنك اختيار ما يصل إلى 6 قطع.'));
+    }
     return next;
   });
 
@@ -3090,6 +3098,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           destination: travelPlan.destination,
           excludePlaceIds,
           slot: place.slot,
+          activityInterest: place.activityInterest,
           date: day.date,
           previousPlace: previousPlace && { placeId: previousPlace.placeId, lat: previousPlace.lat, lng: previousPlace.lng },
           nextPlace: nextPlace && { placeId: nextPlace.placeId, lat: nextPlace.lat, lng: nextPlace.lng },
@@ -3384,18 +3393,18 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         <p className="kin-step-subline">{t('Pick everything you want included.', 'اختر كل ما تريد تضمينه')}</p>
         <p className="kin-step-progress">{t('2 of 3', '2 من 3')}</p>
         <div className="kin-interest-grid" data-testid="kin-interest-grid">
-          {KIN_MAIN_INTERESTS.map((item) => <button type="button" key={item.value} className={`kin-interest-card ${mainInterests.has(item.value) ? 'selected' : ''}`}
+          {KIN_MAIN_INTERESTS.map((item) => <button type="button" key={item.value} aria-pressed={mainInterests.has(item.value)} className={`kin-interest-card ${mainInterests.has(item.value) ? 'selected' : ''}`}
             data-testid={`kin-interest-${item.value}`} onClick={() => toggleMainInterest(item.value)}>
             {t(item.en, item.ar)}
             {mainInterests.has(item.value) && <span className="kin-interest-check"><Check size={12} /></span>}
           </button>)}
           <div className={`kin-interest-card ${sportSelected ? 'selected sport-expanded' : ''}`} data-testid="kin-interest-sport">
-            <button type="button" style={{ all: 'unset', width: '100%', cursor: 'pointer' }} onClick={toggleSport}>
+            <button type="button" aria-pressed={sportSelected} aria-expanded={sportSelected} aria-controls="kin-sport-subchoices" style={{ all: 'unset', width: '100%', cursor: 'pointer' }} onClick={toggleSport}>
               {t('Sport', 'رياضة')}
               {sportSelected && <span className="kin-interest-check"><Check size={12} /></span>}
             </button>
-            {sportSelected && <div className="kin-sport-subchoices">
-              {KIN_SPORT_SUBCHOICES.map((item) => <button type="button" key={item.value} className={sportSubchoices.has(item.value) ? 'selected' : ''}
+            {sportSelected && <div className="kin-sport-subchoices" id="kin-sport-subchoices">
+              {KIN_SPORT_SUBCHOICES.map((item) => <button type="button" key={item.value} aria-pressed={sportSubchoices.has(item.value)} className={sportSubchoices.has(item.value) ? 'selected' : ''}
                 data-testid={`kin-sport-${item.value}`} onClick={() => toggleSportSubchoice(item.value)}>{t(item.en, item.ar)}</button>)}
             </div>}
           </div>
@@ -3419,14 +3428,14 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
               <input type="search" value={wardrobeSearch} onChange={(event) => setWardrobeSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في أغراضك')} aria-label={t('Search your items', 'ابحث في أغراضك')} />
             </label>
             <div className="admin-filter-row" data-testid="kin-wardrobe-categories">
-              {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} className={wardrobeCategory === filter.value ? 'selected' : ''} data-testid={`kin-wardrobe-category-${filter.value}`} onClick={() => setWardrobeCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
+              {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} aria-pressed={wardrobeCategory === filter.value} className={wardrobeCategory === filter.value ? 'selected' : ''} data-testid={`kin-wardrobe-category-${filter.value}`} onClick={() => setWardrobeCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
             </div>
             {ownedItems.length === 0
               ? <Empty text={t('Nothing in My Things yet.', 'لا يوجد شيء في أغراضي بعد.')} />
               : visibleItems.length === 0
                 ? <Empty text={t('No items match your search or filter.', 'لا توجد عناصر تطابق البحث أو الفلتر.')} />
                 : <div className="approved-grid profile-edits-grid" data-testid="kin-wardrobe-grid">
-                  {visibleItems.map((item) => <button type="button" key={item.id} className={`approved-grid-card kin-wardrobe-card ${selectedWardrobeIds.has(item.id) ? 'selected' : ''}`} data-testid="kin-wardrobe-item" onClick={() => toggleWardrobeItem(item.id)}>
+                  {visibleItems.map((item) => <button type="button" key={item.id} aria-pressed={selectedWardrobeIds.has(item.id)} className={`approved-grid-card kin-wardrobe-card ${selectedWardrobeIds.has(item.id) ? 'selected' : ''}`} data-testid="kin-wardrobe-item" onClick={() => toggleWardrobeItem(item.id)}>
                     <div className="profile-grid-media">
                       <img src={`/api/closet-items/${item.id}/image`} alt="" />
                       {selectedWardrobeIds.has(item.id) && <span className="kin-wardrobe-check"><Check size={14} /></span>}
@@ -3434,6 +3443,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
                     <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
                   </button>)}
                 </div>}
+            <p className="settings-note" role="status" aria-live="polite" data-testid="kin-wardrobe-limit">{wardrobeLimitMessage}</p>
           </>;
         })()}
       </>}

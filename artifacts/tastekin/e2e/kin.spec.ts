@@ -162,6 +162,8 @@ test('at least one interest is required; Sport expands to exactly Gyms/Pilates/W
   await expect(page.getByTestId('kin-error')).toBeVisible();
 
   await page.getByTestId('kin-interest-sport').click();
+  await expect(page.getByRole('button', { name: 'Sport', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByRole('button', { name: 'Sport', exact: true })).toHaveAttribute('aria-expanded', 'true');
   await expect(page.getByTestId('kin-sport-gyms')).toBeVisible();
   await expect(page.getByTestId('kin-sport-pilates')).toBeVisible();
   await expect(page.getByTestId('kin-sport-walking_places')).toBeVisible();
@@ -169,6 +171,7 @@ test('at least one interest is required; Sport expands to exactly Gyms/Pilates/W
   await expect(page.getByTestId('kin-error')).toBeVisible();
 
   await page.getByTestId('kin-sport-pilates').click();
+  await expect(page.getByTestId('kin-sport-pilates')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('kin-travel-next').click();
   await expect(page.getByRole('heading', { name: 'Choose from My Things' })).toBeVisible();
 });
@@ -273,6 +276,47 @@ test('the My Things picker in Travel searches and filters only eligible owned it
   await page.getByTestId('kin-wardrobe-category-all').click();
   await page.getByPlaceholder('Search your items').fill('blue');
   await expect(page.getByTestId('kin-wardrobe-item')).toHaveCount(1);
+});
+
+test('the seventh My Things selection gives accessible feedback, keeps six selected, and keyboard deselection still works', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: Array.from({ length: 7 }, (_, index) => ({
+          id: `item-${index + 1}`,
+          itemType: 'shirt',
+          primaryColor: 'blue',
+          style: null,
+          occasion: null,
+          season: null,
+          brand: null,
+          confirmationStatus: 'confirmed',
+          ownershipStatus: 'owned',
+          createdAt: new Date().toISOString(),
+        })) }),
+      });
+    }
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Rome');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-parks').click();
+  await expect(page.getByTestId('kin-interest-parks')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('kin-travel-next').click();
+  const items = page.getByTestId('kin-wardrobe-item');
+  await expect(items).toHaveCount(7);
+  for (let index = 0; index < 7; index++) await items.nth(index).click();
+  await expect(page.getByTestId('kin-wardrobe-limit')).toHaveText('You can select up to 6 items.');
+  await expect(items.nth(0)).toHaveAttribute('aria-pressed', 'true');
+  await expect(items.nth(6)).toHaveAttribute('aria-pressed', 'false');
+  await items.nth(0).focus();
+  await page.keyboard.press('Space');
+  await expect(items.nth(0)).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('kin-wardrobe-limit')).toHaveText('');
 });
 
 test('Travel renders slot-ordered food stops with Google opening hours and driving legs', async ({ page }) => {
@@ -385,6 +429,66 @@ test('Travel renders slot-ordered food stops with Google opening hours and drivi
   await expect(page.getByText(/8 min drive/)).toBeVisible();
 });
 
+test('swapping an activity sends its server-issued activity category, never a client-authored search query', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        plan: {
+          destination: 'Paris',
+          narrative: 'A museum day in Paris.',
+          citations: [],
+          days: [{
+            dayIndex: 0,
+            date: null,
+            places: [{
+              placeId: 'museum-1', name: 'First Museum', formattedAddress: '1 Museum Street',
+              lat: 48.86, lng: 2.34, rating: 4.8, websiteUrl: null,
+              mapsUrl: null, photoUrl: null, photoAttribution: null, slot: null,
+              activityInterest: 'museums', openingHours: null,
+            }],
+            routes: [],
+          }],
+        },
+      }),
+    });
+  });
+  let swapBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/travel/swap-place', async (route) => {
+    swapBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        place: {
+          placeId: 'museum-2', name: 'Second Museum', formattedAddress: '2 Museum Street',
+          lat: 48.87, lng: 2.35, rating: 4.7, websiteUrl: null,
+          mapsUrl: null, photoUrl: null, photoAttribution: null, slot: null,
+          activityInterest: 'museums', openingHours: null,
+        },
+        routes: [],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Paris');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-museums').click();
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-travel-skip').click();
+  await page.getByTestId('kin-open-day').click();
+  await page.getByTestId('kin-swap-place').click();
+  await expect.poll(() => swapBody?.activityInterest).toBe('museums');
+  expect(swapBody).not.toHaveProperty('query');
+  await expect(page.getByTestId('kin-travel-place')).toContainText('Second Museum');
+});
+
 test('Arabic labels render correctly across all 3 Travel guided-flow screens, RTL-safe', async ({ page }) => {
   await mockMe(page, { kinSearch: true, language: 'ar' });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
@@ -414,6 +518,7 @@ test('Arabic labels render correctly across all 3 Travel guided-flow screens, RT
 });
 
 test('no horizontal overflow at 390px on any of the 3 Travel guided-flow screens', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
