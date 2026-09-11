@@ -45,6 +45,20 @@ function isValidHttpsUrl(url: string): boolean {
   }
 }
 
+/** Preserve only HTTPS Google Maps links; provider strings never reach clients unchecked. */
+export function normalizeGoogleMapsUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  try {
+    const url = new URL(value);
+    const validHost = url.hostname === "maps.google.com"
+      || url.hostname === "maps.app.goo.gl"
+      || (url.hostname === "www.google.com" && url.pathname.startsWith("/maps"));
+    return url.protocol === "https:" && validHost ? value : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Google requires the photo's author attribution to be shown alongside it
  * (Places API ToS) — carried through as plain text/link, never dropped.
@@ -144,7 +158,7 @@ function normalizePlacesResponse(payload: unknown, maxResults: number): GooglePl
       types: Array.isArray(item.types) ? item.types.filter((type): type is string => typeof type === "string") : [],
       openingPeriods: normalizeOpeningPeriods(item),
       websiteUrl: typeof item.websiteUri === "string" ? item.websiteUri : null,
-      mapsUrl: typeof item.googleMapsUri === "string" ? item.googleMapsUri : null,
+      mapsUrl: normalizeGoogleMapsUrl(item.googleMapsUri),
       photoRef: firstPhotoRef(item),
     });
     if (places.length >= maxResults) break;

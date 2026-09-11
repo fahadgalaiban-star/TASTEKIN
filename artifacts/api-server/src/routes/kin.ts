@@ -69,7 +69,7 @@ async function lookupMyThingsItem(ownerUserId: string, itemId: string) {
 }
 
 /**
- * Plural counterpart for KIN Travel's "Choose from My Things" screen.
+ * Plural counterpart for KIN's owned-item selection flows.
  * Scoped by owner AND ownershipStatus = "owned" in the same WHERE clause —
  * a "considering" item, a cross-user id, or a nonexistent id all collapse
  * to the same outcome (fewer rows than requested ids), which is treated as
@@ -143,7 +143,14 @@ router.post("/kin/search", requireUserMw, kinSearchFlagMw, async (req, res) => {
 
   let itemContext: string | undefined;
   let imageBuffer: Buffer | undefined;
-  if (validated.value.myThingsItemId) {
+  if (validated.value.myThingsItemIds?.length) {
+    const items = await lookupMyThingsItems(user.id, validated.value.myThingsItemIds);
+    if (!items) {
+      res.status(400).json({ error: "Selected item not found" });
+      return;
+    }
+    itemContext = items.map((item) => item.context).join("; ");
+  } else if (validated.value.myThingsItemId) {
     const item = await lookupMyThingsItem(user.id, validated.value.myThingsItemId);
     if (!item) {
       res.status(400).json({ error: "Selected item not found" });
