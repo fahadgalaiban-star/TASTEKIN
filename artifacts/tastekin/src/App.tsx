@@ -3237,7 +3237,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
                   <span className="kin-timeline-name" style={{ WebkitLineClamp: 2, display: '-webkit-box', overflow: 'hidden', WebkitBoxOrient: 'vertical' }}>{place.name}</span>
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: {place.photoAttribution}</span>}
                   <div className="kin-timeline-actions">
-                    {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Maps', 'خرائط')}</a>}
+                    {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={t(`Open ${place.name} in Google Maps`, `افتح ${place.name} في خرائط Google`)}>{t('Maps', 'خرائط')}</a>}
                     <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
                       {addedTripItems.has(key) ? t('Added to trip', 'أُضيف للرحلة') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to trip', 'أضف للرحلة')}
                     </button>
@@ -3584,7 +3584,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
   };
 
   return <section>
-    <span className="approved-kicker">{stylingMode ? t('Style with KIN', 'نسق مع كين') : t('My Things', 'أغراضي')}</span>
+    <span className="approved-kicker">{stylingMode ? t('Style with KIN', 'نسّق مع KIN') : t('My Things', 'أغراضي')}</span>
     <div className="workspace-head">
       <div>
         <h1 className="approved-title">{stylingMode ? t('Choose items', 'اختر القطع') : t('My Things', 'أغراضي')}</h1>
@@ -3594,7 +3594,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
     </div>
 
     {!stylingMode && session.featureFlags.kin_search === true && <button type="button" className="approved-button wide my-things-style-entry" data-testid="my-things-style-with-kin" onClick={() => { setStylingMode(true); setCategory('all'); setSearch(''); }}>
-      {t('Style with KIN', 'تنسيق مع KIN')}
+      {t('Style with KIN', 'نسّق مع KIN')}
     </button>}
 
     {!stylingMode && <div className="approved-segment" data-testid="my-things-tabs">

@@ -26,6 +26,25 @@ async function mockMe(page: Page, options: MeOptions = {}) {
   });
 }
 
+async function expectMobileControlAboveNavigation(page: Page, testId: string) {
+  const control = page.getByTestId(testId);
+  await control.scrollIntoViewIfNeeded();
+  await expect(control).toBeVisible();
+  const layout = await page.evaluate((id) => {
+    const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+    const navigation = document.querySelector<HTMLElement>('[data-testid="primary-navigation"]');
+    if (!element || !navigation) throw new Error(`Missing mobile layout element: ${id}`);
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      elementBottom: element.getBoundingClientRect().bottom,
+      navigationTop: navigation.getBoundingClientRect().top,
+    };
+  }, testId);
+  expect(layout.scrollWidth).toBe(layout.clientWidth);
+  expect(layout.elementBottom).toBeLessThanOrEqual(layout.navigationTop);
+}
+
 test('the bottom nav opens a real KIN page when the flag is on', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -71,7 +90,7 @@ test('Looks mode: Optional details shows location/budget/size/occasion, not dest
   await expect(page.getByTestId('kin-start-date')).toHaveCount(0);
 });
 
-test('Travel is a dedicated two-step flow with no clothing UI or payload', async ({ page }) => {
+test('Travel is a dedicated two-step flow that submits exact dates and interests with no clothing payload', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   let sentBody: Record<string, unknown> | undefined;
   await page.route('**/api/kin/travel/plan', async (route) => {
@@ -93,6 +112,8 @@ test('Travel is a dedicated two-step flow with no clothing UI or payload', async
   await expect(page.getByText('Start (optional)')).toBeVisible();
   await expect(page.getByText('End (optional)')).toBeVisible();
   await page.getByTestId('kin-destination').fill('Madrid');
+  await page.getByTestId('kin-start-date').fill('2026-10-03');
+  await page.getByTestId('kin-end-date').fill('2026-10-09');
   await page.getByTestId('kin-travel-next').click();
 
   await expect(page.getByRole('heading', { name: 'Choose your interests' })).toBeVisible();
@@ -104,8 +125,13 @@ test('Travel is a dedicated two-step flow with no clothing UI or payload', async
   await expect(page.getByText('Pilates', { exact: true })).toHaveCount(0);
   await expect(page.getByPlaceholder('Anything else?')).toHaveCount(0);
   await page.getByTestId('kin-interest-museums').click();
+  await page.getByTestId('kin-interest-sport').click();
+  await page.getByTestId('kin-sport-pilates').click();
   await page.getByTestId('kin-travel-submit').click();
   await expect.poll(() => sentBody?.destination).toBe('Madrid');
+  expect(sentBody?.startDate).toBe('2026-10-03');
+  expect(sentBody?.endDate).toBe('2026-10-09');
+  expect(sentBody?.interests).toEqual(['museums', 'pilates']);
   expect(sentBody?.myThingsItemId).toBeUndefined();
   expect(sentBody?.myThingsItemIds).toBeUndefined();
   await expect(page.getByText('Choose from My Things')).toHaveCount(0);
@@ -176,10 +202,15 @@ test('Travel step 2 validates interests and Sport subchoices, then submits direc
   await expect.poll(() => calls).toBe(1);
 });
 
-test('Travel renders compact day cards with exact server Maps links, attribution, Swap and Add to trip, without narrative or drive-time copy', async ({ page }) => {
+test('compact Travel cards expose distinct Maps names, send server identities for Swap and Add to trip, and render successful replacements', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   const mapsUrl = 'https://maps.google.com/?cid=stable-place-1';
+  const secondMapsUrl = 'https://www.google.com/maps/place/Second+Gallery';
   let swapBody: Record<string, unknown> | undefined;
+  let tripBody: Record<string, unknown> | undefined;
+  let tripItemBody: Record<string, unknown> | undefined;
+  let failedTripItemBody: Record<string, unknown> | undefined;
+  let tripItemCalls = 0;
   await page.route('**/api/kin/travel/plan', async (route) => {
     await route.fulfill({
       status: 200,
@@ -207,6 +238,20 @@ test('Travel renders compact day cards with exact server Maps links, attribution
               slot: null,
               activityInterest: 'museums',
               openingHours: '08:00–18:00',
+            }, {
+              placeId: 'stable-place-gallery',
+              name: 'Second Gallery',
+              formattedAddress: null,
+              lat: 51.52,
+              lng: -0.12,
+              rating: 4.6,
+              websiteUrl: null,
+              mapsUrl: secondMapsUrl,
+              photoUrl: null,
+              photoAttribution: null,
+              slot: null,
+              activityInterest: 'museums',
+              openingHours: null,
             }],
             routes: [{ fromPlaceId: 'stable-place-1', toPlaceId: 'other', distanceMeters: 1800, durationSeconds: 600 }],
           }],
@@ -240,6 +285,22 @@ test('Travel renders compact day cards with exact server Maps links, attribution
       }),
     });
   });
+  await page.route('**/api/kin/trips', async (route) => {
+    tripBody = route.request().postDataJSON();
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'trip-server-1' }) });
+  });
+  await page.route('**/api/kin/trips/trip-server-1/items', async (route) => {
+    tripItemCalls += 1;
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    if (body.placeId === 'stable-place-gallery') {
+      failedTripItemBody = body;
+      await route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ error: 'Could not add this place' }) });
+      return;
+    }
+    tripItemBody = body;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ id: 'trip-item-1' }) });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-mode-travel').click();
@@ -247,21 +308,45 @@ test('Travel renders compact day cards with exact server Maps links, attribution
   await page.getByTestId('kin-travel-next').click();
   await page.getByTestId('kin-interest-cafes').click();
   await page.getByTestId('kin-travel-submit').click();
-  const place = page.getByTestId('kin-travel-place');
+  const place = page.getByTestId('kin-travel-place').first();
   await expect(place).toBeVisible();
   await expect(place).toContainText('Museums');
-  await expect(place.getByRole('link', { name: 'Maps' })).toHaveAttribute('href', mapsUrl);
+  await expect(place.getByRole('link', { name: 'Open A very long place name that remains constrained inside its compact card in Google Maps' })).toHaveAttribute('href', mapsUrl);
+  await expect(page.getByRole('link', { name: 'Open Second Gallery in Google Maps' })).toHaveAttribute('href', secondMapsUrl);
   await expect(place).toContainText('Google contributor');
   const swap = place.getByTestId('kin-swap-place');
   const add = place.getByTestId('kin-add-to-trip');
-  const maps = place.getByRole('link', { name: 'Maps' });
+  const maps = place.getByRole('link', { name: 'Open A very long place name that remains constrained inside its compact card in Google Maps' });
   for (const control of [swap, add, maps]) {
     const box = await control.boundingBox();
     expect(box?.width).toBeGreaterThanOrEqual(44);
     expect(box?.height).toBeGreaterThanOrEqual(44);
   }
+  await add.click();
+  await expect(add).toBeDisabled();
+  expect(tripItemCalls).toBe(1);
+  await expect(add).toHaveText('Added to trip');
+  expect(tripBody).toEqual({ destination: 'London' });
+  expect(tripItemBody).toEqual({
+    dayIndex: 0,
+    placeId: 'stable-place-1',
+    name: 'A very long place name that remains constrained inside its compact card',
+    formattedAddress: 'A full address that should not render',
+    lat: 51.5,
+    lng: -0.1,
+  });
+  const failedAdd = page.getByTestId('kin-travel-place').nth(1).getByTestId('kin-add-to-trip');
+  const dialogPromise = page.waitForEvent('dialog');
+  await failedAdd.click();
+  const dialog = await dialogPromise;
+  expect(dialog.message()).toContain('Could not add this place');
+  await dialog.accept();
+  expect(failedTripItemBody?.placeId).toBe('stable-place-gallery');
+  await expect(failedAdd).toBeEnabled();
+  await expect(failedAdd).toHaveText('Add to trip');
   await swap.click();
   await expect.poll(() => swapBody?.activityInterest).toBe('museums');
+  expect(swapBody?.query).toBeUndefined();
   await expect(page.getByRole('main')).toContainText('Replacement Museum');
   await expect(page.getByText('This long narrative should not be shown')).toHaveCount(0);
   await expect(page.getByText('A full address that should not render')).toHaveCount(0);
@@ -269,21 +354,81 @@ test('Travel renders compact day cards with exact server Maps links, attribution
   await expect(page.getByText(/10 min drive/)).toHaveCount(0);
 });
 
-test('the two Travel steps are RTL-safe with Arabic labels and no overflow at 390×844', async ({ page }) => {
+test('both English Travel steps remain reachable above the bottom navigation at 390×844', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await expectMobileControlAboveNavigation(page, 'kin-end-date');
+  await expectMobileControlAboveNavigation(page, 'kin-travel-next');
+  await page.getByTestId('kin-destination').fill('Lisbon');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-sport').click();
+  await expectMobileControlAboveNavigation(page, 'kin-sport-walking_places');
+  await page.getByTestId('kin-sport-walking_places').click();
+  await expect(page.getByTestId('kin-sport-walking_places')).toHaveAttribute('aria-pressed', 'true');
+  await expectMobileControlAboveNavigation(page, 'kin-travel-submit');
+});
+
+test('Arabic Travel labels, Maps names, Back navigation, and both 390×844 steps are RTL-safe and reachable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockMe(page, { kinSearch: true, language: 'ar' });
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        plan: {
+          destination: 'دبي',
+          narrative: '',
+          citations: [],
+          days: [{
+            dayIndex: 0,
+            date: null,
+            routes: [],
+            places: [
+              { placeId: 'dubai-1', name: 'متحف المستقبل', formattedAddress: null, lat: null, lng: null, rating: null, websiteUrl: null, mapsUrl: 'https://maps.google.com/?cid=dubai-1', photoUrl: null, photoAttribution: null, slot: null, activityInterest: 'museums', openingHours: null },
+              { placeId: 'dubai-2', name: 'حديقة زعبيل', formattedAddress: null, lat: null, lng: null, rating: null, websiteUrl: null, mapsUrl: 'https://www.google.com/maps/place/Zabeel+Park', photoUrl: null, photoAttribution: null, slot: null, activityInterest: 'parks', openingHours: null },
+            ],
+          }],
+        },
+      }),
+    });
+  });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-mode-travel').click();
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await expect(page.getByText('1 من 2')).toBeVisible();
+  await expect(page.getByText('الوجهة', { exact: true })).toBeVisible();
+  await expect(page.getByText('البداية (اختياري)', { exact: true })).toBeVisible();
+  await expect(page.getByText('النهاية (اختياري)', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kin-travel-next')).toHaveText('التالي');
+  await expect(page.getByTestId('kin-travel-back')).toHaveText('رجوع');
+  await expectMobileControlAboveNavigation(page, 'kin-end-date');
+  await expectMobileControlAboveNavigation(page, 'kin-travel-next');
   await page.getByTestId('kin-destination').fill('دبي');
   await page.getByTestId('kin-travel-next').click();
   await expect(page.getByText('2 من 2')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'اختر اهتماماتك' })).toBeVisible();
+  await expect(page.getByTestId('kin-travel-back')).toHaveText('رجوع');
+  await expect(page.getByTestId('kin-interest-sport')).toContainText('رياضة');
   await page.getByTestId('kin-interest-sport').click();
+  await expect(page.getByTestId('kin-sport-gyms')).toHaveText('نوادٍ رياضية');
+  await expect(page.getByTestId('kin-sport-pilates')).toHaveText('بيلاتس');
   await expect(page.getByTestId('kin-sport-walking_places')).toHaveText('أماكن للمشي');
-  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-  const widths = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
-  expect(widths.scrollWidth).toBeLessThanOrEqual(widths.clientWidth);
+  await expectMobileControlAboveNavigation(page, 'kin-sport-walking_places');
+  await page.getByTestId('kin-sport-walking_places').click();
+  await expect(page.getByTestId('kin-sport-walking_places')).toHaveAttribute('aria-pressed', 'true');
+  await expectMobileControlAboveNavigation(page, 'kin-travel-submit');
+  await page.getByTestId('kin-travel-back').click();
+  await expect(page.getByText('1 من 2')).toBeVisible();
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-travel-submit').click();
+  await expect(page.getByRole('link', { name: 'افتح متحف المستقبل في خرائط Google' })).toHaveText('خرائط');
+  await expect(page.getByRole('link', { name: 'افتح حديقة زعبيل في خرائط Google' })).toHaveText('خرائط');
 });
 
 test('submitting a blank query shows an inline error and never calls the endpoint', async ({ page }) => {

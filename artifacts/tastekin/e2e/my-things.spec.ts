@@ -1201,7 +1201,9 @@ test('Style with KIN enforces six selections with Arabic live feedback and no mo
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
+  await expect(page.getByTestId('my-things-style-with-kin')).toHaveText('نسّق مع KIN');
   await page.getByTestId('my-things-style-with-kin').click();
+  await expect(page.locator('.approved-kicker')).toHaveText('نسّق مع KIN');
   const cards = page.getByTestId('my-things-style-item');
   for (let index = 0; index < 7; index += 1) await cards.nth(index).getByRole('button').click();
   await expect(page.getByText('يمكنك اختيار حتى 6 قطع في المرة الواحدة.')).toBeVisible();
