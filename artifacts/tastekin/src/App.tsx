@@ -2770,6 +2770,12 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [lookAddedToTrip, setLookAddedToTrip] = useState(false);
   const [addingLookToTrip, setAddingLookToTrip] = useState(false);
+  const [lookSaved, setLookSaved] = useState(false);
+  const [savingLook, setSavingLook] = useState(false);
+  const [enlargedResult, setEnlargedResult] = useState<KinResultCard | null>(null);
+  const savingLookRef = useRef(false);
+  const lightboxTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const lightboxCloseRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<'form' | 'looks-result' | 'travel-overview'>('form');
   const [planView, setPlanView] = useState<'plan' | 'map'>('plan');
   const [swappingPlaceKey, setSwappingPlaceKey] = useState<string | null>(null);
@@ -2780,6 +2786,25 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   // opened "Optional details") carries over, and the new screen's own
   // headline/hero can render off-screen above the fold.
   useEffect(() => { window.scrollTo(0, 0); }, [view]);
+
+  useEffect(() => {
+    if (!enlargedResult) return;
+    lightboxCloseRef.current?.focus();
+    const handleLightboxKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setEnlargedResult(null);
+        requestAnimationFrame(() => lightboxTriggerRef.current?.focus());
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        lightboxCloseRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleLightboxKeyDown);
+    return () => document.removeEventListener('keydown', handleLightboxKeyDown);
+  }, [enlargedResult]);
 
   const myThingsEnabled = session.featureFlags.my_things === true;
   useEffect(() => {
@@ -2849,6 +2874,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
+    setLookSaved(false); setEnlargedResult(null);
     // Captured now, before anything async — the request that goes out uses
     // exactly these values, and the result is later shown against exactly
     // this snapshot, regardless of anything the member does to the form's
@@ -2932,7 +2958,9 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   };
 
   const saveRecommendation = async () => {
-    if (!result || result.status !== 'ok') return;
+    if (!result || result.status !== 'ok' || lookSaved || savingLookRef.current) return;
+    savingLookRef.current = true;
+    setSavingLook(true);
     try {
       const response = await fetch('/api/kin/saved', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -2940,8 +2968,12 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       setSavedNotice(t('Saved to your KIN history.', 'تم الحفظ في سجل كين.'));
+      setLookSaved(true);
     } catch (err) {
       setSavedNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      savingLookRef.current = false;
+      setSavingLook(false);
     }
   };
 
@@ -3014,19 +3046,45 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const looksOptions = result && result.status === 'ok' ? result.options ?? [] : [];
   const activeOption = looksOptions[selectedOptionIndex];
   const activeDay = travelPlan?.days[selectedDayIndex];
+  const backToForm = () => { setView('form'); setState('idle'); };
+  const closeResultLightbox = () => {
+    setEnlargedResult(null);
+    requestAnimationFrame(() => lightboxTriggerRef.current?.focus());
+  };
+  const openResultLightbox = (card: KinResultCard, trigger: HTMLButtonElement) => {
+    lightboxTriggerRef.current = trigger;
+    setEnlargedResult(card);
+  };
 
-  // Only ever the member's own uploaded photo or their selected My Things
-  // item's authorized image — captured at submit time (resultReference),
-  // never a web-search product thumbnail. Absent entirely (text-only
-  // advice) when no reference image was part of this request. Shared by
-  // both the parsed-options layout and the plain-answer fallback so a
-  // successful answer with no Signature/Safe/Bold options still shows it.
-  const referenceImage = resultReference && <div className="kin-card-image" data-testid="kin-look-reference">
-    <img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} />
-    <span className="kin-reference-label">{t('Your styling reference', 'مرجع أسلوبك')}</span>
+  // The single compact "your piece" card shown above the results grid.
+  // Only ever the member's own uploaded photo, their selected My Things
+  // item's authorized image, or their pre-selected styling items — never a
+  // web-search product thumbnail. Absent entirely (text-only advice) when
+  // no piece was part of this request. stylingItemIds (pre-selected from
+  // My Things) and resultReference (in-form photo/dropdown, captured at
+  // submit time so it never reflects a since-changed form) are mutually
+  // exclusive, so only one branch below is ever real for a given result.
+  const firstStylingItemId = stylingItemIds.size > 0 ? [...stylingItemIds][0] : null;
+  const firstStylingItem = firstStylingItemId ? myThingsItems.find((item) => item.id === firstStylingItemId) : undefined;
+  const pieceCard = (firstStylingItemId || resultReference) && <div className="kin-piece-card" data-testid="kin-piece-card">
+    {resultReference
+      ? <div className="kin-piece-media" data-testid="kin-look-reference"><img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>
+      : <div className="kin-piece-media"><img src={`/api/closet-items/${firstStylingItemId}/image`} alt="" /></div>}
+    <div className="kin-piece-info">
+      <span className="kin-piece-kicker">{t('Your piece', 'قطعتك')}</span>
+      <span className="kin-piece-desc">
+        {resultReference
+          ? t('Your styling reference', 'مرجع أسلوبك')
+          : stylingItemIds.size > 1
+            ? t(`Styled with ${stylingItemIds.size} items`, `تم التنسيق باستخدام ${stylingItemIds.size} قطع`)
+            : firstStylingItem
+              ? `${closetTaxonomyLabel(CLOSET_ITEM_TYPES, firstStylingItem.itemType)} · ${closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, firstStylingItem.primaryColor)}`
+              : t('Your piece', 'قطعتك')}
+      </span>
+    </div>
+    <button type="button" className="kin-piece-change" onClick={resultReference ? backToForm : onChangeStylingItems}>{t('Change', 'تغيير')}</button>
   </div>;
 
-  const backToForm = () => { setView('form'); setState('idle'); };
   const advanceTravelStep = () => {
     setErrorMessage('');
     if (travelStep === 1) {
@@ -3119,25 +3177,10 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
       <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={backToForm}><ArrowLeft size={18} /></button>
       <span className="kin-kicker">{t('KIN Looks', 'كين لوكس')}</span>
       <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
-      {stylingItemIds.size > 0 && <div className="form-field" data-testid="kin-styling-summary">
-        <div className="kin-styling-summary-head">
-          <span>{t(`Styled with ${stylingItemIds.size} item${stylingItemIds.size > 1 ? 's' : ''}`, `تم التنسيق باستخدام ${stylingItemIds.size} قطع`)}</span>
-          <button type="button" className="approved-button" onClick={onChangeStylingItems}>{t('Change', 'تغيير')}</button>
-        </div>
-        <div className="kin-styling-items">
-          {[...stylingItemIds].map((id) => {
-            const item = myThingsItems.find((candidate) => candidate.id === id);
-            if (!item) return null;
-            return <div key={id} className="kin-styling-item">
-              <img src={`/api/closet-items/${id}/image`} alt="" />
-              <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>
-            </div>;
-          })}
-        </div>
-      </div>}
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       {statusPanel}
       {state === 'ready' && result && result.status !== 'unavailable' && <>
+        {pieceCard}
         {result.status === 'partial' && <div className="workspace-notice" role="status" data-testid="kin-partial">{t('KIN found verified pieces, but the recommendation is incomplete. Try again for Signature, Safe, and Bold options.', 'وجد كين قطعًا موثقة، لكن التوصية غير مكتملة. حاول مرة أخرى للحصول على خيارات الإطلالة المميزة والآمنة والجريئة.')}</div>}
         {activeOption ? <div data-testid="kin-looks-options">
           <div className="kin-card" data-testid="kin-look-option">
@@ -3145,7 +3188,6 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
               <span className="kin-card-kicker">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].en, KIN_LOOKS_OPTION_COPY[activeOption.label].ar)}</span>
               <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
             </div>
-            {referenceImage}
             <div className="kin-card-caption"><FormattedText text={activeOption.reasoning} /></div>
             {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
               {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
@@ -3158,7 +3200,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
             </div>}
             {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
             <div className="kin-card-actions">
-              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save Look', 'احفظ الإطلالة')}</button>}
+              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" aria-pressed={lookSaved} aria-busy={savingLook} disabled={lookSaved || savingLook} onClick={() => void saveRecommendation()}>{lookSaved ? t('Saved', 'تم الحفظ') : savingLook ? t('Saving…', 'جارٍ الحفظ…') : t('Save Look', 'احفظ الإطلالة')}</button>}
               <button className="approved-button" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Get new suggestions', 'احصل على اقتراحات جديدة')}</button>
             </div>
             <div className="kin-link-row">
@@ -3169,7 +3211,6 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
           </div>
           {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
         </div> : <div className="kin-card" data-testid="kin-answer">
-          {referenceImage}
           <div className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={result.answer} /></div>
           {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited" style={{ margin: '0 16px 16px' }}>{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
         </div>}
@@ -3182,13 +3223,27 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
         </div>}
 
         {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results" style={{ marginTop: 14, marginBottom: 24 }}>
-          {result.results.map((card, index) => <a key={`${card.url}-${index}`} className="approved-collection" href={card.url} target="_blank" rel="noopener noreferrer" data-testid="kin-result-card">
+          {/* Never a shopping link or price — KIN Style shows real search
+              results for reference only. Tapping enlarges the image. There
+              is no per-product save: KIN only ever saves the whole look
+              (the Save Look button above), since no per-item save endpoint
+              exists — a card-level save control would be misleading. */}
+          {result.results.map((card, index) => <button type="button" key={`${card.url}-${index}`} className="approved-collection kin-result-card" data-testid="kin-result-card" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={(event) => openResultLightbox(card, event.currentTarget)}>
             <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
             <strong>{card.title}</strong>
-            <span>{card.source}{card.price !== null && card.currency ? ` · ${card.currency} ${card.price}` : ''}</span>
-          </a>)}
+            {card.source && <span>{card.source}</span>}
+          </button>)}
         </div>}
       </>}
+
+      {enlargedResult && <div className="kin-lightbox" role="dialog" aria-modal="true" aria-label={enlargedResult.title} data-testid="kin-lightbox" onClick={closeResultLightbox}>
+        <button ref={lightboxCloseRef} type="button" className="kin-lightbox-close" aria-label={t('Close', 'إغلاق')} onClick={(event) => { event.stopPropagation(); closeResultLightbox(); }}><X size={20} /></button>
+        <img src={enlargedResult.imageUrl || '/kin-placeholder.svg'} alt="" onClick={(event) => event.stopPropagation()} />
+        <div className="kin-lightbox-caption" onClick={(event) => event.stopPropagation()}>
+          <strong>{enlargedResult.title}</strong>
+          {enlargedResult.source && <span>{enlargedResult.source}</span>}
+        </div>
+      </div>}
     </section>;
   }
 
@@ -3261,7 +3316,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
         <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
         <p className="kin-subline">{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
         <div className="kin-tabs">
-          <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Looks', 'الإطلالات')}</button>
+          <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Style', 'نسّق لي')}</button>
           <button type="button" data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
         </div>
       </>

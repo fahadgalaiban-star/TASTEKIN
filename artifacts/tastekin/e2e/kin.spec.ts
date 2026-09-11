@@ -520,7 +520,7 @@ test('a network/5xx error renders the inline error state and the form remains us
   await expect(page.getByTestId('kin-submit')).toBeEnabled();
 });
 
-test('external result cards render title, source, price+currency when supplied, and the branded placeholder when no image is supplied', async ({ page }) => {
+test('external result cards render title and verified source, never a price or shopping link, and enlarge on tap', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/search', async (route) => {
     await route.fulfill({
@@ -529,22 +529,135 @@ test('external result cards render title, source, price+currency when supplied, 
         status: 'ok',
         answer: 'Here is one option.',
         citations: [],
+        options: [{ label: 'signature', reasoning: 'A tailored look.', ownedItems: [], missingItems: [] }],
         results: [
           { title: 'Wool Coat', source: 'example.com', url: 'https://example.com/coat', price: 240, currency: 'USD', imageUrl: null },
         ],
       }),
     });
   });
+  await page.route('**/api/kin/saved', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' }); });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('a warm coat');
   await page.getByTestId('kin-submit').click();
   const card = page.getByTestId('kin-result-card');
-  await expect(card).toHaveAttribute('href', 'https://example.com/coat');
   await expect(card).toContainText('Wool Coat');
   await expect(card).toContainText('example.com');
-  await expect(card).toContainText('USD 240');
+  await expect(card).not.toContainText('USD 240');
+  await expect(card.locator('a')).toHaveCount(0);
+  await expect(card).not.toHaveAttribute('href', /.*/);
   await expect(card.locator('img')).toHaveAttribute('src', '/kin-placeholder.svg');
+  // No per-product save control exists — KIN never invents a per-item
+  // save endpoint, so a result card is never given a misleading save
+  // affordance of its own. Only "Save Look" (checked below) is real.
+  await expect(page.getByTestId('kin-result-save')).toHaveCount(0);
+  await expect(card.getByRole('button', { name: /save/i })).toHaveCount(0);
+
+  await card.click();
+  await expect(page.getByTestId('kin-lightbox')).toBeVisible();
+  await expect(page.getByTestId('kin-lightbox')).toContainText('Wool Coat');
+  await expect(page.getByTestId('kin-lightbox')).not.toContainText('USD 240');
+  await expect(page.locator('a[href="https://example.com/coat"]')).toHaveCount(0);
+  await page.getByLabel('Close', { exact: true }).click();
+  await expect(page.getByTestId('kin-lightbox')).toHaveCount(0);
+
+  // The whole-look Save Look control is the only save action, and it
+  // reflects its own saved state once used.
+  const saveButton = page.getByTestId('kin-save');
+  await expect(saveButton).toHaveText('Save Look');
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
+  await expect(saveButton).toHaveText('Saved');
+  await expect(saveButton).toBeDisabled();
+});
+
+test('Save Look blocks rapid duplicate requests and remains retryable after failure', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        answer: '',
+        citations: [],
+        options: [{ label: 'signature', reasoning: 'A tailored look.', ownedItems: [], missingItems: [] }],
+        results: [],
+      }),
+    });
+  });
+  let saveRequests = 0;
+  await page.route('**/api/kin/saved', async (route) => {
+    saveRequests += 1;
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    await route.fulfill({
+      status: saveRequests === 1 ? 500 : 201,
+      contentType: 'application/json',
+      body: saveRequests === 1 ? JSON.stringify({ error: 'Save failed' }) : '{}',
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('a tailored evening look');
+  await page.getByTestId('kin-submit').click();
+
+  const saveButton = page.getByTestId('kin-save');
+  await saveButton.evaluate((button: HTMLButtonElement) => {
+    button.click();
+    button.click();
+    button.click();
+  });
+  await expect(saveButton).toBeDisabled();
+  await expect(saveButton).toHaveText('Saving…');
+  await expect(saveButton).toBeEnabled();
+  await expect(saveButton).toHaveText('Save Look');
+  expect(saveRequests).toBe(1);
+
+  await saveButton.click();
+  await expect(saveButton).toBeDisabled();
+  await expect(saveButton).toHaveText('Saved');
+  expect(saveRequests).toBe(2);
+});
+
+test('the result lightbox traps focus, closes accessibly, restores the exact trigger, and shows the selected result', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: looksOkBody({ results: [
+        { title: 'First Coat', source: 'first.example', url: 'https://first.example/coat', price: null, currency: null, imageUrl: 'https://first.example/coat.jpg' },
+        { title: 'Second Jacket', source: 'second.example', url: 'https://second.example/jacket', price: null, currency: null, imageUrl: 'https://second.example/jacket.jpg' },
+      ] }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('two outerwear options');
+  await page.getByTestId('kin-submit').click();
+
+  const cards = page.getByTestId('kin-result-card');
+  const firstCard = cards.nth(0);
+  await firstCard.click();
+  const closeButton = page.getByRole('button', { name: 'Close', exact: true });
+  await expect(closeButton).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(closeButton).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(closeButton).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('kin-lightbox')).toHaveCount(0);
+  await expect(firstCard).toBeFocused();
+
+  const secondCard = cards.nth(1);
+  await secondCard.click();
+  const lightbox = page.getByTestId('kin-lightbox');
+  await expect(lightbox).toContainText('Second Jacket');
+  await expect(lightbox.locator('img')).toHaveAttribute('src', 'https://second.example/jacket.jpg');
+  await closeButton.click();
+  await expect(lightbox).toHaveCount(0);
+  await expect(secondCard).toBeFocused();
 });
 
 test('the My Things item picker only appears when my_things is also enabled and items exist', async ({ page }) => {
@@ -574,7 +687,7 @@ test('Arabic UI strings render for KIN', async ({ page }) => {
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await expect(page.getByRole('heading', { name: 'مبني من أجلك.' })).toBeVisible();
-  await expect(page.getByTestId('kin-mode-looks')).toHaveText('الإطلالات');
+  await expect(page.getByTestId('kin-mode-looks')).toHaveText('نسّق لي');
   await expect(page.getByTestId('kin-mode-travel')).toHaveText('السفر');
   await expect(page.getByTestId('kin-submit')).toHaveText('اسأل كين');
 });
@@ -650,6 +763,83 @@ test('a selected My Things item becomes the styling reference, served via the au
   await page.getByTestId('kin-my-things-item').selectOption('item-42');
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
+  const pieceCard = page.getByTestId('kin-piece-card');
+  await expect(pieceCard).toBeVisible();
+  await expect(pieceCard).toContainText('Your piece');
+  await pieceCard.getByRole('button', { name: 'Change', exact: true }).click();
+  await expect(page.getByTestId('kin-query')).toBeVisible();
+  await expect(page.getByTestId('kin-my-things-item')).toHaveValue('item-42');
+});
+
+test('multiple preselected My Things items render one compact count with an authorized thumbnail and no private key', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [
+          { id: 'shirt-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', imagePath: '/objects/private/member/shirt.jpg', createdAt: new Date().toISOString() },
+          { id: 'shoes-2', itemType: 'sneakers', primaryColor: 'white', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', imagePath: '/objects/private/member/shoes.jpg', createdAt: new Date().toISOString() },
+        ] }),
+      });
+    }
+  });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-style-with-kin').click();
+  const styleItems = page.getByTestId('my-things-style-item');
+  await styleItems.nth(0).getByRole('button').click();
+  await styleItems.nth(1).getByRole('button').click();
+  await page.getByTestId('my-things-style-continue').click();
+  await page.getByTestId('kin-query').fill('style both pieces');
+  await page.getByTestId('kin-submit').click();
+
+  const pieceCard = page.getByTestId('kin-piece-card');
+  await expect(pieceCard).toContainText('Styled with 2 items');
+  await expect(pieceCard.locator('img')).toHaveAttribute('src', '/api/closet-items/shirt-1/image');
+  await expect(pieceCard.locator('img')).not.toHaveAttribute('src', /\/objects\/private\//);
+  await expect(page.locator('body')).not.toContainText('/objects/private/member/');
+});
+
+test('Style results fit 390×844 and the final result remains reachable above navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: looksOkBody({ results: [
+        { title: 'First Coat', source: 'first.example', url: 'https://first.example/coat', price: null, currency: null, imageUrl: null },
+        { title: 'Second Jacket', source: 'second.example', url: 'https://second.example/jacket', price: null, currency: null, imageUrl: null },
+      ] }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('two compact outerwear options');
+  await page.getByTestId('kin-submit').click();
+
+  const finalCard = page.getByTestId('kin-result-card').last();
+  await finalCard.scrollIntoViewIfNeeded();
+  await expect(finalCard).toBeVisible();
+  const layout = await page.evaluate(() => {
+    const cards = document.querySelectorAll<HTMLElement>('[data-testid="kin-result-card"]');
+    const finalResult = cards[cards.length - 1];
+    const navigation = document.querySelector<HTMLElement>('[data-testid="primary-navigation"]');
+    if (!finalResult || !navigation) throw new Error('Missing Style result layout elements');
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      finalResultBottom: finalResult.getBoundingClientRect().bottom,
+      navigationTop: navigation.getBoundingClientRect().top,
+    };
+  });
+  expect(layout.scrollWidth).toBe(layout.clientWidth);
+  expect(layout.finalResultBottom).toBeLessThanOrEqual(layout.navigationTop);
 });
 
 test('no photo and no My Things item means text-only styling advice — never a fallback image of any kind', async ({ page }) => {

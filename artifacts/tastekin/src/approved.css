@@ -493,8 +493,6 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:16px 16px 0; }
 .kin-card-kicker { color:var(--tk-wine); font-size:11px; font-weight:800; letter-spacing:.14em; text-transform:uppercase; }
 .kin-badge { padding:5px 10px; border-radius:999px; background:var(--tk-wine); color:var(--tk-text-inverse); font-size:9px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; white-space:nowrap; }
-.kin-card-image { position:relative; margin:14px 16px 0; border-radius:14px; overflow:hidden; aspect-ratio:1/1; background:var(--tk-surface-muted); }
-.kin-card-image img { width:100%; height:100%; display:block; object-fit:cover; }
 .kin-card-caption { margin:14px 16px 0; color:var(--tk-ink); font-family:'Lora', serif; font-style:italic; font-size:14px; line-height:1.5; }
 .approved-app[dir="rtl"] .kin-card-caption { font-family:'IBM Plex Sans Arabic', sans-serif; font-style:normal; }
 .kin-tag-row { display:flex; flex-wrap:wrap; gap:6px; margin:12px 16px 0; }
@@ -516,7 +514,6 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-hero img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .kin-hero-tag { position:absolute; z-index:1; bottom:10px; inset-inline-start:10px; padding:6px 11px; border-radius:999px; background:var(--tk-media-overlay); color:var(--tk-text-inverse); font-size:10px; font-weight:700; }
 .kin-photo-credit { display:block; margin:0 0 14px; color:var(--tk-stone); font-size:9px; text-align:end; }
-.kin-reference-label { position:absolute; z-index:1; bottom:10px; inset-inline-start:10px; padding:6px 11px; border-radius:999px; background:var(--tk-media-overlay); color:var(--tk-text-inverse); font-size:10px; font-weight:700; }
 .kin-back-button { display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; margin-bottom:4px; border:0; border-radius:50%; background:transparent; color:var(--tk-ink); }
 .kin-segmented { display:flex; margin:0 0 16px; padding:4px; border-radius:999px; background:var(--tk-card); }
 .kin-segmented button { flex:1; padding:8px; border:0; border-radius:999px; background:transparent; color:var(--tk-stone); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
@@ -621,3 +618,22 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-styling-item { display:flex; flex:0 0 72px; width:72px; flex-direction:column; gap:4px; }
 .kin-styling-item img { width:72px; height:72px; border-radius:12px; object-fit:cover; }
 .kin-styling-item span { overflow:hidden; color:var(--tk-stone); font-size:9px; line-height:1.2; text-overflow:ellipsis; white-space:nowrap; }
+
+/* KIN Style results — compact "your piece" card, and the two-column
+   reference-only results grid (no prices, no shopping links). */
+.kin-piece-card { display:flex; align-items:center; gap:12px; margin:0 0 14px; padding:10px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); }
+.kin-piece-media { flex:0 0 56px; width:56px; height:56px; border-radius:12px; overflow:hidden; background:var(--tk-surface-muted); }
+.kin-piece-media img { width:100%; height:100%; display:block; object-fit:cover; }
+.kin-piece-info { flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px; }
+.kin-piece-kicker { color:var(--tk-stone); font-size:9px; font-weight:800; letter-spacing:.12em; text-transform:uppercase; }
+.kin-piece-desc { overflow:hidden; color:var(--tk-ink); font-size:13px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.kin-piece-change { flex:0 0 auto; border:0; background:transparent; color:var(--tk-wine); font-size:12px; font-weight:800; text-decoration:underline; text-underline-offset:3px; }
+
+.kin-result-card { display:block; width:100%; margin:0; font:inherit; cursor:pointer; }
+
+.kin-lightbox { position:fixed; inset:0; z-index:50; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:24px; background:rgba(20,12,11,.92); }
+.kin-lightbox img { max-width:100%; max-height:70vh; border-radius:16px; object-fit:contain; }
+.kin-lightbox-close { position:absolute; top:16px; inset-inline-end:16px; width:36px; height:36px; display:grid; place-items:center; border:0; border-radius:50%; background:rgba(255,255,255,.14); color:var(--tk-text-inverse); }
+.kin-lightbox-caption { display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--tk-text-inverse); text-align:center; }
+.kin-lightbox-caption strong { font-size:14px; }
+.kin-lightbox-caption span { font-size:11px; opacity:.75; }
