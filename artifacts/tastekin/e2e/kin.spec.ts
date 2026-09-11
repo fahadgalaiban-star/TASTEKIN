@@ -520,7 +520,7 @@ test('a network/5xx error renders the inline error state and the form remains us
   await expect(page.getByTestId('kin-submit')).toBeEnabled();
 });
 
-test('external result cards render title, source, price+currency when supplied, and the branded placeholder when no image is supplied', async ({ page }) => {
+test('external result cards render title and verified source, never a price or shopping link, and enlarge on tap', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/search', async (route) => {
     await route.fulfill({
@@ -540,11 +540,21 @@ test('external result cards render title, source, price+currency when supplied, 
   await page.getByTestId('kin-query').fill('a warm coat');
   await page.getByTestId('kin-submit').click();
   const card = page.getByTestId('kin-result-card');
-  await expect(card).toHaveAttribute('href', 'https://example.com/coat');
   await expect(card).toContainText('Wool Coat');
   await expect(card).toContainText('example.com');
-  await expect(card).toContainText('USD 240');
+  await expect(card).not.toContainText('USD 240');
+  await expect(card.locator('a')).toHaveCount(0);
+  await expect(card).not.toHaveAttribute('href', /.*/);
   await expect(card.locator('img')).toHaveAttribute('src', '/kin-placeholder.svg');
+  await expect(page.getByTestId('kin-result-save')).toBeVisible();
+
+  await page.getByTestId('kin-result-open').click();
+  await expect(page.getByTestId('kin-lightbox')).toBeVisible();
+  await expect(page.getByTestId('kin-lightbox')).toContainText('Wool Coat');
+  await expect(page.getByTestId('kin-lightbox')).not.toContainText('USD 240');
+  await expect(page.locator('a[href="https://example.com/coat"]')).toHaveCount(0);
+  await page.getByLabel('Close', { exact: true }).click();
+  await expect(page.getByTestId('kin-lightbox')).toHaveCount(0);
 });
 
 test('the My Things item picker only appears when my_things is also enabled and items exist', async ({ page }) => {
@@ -574,7 +584,7 @@ test('Arabic UI strings render for KIN', async ({ page }) => {
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await expect(page.getByRole('heading', { name: 'مبني من أجلك.' })).toBeVisible();
-  await expect(page.getByTestId('kin-mode-looks')).toHaveText('الإطلالات');
+  await expect(page.getByTestId('kin-mode-looks')).toHaveText('نسّق لي');
   await expect(page.getByTestId('kin-mode-travel')).toHaveText('السفر');
   await expect(page.getByTestId('kin-submit')).toHaveText('اسأل كين');
 });
@@ -650,6 +660,12 @@ test('a selected My Things item becomes the styling reference, served via the au
   await page.getByTestId('kin-my-things-item').selectOption('item-42');
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
+  const pieceCard = page.getByTestId('kin-piece-card');
+  await expect(pieceCard).toBeVisible();
+  await expect(pieceCard).toContainText('Your piece');
+  await pieceCard.getByRole('button', { name: 'Change', exact: true }).click();
+  await expect(page.getByTestId('kin-query')).toBeVisible();
+  await expect(page.getByTestId('kin-my-things-item')).toHaveValue('item-42');
 });
 
 test('no photo and no My Things item means text-only styling advice — never a fallback image of any kind', async ({ page }) => {
