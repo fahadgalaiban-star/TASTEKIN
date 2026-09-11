@@ -590,3 +590,23 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-bottom button[data-testid="nav-kin"].active { position:relative; }
 .approved-bottom button[data-testid="nav-kin"].active svg { width:38px; height:38px; padding:8px; border-radius:50%; background:var(--tk-wine); color:var(--tk-text-inverse); margin-top:-14px; box-shadow:0 6px 16px rgba(74,29,36,.35); }
 .approved-bottom button[data-testid="nav-kin"].active span { margin-top:2px; }
+
+/* KIN Travel guided flow (Plan your trip / Choose your interests / Choose from My Things) */
+.kin-step-kicker { display:block; margin:4px 0 6px; color:var(--tk-stone); font-size:10px; font-weight:800; letter-spacing:.16em; text-transform:uppercase; text-align:start; }
+.kin-step-headline { margin:0 0 4px; color:var(--tk-ink); font-family:'Lora', serif; font-size:24px; font-weight:500; line-height:1.2; letter-spacing:-.01em; text-align:start; }
+.kin-step-subline { margin:0 0 10px; color:var(--tk-stone); font-size:12px; text-align:start; }
+.kin-step-progress { margin:0 0 16px; color:var(--tk-stone); font-size:11px; font-weight:700; text-align:start; }
+.kin-date-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+
+.kin-interest-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 16px; }
+.kin-interest-card { position:relative; display:flex; align-items:center; gap:10px; min-height:56px; padding:14px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:700; text-align:start; }
+.kin-interest-card.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.kin-interest-check { position:absolute; top:8px; inset-inline-end:8px; width:20px; height:20px; display:grid; place-items:center; border-radius:50%; background:var(--tk-text-inverse); color:var(--tk-wine); }
+.kin-interest-card.sport-expanded { grid-column:1 / -1; align-items:flex-start; flex-direction:column; gap:10px; }
+.kin-sport-subchoices { display:flex; flex-wrap:wrap; gap:8px; width:100%; }
+.kin-sport-subchoices button { min-height:38px; padding:0 14px; border:1px solid var(--tk-text-inverse); border-radius:999px; background:transparent; color:var(--tk-text-inverse); font-size:11px; font-weight:700; }
+.kin-sport-subchoices button.selected { background:var(--tk-text-inverse); color:var(--tk-wine); }
+
+.kin-wardrobe-card { position:relative; cursor:pointer; }
+.kin-wardrobe-card.selected .profile-grid-media { outline:2px solid var(--tk-wine); outline-offset:-2px; }
+.kin-wardrobe-check { position:absolute; top:8px; inset-inline-end:8px; z-index:1; width:24px; height:24px; display:grid; place-items:center; border-radius:50%; background:var(--tk-wine); color:var(--tk-text-inverse); }

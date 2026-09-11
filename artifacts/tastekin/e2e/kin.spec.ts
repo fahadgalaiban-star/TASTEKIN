@@ -71,32 +71,208 @@ test('Looks mode: Optional details shows location/budget/size/occasion, not dest
   await expect(page.getByTestId('kin-start-date')).toHaveCount(0);
 });
 
-test('Travel mode is a sequential request, destination, dates, and optional-details flow with no duplicate location', async ({ page }) => {
+test('Travel mode is a 3-screen guided flow: destination+dates, then interests, then My Things — no free-text query, trip-type chips, or old budget/occasion fields', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-mode-travel').click();
 
-  await expect(page.getByTestId('kin-query')).toBeVisible();
-  await expect(page.getByTestId('kin-destination')).toHaveCount(0);
-  await page.getByTestId('kin-query').fill('A quiet art and food trip');
-  await page.getByTestId('kin-travel-next').click();
-
+  // Screen 1: Plan your trip
+  await expect(page.getByRole('heading', { name: 'Plan your trip' })).toBeVisible();
+  await expect(page.getByText('Tell KIN where and when.')).toBeVisible();
+  await expect(page.getByText('1 of 3')).toBeVisible();
   await expect(page.getByTestId('kin-destination')).toBeVisible();
+  await expect(page.getByTestId('kin-destination')).toHaveAttribute('placeholder', 'Search a city or place');
   await expect(page.getByTestId('kin-query')).toHaveCount(0);
+  await expect(page.getByText('What kind of trip do you want?')).toHaveCount(0);
+  await expect(page.getByText('Relaxed', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Start (optional)')).toBeVisible();
+  await expect(page.getByText('End (optional)')).toBeVisible();
   await page.getByTestId('kin-destination').fill('Madrid');
   await page.getByTestId('kin-travel-next').click();
 
-  await expect(page.getByTestId('kin-start-date')).toBeVisible();
-  await expect(page.getByTestId('kin-end-date')).toBeVisible();
-  await page.getByTestId('kin-start-date').fill('2026-10-01');
-  await page.getByTestId('kin-end-date').fill('2026-10-04');
+  // Screen 2: Choose your interests
+  await expect(page.getByRole('heading', { name: 'Choose your interests' })).toBeVisible();
+  await expect(page.getByText('2 of 3')).toBeVisible();
+  for (const label of ['Breakfast', 'Dinner', 'Cafés', 'Shopping', 'Museums', 'Parks', 'Hidden gems', 'Sport']) {
+    await expect(page.getByTestId('kin-interest-grid').getByText(label, { exact: true })).toBeVisible();
+  }
+  await expect(page.getByText('Gyms', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('Pilates', { exact: true })).toHaveCount(0);
+  await expect(page.getByPlaceholder('Anything else?')).toHaveCount(0);
+  await page.getByTestId('kin-interest-museums').click();
   await page.getByTestId('kin-travel-next').click();
 
-  await expect(page.getByTestId('kin-budget')).toBeVisible();
-  await expect(page.getByTestId('kin-occasion')).toBeVisible();
+  // Screen 3: Choose from My Things
+  await expect(page.getByRole('heading', { name: 'Choose from My Things' })).toBeVisible();
+  await expect(page.getByText('Select what you may want to pack.')).toBeVisible();
+  await expect(page.getByPlaceholder('Search your items')).toBeVisible();
+  await expect(page.getByTestId('kin-travel-skip')).toBeVisible();
+  await expect(page.getByTestId('kin-budget')).toHaveCount(0);
+  await expect(page.getByTestId('kin-occasion')).toHaveCount(0);
   await expect(page.getByTestId('kin-location')).toHaveCount(0);
   await expect(page.getByTestId('kin-size')).toHaveCount(0);
+});
+
+test('destination is required before advancing from screen 1', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-error')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan your trip' })).toBeVisible();
+});
+
+test('both dates blank is accepted; entering only one date is rejected; end-before-start is rejected', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Tokyo');
+
+  // one date without the other
+  await page.getByTestId('kin-start-date').fill('2026-11-01');
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-error')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan your trip' })).toBeVisible();
+
+  // end before start
+  await page.getByTestId('kin-end-date').fill('2026-10-01');
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-error')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Plan your trip' })).toBeVisible();
+
+  // both blank is accepted
+  await page.getByTestId('kin-start-date').fill('');
+  await page.getByTestId('kin-end-date').fill('');
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByRole('heading', { name: 'Choose your interests' })).toBeVisible();
+});
+
+test('at least one interest is required; Sport expands to exactly Gyms/Pilates/Walking places and requires a subchoice', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Cairo');
+  await page.getByTestId('kin-travel-next').click();
+
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-error')).toBeVisible();
+
+  await page.getByTestId('kin-interest-sport').click();
+  await expect(page.getByTestId('kin-sport-gyms')).toBeVisible();
+  await expect(page.getByTestId('kin-sport-pilates')).toBeVisible();
+  await expect(page.getByTestId('kin-sport-walking_places')).toBeVisible();
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-error')).toBeVisible();
+
+  await page.getByTestId('kin-sport-pilates').click();
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByRole('heading', { name: 'Choose from My Things' })).toBeVisible();
+});
+
+test('selected interests, dates, and multiple My Things items all reach the actual API request; Skip for now sends zero items', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [
+          { id: 'item-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() },
+          { id: 'item-2', itemType: 'jacket', primaryColor: 'black', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() },
+          { id: 'item-3', itemType: 'coat', primaryColor: 'grey', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'considering', createdAt: new Date().toISOString() },
+        ] }),
+      });
+    }
+  });
+  let sentBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    sentBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', plan: { destination: 'Madrid', narrative: 'A plan.', citations: [], days: [] } }) });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Madrid');
+  await page.getByTestId('kin-start-date').fill('2026-10-01');
+  await page.getByTestId('kin-end-date').fill('2026-10-03');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-breakfast').click();
+  await page.getByTestId('kin-interest-museums').click();
+  await page.getByTestId('kin-travel-next').click();
+
+  // Only the two "owned" items should render — the "considering" one never appears.
+  await expect(page.getByTestId('kin-wardrobe-item')).toHaveCount(2);
+  await page.getByTestId('kin-wardrobe-item').nth(0).click();
+  await page.getByTestId('kin-wardrobe-item').nth(1).click();
+  await page.getByTestId('kin-travel-use-items').click();
+
+  await expect.poll(() => sentBody?.destination).toBe('Madrid');
+  expect(sentBody?.startDate).toBe('2026-10-01');
+  expect(sentBody?.endDate).toBe('2026-10-03');
+  expect(sentBody?.interests).toEqual(expect.arrayContaining(['breakfast', 'museums']));
+  expect((sentBody?.interests as string[]).length).toBe(2);
+  expect(sentBody?.myThingsItemIds).toEqual(expect.arrayContaining(['item-1', 'item-2']));
+  expect((sentBody?.myThingsItemIds as string[]).length).toBe(2);
+});
+
+test('Skip for now submits the trip with zero My Things items, even after items were selected', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ id: 'item-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() }] }),
+      });
+    }
+  });
+  let sentBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    sentBody = route.request().postDataJSON() as Record<string, unknown>;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', plan: { destination: 'Rome', narrative: 'A plan.', citations: [], days: [] } }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Rome');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-parks').click();
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-wardrobe-item').first().click();
+  await page.getByTestId('kin-travel-skip').click();
+  await expect.poll(() => sentBody?.destination).toBe('Rome');
+  expect(sentBody?.myThingsItemIds).toBeUndefined();
+});
+
+test('the My Things picker in Travel searches and filters only eligible owned items by category', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [
+          { id: 'item-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() },
+          { id: 'item-2', itemType: 'sneakers', primaryColor: 'white', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() },
+        ] }),
+      });
+    }
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Rome');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-parks').click();
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-wardrobe-item')).toHaveCount(2);
+  await page.getByTestId('kin-wardrobe-category-shoes').click();
+  await expect(page.getByTestId('kin-wardrobe-item')).toHaveCount(1);
+  await page.getByTestId('kin-wardrobe-category-all').click();
+  await page.getByPlaceholder('Search your items').fill('blue');
+  await expect(page.getByTestId('kin-wardrobe-item')).toHaveCount(1);
 });
 
 test('Travel renders slot-ordered food stops with Google opening hours and driving legs', async ({ page }) => {
@@ -172,14 +348,14 @@ test('Travel renders slot-ordered food stops with Google opening hours and drivi
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-mode-travel').click();
-  await page.getByTestId('kin-query').fill('Coffee and dinner');
-  await page.getByTestId('kin-travel-next').click();
   await page.getByTestId('kin-destination').fill('London');
-  await page.getByTestId('kin-travel-next').click();
   await page.getByTestId('kin-start-date').fill('2026-10-01');
   await page.getByTestId('kin-end-date').fill('2026-10-01');
   await page.getByTestId('kin-travel-next').click();
-  await page.getByTestId('kin-submit').click();
+  await page.getByTestId('kin-interest-cafes').click();
+  await page.getByTestId('kin-interest-dinner').click();
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-travel-skip').click();
 
   const narrative = page.getByTestId('kin-answer');
   await expect(narrative.getByText('Day plan', { exact: true })).toBeVisible();
@@ -207,6 +383,58 @@ test('Travel renders slot-ordered food stops with Google opening hours and drivi
   await expect(page.getByText('09:00–19:00', { exact: true })).toBeVisible();
   await expect(page.getByText(/7 min drive/)).toBeVisible();
   await expect(page.getByText(/8 min drive/)).toBeVisible();
+});
+
+test('Arabic labels render correctly across all 3 Travel guided-flow screens, RTL-safe', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+
+  await expect(page.getByRole('heading', { name: 'خطط لرحلتك' })).toBeVisible();
+  await expect(page.getByText('أخبر KIN أين ومتى')).toBeVisible();
+  await expect(page.getByText('البداية (اختياري)')).toBeVisible();
+  await expect(page.getByText('النهاية (اختياري)')).toBeVisible();
+  await page.getByTestId('kin-destination').fill('دبي');
+  await page.getByTestId('kin-travel-next').click();
+
+  await expect(page.getByRole('heading', { name: 'اختر اهتماماتك' })).toBeVisible();
+  await expect(page.getByTestId('kin-interest-grid').getByText('فطور', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kin-interest-grid').getByText('رياضة', { exact: true })).toBeVisible();
+  await page.getByTestId('kin-interest-sport').click();
+  await expect(page.getByTestId('kin-sport-gyms')).toHaveText('نوادٍ رياضية');
+  await expect(page.getByTestId('kin-sport-pilates')).toHaveText('بيلاتس');
+  await expect(page.getByTestId('kin-sport-walking_places')).toHaveText('أماكن للمشي');
+  await page.getByTestId('kin-sport-gyms').click();
+  await page.getByTestId('kin-travel-next').click();
+
+  await expect(page.getByRole('heading', { name: 'اختر من أغراضي' })).toBeVisible();
+  await expect(page.getByText('اختر ما قد ترغب في أخذه معك')).toBeVisible();
+  await expect(page.getByTestId('kin-travel-skip')).toHaveText('تخطَّ الآن');
+});
+
+test('no horizontal overflow at 390px on any of the 3 Travel guided-flow screens', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+
+  const noOverflow = async () => {
+    const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  };
+  await noOverflow();
+  await page.getByTestId('kin-destination').fill('Amsterdam');
+  await page.getByTestId('kin-travel-next').click();
+  await noOverflow();
+  await page.getByTestId('kin-interest-sport').click();
+  await noOverflow();
+  await page.getByTestId('kin-sport-gyms').click();
+  await page.getByTestId('kin-travel-next').click();
+  await noOverflow();
 });
 
 test('submitting a blank query shows an inline error and never calls the endpoint', async ({ page }) => {

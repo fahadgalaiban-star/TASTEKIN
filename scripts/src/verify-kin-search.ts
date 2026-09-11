@@ -1421,6 +1421,116 @@ async function main() {
       assert.ok(!text.includes("X-Goog-Api-Key") && !text.includes("key=fake-google-key"), "...but never inside the response body itself");
     });
 
+    // --- KIN Travel guided flow: structured `interests` + `myThingsItemIds` ---
+    await check("an invalid interests value is rejected with 400", async () => {
+      assert.equal((await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", interests: ["not-a-real-interest"] })).status, 400);
+    });
+    await check("interests: breakfast + museums resolve typed Places searches, never a generic attractions search", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip", destination: "London", interests: ["breakfast", "museums"], startDate: "2026-10-01", endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; plan: { days: Array<{ places: Array<{ slot: string | null }> }> } };
+      assert.equal(payload.status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string });
+      assert.deepEqual(requests.map((request) => request.includedType).sort(), ["bakery", "museum"]);
+      assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)), "structured interests must never fall back to a generic attractions search");
+      assert.ok(requests.some((request) => request.includedType === "museum" && /museum/i.test(request.textQuery)));
+    });
+    await check("interests: shopping and hidden_gems resolve real place searches with no type restriction, never a product/affiliate search", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Rome", interests: ["shopping", "hidden_gems"] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string });
+      assert.ok(requests.every((request) => request.includedType === undefined), "shopping/hidden_gems must search real places, not a typed category");
+      assert.ok(requests.some((request) => /shopping/i.test(request.textQuery)));
+      assert.ok(requests.some((request) => /hidden gems|local favorite/i.test(request.textQuery)));
+      assert.ok(requests.every((request) => !/product|buy now|affiliate/i.test(request.textQuery)), "shopping must resolve places, never products or affiliate links");
+    });
+    await check("Sport subchoices (gyms/pilates/walking_places) resolve distinct real place searches, and gyms is type-filtered", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Berlin", interests: ["gyms", "pilates", "walking_places"] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string });
+      assert.equal(requests.filter((request) => request.includedType !== undefined).length, 1, "only the gyms interest is type-filtered; pilates/walking_places search by text");
+      assert.ok(requests.some((request) => request.includedType === "gym"));
+      assert.ok(requests.some((request) => /gym|fitness/i.test(request.textQuery)));
+      assert.ok(requests.some((request) => /pilates/i.test(request.textQuery)));
+      assert.ok(requests.some((request) => /walking|promenade/i.test(request.textQuery)));
+    });
+    await check("with no dates supplied, a structured-interests plan still returns a single sensible day, never inventing a duration", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Lisbon", interests: ["parks"] });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; plan: { days: Array<{ date: string | null }> } };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.plan.days.length, 1, "no dates means exactly one undated day — never a fabricated multi-day duration");
+      assert.equal(payload.plan.days[0].date, null, "no date was supplied, so none must be invented");
+    });
+
+    // --- KIN Travel guided flow: multi-item "Choose from My Things" -----------
+    let ownedItemA = ""; let ownedItemB = ""; let consideringItemA = ""; let userBOwnedItem = "";
+    await check("fixture: user A has two owned items and one considering item; user B has one owned item", async () => {
+      const jpeg = await validJpeg();
+      const uploadA1 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
+      ownedItemA = (await (await userA.createItem(uploadA1.uploadId, { itemType: "jacket", primaryColor: "black" })).json() as { id: string }).id;
+      const uploadA2 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
+      ownedItemB = (await (await userA.createItem(uploadA2.uploadId, { itemType: "sneakers", primaryColor: "white" })).json() as { id: string }).id;
+      const uploadA3 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
+      consideringItemA = (await (await userA.createItem(uploadA3.uploadId, { itemType: "coat", primaryColor: "grey", ownershipStatus: "considering" })).json() as { id: string }).id;
+      const uploadB = await (await userB.uploadMedia(jpeg)).json() as { uploadId: string };
+      userBOwnedItem = (await (await userB.createItem(uploadB.uploadId, { itemType: "shirt", primaryColor: "blue" })).json() as { id: string }).id;
+    });
+    await check("myThingsItemIds: both selected owned items reach the plan request, not reduced to one", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, ownedItemB] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      assert.ok(lastAnthropicRequestBody.includes("jacket") && lastAnthropicRequestBody.includes("sneakers"), "both selected items' context must reach the model, not just the first one");
+    });
+    await check("myThingsItemIds: a considering-status item is rejected, never treated as owned travel context", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, consideringItemA] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: a cross-user item id is rejected safely, not silently dropped or leaked", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, userBOwnedItem] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: a well-formed but nonexistent id is rejected with 400", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: ["00000000-0000-0000-0000-000000000000"] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: a malformed id is rejected with 400", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: ["not-a-uuid"] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: an empty array is rejected with 400 (use the singular field's absence, or omit it, to mean zero items)", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds takes precedence over the legacy singular myThingsItemId when both are sent", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemId: ownedItemB, myThingsItemIds: [ownedItemA] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      assert.ok(lastAnthropicRequestBody.includes("jacket"), "the plural field must win");
+      assert.ok(!lastAnthropicRequestBody.includes("sneakers"), "the singular field must be ignored once the plural field is present");
+    });
+    await check("omitting myThingsItemIds and myThingsItemId entirely still plans a trip with zero items (Skip for now)", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+    });
+
     // --- swap-place: a real alternate stop, never a fabricated one ---
     let firstTripPlaceIds: string[] = [];
     await check("swap-place returns a real alternate place excluding every placeId already used in the trip", async () => {

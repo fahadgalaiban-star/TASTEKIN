@@ -1,5 +1,5 @@
 import { closetItems, db, kinSavedRecommendations, kinTripItems, kinTrips } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import express, { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 
 import {
@@ -66,6 +66,41 @@ async function lookupMyThingsItem(ownerUserId: string, itemId: string) {
   if (item.season) parts.push(item.season);
   if (item.brand) parts.push(item.brand);
   return { context: parts.join(", "), imageObjectKey: item.imageObjectKey };
+}
+
+/**
+ * Plural counterpart for KIN Travel's "Choose from My Things" screen.
+ * Scoped by owner AND ownershipStatus = "owned" in the same WHERE clause —
+ * a "considering" item, a cross-user id, or a nonexistent id all collapse
+ * to the same outcome (fewer rows than requested ids), which is treated as
+ * a single hard failure for the whole request rather than silently
+ * dropping the offending id. Order of the input array is preserved in the
+ * returned contexts purely for a stable, readable combined description;
+ * it carries no authorization meaning.
+ */
+async function lookupMyThingsItems(ownerUserId: string, itemIds: string[]): Promise<{ context: string }[] | null> {
+  const rows = await db
+    .select({
+      id: closetItems.id, itemType: closetItems.itemType, primaryColor: closetItems.primaryColor,
+      style: closetItems.style, occasion: closetItems.occasion, season: closetItems.season, brand: closetItems.brand,
+    })
+    .from(closetItems)
+    .where(and(
+      inArray(closetItems.id, itemIds),
+      eq(closetItems.ownerUserId, ownerUserId),
+      eq(closetItems.ownershipStatus, "owned"),
+    ));
+  if (rows.length !== itemIds.length) return null;
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return itemIds.map((id) => {
+    const item = byId.get(id)!;
+    const parts = [item.itemType, item.primaryColor];
+    if (item.style) parts.push(item.style);
+    if (item.occasion) parts.push(item.occasion);
+    if (item.season) parts.push(item.season);
+    if (item.brand) parts.push(item.brand);
+    return { context: parts.join(", ") };
+  });
 }
 
 /**
@@ -250,13 +285,19 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
   }
 
   let itemContext: string | undefined;
-  if (validated.value.myThingsItemId) {
-    const item = await lookupMyThingsItem(user.id, validated.value.myThingsItemId);
-    if (!item) {
+  // The plural field (multi-select "Choose from My Things") takes
+  // precedence when present and non-empty; a caller that only ever sends
+  // the original singular field is completely unaffected.
+  const itemIds = validated.value.myThingsItemIds?.length
+    ? validated.value.myThingsItemIds
+    : validated.value.myThingsItemId ? [validated.value.myThingsItemId] : [];
+  if (itemIds.length > 0) {
+    const items = await lookupMyThingsItems(user.id, itemIds);
+    if (!items) {
       res.status(400).json({ error: "Selected item not found" });
       return;
     }
-    itemContext = item.context;
+    itemContext = items.map((item) => item.context).join("; ");
   }
 
   const reservation = await reserveKinSearchAttempt(user.id);

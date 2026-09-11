@@ -2708,6 +2708,28 @@ const KIN_SLOT_LABELS: Record<string, { en: string; ar: string }> = {
   DINNER: { en: 'Dinner', ar: 'عشاء' }
 };
 
+// KIN Travel guided flow — "Choose your interests". Sport is a UI-only
+// grouping: selecting it never sends "sport" itself to the backend, only
+// whichever of its subchoices the member also picks (see kin-search.ts's
+// KinTravelInterest, which shares these exact string values).
+type KinMainInterest = 'breakfast' | 'dinner' | 'cafes' | 'shopping' | 'museums' | 'parks' | 'hidden_gems';
+type KinSportSubchoice = 'gyms' | 'pilates' | 'walking_places';
+const KIN_MAIN_INTERESTS: { value: KinMainInterest; en: string; ar: string }[] = [
+  { value: 'breakfast', en: 'Breakfast', ar: 'فطور' },
+  { value: 'dinner', en: 'Dinner', ar: 'عشاء' },
+  { value: 'cafes', en: 'Cafés', ar: 'مقاهي' },
+  { value: 'shopping', en: 'Shopping', ar: 'تسوق' },
+  { value: 'museums', en: 'Museums', ar: 'متاحف' },
+  { value: 'parks', en: 'Parks', ar: 'حدائق' },
+  { value: 'hidden_gems', en: 'Hidden gems', ar: 'أماكن مميزة وغير معروفة' },
+];
+const KIN_SPORT_SUBCHOICES: { value: KinSportSubchoice; en: string; ar: string }[] = [
+  { value: 'gyms', en: 'Gyms', ar: 'نوادٍ رياضية' },
+  { value: 'pilates', en: 'Pilates', ar: 'بيلاتس' },
+  { value: 'walking_places', en: 'Walking places', ar: 'أماكن للمشي' },
+];
+const MAX_TRAVEL_ITEMS = 6;
+
 function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
@@ -2731,7 +2753,13 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [travelStep, setTravelStep] = useState<1 | 2 | 3 | 4>(1);
+  const [travelStep, setTravelStep] = useState<1 | 2 | 3>(1);
+  const [mainInterests, setMainInterests] = useState<Set<KinMainInterest>>(new Set());
+  const [sportSelected, setSportSelected] = useState(false);
+  const [sportSubchoices, setSportSubchoices] = useState<Set<KinSportSubchoice>>(new Set());
+  const [wardrobeSearch, setWardrobeSearch] = useState('');
+  const [wardrobeCategory, setWardrobeCategory] = useState<ClosetCategoryFilter>('all');
+  const [selectedWardrobeIds, setSelectedWardrobeIds] = useState<Set<string>>(new Set());
   const [travelReasonCode, setTravelReasonCode] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -2807,12 +2835,21 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     if (id) clearPhoto();
   };
 
-  const submit = async () => {
+  // The guided flow's chip labels, in whichever language the member is
+  // reading the app in — used only to build a readable synthetic query for
+  // KIN's narrative call. The actual place-resolution logic never reads
+  // this string; it reads the structured `interests` list sent alongside it.
+  const travelInterestLabel = (value: KinMainInterest | KinSportSubchoice): string => {
+    const main = KIN_MAIN_INTERESTS.find((item) => item.value === value);
+    if (main) return t(main.en, main.ar);
+    const sub = KIN_SPORT_SUBCHOICES.find((item) => item.value === value);
+    return sub ? t(sub.en, sub.ar) : value;
+  };
+
+  const submit = async (overrideWardrobeIds?: string[]) => {
     const trimmed = query.trim();
-    if (!trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
+    if (mode === 'looks' && !trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
-    if (mode === 'travel' && (!startDate || !endDate)) { setErrorMessage(t('Choose your travel dates.', 'اختر تواريخ سفرك.')); return; }
-    if (mode === 'travel' && endDate < startDate) { setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.')); return; }
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
@@ -2825,11 +2862,15 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     const submittedLocale: 'en' | 'ar' = ar ? 'ar' : 'en';
     try {
       if (mode === 'travel') {
-        const body: Record<string, unknown> = { query: trimmed, destination: destination.trim(), locale: submittedLocale };
-        if (selectedItemId) body.myThingsItemId = selectedItemId;
-        if (budget.trim()) body.budget = Number(budget);
-        if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
-        if (occasion.trim()) body.occasion = occasion.trim();
+        const interestList: (KinMainInterest | KinSportSubchoice)[] = [...mainInterests, ...(sportSelected ? sportSubchoices : [])];
+        const trimmedDestination = destination.trim();
+        const syntheticQuery = interestList.length
+          ? t(`Plan a trip to ${trimmedDestination} including: ${interestList.map(travelInterestLabel).join(', ')}`, `خطط لرحلة إلى ${trimmedDestination} تشمل: ${interestList.map(travelInterestLabel).join('، ')}`)
+          : t(`Plan a trip to ${trimmedDestination}`, `خطط لرحلة إلى ${trimmedDestination}`);
+        const body: Record<string, unknown> = { query: syntheticQuery, destination: trimmedDestination, locale: submittedLocale };
+        if (interestList.length) body.interests = interestList;
+        const submittedWardrobeIds = overrideWardrobeIds ?? [...selectedWardrobeIds];
+        if (submittedWardrobeIds.length) body.myThingsItemIds = submittedWardrobeIds;
         if (startDate) body.startDate = startDate;
         if (endDate) body.endDate = endDate;
         const response = await fetch('/api/kin/travel/plan', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -2992,24 +3033,41 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const openDay = (index: number) => { setSelectedDayIndex(index); setView('travel-day'); };
   const advanceTravelStep = () => {
     setErrorMessage('');
-    if (travelStep === 1 && !query.trim()) {
-      setErrorMessage(t('Tell KIN what kind of trip you want.', 'أخبر كين بنوع الرحلة التي تريدها.'));
-      return;
+    if (travelStep === 1) {
+      if (!destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
+      if (Boolean(startDate) !== Boolean(endDate)) { setErrorMessage(t('Enter both dates, or leave both blank.', 'أدخل التاريخين معًا، أو اتركهما فارغين.')); return; }
+      if (startDate && endDate && endDate < startDate) { setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.')); return; }
     }
-    if (travelStep === 2 && !destination.trim()) {
-      setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.'));
-      return;
+    if (travelStep === 2) {
+      if (mainInterests.size === 0 && !sportSelected) { setErrorMessage(t('Choose at least one interest.', 'اختر اهتمامًا واحدًا على الأقل.')); return; }
+      if (sportSelected && sportSubchoices.size === 0) { setErrorMessage(t('Choose at least one Sport option.', 'اختر خيارًا واحدًا على الأقل من الرياضة.')); return; }
     }
-    if (travelStep === 3 && (!startDate || !endDate)) {
-      setErrorMessage(t('Choose your travel dates.', 'اختر تواريخ سفرك.'));
-      return;
-    }
-    if (travelStep === 3 && endDate < startDate) {
-      setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.'));
-      return;
-    }
-    setTravelStep((current) => Math.min(4, current + 1) as 1 | 2 | 3 | 4);
+    setTravelStep((current) => Math.min(3, current + 1) as 1 | 2 | 3);
   };
+
+  const toggleMainInterest = (value: KinMainInterest) => setMainInterests((prev) => {
+    const next = new Set(prev);
+    if (next.has(value)) next.delete(value); else next.add(value);
+    return next;
+  });
+  const toggleSport = () => {
+    setSportSelected((prev) => {
+      const next = !prev;
+      if (!next) setSportSubchoices(new Set());
+      return next;
+    });
+  };
+  const toggleSportSubchoice = (value: KinSportSubchoice) => setSportSubchoices((prev) => {
+    const next = new Set(prev);
+    if (next.has(value)) next.delete(value); else next.add(value);
+    return next;
+  });
+  const toggleWardrobeItem = (id: string) => setSelectedWardrobeIds((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else if (next.size < MAX_TRAVEL_ITEMS) next.add(id);
+    return next;
+  });
 
   /**
    * Replaces one itinerary stop with a different real place at the same
@@ -3306,40 +3364,97 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     </div></details>}
 
     {mode === 'travel' && <div data-testid="kin-travel-step" data-step={travelStep}>
-      <p className="settings-note">{t(`Step ${travelStep} of 4`, `الخطوة ${travelStep} من 4`)}</p>
-      {travelStep === 1 && <label className="form-field"><span>{t('What kind of trip do you want?', 'ما نوع الرحلة التي تريدها؟')}</span>
-        <textarea data-testid="kin-query" rows={3} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 2000))}
-          placeholder={t('e.g. slow mornings, art, and great local food', 'مثال: صباحات هادئة وفن وطعام محلي رائع')} />
-      </label>}
-      {travelStep === 2 && <label className="form-field"><span>{t('Where are you going?', 'إلى أين ستذهب؟')}</span>
-        <input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))} />
-      </label>}
-      {travelStep === 3 && <div className="form-two">
-        <label className="form-field"><span>{t('Start date', 'تاريخ البدء')}</span><input data-testid="kin-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
-        <label className="form-field"><span>{t('End date', 'تاريخ الانتهاء')}</span><input data-testid="kin-end-date" type="date" min={startDate || undefined} value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
-      </div>}
-      {travelStep === 4 && <div className="details-body">
-        {myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
-          <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
-            <option value="">{t('None', 'بلا')}</option>
-            {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
-          </select>
-        </label>}
-        <div className="form-two">
-          <label className="form-field"><span>{t('Budget (optional)', 'الميزانية (اختياري)')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
-          <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
+      {travelStep === 1 && <>
+        <span className="kin-step-kicker">{t('KIN TRAVEL', 'كين ترافل')}</span>
+        <h2 className="kin-step-headline">{t('Plan your trip', 'خطط لرحلتك')}</h2>
+        <p className="kin-step-subline">{t('Tell KIN where and when.', 'أخبر KIN أين ومتى')}</p>
+        <p className="kin-step-progress">{t('1 of 3', '1 من 3')}</p>
+        <label className="form-field"><span>{t('Destination', 'الوجهة')}</span>
+          <input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))}
+            placeholder={t('Search a city or place', 'ابحث عن مدينة أو مكان')} />
+        </label>
+        <div className="kin-date-row">
+          <label className="form-field"><span>{t('Start (optional)', 'البداية (اختياري)')}</span><input data-testid="kin-start-date" type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label>
+          <label className="form-field"><span>{t('End (optional)', 'النهاية (اختياري)')}</span><input data-testid="kin-end-date" type="date" min={startDate || undefined} value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label>
         </div>
-        <label className="form-field"><span>{t('Occasion or priorities (optional)', 'المناسبة أو الأولويات (اختياري)')}</span><input data-testid="kin-occasion" type="text" value={occasion} onChange={(event) => setOccasion(event.target.value.slice(0, 200))} /></label>
-      </div>}
+      </>}
+      {travelStep === 2 && <>
+        <span className="kin-step-kicker">{t('KIN TRAVEL', 'كين ترافل')}</span>
+        <h2 className="kin-step-headline">{t('Choose your interests', 'اختر اهتماماتك')}</h2>
+        <p className="kin-step-subline">{t('Pick everything you want included.', 'اختر كل ما تريد تضمينه')}</p>
+        <p className="kin-step-progress">{t('2 of 3', '2 من 3')}</p>
+        <div className="kin-interest-grid" data-testid="kin-interest-grid">
+          {KIN_MAIN_INTERESTS.map((item) => <button type="button" key={item.value} className={`kin-interest-card ${mainInterests.has(item.value) ? 'selected' : ''}`}
+            data-testid={`kin-interest-${item.value}`} onClick={() => toggleMainInterest(item.value)}>
+            {t(item.en, item.ar)}
+            {mainInterests.has(item.value) && <span className="kin-interest-check"><Check size={12} /></span>}
+          </button>)}
+          <div className={`kin-interest-card ${sportSelected ? 'selected sport-expanded' : ''}`} data-testid="kin-interest-sport">
+            <button type="button" style={{ all: 'unset', width: '100%', cursor: 'pointer' }} onClick={toggleSport}>
+              {t('Sport', 'رياضة')}
+              {sportSelected && <span className="kin-interest-check"><Check size={12} /></span>}
+            </button>
+            {sportSelected && <div className="kin-sport-subchoices">
+              {KIN_SPORT_SUBCHOICES.map((item) => <button type="button" key={item.value} className={sportSubchoices.has(item.value) ? 'selected' : ''}
+                data-testid={`kin-sport-${item.value}`} onClick={() => toggleSportSubchoice(item.value)}>{t(item.en, item.ar)}</button>)}
+            </div>}
+          </div>
+        </div>
+      </>}
+      {travelStep === 3 && <>
+        <span className="kin-step-kicker">{t('KIN TRAVEL', 'كين ترافل')}</span>
+        <h2 className="kin-step-headline">{t('Choose from My Things', 'اختر من أغراضي')}</h2>
+        <p className="kin-step-subline">{t('Select what you may want to pack.', 'اختر ما قد ترغب في أخذه معك')}</p>
+        <p className="kin-step-progress">{t('3 of 3 · Optional', '3 من 3 · اختياري')}</p>
+        {(() => {
+          const ownedItems = myThingsItems.filter((item) => item.ownershipStatus === 'owned');
+          const categoryItems = wardrobeCategory === 'all' ? ownedItems : ownedItems.filter((item) => closetCategoryOf(item.itemType) === wardrobeCategory);
+          const query = wardrobeSearch.trim().toLowerCase();
+          const visibleItems = query
+            ? categoryItems.filter((item) => `${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} ${closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}`.toLowerCase().includes(query))
+            : categoryItems;
+          return <>
+            <label className="approved-search" data-testid="kin-wardrobe-search">
+              <Search size={14} />
+              <input type="search" value={wardrobeSearch} onChange={(event) => setWardrobeSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في أغراضك')} aria-label={t('Search your items', 'ابحث في أغراضك')} />
+            </label>
+            <div className="admin-filter-row" data-testid="kin-wardrobe-categories">
+              {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} className={wardrobeCategory === filter.value ? 'selected' : ''} data-testid={`kin-wardrobe-category-${filter.value}`} onClick={() => setWardrobeCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
+            </div>
+            {ownedItems.length === 0
+              ? <Empty text={t('Nothing in My Things yet.', 'لا يوجد شيء في أغراضي بعد.')} />
+              : visibleItems.length === 0
+                ? <Empty text={t('No items match your search or filter.', 'لا توجد عناصر تطابق البحث أو الفلتر.')} />
+                : <div className="approved-grid profile-edits-grid" data-testid="kin-wardrobe-grid">
+                  {visibleItems.map((item) => <button type="button" key={item.id} className={`approved-grid-card kin-wardrobe-card ${selectedWardrobeIds.has(item.id) ? 'selected' : ''}`} data-testid="kin-wardrobe-item" onClick={() => toggleWardrobeItem(item.id)}>
+                    <div className="profile-grid-media">
+                      <img src={`/api/closet-items/${item.id}/image`} alt="" />
+                      {selectedWardrobeIds.has(item.id) && <span className="kin-wardrobe-check"><Check size={14} /></span>}
+                    </div>
+                    <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
+                  </button>)}
+                </div>}
+          </>;
+        })()}
+      </>}
+      {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       <div className="kin-card-actions">
-        {travelStep > 1 && <button type="button" className="approved-button" data-testid="kin-travel-back" onClick={() => { setErrorMessage(''); setTravelStep((current) => Math.max(1, current - 1) as 1 | 2 | 3 | 4); }}>{t('Back', 'رجوع')}</button>}
-        {travelStep < 4 && <button type="button" className="approved-button primary" data-testid="kin-travel-next" onClick={advanceTravelStep}>{t('Next', 'التالي')}</button>}
+        {travelStep > 1 && <button type="button" className="approved-button" data-testid="kin-travel-back" onClick={() => { setErrorMessage(''); setTravelStep((current) => Math.max(1, current - 1) as 1 | 2 | 3); }}>{t('Back', 'رجوع')}</button>}
+        {travelStep < 3 && <button type="button" className="approved-button primary" data-testid="kin-travel-next" onClick={advanceTravelStep}>{t('Next', 'التالي')}</button>}
+        {travelStep === 3 && <>
+          {selectedWardrobeIds.size > 0 && <button type="button" className="approved-button primary" data-testid="kin-travel-use-items" onClick={() => void submit()} disabled={state === 'loading'}>
+            {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t(`Use ${selectedWardrobeIds.size} item${selectedWardrobeIds.size === 1 ? '' : 's'}`, `استخدم ${selectedWardrobeIds.size} قطع`)}
+          </button>}
+          <button type="button" className={selectedWardrobeIds.size > 0 ? 'approved-button' : 'approved-button primary'} data-testid="kin-travel-skip" onClick={() => { setSelectedWardrobeIds(new Set()); void submit([]); }} disabled={state === 'loading'}>
+            {state === 'loading' && selectedWardrobeIds.size === 0 ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Skip for now', 'تخطَّ الآن')}
+          </button>
+        </>}
       </div>
     </div>}
 
-    {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
+    {errorMessage && mode === 'looks' && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
 
-    {(mode === 'looks' || travelStep === 4) && <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
+    {mode === 'looks' && <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
       {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Ask KIN', 'اسأل كين')}
     </button>}
 
