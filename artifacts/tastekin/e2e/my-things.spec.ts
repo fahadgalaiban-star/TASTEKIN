@@ -1,8 +1,8 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 
-type MeOptions = { authenticated?: boolean; myThings?: boolean; closetAnalysis?: boolean; language?: 'en' | 'ar' };
+type MeOptions = { authenticated?: boolean; myThings?: boolean; kinSearch?: boolean; closetAnalysis?: boolean; language?: 'en' | 'ar' };
 
-function meBody({ authenticated = true, myThings = true, closetAnalysis = false, language = 'en' }: MeOptions = {}) {
+function meBody({ authenticated = true, myThings = true, kinSearch = false, closetAnalysis = false, language = 'en' }: MeOptions = {}) {
   return JSON.stringify({
     user: authenticated ? { id: 'my-things-e2e-user', email: 'my-things-e2e@tastekin.test' } : null,
     role: 'consumer',
@@ -16,7 +16,7 @@ function meBody({ authenticated = true, myThings = true, closetAnalysis = false,
     needsOnboarding: false,
     onboardingStep: 'done',
     googleAuthConfigured: false,
-    featureFlags: { my_things: myThings, closet_item_analysis: closetAnalysis },
+    featureFlags: { my_things: myThings, kin_search: kinSearch, closet_item_analysis: closetAnalysis },
   });
 }
 
@@ -1128,4 +1128,85 @@ test('Retake photo resets the upload state and lets a new photo go through the s
   await page.getByTestId('my-things-submit').click();
   await expect(page.getByTestId('my-things-add')).toBeVisible();
   expect(createCalls).toBe(1);
+});
+
+test('Style with KIN selects only owned items, preserves filters, sends 1–6 ids to Looks, and supports changing the selection', async ({ page }) => {
+  await mockMe(page, { myThings: true, kinSearch: true });
+  let items = [
+    { ...SAMPLE_ITEM, id: 'owned-shirt', itemType: 'shirt', primaryColor: 'blue' },
+    { ...SAMPLE_ITEM, id: 'owned-shoes', itemType: 'sneakers', primaryColor: 'white' },
+    { ...SAMPLE_ITEM, id: 'considering-coat', itemType: 'coat', primaryColor: 'black', ownershipStatus: 'considering' as const },
+  ];
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items }) });
+  });
+  let sentBody: Record<string, unknown> | undefined;
+  let travelBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/search', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', answer: 'Styled together.', citations: [], results: [] }) });
+  });
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    travelBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', plan: { destination: 'Rome', narrative: '', citations: [], days: [] } }) });
+  });
+
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-style-with-kin').click();
+  await expect(page.getByTestId('my-things-style-item')).toHaveCount(2);
+  await expect(page.getByText('Considering', { exact: true })).toHaveCount(0);
+
+  await page.getByTestId('my-things-category-shoes').click();
+  await expect(page.getByTestId('my-things-style-item')).toHaveCount(1);
+  await page.getByTestId('my-things-style-item').getByRole('button').click();
+  await expect(page.getByRole('status').first()).toContainText('1 of 6 selected');
+  await page.getByTestId('my-things-category-all').click();
+  await page.getByTestId('my-things-search-input').fill('shirt');
+  await page.getByTestId('my-things-style-item').getByRole('button').click();
+  await page.getByTestId('my-things-style-continue').click();
+
+  await expect(page.getByTestId('kin-styling-summary')).toContainText('Styling 2 items');
+  await page.getByTestId('kin-query').fill('Build one look');
+  await page.getByTestId('kin-submit').click();
+  await expect.poll(() => sentBody?.myThingsItemIds).toEqual(['owned-shoes', 'owned-shirt']);
+  expect(sentBody?.myThingsItemId).toBeUndefined();
+
+  await expect(page.getByTestId('kin-styling-summary')).toContainText('Styled with 2 items');
+  items = items.filter((item) => item.id !== 'owned-shirt');
+  await page.getByTestId('kin-styling-summary').getByRole('button', { name: 'Change' }).click();
+  await expect(page.getByRole('heading', { name: 'Choose items' })).toBeVisible();
+  await expect(page.getByTestId('my-things-style-item').filter({ has: page.locator('[aria-pressed="true"]') })).toHaveCount(1);
+  await expect(page.getByRole('status').first()).toContainText('1 of 6 selected');
+  await page.getByTestId('my-things-style-continue').click();
+  await expect(page.getByTestId('kin-styling-summary')).toContainText('Styling 1 item');
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('Rome');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-parks').click();
+  await page.getByTestId('kin-travel-submit').click();
+  await expect.poll(() => travelBody?.destination).toBe('Rome');
+  expect(travelBody?.myThingsItemId).toBeUndefined();
+  expect(travelBody?.myThingsItemIds).toBeUndefined();
+});
+
+test('Style with KIN enforces six selections with Arabic live feedback and no mobile overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { myThings: true, kinSearch: true, language: 'ar' });
+  const items = Array.from({ length: 7 }, (_, index) => ({ ...SAMPLE_ITEM, id: `owned-${index + 1}`, ownershipStatus: 'owned' as const }));
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items }) });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-style-with-kin').click();
+  const cards = page.getByTestId('my-things-style-item');
+  for (let index = 0; index < 7; index += 1) await cards.nth(index).getByRole('button').click();
+  await expect(page.getByText('يمكنك اختيار حتى 6 قطع في المرة الواحدة.')).toBeVisible();
+  await expect(cards.nth(6).getByRole('button')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  const widths = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+  expect(widths.scrollWidth).toBeLessThanOrEqual(widths.clientWidth);
 });

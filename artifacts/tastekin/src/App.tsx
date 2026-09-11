@@ -367,6 +367,7 @@ function TastekinApp() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingClosetItem, setEditingClosetItem] = useState<ClosetItem | null>(null);
+  const [kinStylingItemIds, setKinStylingItemIds] = useState<Set<string>>(new Set());
   const [editForm, setEditForm] = useState<EditForm>(blankEdit);
   const [pendingCrop, setPendingCrop] = useState<PendingCrop | null>(null);
   const [pendingMediaPaths, setPendingMediaPaths] = useState<string[]>([]);
@@ -1008,7 +1009,7 @@ function TastekinApp() {
     {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
-    {screen === 'kin' && <KinScreen ar={ar} onUnavailable={() => go('you')} />}
+    {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
@@ -1033,10 +1034,10 @@ function TastekinApp() {
     {screen === 'adminAnalytics' && <AdminAnalyticsScreen ar={ar} />}
     {screen === 'blockedAccounts' && <BlockedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
     {screen === 'mutedAccounts' && <MutedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
-    {screen === 'myThings' && <MyThingsScreen ar={ar} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
+    {screen === 'myThings' && <MyThingsScreen ar={ar} initialSelectedStyleIds={kinStylingItemIds} onStyleSelectionChange={(ids) => setKinStylingItemIds(new Set(ids))} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
     {screen === 'myThingsAdd' && <AddClosetItemScreen ar={ar} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'myThingsEdit' && editingClosetItem && <EditClosetItemScreen ar={ar} item={editingClosetItem} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
-    {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
+    {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} initialSelectedStyleIds={kinStylingItemIds} onStyleSelectionChange={(ids) => setKinStylingItemIds(new Set(ids))} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
    </main>{screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
@@ -2728,9 +2729,7 @@ const KIN_SPORT_SUBCHOICES: { value: KinSportSubchoice; en: string; ar: string }
   { value: 'pilates', en: 'Pilates', ar: 'بيلاتس' },
   { value: 'walking_places', en: 'Walking places', ar: 'أماكن للمشي' },
 ];
-const MAX_TRAVEL_ITEMS = 6;
-
-function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => void }) {
+function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: { ar: boolean; stylingItemIds: Set<string>; onChangeStylingItems: () => void; onUnavailable: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const allowed = session.status === 'authenticated' && session.featureFlags.kin_search === true;
@@ -2753,14 +2752,10 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [travelStep, setTravelStep] = useState<1 | 2 | 3>(1);
+  const [travelStep, setTravelStep] = useState<1 | 2>(1);
   const [mainInterests, setMainInterests] = useState<Set<KinMainInterest>>(new Set());
   const [sportSelected, setSportSelected] = useState(false);
   const [sportSubchoices, setSportSubchoices] = useState<Set<KinSportSubchoice>>(new Set());
-  const [wardrobeSearch, setWardrobeSearch] = useState('');
-  const [wardrobeCategory, setWardrobeCategory] = useState<ClosetCategoryFilter>('all');
-  const [selectedWardrobeIds, setSelectedWardrobeIds] = useState<Set<string>>(new Set());
-  const [wardrobeLimitMessage, setWardrobeLimitMessage] = useState('');
   const [travelReasonCode, setTravelReasonCode] = useState('');
   const [state, setState] = useState<'idle' | 'loading' | 'ready' | 'empty' | 'unavailable' | 'error' | 'quota-exceeded'>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -2775,7 +2770,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
   const [lookAddedToTrip, setLookAddedToTrip] = useState(false);
   const [addingLookToTrip, setAddingLookToTrip] = useState(false);
-  const [view, setView] = useState<'form' | 'looks-result' | 'travel-overview' | 'travel-day'>('form');
+  const [view, setView] = useState<'form' | 'looks-result' | 'travel-overview'>('form');
   const [planView, setPlanView] = useState<'plan' | 'map'>('plan');
   const [swappingPlaceKey, setSwappingPlaceKey] = useState<string | null>(null);
 
@@ -2847,7 +2842,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     return sub ? t(sub.en, sub.ar) : value;
   };
 
-  const submit = async (overrideWardrobeIds?: string[]) => {
+  const submit = async () => {
     const trimmed = query.trim();
     if (mode === 'looks' && !trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
@@ -2863,6 +2858,8 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     const submittedLocale: 'en' | 'ar' = ar ? 'ar' : 'en';
     try {
       if (mode === 'travel') {
+        if (mainInterests.size === 0 && !sportSelected) { setErrorMessage(t('Choose at least one interest.', 'اختر اهتمامًا واحدًا على الأقل.')); setState('idle'); return; }
+        if (sportSelected && sportSubchoices.size === 0) { setErrorMessage(t('Choose at least one Sport option.', 'اختر خيارًا واحدًا على الأقل من الرياضة.')); setState('idle'); return; }
         const interestList: (KinMainInterest | KinSportSubchoice)[] = [...mainInterests, ...(sportSelected ? sportSubchoices : [])];
         const trimmedDestination = destination.trim();
         const syntheticQuery = interestList.length
@@ -2870,8 +2867,6 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           : t(`Plan a trip to ${trimmedDestination}`, `خطط لرحلة إلى ${trimmedDestination}`);
         const body: Record<string, unknown> = { query: syntheticQuery, destination: trimmedDestination, locale: submittedLocale };
         if (interestList.length) body.interests = interestList;
-        const submittedWardrobeIds = (overrideWardrobeIds ?? [...selectedWardrobeIds]).slice(0, MAX_TRAVEL_ITEMS);
-        if (submittedWardrobeIds.length) body.myThingsItemIds = submittedWardrobeIds;
         if (startDate) body.startDate = startDate;
         if (endDate) body.endDate = endDate;
         const response = await fetch('/api/kin/travel/plan', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -2900,6 +2895,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       } else {
         const body: Record<string, unknown> = { mode: 'looks', query: trimmed, locale: submittedLocale };
         if (submittedItemId) body.myThingsItemId = submittedItemId;
+        if (stylingItemIds.size > 0) body.myThingsItemIds = [...stylingItemIds];
         if (location.trim()) body.location = location.trim();
         if (budget.trim()) body.budget = Number(budget);
         if (budget.trim() && currency.trim()) body.currency = currency.trim().toUpperCase();
@@ -3031,19 +3027,14 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
   </div>;
 
   const backToForm = () => { setView('form'); setState('idle'); };
-  const openDay = (index: number) => { setSelectedDayIndex(index); setView('travel-day'); };
   const advanceTravelStep = () => {
     setErrorMessage('');
     if (travelStep === 1) {
       if (!destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
       if (Boolean(startDate) !== Boolean(endDate)) { setErrorMessage(t('Enter both dates, or leave both blank.', 'أدخل التاريخين معًا، أو اتركهما فارغين.')); return; }
       if (startDate && endDate && endDate < startDate) { setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.')); return; }
+      setTravelStep(2);
     }
-    if (travelStep === 2) {
-      if (mainInterests.size === 0 && !sportSelected) { setErrorMessage(t('Choose at least one interest.', 'اختر اهتمامًا واحدًا على الأقل.')); return; }
-      if (sportSelected && sportSubchoices.size === 0) { setErrorMessage(t('Choose at least one Sport option.', 'اختر خيارًا واحدًا على الأقل من الرياضة.')); return; }
-    }
-    setTravelStep((current) => Math.min(3, current + 1) as 1 | 2 | 3);
   };
 
   const toggleMainInterest = (value: KinMainInterest) => setMainInterests((prev) => {
@@ -3063,20 +3054,6 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
     if (next.has(value)) next.delete(value); else next.add(value);
     return next;
   });
-  const toggleWardrobeItem = (id: string) => setSelectedWardrobeIds((prev) => {
-    const next = new Set(prev);
-    if (next.has(id)) {
-      next.delete(id);
-      setWardrobeLimitMessage('');
-    } else if (next.size < MAX_TRAVEL_ITEMS) {
-      next.add(id);
-      setWardrobeLimitMessage('');
-    } else {
-      setWardrobeLimitMessage(t('You can select up to 6 items.', 'يمكنك اختيار ما يصل إلى 6 قطع.'));
-    }
-    return next;
-  });
-
   /**
    * Replaces one itinerary stop with a different real place at the same
    * destination (one additional Google Places lookup, excluding every
@@ -3142,6 +3119,22 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
       <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={backToForm}><ArrowLeft size={18} /></button>
       <span className="kin-kicker">{t('KIN Looks', 'كين لوكس')}</span>
       <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
+      {stylingItemIds.size > 0 && <div className="form-field" data-testid="kin-styling-summary">
+        <div className="kin-styling-summary-head">
+          <span>{t(`Styled with ${stylingItemIds.size} item${stylingItemIds.size > 1 ? 's' : ''}`, `تم التنسيق باستخدام ${stylingItemIds.size} قطع`)}</span>
+          <button type="button" className="approved-button" onClick={onChangeStylingItems}>{t('Change', 'تغيير')}</button>
+        </div>
+        <div className="kin-styling-items">
+          {[...stylingItemIds].map((id) => {
+            const item = myThingsItems.find((candidate) => candidate.id === id);
+            if (!item) return null;
+            return <div key={id} className="kin-styling-item">
+              <img src={`/api/closet-items/${id}/image`} alt="" />
+              <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>
+            </div>;
+          })}
+        </div>
+      </div>}
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       {statusPanel}
       {state === 'ready' && result && result.status !== 'unavailable' && <>
@@ -3228,89 +3221,21 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         <KinRouteMap places={travelPlan.days.flatMap((d) => d.places)} />
       </div> : activeDay && <div className="kin-day-card" data-testid="kin-day-preview" style={{ marginBottom: 24 }}>
         <span className="kin-day-kicker">{(activeDay.date ? new Date(`${activeDay.date}T00:00:00Z`).toLocaleDateString(ar ? 'ar' : 'en-US', { weekday: 'long', timeZone: 'UTC' }) : `${t('Day', 'اليوم')} ${activeDay.dayIndex + 1}`)} · {travelPlan.destination}</span>
-        <h2 className="kin-day-title">{t('Your day in ', 'يومك في ')}{travelPlan.destination}</h2>
-        {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <>
+        {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <div className="kin-timeline" style={{ marginTop: 16 }}>
           {activeDay.places.map((place, index) => {
-            const previousPlace = index > 0 ? activeDay.places[index - 1] : undefined;
-            const leg = previousPlace
-              ? activeDay.routes.find((route) => route.fromPlaceId === previousPlace.placeId && route.toPlaceId === place.placeId)
-              : undefined;
+            const key = `${activeDay.dayIndex}:${place.placeId}`;
             const slotLabel = place.slot ? (KIN_SLOT_LABELS[place.slot] ? (ar ? KIN_SLOT_LABELS[place.slot].ar : KIN_SLOT_LABELS[place.slot].en) : place.slot) : null;
-            return <Fragment key={place.placeId}>
-              {leg && <div className="kin-day-preview-transit">
-                <div className="kin-day-preview-rail" />
-                <div className="kin-day-preview-transit-spacer">
-                  <span />
-                </div>
-                <span className="kin-day-preview-transit-label">
-                  {`${Math.round(leg.durationSeconds / 60)} ${t('min drive', 'دقيقة بالسيارة')}`}
-                </span>
-              </div>}
-              <div className="kin-day-preview-row">
-                <div className="kin-day-preview-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={16} />}</div>
-                <div className="kin-day-preview-body">
-                  <div className="kin-day-preview-head">
-                    {place.openingHours && <><span className="kin-day-preview-time">{place.openingHours}</span><span className="kin-day-preview-sep">·</span></>}
-                    <span className="kin-day-preview-name">{place.name}</span>
-                  </div>
-                  <span className="kin-day-preview-slot">{slotLabel || place.slot}</span>
-                </div>
-              </div>
-            </Fragment>;
-          })}
-          <button className="approved-button primary wide" style={{ marginTop: 20 }} data-testid="kin-open-day" onClick={() => openDay(activeDay.dayIndex)}>{t('OPEN DAY', 'افتح اليوم')} {activeDay.dayIndex + 1}</button>
-        </>}
-      </div>}
-
-      {travelPlan.narrative && <div className="kin-card" data-testid="kin-answer" style={{ marginBottom: 24 }}>
-        <div className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={travelPlan.narrative} /></div>
-        {travelPlan.citations.length > 0 && <div data-testid="kin-citations" style={{ padding: '0 16px 16px' }}>
-          <span className="form-label">{t('Sources', 'المصادر')}</span>
-          <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
-            {travelPlan.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
-          </ul>
-        </div>}
-      </div>}
-    </section>;
-  }
-
-  if (view === 'travel-day' && travelPlan && activeDay) {
-    return <section data-testid="kin-screen">
-      <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={() => setView('travel-overview')}><ArrowLeft size={18} /></button>
-      <span className="kin-day-kicker">{(activeDay.date ? new Date(`${activeDay.date}T00:00:00Z`).toLocaleDateString(ar ? 'ar' : 'en-US', { weekday: 'long', timeZone: 'UTC' }) : `${t('Day', 'اليوم')} ${activeDay.dayIndex + 1}`)} · {travelPlan.destination}</span>
-      <h1 className="kin-headline" style={{ textAlign: 'start', fontSize: 22 }}>{t('Your day in ', 'يومك في ')}{travelPlan.destination}</h1>
-
-      <KinRouteMap places={activeDay.places} />
-
-      {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <div className="kin-timeline" style={{ marginBottom: 24 }}>
-        {activeDay.places.map((place, index) => {
-          const key = `${activeDay.dayIndex}:${place.placeId}`;
-          const previousPlace = index > 0 ? activeDay.places[index - 1] : undefined;
-          const leg = previousPlace
-            ? activeDay.routes.find((route) => route.fromPlaceId === previousPlace.placeId && route.toPlaceId === place.placeId)
-            : undefined;
-          const slotLabel = place.slot ? (KIN_SLOT_LABELS[place.slot] ? (ar ? KIN_SLOT_LABELS[place.slot].ar : KIN_SLOT_LABELS[place.slot].en) : place.slot) : null;
-          return <div key={place.placeId}>
-            {leg && <div className="kin-transit">
-              <span />
-              <div className="kin-timeline-rail" />
-              <div className="kin-transit-label">
-                {`${Math.round(leg.durationSeconds / 60)} ${t('min drive', 'دقيقة بالسيارة')}`}
-              </div>
-            </div>}
-            <div className="kin-timeline-item" data-testid="kin-travel-place">
-              <span className="kin-timeline-hours">{place.openingHours}</span>
+            const categoryLabel = slotLabel ?? (place.activityInterest ? travelInterestLabel(place.activityInterest) : null);
+            return <div key={place.placeId} className="kin-timeline-item" data-testid="kin-travel-place">
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
               <div className="kin-timeline-card">
                 <div className="kin-timeline-thumb">{place.photoUrl ? <img src={place.photoUrl} alt="" /> : <KinRingsMark size={22} />}</div>
                 <div className="kin-timeline-body">
                   <div className="kin-timeline-meta">
-                    {slotLabel && <span className="kin-timeline-slot">{slotLabel}</span>}
-                    {place.rating !== null && <span className="kin-timeline-rating">★ {place.rating}</span>}
+                    {categoryLabel && <span className="kin-timeline-slot">{categoryLabel}</span>}
                   </div>
-                  <span className="kin-timeline-name">{place.name}</span>
-                  {place.formattedAddress && <span className="kin-timeline-note">{place.formattedAddress}</span>}
-                  {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0 }}>{t('Photo', 'صورة')}: {place.photoAttribution}</span>}
+                  <span className="kin-timeline-name" style={{ WebkitLineClamp: 2, display: '-webkit-box', overflow: 'hidden', WebkitBoxOrient: 'vertical' }}>{place.name}</span>
+                  {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: {place.photoAttribution}</span>}
                   <div className="kin-timeline-actions">
                     {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Maps', 'خرائط')}</a>}
                     <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
@@ -3322,36 +3247,60 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
                   {swappingPlaceKey === key ? t('SWAPPING…', 'جارٍ التبديل…') : t('SWAP', 'تبديل')}
                 </button>
               </div>
-            </div>
-          </div>;
-        })}
+            </div>;
+          })}
+        </div>}
       </div>}
     </section>;
   }
 
   return <section data-testid="kin-screen">
     <span className="kin-kicker">{mode === 'looks' ? t('KIN Looks', 'كين لوكس') : t('KIN Travel', 'كين ترافل')}</span>
-    <h1 className="kin-headline">{mode === 'looks' ? t('Built around you.', 'مبني من أجلك.') : t('Shaped around you.', 'مصمم من أجلك.')}</h1>
-    <p className="kin-subline">{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
-
-    <div className="kin-tabs">
-      <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Looks', 'الإطلالات')}</button>
-      <button type="button" data-testid="kin-mode-travel" className={mode === 'travel' ? 'selected' : ''} onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
-    </div>
+    {mode === 'looks' && (
+      <>
+        <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
+        <p className="kin-subline">{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
+        <div className="kin-tabs">
+          <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Looks', 'الإطلالات')}</button>
+          <button type="button" data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
+        </div>
+      </>
+    )}
 
     {mode === 'looks' && <label className="form-field"><span>{t('What do you need?', 'ماذا تحتاج؟')}</span>
       <textarea data-testid="kin-query" rows={3} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 2000))}
         placeholder={t('e.g. a dinner outfit in Paris, 14°C, smart casual', 'مثال: إطلالة عشاء في باريس، ١٤°م، أنيقة غير رسمية')} />
     </label>}
 
-    {mode === 'looks' && myThingsEnabled && myThingsItems.length > 0 && <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
-      <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
-        <option value="">{t('None', 'بلا')}</option>
-        {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
-      </select>
-    </label>}
+    {mode === 'looks' && myThingsEnabled && myThingsItems.length > 0 && (
+      stylingItemIds.size > 0 ? (
+        <div className="form-field" data-testid="kin-styling-summary">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+            <span>{t(`Styling ${stylingItemIds.size} item${stylingItemIds.size > 1 ? 's' : ''}`, `تنسيق ${stylingItemIds.size} قطع`)}</span>
+            <button type="button" className="approved-button" style={{ minHeight: 32, padding: '0 10px', fontSize: 11 }} onClick={onChangeStylingItems}>{t('Change', 'تغيير')}</button>
+          </div>
+          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
+            {[...stylingItemIds].map((id) => {
+              const item = myThingsItems.find(i => i.id === id);
+              if (!item) return null;
+              return <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 72, flex: '0 0 72px' }}>
+                <img src={`/api/closet-items/${id}/image`} alt="" style={{ width: 72, height: 72, borderRadius: 12, objectFit: 'cover' }} />
+                <span style={{ fontSize: 9, lineHeight: 1.2, color: 'var(--tk-stone)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>
+              </div>;
+            })}
+          </div>
+        </div>
+      ) : (
+        <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
+          <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
+            <option value="">{t('None', 'بلا')}</option>
+            {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
+          </select>
+        </label>
+      )
+    )}
 
-    {mode === 'looks' && !selectedItemId && <div className="form-field"><span>{t('Or add a photo (optional)', 'أو أضف صورة (اختياري)')}</span>
+    {mode === 'looks' && !selectedItemId && stylingItemIds.size === 0 && <div className="form-field"><span>{t('Or add a photo (optional)', 'أو أضف صورة (اختياري)')}</span>
       {photoPreviewUrl ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
         <img src={photoPreviewUrl} alt="" style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 12, display: 'block' }} />
         <button type="button" className="approved-button" data-testid="kin-photo-clear" onClick={clearPhoto}>{t('Remove photo', 'إزالة الصورة')}</button>
@@ -3377,7 +3326,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         <span className="kin-step-kicker">{t('KIN TRAVEL', 'كين ترافل')}</span>
         <h2 className="kin-step-headline">{t('Plan your trip', 'خطط لرحلتك')}</h2>
         <p className="kin-step-subline">{t('Tell KIN where and when.', 'أخبر KIN أين ومتى')}</p>
-        <p className="kin-step-progress">{t('1 of 3', '1 من 3')}</p>
+        <p className="kin-step-progress">{t('1 of 2', '1 من 2')}</p>
         <label className="form-field"><span>{t('Destination', 'الوجهة')}</span>
           <input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))}
             placeholder={t('Search a city or place', 'ابحث عن مدينة أو مكان')} />
@@ -3391,7 +3340,7 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
         <span className="kin-step-kicker">{t('KIN TRAVEL', 'كين ترافل')}</span>
         <h2 className="kin-step-headline">{t('Choose your interests', 'اختر اهتماماتك')}</h2>
         <p className="kin-step-subline">{t('Pick everything you want included.', 'اختر كل ما تريد تضمينه')}</p>
-        <p className="kin-step-progress">{t('2 of 3', '2 من 3')}</p>
+        <p className="kin-step-progress">{t('2 of 2', '2 من 2')}</p>
         <div className="kin-interest-grid" data-testid="kin-interest-grid">
           {KIN_MAIN_INTERESTS.map((item) => <button type="button" key={item.value} aria-pressed={mainInterests.has(item.value)} className={`kin-interest-card ${mainInterests.has(item.value) ? 'selected' : ''}`}
             data-testid={`kin-interest-${item.value}`} onClick={() => toggleMainInterest(item.value)}>
@@ -3410,55 +3359,20 @@ function KinScreen({ ar, onUnavailable }: { ar: boolean; onUnavailable: () => vo
           </div>
         </div>
       </>}
-      {travelStep === 3 && <>
-        <span className="kin-step-kicker">{t('KIN TRAVEL', 'كين ترافل')}</span>
-        <h2 className="kin-step-headline">{t('Choose from My Things', 'اختر من أغراضي')}</h2>
-        <p className="kin-step-subline">{t('Select what you may want to pack.', 'اختر ما قد ترغب في أخذه معك')}</p>
-        <p className="kin-step-progress">{t('3 of 3 · Optional', '3 من 3 · اختياري')}</p>
-        {(() => {
-          const ownedItems = myThingsItems.filter((item) => item.ownershipStatus === 'owned');
-          const categoryItems = wardrobeCategory === 'all' ? ownedItems : ownedItems.filter((item) => closetCategoryOf(item.itemType) === wardrobeCategory);
-          const query = wardrobeSearch.trim().toLowerCase();
-          const visibleItems = query
-            ? categoryItems.filter((item) => `${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} ${closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}`.toLowerCase().includes(query))
-            : categoryItems;
-          return <>
-            <label className="approved-search" data-testid="kin-wardrobe-search">
-              <Search size={14} />
-              <input type="search" value={wardrobeSearch} onChange={(event) => setWardrobeSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في أغراضك')} aria-label={t('Search your items', 'ابحث في أغراضك')} />
-            </label>
-            <div className="admin-filter-row" data-testid="kin-wardrobe-categories">
-              {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} aria-pressed={wardrobeCategory === filter.value} className={wardrobeCategory === filter.value ? 'selected' : ''} data-testid={`kin-wardrobe-category-${filter.value}`} onClick={() => setWardrobeCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
-            </div>
-            {ownedItems.length === 0
-              ? <Empty text={t('Nothing in My Things yet.', 'لا يوجد شيء في أغراضي بعد.')} />
-              : visibleItems.length === 0
-                ? <Empty text={t('No items match your search or filter.', 'لا توجد عناصر تطابق البحث أو الفلتر.')} />
-                : <div className="approved-grid profile-edits-grid" data-testid="kin-wardrobe-grid">
-                  {visibleItems.map((item) => <button type="button" key={item.id} aria-pressed={selectedWardrobeIds.has(item.id)} className={`approved-grid-card kin-wardrobe-card ${selectedWardrobeIds.has(item.id) ? 'selected' : ''}`} data-testid="kin-wardrobe-item" onClick={() => toggleWardrobeItem(item.id)}>
-                    <div className="profile-grid-media">
-                      <img src={`/api/closet-items/${item.id}/image`} alt="" />
-                      {selectedWardrobeIds.has(item.id) && <span className="kin-wardrobe-check"><Check size={14} /></span>}
-                    </div>
-                    <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
-                  </button>)}
-                </div>}
-            <p className="settings-note" role="status" aria-live="polite" data-testid="kin-wardrobe-limit">{wardrobeLimitMessage}</p>
-          </>;
-        })()}
-      </>}
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       <div className="kin-card-actions">
-        {travelStep > 1 && <button type="button" className="approved-button" data-testid="kin-travel-back" onClick={() => { setErrorMessage(''); setTravelStep((current) => Math.max(1, current - 1) as 1 | 2 | 3); }}>{t('Back', 'رجوع')}</button>}
-        {travelStep < 3 && <button type="button" className="approved-button primary" data-testid="kin-travel-next" onClick={advanceTravelStep}>{t('Next', 'التالي')}</button>}
-        {travelStep === 3 && <>
-          {selectedWardrobeIds.size > 0 && <button type="button" className="approved-button primary" data-testid="kin-travel-use-items" onClick={() => void submit()} disabled={state === 'loading'}>
-            {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t(`Use ${selectedWardrobeIds.size} item${selectedWardrobeIds.size === 1 ? '' : 's'}`, `استخدم ${selectedWardrobeIds.size} قطع`)}
-          </button>}
-          <button type="button" className={selectedWardrobeIds.size > 0 ? 'approved-button' : 'approved-button primary'} data-testid="kin-travel-skip" onClick={() => { setSelectedWardrobeIds(new Set()); void submit([]); }} disabled={state === 'loading'}>
-            {state === 'loading' && selectedWardrobeIds.size === 0 ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Skip for now', 'تخطَّ الآن')}
-          </button>
-        </>}
+        <button type="button" className="approved-button" data-testid="kin-travel-back" onClick={() => {
+          setErrorMessage('');
+          if (travelStep === 1) {
+            setMode('looks');
+          } else {
+            setTravelStep(1);
+          }
+        }}>{t('Back', 'رجوع')}</button>
+        {travelStep === 1 && <button type="button" className="approved-button primary" data-testid="kin-travel-next" onClick={advanceTravelStep}>{t('Next', 'التالي')}</button>}
+        {travelStep === 2 && <button type="button" className="approved-button primary" data-testid="kin-travel-submit" onClick={() => void submit()} disabled={state === 'loading'}>
+          {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Plan Trip', 'تخطيط الرحلة')}
+        </button>}
       </div>
     </div>}
 
@@ -3553,7 +3467,7 @@ function closetCategoryOf(itemType: string): ClosetCategoryFilter | null {
  * authorized, id-keyed GET /api/closet-items/:id/image route, which itself
  * redirects to a 60s-TTL signed URL server-side.
  */
-function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onAdd: () => void; onEdit: (item: ClosetItem) => void; onUnavailable: () => void }) {
+function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onStyleSelectionChange, initialSelectedStyleIds }: { ar: boolean; onAdd: () => void; onEdit: (item: ClosetItem) => void; onUnavailable: () => void; onStyleWithKin?: (ids: string[]) => void; onStyleSelectionChange?: (ids: string[]) => void; initialSelectedStyleIds?: Set<string> }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [items, setItems] = useState<ClosetItem[]>([]);
@@ -3564,6 +3478,12 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
   const [deleteNotice, setDeleteNotice] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<ClosetCategoryFilter>('all');
+
+  const [stylingMode, setStylingMode] = useState(Boolean(initialSelectedStyleIds && initialSelectedStyleIds.size > 0));
+  const [selectedForStyling, setSelectedForStyling] = useState<Set<string>>(() => new Set(initialSelectedStyleIds));
+  const [wardrobeLimitMessage, setWardrobeLimitMessage] = useState('');
+
+  const activeTab = stylingMode ? 'wardrobe' : tab;
 
   const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
   useEffect(() => {
@@ -3576,6 +3496,12 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
       const response = await fetch('/api/closet-items', { credentials: 'include', cache: 'no-store' });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as { items: ClosetItem[] };
+      const ownedIds = new Set(payload.items.filter((item) => item.ownershipStatus === 'owned').map((item) => item.id));
+      setSelectedForStyling((current) => {
+        const reconciled = new Set([...current].filter((id) => ownedIds.has(id)));
+        if (reconciled.size !== current.size) onStyleSelectionChange?.([...reconciled]);
+        return reconciled;
+      });
       setItems(payload.items); setState('ready');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err)); setState('error');
@@ -3590,6 +3516,13 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json().catch(() => null) as { physicalDeletion?: string } | null;
       setItems((current) => current.filter((item) => item.id !== id));
+      setSelectedForStyling((current) => {
+        if (!current.has(id)) return current;
+        const next = new Set(current);
+        next.delete(id);
+        onStyleSelectionChange?.([...next]);
+        return next;
+      });
       setDeleteNotice(payload?.physicalDeletion === 'pending'
         ? t('Removed. Final cleanup is finishing in the background.', 'تمت الإزالة. التنظيف النهائي يجري في الخلفية.')
         : t('Removed.', 'تمت الإزالة.'));
@@ -3628,7 +3561,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
 
   const wardrobeItems = items.filter((item) => item.ownershipStatus !== 'considering');
   const consideringItems = items.filter((item) => item.ownershipStatus === 'considering');
-  const tabItems = tab === 'wardrobe' ? wardrobeItems : consideringItems;
+  const tabItems = activeTab === 'wardrobe' ? wardrobeItems : consideringItems;
   const categoryItems = category === 'all' ? tabItems : tabItems.filter((item) => closetCategoryOf(item.itemType) === category);
   const query = search.trim().toLowerCase();
   const visibleItems = query
@@ -3636,20 +3569,38 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
     : categoryItems;
   const hasAnyItemsInTab = tabItems.length > 0;
 
+  const toggleStyleItem = (id: string) => {
+    setWardrobeLimitMessage('');
+    const next = new Set(selectedForStyling);
+    if (next.has(id)) {
+      next.delete(id);
+    } else if (next.size >= 6) {
+      setWardrobeLimitMessage(t('You can select up to 6 items at once.', 'يمكنك اختيار حتى 6 قطع في المرة الواحدة.'));
+      return;
+    } else {
+      next.add(id);
+    }
+    setSelectedForStyling(next);
+  };
+
   return <section>
-    <span className="approved-kicker">{t('My Things', 'أغراضي')}</span>
+    <span className="approved-kicker">{stylingMode ? t('Style with KIN', 'نسق مع كين') : t('My Things', 'أغراضي')}</span>
     <div className="workspace-head">
       <div>
-        <h1 className="approved-title">{t('My Things', 'أغراضي')}</h1>
-        <p>{t('Your wardrobe, ready for KIN.', 'خزانتك جاهزة لـ KIN.')}</p>
+        <h1 className="approved-title">{stylingMode ? t('Choose items', 'اختر القطع') : t('My Things', 'أغراضي')}</h1>
+        <p>{stylingMode ? t('Select up to 6 items to build a look around.', 'اختر ما يصل إلى 6 قطع لبناء إطلالة حولها.') : t('Your wardrobe, ready for KIN.', 'خزانتك جاهزة لـ KIN.')}</p>
       </div>
-      <button type="button" className="approved-icon primary" data-testid="my-things-add" aria-label={t('Add item', 'إضافة قطعة')} onClick={onAdd}><Plus size={20} /></button>
+      {!stylingMode && <button type="button" className="approved-icon primary" data-testid="my-things-add" aria-label={t('Add item', 'إضافة قطعة')} onClick={onAdd}><Plus size={20} /></button>}
     </div>
 
-    <div className="approved-segment" data-testid="my-things-tabs">
-      <button className={tab === 'wardrobe' ? 'selected' : ''} data-testid="my-things-tab-wardrobe" onClick={() => setTab('wardrobe')}>{t('My Wardrobe', 'خزانتي')}</button>
-      <button className={tab === 'considering' ? 'selected' : ''} data-testid="my-things-tab-considering" onClick={() => setTab('considering')}>{t('Thinking of Buying', 'أفكر أشتريها')}</button>
-    </div>
+    {!stylingMode && session.featureFlags.kin_search === true && <button type="button" className="approved-button wide my-things-style-entry" data-testid="my-things-style-with-kin" onClick={() => { setStylingMode(true); setCategory('all'); setSearch(''); }}>
+      {t('Style with KIN', 'تنسيق مع KIN')}
+    </button>}
+
+    {!stylingMode && <div className="approved-segment" data-testid="my-things-tabs">
+      <button className={activeTab === 'wardrobe' ? 'selected' : ''} data-testid="my-things-tab-wardrobe" onClick={() => setTab('wardrobe')}>{t('My Wardrobe', 'خزانتي')}</button>
+      <button className={activeTab === 'considering' ? 'selected' : ''} data-testid="my-things-tab-considering" onClick={() => setTab('considering')}>{t('Thinking of Buying', 'أفكر أشتريها')}</button>
+    </div>}
 
     <label className="approved-search" data-testid="my-things-search">
       <Search size={14} />
@@ -3664,27 +3615,41 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable }: { ar: boolean; onA
     {state === 'loading' && <Empty text={t('Loading…', 'جارٍ التحميل…')} />}
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{t('Try again', 'حاول مجددًا')}</button></div>}
     {state === 'ready' && !visibleItems.length && <Empty text={!hasAnyItemsInTab
-      ? (tab === 'wardrobe'
+      ? (activeTab === 'wardrobe'
         ? t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')
         : t('Nothing you’re thinking of buying yet. Save a piece here while you decide.', 'لا يوجد شيء تفكر في شرائه بعد. احفظ قطعة هنا أثناء اتخاذ القرار.'))
       : t('No items match your search or filter.', 'لا توجد عناصر تطابق البحث أو الفلتر.')} />}
     {state === 'ready' && visibleItems.length > 0 && <div className="approved-grid profile-edits-grid" data-testid="my-things-grid">
-      {visibleItems.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
-        <button type="button" data-testid="my-things-open" aria-label={t('Edit item', 'تعديل الغرض')} onClick={() => onEdit(item)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
+      {visibleItems.map((item) => <div key={item.id} className={`approved-grid-card ${stylingMode && selectedForStyling.has(item.id) ? 'selected' : ''}`} data-testid={stylingMode ? "my-things-style-item" : "my-things-item"}>
+        <button type="button" aria-pressed={stylingMode ? selectedForStyling.has(item.id) : undefined} data-testid="my-things-open" aria-label={stylingMode ? t(`Select ${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}`, `اختر ${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}`) : t('Edit item', 'تعديل الغرض')} onClick={() => stylingMode ? toggleStyleItem(item.id) : onEdit(item)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
           <div className="profile-grid-media">
             <img src={`/api/closet-items/${item.id}/image`} alt="" />
             {item.confirmationStatus === 'pending_review' && <span className="profile-grid-access">{t('Pending', 'قيد المراجعة')}</span>}
+            {stylingMode && selectedForStyling.has(item.id) && <span className="kin-wardrobe-check" style={{ position: 'absolute', top: 8, insetInlineEnd: 8, width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: '50%', background: 'var(--tk-wine)', color: 'var(--tk-text-inverse)' }}><Check size={14} /></span>}
           </div>
           <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
         </button>
-        <div style={{ padding: '0 10px 10px', display: 'flex', justifyContent: 'flex-end' }}>
+        {!stylingMode && <div style={{ padding: '0 10px 10px', display: 'flex', justifyContent: 'flex-end' }}>
           <ClosetItemMenu ar={ar} deleting={deletingId === item.id} canMove={item.ownershipStatus === 'considering'}
             onEdit={() => onEdit(item)}
             onMove={() => void moveToWardrobe(item.id)}
             onDelete={() => void confirmedDelete(item.id)} />
-        </div>
+        </div>}
       </div>)}
     </div>}
+
+    {stylingMode && <>
+      <p className="my-things-style-status" role="status" aria-live="polite">{t(`${selectedForStyling.size} of 6 selected`, `تم اختيار ${selectedForStyling.size} من 6`)}</p>
+      {wardrobeLimitMessage && <p className="settings-note" role="status" aria-live="polite">{wardrobeLimitMessage}</p>}
+      <div className="kin-card-actions my-things-style-actions">
+        <button type="button" className="approved-button" data-testid="my-things-style-cancel" onClick={() => setStylingMode(false)}>
+          {t('Cancel', 'إلغاء')}
+        </button>
+        <button type="button" className="approved-button primary" data-testid="my-things-style-continue" disabled={selectedForStyling.size === 0} onClick={() => onStyleWithKin?.([...selectedForStyling])}>
+          {t(`Continue with ${selectedForStyling.size}`, `متابعة بـ ${selectedForStyling.size}`)}
+        </button>
+      </div>
+    </>}
   </section>;
 }
 

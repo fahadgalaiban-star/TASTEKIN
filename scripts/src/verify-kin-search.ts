@@ -10,6 +10,7 @@
 //   DATABASE_URL=postgresql://... pnpm --filter scripts run verify:kin-search
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
 import path from "node:path";
@@ -1553,7 +1554,9 @@ async function main() {
       const uploadA2 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
       ownedItemB = (await (await userA.createItem(uploadA2.uploadId, { itemType: "sneakers", primaryColor: "white" })).json() as { id: string }).id;
       const uploadA3 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
-      consideringItemA = (await (await userA.createItem(uploadA3.uploadId, { itemType: "coat", primaryColor: "grey", ownershipStatus: "considering" })).json() as { id: string }).id;
+      const consideringResponse = await userA.createItem(uploadA3.uploadId, { itemType: "coat", primaryColor: "gray", ownershipStatus: "considering" });
+      await expectStatus(consideringResponse, 201);
+      consideringItemA = (await consideringResponse.json() as { id: string }).id;
       const uploadB = await (await userB.uploadMedia(jpeg)).json() as { uploadId: string };
       userBOwnedItem = (await (await userB.createItem(uploadB.uploadId, { itemType: "shirt", primaryColor: "blue" })).json() as { id: string }).id;
     });
@@ -1564,6 +1567,33 @@ async function main() {
       await expectStatus(response, 200);
       assert.equal((await response.json() as { status: string }).status, "ok");
       assert.ok(lastAnthropicRequestBody.includes("jacket") && lastAnthropicRequestBody.includes("sneakers"), "both selected items' context must reach the model, not just the first one");
+    });
+    await check("Looks securely accepts one to six owned myThingsItemIds and sends every selected item's metadata to the model", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinSearch({ mode: "looks", query: "style these together", myThingsItemIds: [ownedItemA, ownedItemB] });
+      await expectStatus(response, 200);
+      assert.ok(["ok", "partial"].includes((await response.json() as { status: string }).status));
+      assert.ok(lastAnthropicRequestBody.includes("jacket") && lastAnthropicRequestBody.includes("sneakers"), "every authorized selected item must enter the Looks context");
+    });
+    for (const [label, rejectedId] of [
+      ["considering", consideringItemA],
+      ["cross-user", userBOwnedItem],
+      ["nonexistent", randomUUID()],
+    ] as const) {
+      await check(`Looks plural selection rejects a ${label} id with the generic response`, async () => {
+        const response = await userA.kinSearch({ mode: "looks", query: "style these", myThingsItemIds: [ownedItemA, rejectedId] });
+        assert.equal(response.status, 400);
+        assert.deepEqual(await response.json(), { error: "Selected item not found" });
+      });
+    }
+    await check("Looks plural selection rejects malformed, empty, and over-six lists before item lookup", async () => {
+      const malformed = await userA.kinSearch({ mode: "looks", query: "style these", myThingsItemIds: ["not-a-uuid"] });
+      assert.equal(malformed.status, 400);
+      const empty = await userA.kinSearch({ mode: "looks", query: "style these", myThingsItemIds: [] });
+      assert.equal(empty.status, 400);
+      const sevenIds = Array.from({ length: 7 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`);
+      const overSix = await userA.kinSearch({ mode: "looks", query: "style these", myThingsItemIds: sevenIds });
+      assert.equal(overSix.status, 400);
     });
     await check("myThingsItemIds: a considering-status item is rejected, never treated as owned travel context", async () => {
       const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, consideringItemA] });
