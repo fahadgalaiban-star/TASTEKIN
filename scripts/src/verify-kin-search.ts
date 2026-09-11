@@ -263,6 +263,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
 type FakeGooglePlacesMode =
   | { kind: "ok" }
   | { kind: "cross_day_collision" }
+  | { kind: "empty_success" }
   | { kind: "empty_type"; includedType: string }
   | { kind: "overnight" }
   | { kind: "malformed" }
@@ -296,6 +297,11 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
         if (mode.kind === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end("{not json"); return; }
+        if (mode.kind === "empty_success") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ places: [] }));
+          return;
+        }
         if (mode.kind === "empty_type" && parsedRequest.includedType === mode.includedType) {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ places: [] }));
@@ -1407,6 +1413,16 @@ async function main() {
     });
     await check("a place missing an address never gets a fabricated one (omitted, not guessed)", async () => {
       assert.ok(lastPlan!.days.some((day) => day.places.some((place) => place.formattedAddress === null)), "the 7th fake place has no address and must surface as null");
+    });
+    await check("a successful empty Google Places response cannot return a successful empty itinerary", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "empty_success" };
+      const anthropicBefore = anthropicRequestCount;
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(response, 200);
+      assert.equal(anthropicRequestCount, anthropicBefore + 1, "the request must pass provider normalization and reach the final post-resolution safeguard");
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "ok" };
     });
     await check("Google Places malformed response: travel plan reports unavailable, never a fabricated itinerary", async () => {
       fakeGooglePlacesMode = { kind: "malformed" };
