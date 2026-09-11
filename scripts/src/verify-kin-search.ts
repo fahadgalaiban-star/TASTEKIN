@@ -32,6 +32,7 @@ if (!process.env.DATABASE_URL) {
 // works for the "existing My Things item as context" fixture) -------------
 
 const store = new Map<string, Buffer>();
+const FAKE_SIDECAR_PORT = 1116;
 
 function startFakeSidecar(): Promise<http.Server> {
   return new Promise((resolve, reject) => {
@@ -44,7 +45,7 @@ function startFakeSidecar(): Promise<http.Server> {
           const parsed = JSON.parse(body.toString("utf8")) as { bucket_name: string; object_name: string };
           const key = encodeURIComponent(`${parsed.bucket_name}/${parsed.object_name}`);
           res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ signed_url: `http://127.0.0.1:1106/storage-object/${key}` }));
+          res.end(JSON.stringify({ signed_url: `http://127.0.0.1:${FAKE_SIDECAR_PORT}/storage-object/${key}` }));
           return;
         }
         const match = req.url?.match(/^\/storage-object\/(.+)$/);
@@ -61,7 +62,7 @@ function startFakeSidecar(): Promise<http.Server> {
         res.writeHead(404); res.end();
       });
     });
-    server.listen(1106, "127.0.0.1", () => resolve(server));
+    server.listen(FAKE_SIDECAR_PORT, "127.0.0.1", () => resolve(server));
     server.on("error", reject);
   });
 }
@@ -260,6 +261,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
 
 type FakeGooglePlacesMode =
   | { kind: "ok" }
+  | { kind: "cross_day_collision" }
   | { kind: "empty_type"; includedType: string }
   | { kind: "overnight" }
   | { kind: "malformed" }
@@ -288,7 +290,7 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         lastPlacesFieldMask = String(req.headers["x-goog-fieldmask"] || "");
         lastPlacesRequestBody = Buffer.concat(chunks).toString("utf8");
         placesRequestBodies.push(lastPlacesRequestBody);
-        const parsedRequest = JSON.parse(lastPlacesRequestBody) as { includedType?: string };
+        const parsedRequest = JSON.parse(lastPlacesRequestBody) as { includedType?: string; textQuery?: string };
         const mode = fakeGooglePlacesMode;
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
@@ -299,8 +301,14 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
           return;
         }
         const coordinateOffsets = [0, 0.04, 0.001, 0.041, 0.002, 0.042, 0.003];
-        const places = Array.from({ length: 7 }, (_, i) => ({
-          id: `place-${i}`,
+        const crossDayIds = /breakfast/i.test(parsedRequest.textQuery ?? "")
+          ? ["breakfast-day-1", "shared-cross-day"]
+          : ["shared-cross-day", "shopping-alternative"];
+        const placeIds = mode.kind === "cross_day_collision"
+          ? crossDayIds
+          : Array.from({ length: 7 }, (_, i) => `place-${i}`);
+        const places = placeIds.map((placeId, i) => ({
+          id: placeId,
           displayName: { text: `Fake Place ${i}` },
           formattedAddress: i === 2 ? undefined : `${i} Example Street`,
           location: { latitude: 48.85 + coordinateOffsets[i], longitude: 2.35 + coordinateOffsets[i] },
@@ -646,6 +654,7 @@ async function resetData() {
 async function main() {
   await resetData();
   const sidecar = await startFakeSidecar();
+  process.env.OBJECT_STORAGE_SIDECAR_ENDPOINT = `http://127.0.0.1:${FAKE_SIDECAR_PORT}`;
   const fakeAnthropic = await startFakeAnthropic();
   const anthropicBaseUrl = `http://127.0.0.1:${fakeAnthropic.port}`;
   const fakeGooglePlaces = await startFakeGooglePlaces();
@@ -1198,7 +1207,11 @@ async function main() {
 
     // --- KIN Travel: Google Places + Routes day-by-day plan ---
     await check("without GOOGLE_MAPS_API_KEY configured, travel plan reports unavailable rather than fabricating places", async () => {
-      const noGoogleServer = await startServer({ ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl });
+      const noGoogleServer = await startServer({
+        ANTHROPIC_API_KEY: "fake-test-key",
+        ANTHROPIC_BASE_URL: anthropicBaseUrl,
+        GOOGLE_MAPS_API_KEY: undefined,
+      });
       try {
         const session = new Session(noGoogleServer.baseUrl);
         await session.signup(`kin-nogoogle-${suffix}@example.com`, PASSWORD);
@@ -1421,6 +1434,178 @@ async function main() {
       assert.ok(!text.includes("X-Goog-Api-Key") && !text.includes("key=fake-google-key"), "...but never inside the response body itself");
     });
 
+    // --- KIN Travel guided flow: structured `interests` + `myThingsItemIds` ---
+    await check("an invalid interests value is rejected with 400", async () => {
+      assert.equal((await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", interests: ["not-a-real-interest"] })).status, 400);
+    });
+    await check("interests: breakfast + museums resolve typed Places searches, never a generic attractions search", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip", destination: "London", interests: ["breakfast", "museums"], startDate: "2026-10-01", endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; plan: { days: Array<{ places: Array<{ slot: string | null }> }> } };
+      assert.equal(payload.status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string });
+      assert.deepEqual(requests.map((request) => request.includedType).sort(), ["bakery", "museum"]);
+      assert.ok(requests.every((request) => !/attractions|things to do/i.test(request.textQuery)), "structured interests must never fall back to a generic attractions search");
+      assert.ok(requests.some((request) => request.includedType === "museum" && /museum/i.test(request.textQuery)));
+    });
+    await check("interests: shopping and hidden_gems resolve real place searches with no type restriction, never a product/affiliate search", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Rome", interests: ["shopping", "hidden_gems"] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string });
+      assert.ok(requests.every((request) => request.includedType === undefined), "shopping/hidden_gems must search real places, not a typed category");
+      assert.ok(requests.some((request) => /shopping/i.test(request.textQuery)));
+      assert.ok(requests.some((request) => /hidden gems|local favorite/i.test(request.textQuery)));
+      assert.ok(requests.every((request) => !/product|buy now|affiliate/i.test(request.textQuery)), "shopping must resolve places, never products or affiliate links");
+    });
+    await check("Sport subchoices (gyms/pilates/walking_places) resolve distinct real place searches, and gyms is type-filtered", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      placesRequestBodies = [];
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Berlin", interests: ["gyms", "pilates", "walking_places"] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      const requests = placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string });
+      assert.equal(requests.filter((request) => request.includedType !== undefined).length, 1, "only the gyms interest is type-filtered; pilates/walking_places search by text");
+      assert.ok(requests.some((request) => request.includedType === "gym"));
+      assert.ok(requests.some((request) => /gym|fitness/i.test(request.textQuery)));
+      assert.ok(requests.some((request) => /pilates/i.test(request.textQuery)));
+      assert.ok(requests.some((request) => /walking|promenade/i.test(request.textQuery)));
+    });
+    await check("combined guided days deduplicate by Google placeId while keeping breakfast first, dinner last, and coffee before dinner", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "London",
+        interests: ["breakfast", "cafes", "dinner", "museums"],
+        startDate: "2026-10-01",
+        endDate: "2026-10-01",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ placeId: string; slot: string | null; activityInterest?: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      const places = payload.plan.days[0].places;
+      assert.equal(new Set(places.map((place) => place.placeId)).size, places.length, "one day must never return the same stable Google placeId twice");
+      assert.equal(places[0].slot, "BREAKFAST", "breakfast must remain the first stop");
+      assert.equal(places.at(-1)?.slot, "DINNER", "dinner must remain the last stop");
+      assert.ok(places.findIndex((place) => place.slot === "COFFEE") < places.findIndex((place) => place.slot === "DINNER"), "coffee must never be ordered after dinner");
+      assert.ok(places.some((place) => place.activityInterest === "museums"), "activity stops must retain their originating server category");
+    });
+    await check("multi-day guided plans avoid cross-day food/activity placeId collisions when real alternatives exist", async () => {
+      fakeGooglePlacesMode = { kind: "cross_day_collision" };
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "London",
+        interests: ["breakfast", "shopping"],
+        startDate: "2026-10-01",
+        endDate: "2026-10-02",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ placeId: string; slot: string | null; activityInterest?: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      const [dayOne, dayTwo] = payload.plan.days;
+      const places = payload.plan.days.flatMap((day) => day.places);
+      const sharedOccurrences = places.filter((place) => place.placeId === "shared-cross-day");
+      assert.equal(sharedOccurrences.length, 1, "the shared Google placeId must appear exactly once across the trip");
+      assert.equal(new Set(places.map((place) => place.placeId)).size, places.length, "unused candidates must prevent avoidable cross-day duplicates");
+      assert.ok(!dayOne.places.some((place) => place.placeId === "shared-cross-day" && place.activityInterest === "shopping"), "the cross-day collision must not survive as a first-day activity");
+      assert.ok(dayTwo.places.some((place) => place.placeId === "shared-cross-day" && place.slot === "BREAKFAST"), "the shared provider result must remain the valid second-day breakfast");
+      assert.ok(places.some((place) => place.placeId === "shopping-alternative" && place.activityInterest === "shopping"), "the unused Shopping alternative must be preferred");
+      assert.ok(payload.plan.days.every((day) => day.places[0]?.slot === "BREAKFAST"), "breakfast must remain first on both days");
+      assert.ok(places.every((place) => ["breakfast-day-1", "shared-cross-day", "shopping-alternative"].includes(place.placeId)), "every returned place must come from the provider fixture");
+      fakeGooglePlacesMode = { kind: "ok" };
+    });
+    await check("an activity provider failure makes the guided plan honestly unavailable", async () => {
+      fakeGooglePlacesMode = { kind: "http_error", status: 503 };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Rome", interests: ["parks"] });
+      await expectStatus(response, 200);
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "ok" };
+    });
+    await check("with no dates supplied, a structured-interests plan still returns a single sensible day, never inventing a duration", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Lisbon", interests: ["parks"] });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; plan: { days: Array<{ date: string | null }> } };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.plan.days.length, 1, "no dates means exactly one undated day — never a fabricated multi-day duration");
+      assert.equal(payload.plan.days[0].date, null, "no date was supplied, so none must be invented");
+    });
+
+    // --- KIN Travel guided flow: multi-item "Choose from My Things" -----------
+    let ownedItemA = ""; let ownedItemB = ""; let consideringItemA = ""; let userBOwnedItem = "";
+    await check("fixture: user A has two owned items and one considering item; user B has one owned item", async () => {
+      const jpeg = await validJpeg();
+      const uploadA1 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
+      ownedItemA = (await (await userA.createItem(uploadA1.uploadId, { itemType: "jacket", primaryColor: "black" })).json() as { id: string }).id;
+      const uploadA2 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
+      ownedItemB = (await (await userA.createItem(uploadA2.uploadId, { itemType: "sneakers", primaryColor: "white" })).json() as { id: string }).id;
+      const uploadA3 = await (await userA.uploadMedia(jpeg)).json() as { uploadId: string };
+      consideringItemA = (await (await userA.createItem(uploadA3.uploadId, { itemType: "coat", primaryColor: "grey", ownershipStatus: "considering" })).json() as { id: string }).id;
+      const uploadB = await (await userB.uploadMedia(jpeg)).json() as { uploadId: string };
+      userBOwnedItem = (await (await userB.createItem(uploadB.uploadId, { itemType: "shirt", primaryColor: "blue" })).json() as { id: string }).id;
+    });
+    await check("myThingsItemIds: both selected owned items reach the plan request, not reduced to one", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, ownedItemB] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      assert.ok(lastAnthropicRequestBody.includes("jacket") && lastAnthropicRequestBody.includes("sneakers"), "both selected items' context must reach the model, not just the first one");
+    });
+    await check("myThingsItemIds: a considering-status item is rejected, never treated as owned travel context", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, consideringItemA] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: a cross-user item id is rejected safely, not silently dropped or leaked", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [ownedItemA, userBOwnedItem] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: a well-formed but nonexistent id is rejected with 400", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: ["00000000-0000-0000-0000-000000000000"] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: a malformed id is rejected with 400", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: ["not-a-uuid"] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: an empty array is rejected with 400 (use the singular field's absence, or omit it, to mean zero items)", async () => {
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [] });
+      assert.equal(response.status, 400);
+    });
+    await check("myThingsItemIds: seven syntactically valid ids are rejected before private item lookup", async () => {
+      const sevenIds = Array.from({ length: 7 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`);
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: sevenIds });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "myThingsItemIds must be an array of 1-6 valid ids" });
+    });
+    await check("myThingsItemIds takes precedence over the legacy singular myThingsItemId when both are sent", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemId: ownedItemB, myThingsItemIds: [ownedItemA] });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+      assert.ok(lastAnthropicRequestBody.includes("jacket"), "the plural field must win");
+      assert.ok(!lastAnthropicRequestBody.includes("sneakers"), "the singular field must be ignored once the plural field is present");
+    });
+    await check("omitting myThingsItemIds and myThingsItemId entirely still plans a trip with zero items (Skip for now)", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(response, 200);
+      assert.equal((await response.json() as { status: string }).status, "ok");
+    });
+
     // --- swap-place: a real alternate stop, never a fabricated one ---
     let firstTripPlaceIds: string[] = [];
     await check("swap-place returns a real alternate place excluding every placeId already used in the trip", async () => {
@@ -1463,6 +1648,83 @@ async function main() {
       });
       await expectStatus(response, 200);
       assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+    });
+    await check("an undated food stop swaps through Google Places without inventing a date", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      const planResponse = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "Lisbon",
+        interests: ["breakfast"],
+      });
+      await expectStatus(planResponse, 200);
+      const planPayload = await planResponse.json() as {
+        status: string;
+        plan: { days: Array<{ date: string | null; places: Array<{ placeId: string; slot: string | null }> }> };
+      };
+      assert.equal(planPayload.status, "ok");
+      const day = planPayload.plan.days[0];
+      assert.equal(day.date, null);
+      const breakfast = day.places.find((place) => place.slot === "BREAKFAST");
+      assert.ok(breakfast);
+      placesRequestBodies = [];
+      const response = await userA.request("/api/kin/travel/swap-place", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          destination: "Lisbon",
+          excludePlaceIds: day.places.map((place) => place.placeId),
+          slot: breakfast!.slot,
+          date: day.date,
+        }),
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; place?: { placeId: string; slot: string | null; date?: string } };
+      assert.equal(payload.status, "ok");
+      assert.ok(payload.place && payload.place.placeId !== breakfast!.placeId, "the replacement must be a different provider result");
+      assert.equal(payload.place!.slot, "BREAKFAST");
+      assert.ok(!Object.prototype.hasOwnProperty.call(payload.place, "date"), "the swap must not invent a date");
+      const providerRequest = JSON.parse(placesRequestBodies.at(-1)!) as { textQuery: string; includedType?: string };
+      assert.match(providerRequest.textQuery, /breakfast/i);
+      assert.equal(providerRequest.includedType, "bakery");
+    });
+    await check("swap-place rejects a malformed supplied date while continuing to accept an absent date", async () => {
+      const response = await userA.request("/api/kin/travel/swap-place", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ destination: "Lisbon", slot: "BREAKFAST", date: "not-a-date" }),
+      });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "date must be a valid YYYY-MM-DD value when supplied" });
+    });
+    await check("activity swaps use only the seven validated server-controlled category searches", async () => {
+      const cases = [
+        ["museums", /museums/i, "museum"],
+        ["parks", /parks/i, "park"],
+        ["shopping", /shopping areas|markets/i, undefined],
+        ["hidden_gems", /hidden gems|local favorite/i, undefined],
+        ["gyms", /gyms|fitness centers/i, "gym"],
+        ["pilates", /pilates studios/i, undefined],
+        ["walking_places", /walking areas|promenades/i, undefined],
+      ] as const;
+      for (const [activityInterest, queryPattern, includedType] of cases) {
+        placesRequestBodies = [];
+        const response = await userA.request("/api/kin/travel/swap-place", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ destination: "Paris", activityInterest }),
+        });
+        await expectStatus(response, 200);
+        assert.equal((await response.json() as { status: string }).status, "ok");
+        const request = JSON.parse(placesRequestBodies.at(-1)!) as { textQuery: string; includedType?: string };
+        assert.match(request.textQuery, queryPattern);
+        assert.equal(request.includedType, includedType);
+      }
+      const invalid = await userA.request("/api/kin/travel/swap-place", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ destination: "Paris", activityInterest: "user supplied arbitrary query" }),
+      });
+      assert.equal(invalid.status, 400);
     });
     await check("swap-place is auth+flag gated and consumes the daily KIN quota like every other action", async () => {
       const anon = new Session(server.baseUrl);

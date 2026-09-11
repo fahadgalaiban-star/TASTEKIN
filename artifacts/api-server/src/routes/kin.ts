@@ -1,5 +1,5 @@
 import { closetItems, db, kinSavedRecommendations, kinTripItems, kinTrips } from "@workspace/db";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import express, { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 
 import {
@@ -18,7 +18,7 @@ import {
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { runKinTravelPlan, swapPlace, type KinTravelSlot } from "../lib/kin-travel";
+import { runKinTravelPlan, swapPlace, type ActivityInterest, type KinTravelSlot } from "../lib/kin-travel";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -66,6 +66,41 @@ async function lookupMyThingsItem(ownerUserId: string, itemId: string) {
   if (item.season) parts.push(item.season);
   if (item.brand) parts.push(item.brand);
   return { context: parts.join(", "), imageObjectKey: item.imageObjectKey };
+}
+
+/**
+ * Plural counterpart for KIN Travel's "Choose from My Things" screen.
+ * Scoped by owner AND ownershipStatus = "owned" in the same WHERE clause —
+ * a "considering" item, a cross-user id, or a nonexistent id all collapse
+ * to the same outcome (fewer rows than requested ids), which is treated as
+ * a single hard failure for the whole request rather than silently
+ * dropping the offending id. Order of the input array is preserved in the
+ * returned contexts purely for a stable, readable combined description;
+ * it carries no authorization meaning.
+ */
+async function lookupMyThingsItems(ownerUserId: string, itemIds: string[]): Promise<{ context: string }[] | null> {
+  const rows = await db
+    .select({
+      id: closetItems.id, itemType: closetItems.itemType, primaryColor: closetItems.primaryColor,
+      style: closetItems.style, occasion: closetItems.occasion, season: closetItems.season, brand: closetItems.brand,
+    })
+    .from(closetItems)
+    .where(and(
+      inArray(closetItems.id, itemIds),
+      eq(closetItems.ownerUserId, ownerUserId),
+      eq(closetItems.ownershipStatus, "owned"),
+    ));
+  if (rows.length !== itemIds.length) return null;
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  return itemIds.map((id) => {
+    const item = byId.get(id)!;
+    const parts = [item.itemType, item.primaryColor];
+    if (item.style) parts.push(item.style);
+    if (item.occasion) parts.push(item.occasion);
+    if (item.season) parts.push(item.season);
+    if (item.brand) parts.push(item.brand);
+    return { context: parts.join(", ") };
+  });
 }
 
 /**
@@ -250,13 +285,19 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
   }
 
   let itemContext: string | undefined;
-  if (validated.value.myThingsItemId) {
-    const item = await lookupMyThingsItem(user.id, validated.value.myThingsItemId);
-    if (!item) {
+  // The plural field (multi-select "Choose from My Things") takes
+  // precedence when present and non-empty; a caller that only ever sends
+  // the original singular field is completely unaffected.
+  const itemIds = validated.value.myThingsItemIds?.length
+    ? validated.value.myThingsItemIds
+    : validated.value.myThingsItemId ? [validated.value.myThingsItemId] : [];
+  if (itemIds.length > 0) {
+    const items = await lookupMyThingsItems(user.id, itemIds);
+    if (!items) {
       res.status(400).json({ error: "Selected item not found" });
       return;
     }
-    itemContext = item.context;
+    itemContext = items.map((item) => item.context).join("; ");
   }
 
   const reservation = await reserveKinSearchAttempt(user.id);
@@ -302,10 +343,19 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
   const slot = typeof body.slot === "string" && ["COFFEE", "BREAKFAST", "LUNCH", "DINNER"].includes(body.slot)
     ? body.slot as KinTravelSlot
     : null;
+  const activityInterest = typeof body.activityInterest === "string"
+    && ["museums", "parks", "shopping", "hidden_gems", "gyms", "pilates", "walking_places"].includes(body.activityInterest)
+    ? body.activityInterest as ActivityInterest
+    : null;
+  if (body.activityInterest !== undefined && activityInterest === null) {
+    res.status(400).json({ error: "invalid activity interest" });
+    return;
+  }
+  const dateWasSupplied = body.date !== undefined && body.date !== null;
   const rawDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null;
   const date = rawDate && new Date(`${rawDate}T00:00:00Z`).toISOString().slice(0, 10) === rawDate ? rawDate : null;
-  if (slot && !date) {
-    res.status(400).json({ error: "A valid date is required for a scheduled stop" });
+  if (dateWasSupplied && !date) {
+    res.status(400).json({ error: "date must be a valid YYYY-MM-DD value when supplied" });
     return;
   }
   const parseNeighbour = (value: unknown): { placeId: string; lat: number | null; lng: number | null } | null => {
@@ -329,7 +379,7 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     return;
   }
 
-  const result = await swapPlace(destination, excludePlaceIds, slot, date, previousPlace, nextPlace);
+  const result = await swapPlace(destination, excludePlaceIds, slot, date, previousPlace, nextPlace, activityInterest);
   if (result.status !== "ok") {
     if (result.reason !== "not configured" && result.reason !== "no alternative available") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel swap-place unavailable");

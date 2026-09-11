@@ -198,10 +198,32 @@ function kinSearchTimeoutMs(): number {
 
 export type KinSearchMode = "looks" | "travel";
 
+/**
+ * Structured KIN Travel interest chips — the guided 3-screen flow's
+ * "Choose your interests" screen. Sport itself is a UI-only grouping (it
+ * expands to reveal gyms/pilates/walking_places); only its subchoices are
+ * ever sent here. Each maps deterministically to a real Google Places
+ * query in kin-travel.ts — never a free-text/inferred category.
+ */
+export const KIN_TRAVEL_INTERESTS = [
+  "breakfast", "dinner", "cafes", "shopping", "museums", "parks", "hidden_gems", "gyms", "pilates", "walking_places",
+] as const;
+export type KinTravelInterest = (typeof KIN_TRAVEL_INTERESTS)[number];
+const MAX_TRAVEL_ITEMS = 6;
+
 export type KinSearchRequest = {
   mode: KinSearchMode;
   query: string;
   myThingsItemId?: string;
+  /**
+   * Additive alternative to myThingsItemId for KIN Travel's "Choose from My
+   * Things" screen, which allows selecting more than one owned item. When
+   * present and non-empty, the caller (routes/kin.ts) prefers this over the
+   * singular field; existing callers that only ever send myThingsItemId are
+   * completely unaffected.
+   */
+  myThingsItemIds?: string[];
+  interests?: KinTravelInterest[];
   location?: string;
   budget?: number;
   currency?: string;
@@ -312,6 +334,30 @@ export function validateKinSearchRequest(body: unknown): KinSearchValidationResu
       return { ok: false, error: "myThingsItemId must be a valid id" };
     }
     value.myThingsItemId = record.myThingsItemId;
+  }
+
+  if (record.myThingsItemIds !== undefined) {
+    if (!Array.isArray(record.myThingsItemIds) || record.myThingsItemIds.length === 0 || record.myThingsItemIds.length > MAX_TRAVEL_ITEMS) {
+      return { ok: false, error: `myThingsItemIds must be an array of 1-${MAX_TRAVEL_ITEMS} valid ids` };
+    }
+    const ids: string[] = [];
+    for (const raw of record.myThingsItemIds) {
+      if (typeof raw !== "string" || !UUID_RE.test(raw)) return { ok: false, error: "myThingsItemIds must be valid ids" };
+      if (!ids.includes(raw)) ids.push(raw);
+    }
+    value.myThingsItemIds = ids;
+  }
+
+  if (record.interests !== undefined) {
+    if (!Array.isArray(record.interests)) return { ok: false, error: "interests must be an array" };
+    const interests: KinTravelInterest[] = [];
+    for (const raw of record.interests) {
+      if (typeof raw !== "string" || !(KIN_TRAVEL_INTERESTS as readonly string[]).includes(raw)) {
+        return { ok: false, error: "interests contains an invalid value" };
+      }
+      if (!interests.includes(raw as KinTravelInterest)) interests.push(raw as KinTravelInterest);
+    }
+    value.interests = interests;
   }
 
   const location = optionalTrimmedString(record.location, MAX_TEXT_FIELD_LENGTH);

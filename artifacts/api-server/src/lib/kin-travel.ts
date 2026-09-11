@@ -1,5 +1,6 @@
 import { computeRoute } from "./google-routes";
 import {
+  GOOGLE_PLACES_MAX_RESULTS,
   isGooglePlacesConfigured,
   resolvePlacePhotoUrl,
   searchPlaces,
@@ -7,7 +8,7 @@ import {
   type GooglePlaceOpeningPeriod,
   type GooglePlaceTypeFilter,
 } from "./google-places";
-import { runKinSearch, type KinSearchCitation, type KinSearchRequest } from "./kin-search";
+import { runKinSearch, type KinSearchCitation, type KinSearchRequest, type KinTravelInterest } from "./kin-search";
 
 const MAX_TRIP_DAYS = 10;
 const MAX_FOOD_CANDIDATES_PER_SLOT = 20;
@@ -18,10 +19,11 @@ export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "
   photoUrl: string | null;
   photoAttribution: string | null;
   slot: KinTravelSlot | null;
+  activityInterest?: ActivityInterest;
   openingHours: string | null;
 };
 
-type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null };
+type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null; activityInterest?: ActivityInterest };
 
 /**
  * Resolves at most one real photo per place (Google's photos[0]) to an
@@ -30,7 +32,7 @@ type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null 
  * alongside the URL since Google's ToS requires it be shown with the photo.
  */
 async function resolvePlace(place: TravelPlaceCandidate, date: string | null): Promise<KinTravelPlace | null> {
-  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, requestedSlot, ...rest } = place;
+  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, requestedSlot, activityInterest, ...rest } = place;
   if (requestedSlot && !isOpenForSlot(requestedSlot, date, openingPeriods)) return null;
   const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
   return {
@@ -38,6 +40,7 @@ async function resolvePlace(place: TravelPlaceCandidate, date: string | null): P
     photoUrl,
     photoAttribution: photoUrl ? photoRef!.attributionText : null,
     slot: requestedSlot,
+    ...(activityInterest ? { activityInterest } : {}),
     openingHours: openingHoursForDate(date, openingPeriods),
   };
 }
@@ -100,6 +103,36 @@ export function foodIntentsForRequest(query: string): FoodIntent[] {
   return intents;
 }
 
+/**
+ * Deterministic, structured counterpart to foodIntentsForRequest — driven
+ * by the guided flow's own interest chips rather than regex over free
+ * text. Only breakfast/cafes/dinner are time-slotted (an actual meal
+ * schedule); lunch is not one of the approved chips, so it is never
+ * produced here — the regex-based legacy path is untouched and keeps its
+ * own lunch handling for older clients that still send a free-text query.
+ */
+function foodIntentsForInterests(interests: KinTravelInterest[]): FoodIntent[] {
+  const intents: FoodIntent[] = [];
+  if (interests.includes("breakfast")) intents.push({ slot: "BREAKFAST", type: "bakery", query: "breakfast and bakeries" });
+  if (interests.includes("cafes")) intents.push({ slot: "COFFEE", type: "cafe", query: "coffee and tea shops" });
+  if (interests.includes("dinner")) intents.push({ slot: "DINNER", type: "restaurant", query: "restaurants for dinner and drinks" });
+  return intents;
+}
+
+export type ActivityInterest = Exclude<KinTravelInterest, "breakfast" | "dinner" | "cafes">;
+const ACTIVITY_INTEREST_QUERY: Record<ActivityInterest, { query: string; type?: GooglePlaceTypeFilter }> = {
+  museums: { query: "museums", type: "museum" },
+  parks: { query: "parks", type: "park" },
+  shopping: { query: "shopping areas and markets" },
+  hidden_gems: { query: "hidden gems and local favorite spots" },
+  gyms: { query: "gyms and fitness centers", type: "gym" },
+  pilates: { query: "pilates studios" },
+  walking_places: { query: "scenic walking areas and promenades" },
+};
+function isActivityInterest(interest: KinTravelInterest): interest is ActivityInterest {
+  return interest in ACTIVITY_INTEREST_QUERY;
+}
+
 const SLOT_WINDOW: Record<KinTravelSlot, { start: number; end: number }> = {
   BREAKFAST: { start: 7 * 60, end: 11 * 60 },
   COFFEE: { start: 8 * 60, end: 17 * 60 },
@@ -154,25 +187,22 @@ function openingIntervalsForWeekday(
   return intervals.sort((a, b) => a.start - b.start);
 }
 
-async function placeBucketsForRequest(
-  request: KinSearchRequest,
+/**
+ * Shared day-by-day meal scheduler — used by both the legacy regex-derived
+ * food intents (free-text query) and the new structured interest chips.
+ * Each requested slot must resolve to a real, open, not-yet-used-that-day
+ * place for every day of the trip; a slot with no eligible candidate fails
+ * the whole request rather than silently omitting a meal.
+ */
+async function foodBucketsForIntents(
+  destination: string,
+  startDate: string | undefined,
   dayCount: number,
-): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][]; expectedSlots: KinTravelSlot[] | null } | { status: "unavailable"; reason: string }> {
-  const intents = foodIntentsForRequest(request.query);
-  if (intents.length === 0) {
-    const result = await searchPlaces(`top attractions and things to do in ${request.destination}`);
-    return result.status === "ok"
-      ? {
-          status: "ok",
-          buckets: distributePlaces(result.places.map((place) => ({ ...place, requestedSlot: null })), dayCount),
-          expectedSlots: null,
-        }
-      : result;
-  }
-
+  intents: FoodIntent[],
+): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][]; orderedSlots: KinTravelSlot[] } | { status: "unavailable"; reason: string }> {
   const orderedIntents = [...intents].sort((a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot]);
   const results = await Promise.all(orderedIntents.map((intent) =>
-    searchPlaces(`${intent.query} in ${request.destination}`, MAX_FOOD_CANDIDATES_PER_SLOT, intent.type, false)
+    searchPlaces(`${intent.query} in ${destination}`, MAX_FOOD_CANDIDATES_PER_SLOT, intent.type, false)
       .then((result) => ({ intent, result })),
   ));
   if (results.some(({ result }) => result.status !== "ok")) {
@@ -182,7 +212,7 @@ async function placeBucketsForRequest(
   const buckets: TravelPlaceCandidate[][] = [];
   const usedAcrossTrip = new Set<string>();
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
-    const date = dateForDay(request.startDate, dayIndex);
+    const date = dateForDay(startDate, dayIndex);
     const usedToday = new Set<string>();
     const dayPlaces: TravelPlaceCandidate[] = [];
     for (const { intent, result } of results) {
@@ -202,10 +232,129 @@ async function placeBucketsForRequest(
       usedAcrossTrip.add(place.placeId);
       dayPlaces.push({ ...place, requestedSlot: intent.slot });
     }
-    if (dayPlaces.length !== intents.length) return { status: "unavailable", reason: "incomplete food schedule" };
+    if (dayPlaces.length !== orderedIntents.length) return { status: "unavailable", reason: "incomplete food schedule" };
     buckets.push(dayPlaces);
   }
-  return { status: "ok", buckets, expectedSlots: orderedIntents.map((intent) => intent.slot) };
+  return { status: "ok", buckets, orderedSlots: orderedIntents.map((intent) => intent.slot) };
+}
+
+/**
+ * Non-time-windowed activity places (museums, parks, shopping, hidden
+ * gems, gyms, pilates, walking places) — one search per selected activity
+ * interest, merged and deduplicated, then distributed across days the same
+ * way the generic "top attractions" fallback already does. These never
+ * carry a requestedSlot, so they are never subject to the meal-time
+ * opening-hours check in resolvePlace/isOpenForSlot.
+ */
+async function activityBucketsForInterests(
+  destination: string,
+  dayCount: number,
+  activityInterests: ActivityInterest[],
+  avoidPlaceIds: ReadonlySet<string> = new Set(),
+): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][] } | { status: "unavailable"; reason: string }> {
+  if (activityInterests.length === 0) return { status: "ok", buckets: Array.from({ length: dayCount }, () => []) };
+  const results = await Promise.all(activityInterests.map((interest) => {
+    const config = ACTIVITY_INTEREST_QUERY[interest];
+    return searchPlaces(`${config.query} in ${destination}`, GOOGLE_PLACES_MAX_RESULTS, config.type, false);
+  }));
+  if (results.some((result) => result.status !== "ok")) {
+    return { status: "unavailable", reason: "activity places unavailable" };
+  }
+  const seen = new Set<string>();
+  const preferred: TravelPlaceCandidate[] = [];
+  const colliding: TravelPlaceCandidate[] = [];
+  for (const [index, result] of results.entries()) {
+    if (result.status !== "ok") continue;
+    for (const place of result.places) {
+      if (!seen.has(place.placeId)) {
+        seen.add(place.placeId);
+        const candidate = { ...place, requestedSlot: null, activityInterest: activityInterests[index] };
+        (avoidPlaceIds.has(place.placeId) ? colliding : preferred).push(candidate);
+      }
+    }
+  }
+  // Food is assigned first for combined plans. Prefer activity candidates
+  // that are unused anywhere in that meal schedule; only fall back to
+  // colliding real results when the provider supplied no distinct activity.
+  const candidates = preferred.length > 0 ? preferred : colliding;
+  return { status: "ok", buckets: distributePlaces(candidates, dayCount) };
+}
+
+/**
+ * Structured-interests path: combines a meal schedule (breakfast/cafes/
+ * dinner, if selected) with activity places (if selected) for each day.
+ * Within a day, breakfast anchors the start and dinner the end, with
+ * activities and coffee ordered by geographic proximity in between —
+ * deterministic, not a temporal-reasoning attempt.
+ */
+async function placeBucketsForInterests(
+  request: KinSearchRequest,
+  dayCount: number,
+  interests: KinTravelInterest[],
+): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][]; expectedSlots: KinTravelSlot[] | null } | { status: "unavailable"; reason: string }> {
+  const foodIntents = foodIntentsForInterests(interests);
+  const activityInterests = interests.filter(isActivityInterest);
+
+  if (foodIntents.length === 0) {
+    if (activityInterests.length === 0) {
+      const result = await searchPlaces(`top attractions and things to do in ${request.destination}`);
+      return result.status === "ok"
+        ? { status: "ok", buckets: distributePlaces(result.places.map((place) => ({ ...place, requestedSlot: null })), dayCount), expectedSlots: null }
+        : result;
+    }
+    const activityResult = await activityBucketsForInterests(request.destination!, dayCount, activityInterests);
+    if (activityResult.status !== "ok") return activityResult;
+    return { status: "ok", buckets: activityResult.buckets, expectedSlots: null };
+  }
+
+  const foodResult = await foodBucketsForIntents(request.destination!, request.startDate, dayCount, foodIntents);
+  if (foodResult.status !== "ok") return foodResult;
+  const tripFoodIds = new Set(foodResult.buckets.flatMap((bucket) => bucket.map((place) => place.placeId)));
+  const activityResult = await activityBucketsForInterests(request.destination!, dayCount, activityInterests, tripFoodIds);
+  if (activityResult.status !== "ok") return activityResult;
+
+  const buckets: TravelPlaceCandidate[][] = [];
+  for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
+    const dayFood = foodResult.buckets[dayIndex] ?? [];
+    const breakfast = dayFood.find((place) => place.requestedSlot === "BREAKFAST");
+    const dinner = dayFood.find((place) => place.requestedSlot === "DINNER");
+    const foodIds = new Set(dayFood.map((place) => place.placeId));
+    const seen = new Set<string>();
+    const middle = [...(activityResult.buckets[dayIndex] ?? []).filter((place) => !foodIds.has(place.placeId)), ...dayFood.filter((place) => place.requestedSlot !== "BREAKFAST" && place.requestedSlot !== "DINNER")]
+      .filter((place) => !seen.has(place.placeId) && Boolean(seen.add(place.placeId)));
+    const orderedMiddle = breakfast
+      ? orderPlacesNearestNeighbour([breakfast, ...middle]).slice(1)
+      : orderPlacesNearestNeighbour(middle);
+    buckets.push([...(breakfast ? [breakfast] : []), ...orderedMiddle, ...(dinner ? [dinner] : [])]);
+  }
+  return { status: "ok", buckets, expectedSlots: foodResult.orderedSlots };
+}
+
+async function placeBucketsForRequest(
+  request: KinSearchRequest,
+  dayCount: number,
+): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][]; expectedSlots: KinTravelSlot[] | null } | { status: "unavailable"; reason: string }> {
+  if (request.interests && request.interests.length > 0) {
+    return placeBucketsForInterests(request, dayCount, request.interests);
+  }
+
+  // Legacy path: no structured interests were sent (an older client) —
+  // derive food intents from the free-text query exactly as before.
+  const intents = foodIntentsForRequest(request.query);
+  if (intents.length === 0) {
+    const result = await searchPlaces(`top attractions and things to do in ${request.destination}`);
+    return result.status === "ok"
+      ? {
+          status: "ok",
+          buckets: distributePlaces(result.places.map((place) => ({ ...place, requestedSlot: null })), dayCount),
+          expectedSlots: null,
+        }
+      : result;
+  }
+
+  const foodResult = await foodBucketsForIntents(request.destination!, request.startDate, dayCount, intents);
+  if (foodResult.status !== "ok") return foodResult;
+  return { status: "ok", buckets: foodResult.buckets, expectedSlots: foodResult.orderedSlots };
 }
 
 type LocatedPlace = { lat: number | null; lng: number | null };
@@ -318,13 +467,17 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
     const date = dateForDay(request.startDate, dayIndex);
     const resolved = await Promise.all(placesResult.buckets[dayIndex].map((place) => resolvePlace(place, date)));
-    const dayPlaces = resolved.filter((place): place is KinTravelPlace => place !== null);
+    const seenPlaceIds = new Set<string>();
+    const dayPlaces = resolved
+      .filter((place): place is KinTravelPlace => place !== null)
+      .filter((place) => !seenPlaceIds.has(place.placeId) && Boolean(seenPlaceIds.add(place.placeId)));
+    // A day combining a meal schedule with activity interests legitimately
+    // has more places than expectedSlots — this only verifies every
+    // requested meal slot resolved to a real, open place, never that the
+    // day contains nothing else.
     if (
       placesResult.expectedSlots
-      && (
-        dayPlaces.length !== placesResult.expectedSlots.length
-        || placesResult.expectedSlots.some((slot) => !dayPlaces.some((place) => place.slot === slot))
-      )
+      && placesResult.expectedSlots.some((slot) => !dayPlaces.some((place) => place.slot === slot))
     ) {
       return { status: "unavailable", reason: "incomplete food schedule" };
     }
@@ -363,6 +516,7 @@ export async function swapPlace(
   date: string | null = null,
   previousPlace: KinTravelNeighbour | null = null,
   nextPlace: KinTravelNeighbour | null = null,
+  activityInterest: ActivityInterest | null = null,
 ): Promise<KinTravelSwapResult> {
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
   // A larger candidate pool than the itinerary's own 5 — otherwise every
@@ -374,7 +528,7 @@ export async function swapPlace(
     BREAKFAST: { query: "breakfast and bakeries", type: "bakery" },
     LUNCH: { query: "restaurants for lunch", type: "restaurant" },
     DINNER: { query: "restaurants for dinner", type: "restaurant" },
-  }[slot] : null;
+  }[slot] : activityInterest ? ACTIVITY_INTEREST_QUERY[activityInterest] : null;
   const placesResult = await searchPlaces(
     intent ? `${intent.query} in ${destination}` : `top attractions and things to do in ${destination}`,
     SWAP_CANDIDATE_POOL_SIZE,
@@ -384,8 +538,8 @@ export async function swapPlace(
   const excluded = new Set(excludePlaceIds);
   const alternatives = placesResult.places.filter((place) => !excluded.has(place.placeId));
   for (const alternative of alternatives) {
-    if (intent && alternative.primaryType !== intent.type && !alternative.types.includes(intent.type)) continue;
-    const place = await resolvePlace({ ...alternative, requestedSlot: slot }, date);
+    if (intent?.type && alternative.primaryType !== intent.type && !alternative.types.includes(intent.type)) continue;
+    const place = await resolvePlace({ ...alternative, requestedSlot: slot, ...(activityInterest ? { activityInterest } : {}) }, date);
     if (place) {
       const routes: KinTravelRoute[] = [];
       if (previousPlace) {

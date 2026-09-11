@@ -51,7 +51,7 @@ function isValidHttpsUrl(url: string): boolean {
  */
 export type GooglePlacePhotoRef = { name: string; attributionText: string | null; attributionUri: string | null };
 
-export type GooglePlaceTypeFilter = "cafe" | "restaurant" | "bakery";
+export type GooglePlaceTypeFilter = "cafe" | "restaurant" | "bakery" | "museum" | "park" | "gym";
 export type GooglePlaceOpeningPeriod = {
   open: { day: number; hour: number; minute: number };
   close: { day: number; hour: number; minute: number } | null;
