@@ -2771,7 +2771,11 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const [lookAddedToTrip, setLookAddedToTrip] = useState(false);
   const [addingLookToTrip, setAddingLookToTrip] = useState(false);
   const [lookSaved, setLookSaved] = useState(false);
+  const [savingLook, setSavingLook] = useState(false);
   const [enlargedResult, setEnlargedResult] = useState<KinResultCard | null>(null);
+  const savingLookRef = useRef(false);
+  const lightboxTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const lightboxCloseRef = useRef<HTMLButtonElement | null>(null);
   const [view, setView] = useState<'form' | 'looks-result' | 'travel-overview'>('form');
   const [planView, setPlanView] = useState<'plan' | 'map'>('plan');
   const [swappingPlaceKey, setSwappingPlaceKey] = useState<string | null>(null);
@@ -2782,6 +2786,25 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   // opened "Optional details") carries over, and the new screen's own
   // headline/hero can render off-screen above the fold.
   useEffect(() => { window.scrollTo(0, 0); }, [view]);
+
+  useEffect(() => {
+    if (!enlargedResult) return;
+    lightboxCloseRef.current?.focus();
+    const handleLightboxKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setEnlargedResult(null);
+        requestAnimationFrame(() => lightboxTriggerRef.current?.focus());
+        return;
+      }
+      if (event.key === 'Tab') {
+        event.preventDefault();
+        lightboxCloseRef.current?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleLightboxKeyDown);
+    return () => document.removeEventListener('keydown', handleLightboxKeyDown);
+  }, [enlargedResult]);
 
   const myThingsEnabled = session.featureFlags.my_things === true;
   useEffect(() => {
@@ -2935,7 +2958,9 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   };
 
   const saveRecommendation = async () => {
-    if (!result || result.status !== 'ok') return;
+    if (!result || result.status !== 'ok' || lookSaved || savingLookRef.current) return;
+    savingLookRef.current = true;
+    setSavingLook(true);
     try {
       const response = await fetch('/api/kin/saved', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
@@ -2946,6 +2971,9 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
       setLookSaved(true);
     } catch (err) {
       setSavedNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      savingLookRef.current = false;
+      setSavingLook(false);
     }
   };
 
@@ -3019,6 +3047,14 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const activeOption = looksOptions[selectedOptionIndex];
   const activeDay = travelPlan?.days[selectedDayIndex];
   const backToForm = () => { setView('form'); setState('idle'); };
+  const closeResultLightbox = () => {
+    setEnlargedResult(null);
+    requestAnimationFrame(() => lightboxTriggerRef.current?.focus());
+  };
+  const openResultLightbox = (card: KinResultCard, trigger: HTMLButtonElement) => {
+    lightboxTriggerRef.current = trigger;
+    setEnlargedResult(card);
+  };
 
   // The single compact "your piece" card shown above the results grid.
   // Only ever the member's own uploaded photo, their selected My Things
@@ -3164,7 +3200,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
             </div>}
             {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
             <div className="kin-card-actions">
-              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" aria-pressed={lookSaved} disabled={lookSaved} onClick={() => void saveRecommendation()}>{lookSaved ? t('Saved', 'تم الحفظ') : t('Save Look', 'احفظ الإطلالة')}</button>}
+              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" aria-pressed={lookSaved} aria-busy={savingLook} disabled={lookSaved || savingLook} onClick={() => void saveRecommendation()}>{lookSaved ? t('Saved', 'تم الحفظ') : savingLook ? t('Saving…', 'جارٍ الحفظ…') : t('Save Look', 'احفظ الإطلالة')}</button>}
               <button className="approved-button" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Get new suggestions', 'احصل على اقتراحات جديدة')}</button>
             </div>
             <div className="kin-link-row">
@@ -3192,7 +3228,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
               is no per-product save: KIN only ever saves the whole look
               (the Save Look button above), since no per-item save endpoint
               exists — a card-level save control would be misleading. */}
-          {result.results.map((card, index) => <button type="button" key={`${card.url}-${index}`} className="approved-collection kin-result-card" data-testid="kin-result-card" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={() => setEnlargedResult(card)}>
+          {result.results.map((card, index) => <button type="button" key={`${card.url}-${index}`} className="approved-collection kin-result-card" data-testid="kin-result-card" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={(event) => openResultLightbox(card, event.currentTarget)}>
             <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
             <strong>{card.title}</strong>
             {card.source && <span>{card.source}</span>}
@@ -3200,8 +3236,8 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
         </div>}
       </>}
 
-      {enlargedResult && <div className="kin-lightbox" role="dialog" aria-modal="true" aria-label={enlargedResult.title} data-testid="kin-lightbox" onClick={() => setEnlargedResult(null)}>
-        <button type="button" className="kin-lightbox-close" aria-label={t('Close', 'إغلاق')} onClick={() => setEnlargedResult(null)}><X size={20} /></button>
+      {enlargedResult && <div className="kin-lightbox" role="dialog" aria-modal="true" aria-label={enlargedResult.title} data-testid="kin-lightbox" onClick={closeResultLightbox}>
+        <button ref={lightboxCloseRef} type="button" className="kin-lightbox-close" aria-label={t('Close', 'إغلاق')} onClick={(event) => { event.stopPropagation(); closeResultLightbox(); }}><X size={20} /></button>
         <img src={enlargedResult.imageUrl || '/kin-placeholder.svg'} alt="" onClick={(event) => event.stopPropagation()} />
         <div className="kin-lightbox-caption" onClick={(event) => event.stopPropagation()}>
           <strong>{enlargedResult.title}</strong>
