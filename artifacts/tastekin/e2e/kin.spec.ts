@@ -574,7 +574,10 @@ test('a network/5xx error renders the inline error state and the form remains us
 
 test('external result cards render title and verified source, never a price or shopping link, and enlarge on tap', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
+  let searchQuery: unknown;
+  let savedQuery: unknown;
   await page.route('**/api/kin/search', async (route) => {
+    searchQuery = route.request().postDataJSON()?.query;
     await route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
@@ -588,7 +591,10 @@ test('external result cards render title and verified source, never a price or s
       }),
     });
   });
-  await page.route('**/api/kin/saved', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' }); });
+  await page.route('**/api/kin/saved', async (route) => {
+    savedQuery = route.request().postDataJSON()?.query;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('a warm coat');
@@ -624,6 +630,8 @@ test('external result cards render title and verified source, never a price or s
   await saveButton.click();
   await expect(saveButton).toHaveText('Saved');
   await expect(saveButton).toBeDisabled();
+  expect(searchQuery).toBe('a warm coat');
+  expect(savedQuery).toBe(searchQuery);
 });
 
 test('Save Look blocks rapid duplicate requests and remains retryable after failure', async ({ page }) => {
@@ -828,6 +836,7 @@ test('an uploaded photo becomes the styling reference, clearly labeled — even 
 test('a selected My Things item becomes the styling reference, served via the authorized per-item image route', async ({ page }) => {
   await mockMe(page, { kinSearch: true, myThings: true });
   let sentBody: Record<string, unknown> | undefined;
+  let savedBody: Record<string, unknown> | undefined;
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
@@ -840,6 +849,10 @@ test('a selected My Things item becomes the styling reference, served via the au
     sentBody = route.request().postDataJSON();
     await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
   });
+  await page.route('**/api/kin/saved', async (route) => {
+    savedBody = route.request().postDataJSON();
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
@@ -851,6 +864,9 @@ test('a selected My Things item becomes the styling reference, served via the au
   expect(sentBody?.myThingsItemIds).toEqual(['item-42']);
   expect(sentBody?.occasion).toBe('Everyday');
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
+  await page.getByTestId('kin-save').click();
+  await expect(page.getByTestId('kin-save')).toHaveText('Saved');
+  expect(savedBody?.query).toBe(sentBody?.query);
   const pieceCard = page.getByTestId('kin-piece-card');
   await expect(pieceCard).toBeVisible();
   await expect(pieceCard).toContainText('Your piece');
@@ -1162,10 +1178,15 @@ test('an Arabic blank-description photo request sends the localized fallback que
   await mockMe(page, { kinSearch: true, language: 'ar' });
   let sentUrl = '';
   let uploadedBody: Buffer | null = null;
+  let savedQuery: unknown;
   await page.route('**/api/kin/looks/photo*', async (route) => {
     sentUrl = route.request().url();
     uploadedBody = route.request().postDataBuffer();
     await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.route('**/api/kin/saved', async (route) => {
+    savedQuery = route.request().postDataJSON()?.query;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
   });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
@@ -1177,4 +1198,7 @@ test('an Arabic blank-description photo request sends the localized fallback que
   expect(params.get('occasion')).toBe('Everyday');
   expect(params.get('locale')).toBe('ar');
   expect(uploadedBody?.toString()).toBe('blank-description-photo');
+  await page.getByTestId('kin-save').click();
+  await expect(page.getByTestId('kin-save')).toHaveText('تم الحفظ');
+  expect(savedQuery).toBe(params.get('query'));
 });

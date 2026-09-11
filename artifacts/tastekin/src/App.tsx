@@ -2761,6 +2761,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<KinSearchResponse | null>(null);
   const [resultReference, setResultReference] = useState<KinLooksReference | null>(null);
+  const [submittedLooksQuery, setSubmittedLooksQuery] = useState<string | null>(null);
   const [travelPlan, setTravelPlan] = useState<KinTravelPlan | null>(null);
   const [savedNotice, setSavedNotice] = useState('');
   const [tripId, setTripId] = useState<string | null>(null);
@@ -2835,7 +2836,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
 
   const clearPhoto = () => {
     if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-    setPhotoFile(null); setPhotoPreviewUrl(null); setPhotoError('');
+    setPhotoFile(null); setPhotoPreviewUrl(null); setPhotoError(''); setSubmittedLooksQuery(null);
   };
 
   const selectPhoto = (event: ChangeEvent<HTMLInputElement>) => {
@@ -2849,12 +2850,19 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     setPhotoFile(selected);
     setPhotoPreviewUrl(URL.createObjectURL(selected));
     setSelectedItemId('');
+    setSubmittedLooksQuery(null);
     onClearStylingItems();
   };
 
   const selectMyThingsItem = (id: string) => {
     setSelectedItemId(id);
+    setSubmittedLooksQuery(null);
     if (id) clearPhoto();
+  };
+
+  const changeStylingItems = () => {
+    setSubmittedLooksQuery(null);
+    onChangeStylingItems();
   };
 
   // The guided flow's chip labels, in whichever language the member is
@@ -2876,6 +2884,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       return;
     }
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
+    setSubmittedLooksQuery(null);
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
@@ -2948,6 +2957,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       if (payload.status === 'unavailable') { setState('unavailable'); return; }
       const hasOptions = (payload.options?.length ?? 0) > 0;
       const looksReady = payload.answer.trim() || payload.results.length || hasOptions;
+      setSubmittedLooksQuery(looksQuery);
       setResultReference(
         !looksReady ? null
           : submittedPhotoFile ? { kind: 'photo', url: URL.createObjectURL(submittedPhotoFile) }
@@ -2970,13 +2980,13 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   };
 
   const saveRecommendation = async () => {
-    if (!result || result.status !== 'ok' || lookSaved || savingLookRef.current) return;
+    if (!result || result.status !== 'ok' || !submittedLooksQuery || lookSaved || savingLookRef.current) return;
     savingLookRef.current = true;
     setSavingLook(true);
     try {
       const response = await fetch('/api/kin/saved', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completionStatus: 'ok', mode: 'looks', query: query.trim(), answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
+        body: JSON.stringify({ completionStatus: 'ok', mode: 'looks', query: submittedLooksQuery, answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       setSavedNotice(t('Saved to your KIN history.', 'تم الحفظ في سجل كين.'));
@@ -3094,7 +3104,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
               : t('Your piece', 'قطعتك')}
       </span>
     </div>
-    <button type="button" className="kin-piece-change" onClick={resultReference ? backToForm : onChangeStylingItems}>{t('Change', 'تغيير')}</button>
+    <button type="button" className="kin-piece-change" onClick={resultReference ? backToForm : changeStylingItems}>{t('Change', 'تغيير')}</button>
   </div>;
 
   const advanceTravelStep = () => {
@@ -3188,7 +3198,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     return <section className="kin-style-screen" data-testid="kin-screen">
       <div className="kin-segmented" data-testid="kin-mode-toggle">
         <button type="button" className="selected" data-testid="kin-mode-looks" onClick={backToForm}>{t('Style', 'نسّق لي')}</button>
-        {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={onChangeStylingItems}>{t('My Things', 'أغراضي')}</button>}
+        {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
         <button type="button" data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); backToForm(); }}>{t('Travel', 'السفر')}</button>
       </div>
 
@@ -3305,7 +3315,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   return <section className={mode === 'looks' ? 'kin-style-screen' : undefined} data-testid="kin-screen">
     <div className="kin-segmented" data-testid="kin-mode-toggle">
       <button type="button" className={mode === 'looks' ? 'selected' : ''} data-testid="kin-mode-looks" onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Style', 'نسّق لي')}</button>
-      {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={onChangeStylingItems}>{t('My Things', 'أغراضي')}</button>}
+      {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
       <button type="button" className={mode === 'travel' ? 'selected' : ''} data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
     </div>
 
@@ -3327,7 +3337,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   {item && <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>}
                 </div>;
               })}
-              <button type="button" className="kin-piece-refresh" data-testid="kin-piece-change" aria-label={t('Change your piece', 'غيّر قطعتك')} onClick={onChangeStylingItems}><RefreshCw size={16} /></button>
+              <button type="button" className="kin-piece-refresh" data-testid="kin-piece-change" aria-label={t('Change your piece', 'غيّر قطعتك')} onClick={changeStylingItems}><RefreshCw size={16} /></button>
             </div>
           ) : photoPreviewUrl ? (
              <>
@@ -3344,7 +3354,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
               <Camera size={18} /> {t('Take a photo', 'التقط صورة')}
               <input className="kin-file-input" aria-label={t('Add a clothing photo', 'أضف صورة قطعة ملابس')} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="kin-photo-input" onChange={selectPhoto} />
            </label>
-           {myThingsEnabled && <button type="button" data-testid="kin-open-my-things" onClick={onChangeStylingItems}><Archive size={18} /> {t('My Things', 'أغراضي')}</button>}
+           {myThingsEnabled && <button type="button" data-testid="kin-open-my-things" onClick={changeStylingItems}><Archive size={18} /> {t('My Things', 'أغراضي')}</button>}
         </div>
         {photoError && <p className="workspace-notice" role="alert" data-testid="kin-photo-error">{photoError}</p>}
 
