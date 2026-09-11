@@ -302,8 +302,8 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         }
         const coordinateOffsets = [0, 0.04, 0.001, 0.041, 0.002, 0.042, 0.003];
         const crossDayIds = /breakfast/i.test(parsedRequest.textQuery ?? "")
-          ? ["breakfast-day-1", "shared-cross-day", "breakfast-alternative"]
-          : ["shopping-day-1", "shared-cross-day", "shopping-alternative"];
+          ? ["breakfast-day-1", "shared-cross-day"]
+          : ["shared-cross-day", "shopping-alternative"];
         const placeIds = mode.kind === "cross_day_collision"
           ? crossDayIds
           : Array.from({ length: 7 }, (_, i) => `place-${i}`);
@@ -1515,10 +1515,16 @@ async function main() {
         plan: { days: Array<{ places: Array<{ placeId: string; slot: string | null; activityInterest?: string }> }> };
       };
       assert.equal(payload.status, "ok");
+      const [dayOne, dayTwo] = payload.plan.days;
       const places = payload.plan.days.flatMap((day) => day.places);
+      const sharedOccurrences = places.filter((place) => place.placeId === "shared-cross-day");
+      assert.equal(sharedOccurrences.length, 1, "the shared Google placeId must appear exactly once across the trip");
       assert.equal(new Set(places.map((place) => place.placeId)).size, places.length, "unused candidates must prevent avoidable cross-day duplicates");
-      assert.ok(places.some((place) => place.placeId === "shared-cross-day" && place.slot === "BREAKFAST"), "the shared provider result remains the valid second-day breakfast");
+      assert.ok(!dayOne.places.some((place) => place.placeId === "shared-cross-day" && place.activityInterest === "shopping"), "the cross-day collision must not survive as a first-day activity");
+      assert.ok(dayTwo.places.some((place) => place.placeId === "shared-cross-day" && place.slot === "BREAKFAST"), "the shared provider result must remain the valid second-day breakfast");
       assert.ok(places.some((place) => place.placeId === "shopping-alternative" && place.activityInterest === "shopping"), "the unused Shopping alternative must be preferred");
+      assert.ok(payload.plan.days.every((day) => day.places[0]?.slot === "BREAKFAST"), "breakfast must remain first on both days");
+      assert.ok(places.every((place) => ["breakfast-day-1", "shared-cross-day", "shopping-alternative"].includes(place.placeId)), "every returned place must come from the provider fixture");
       fakeGooglePlacesMode = { kind: "ok" };
     });
     await check("an activity provider failure makes the guided plan honestly unavailable", async () => {
