@@ -90,6 +90,21 @@ test('Looks mode: Optional details shows location/budget/size/occasion, not dest
   await expect(page.getByTestId('kin-start-date')).toHaveCount(0);
 });
 
+test('Back on Travel step 1 closes the guided flow and returns to active Looks', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await expect(page.getByTestId('kin-travel-step')).toHaveAttribute('data-step', '1');
+
+  await page.getByTestId('kin-travel-back').click();
+
+  await expect(page.getByTestId('kin-travel-step')).toHaveCount(0);
+  await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
+  await expect(page.getByTestId('kin-mode-looks')).toHaveClass(/selected/);
+  await expect(page.getByRole('heading', { name: 'Built around you.' })).toBeVisible();
+});
+
 test('Travel is a dedicated two-step flow that submits exact dates and interests with no clothing payload', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   let sentBody: Record<string, unknown> | undefined;
