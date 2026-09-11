@@ -49,8 +49,15 @@ test('the bottom nav opens a real KIN page when the flag is on', async ({ page }
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'Built around you.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
+  await expect(page.getByText('Start with one piece. Make it feel like you.')).toBeVisible();
+  await expect(page.getByTestId('kin-styling-summary')).toBeVisible();
+  await expect(page.getByTestId('kin-take-photo')).toContainText('Take a photo');
+  await expect(page.getByTestId('kin-query')).toHaveAttribute('placeholder', 'Or describe what you want to style…');
+  await expect(page.getByTestId('kin-occasion-everyday')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('kin-submit')).toHaveText('Create my looks');
   await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
+  await expect(page.getByTestId('kin-mode-looks')).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(page.getByTestId('kin-mode-travel')).toBeVisible();
 });
 
@@ -77,17 +84,48 @@ test('the guard sends KIN back to You when the session becomes unauthenticated m
   await expect(page.getByTestId('you-sign-in')).toBeVisible();
 });
 
-test('Looks mode: Optional details shows location/budget/size/occasion, not destination/dates', async ({ page }) => {
+test('Looks mode: More preferences shows location/budget/size, occasion is outside, not destination/dates', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
+  let sentBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/search', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok', answer: '', citations: [], options: [{ label: 'signature', reasoning: '', ownedItems: [], missingItems: [] }], results: [] }),
+    });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await page.getByText('Optional details', { exact: true }).click();
+  await expect(page.getByTestId('kin-occasion')).toBeVisible();
+  await expect(page.getByTestId('kin-location')).toBeHidden();
+  await page.getByTestId('kin-occasion-dinner').click();
+  await page.getByTestId('kin-more-preferences').click();
   await expect(page.getByTestId('kin-location')).toBeVisible();
   await expect(page.getByTestId('kin-budget')).toBeVisible();
   await expect(page.getByTestId('kin-size')).toBeVisible();
-  await expect(page.getByTestId('kin-occasion')).toBeVisible();
   await expect(page.getByTestId('kin-destination')).toHaveCount(0);
   await expect(page.getByTestId('kin-start-date')).toHaveCount(0);
+  await page.getByTestId('kin-query').fill('style a dinner piece');
+  await page.getByTestId('kin-location').fill('Kuwait');
+  await page.getByTestId('kin-budget').fill('180');
+  await page.getByTestId('kin-currency').fill('kwd');
+  await page.getByTestId('kin-size').fill('M');
+  await page.getByTestId('kin-submit').click();
+  await expect.poll(() => sentBody?.occasion).toBe('Dinner');
+  expect(sentBody).toMatchObject({ location: 'Kuwait', budget: 180, currency: 'KWD', size: 'M' });
+});
+
+test('the approved Style input fits 390×844 without horizontal overflow and its CTA clears the bottom navigation', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
+  await expect(page.getByTestId('kin-open-my-things')).toBeVisible();
+  await page.getByTestId('kin-photo-input').focus();
+  await expect(page.getByTestId('kin-photo-input')).toBeFocused();
+  await expectMobileControlAboveNavigation(page, 'kin-submit');
 });
 
 test('Back on Travel step 1 closes the guided flow and returns to active Looks', async ({ page }) => {
@@ -102,7 +140,7 @@ test('Back on Travel step 1 closes the guided flow and returns to active Looks',
   await expect(page.getByTestId('kin-travel-step')).toHaveCount(0);
   await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toHaveClass(/selected/);
-  await expect(page.getByRole('heading', { name: 'Built around you.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
 });
 
 test('Travel is a dedicated two-step flow that submits exact dates and interests with no clothing payload', async ({ page }) => {
@@ -457,7 +495,20 @@ test('submitting a blank query shows an inline error and never calls the endpoin
   expect(searchCalls).toBe(0);
 });
 
-test('loading state shows while the request is in flight, then renders the answer with clickable source citations', async ({ page }) => {
+test('a 400 validation response is shown as a request problem, not a temporary KIN outage', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'query is required' }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('style this piece');
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-error')).toHaveText('Please check your styling details and try again.');
+  await expect(page.getByText('KIN is temporarily unavailable. Please try again shortly.')).toHaveCount(0);
+});
+
+test('loading state shows while the request is in flight, then opens the concise results screen without long narrative or shopping links', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/search', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 200));
@@ -467,7 +518,7 @@ test('loading state shows while the request is in flight, then renders the answe
         status: 'ok',
         answer: 'A warm, editorial answer grounded in live search.',
         citations: [{ title: 'Example Boutique', url: 'https://example.com/item-1' }],
-        results: [],
+        results: [{ title: 'Tailored shirt', source: 'example.com', url: 'https://example.com/item-1', imageUrl: null }],
       }),
     });
   });
@@ -478,9 +529,10 @@ test('loading state shows while the request is in flight, then renders the answe
   await expect(page.getByTestId('kin-loading')).toBeVisible();
   await expect(page.getByTestId('kin-answer')).toBeVisible();
   await expect(page.getByTestId('kin-loading')).toHaveCount(0);
-  await expect(page.getByText('A warm, editorial answer grounded in live search.')).toBeVisible();
-  const citationLink = page.getByTestId('kin-citations').getByRole('link', { name: 'Example Boutique' });
-  await expect(citationLink).toHaveAttribute('href', 'https://example.com/item-1');
+  await expect(page.getByRole('heading', { name: 'Made for your taste.' })).toBeVisible();
+  await expect(page.getByTestId('kin-result-card')).toContainText('Tailored shirt');
+  await expect(page.getByText('A warm, editorial answer grounded in live search.')).toHaveCount(0);
+  await expect(page.locator('a[href="https://example.com/item-1"]')).toHaveCount(0);
 });
 
 test('an empty result renders the empty state, not an error', async ({ page }) => {
@@ -522,7 +574,10 @@ test('a network/5xx error renders the inline error state and the form remains us
 
 test('external result cards render title and verified source, never a price or shopping link, and enlarge on tap', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
+  let searchQuery: unknown;
+  let savedQuery: unknown;
   await page.route('**/api/kin/search', async (route) => {
+    searchQuery = route.request().postDataJSON()?.query;
     await route.fulfill({
       status: 200, contentType: 'application/json',
       body: JSON.stringify({
@@ -531,23 +586,28 @@ test('external result cards render title and verified source, never a price or s
         citations: [],
         options: [{ label: 'signature', reasoning: 'A tailored look.', ownedItems: [], missingItems: [] }],
         results: [
-          { title: 'Wool Coat', source: 'example.com', url: 'https://example.com/coat', price: 240, currency: 'USD', imageUrl: null },
+          { title: 'Longline Double-Breasted Wool Coat', source: 'example.com', url: 'https://example.com/coat', price: 240, currency: 'USD', imageUrl: null },
         ],
       }),
     });
   });
-  await page.route('**/api/kin/saved', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' }); });
+  await page.route('**/api/kin/saved', async (route) => {
+    savedQuery = route.request().postDataJSON()?.query;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('a warm coat');
   await page.getByTestId('kin-submit').click();
   const card = page.getByTestId('kin-result-card');
-  await expect(card).toContainText('Wool Coat');
+  await expect(card).toContainText('Longline Double-Breasted Wool Coat');
   await expect(card).toContainText('example.com');
   await expect(card).not.toContainText('USD 240');
   await expect(card.locator('a')).toHaveCount(0);
   await expect(card).not.toHaveAttribute('href', /.*/);
   await expect(card.locator('img')).toHaveAttribute('src', '/kin-placeholder.svg');
+  await expect(card.locator('strong')).toHaveCSS('white-space', 'normal');
+  await expect(card.locator('strong')).toHaveCSS('overflow-wrap', 'anywhere');
   // No per-product save control exists — KIN never invents a per-item
   // save endpoint, so a result card is never given a misleading save
   // affordance of its own. Only "Save Look" (checked below) is real.
@@ -556,7 +616,7 @@ test('external result cards render title and verified source, never a price or s
 
   await card.click();
   await expect(page.getByTestId('kin-lightbox')).toBeVisible();
-  await expect(page.getByTestId('kin-lightbox')).toContainText('Wool Coat');
+  await expect(page.getByTestId('kin-lightbox')).toContainText('Longline Double-Breasted Wool Coat');
   await expect(page.getByTestId('kin-lightbox')).not.toContainText('USD 240');
   await expect(page.locator('a[href="https://example.com/coat"]')).toHaveCount(0);
   await page.getByLabel('Close', { exact: true }).click();
@@ -570,6 +630,8 @@ test('external result cards render title and verified source, never a price or s
   await saveButton.click();
   await expect(saveButton).toHaveText('Saved');
   await expect(saveButton).toBeDisabled();
+  expect(searchQuery).toBe('a warm coat');
+  expect(savedQuery).toBe(searchQuery);
 });
 
 test('Save Look blocks rapid duplicate requests and remains retryable after failure', async ({ page }) => {
@@ -660,7 +722,7 @@ test('the result lightbox traps focus, closes accessibly, restores the exact tri
   await expect(secondCard).toBeFocused();
 });
 
-test('the My Things item picker only appears when my_things is also enabled and items exist', async ({ page }) => {
+test('the approved My Things entry opens the private item picker when the feature is enabled', async ({ page }) => {
   await mockMe(page, { kinSearch: true, myThings: true });
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') {
@@ -672,24 +734,49 @@ test('the My Things item picker only appears when my_things is also enabled and 
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByTestId('kin-my-things-item')).toBeVisible();
+  await expect(page.getByTestId('kin-open-my-things')).toBeVisible();
+  await page.getByTestId('kin-open-my-things').click();
+  await expect(page.getByTestId('my-things-style-with-kin')).toBeVisible();
 });
 
-test('the My Things item picker is absent when my_things is disabled', async ({ page }) => {
+test('the My Things entry is absent when my_things is disabled', async ({ page }) => {
   await mockMe(page, { kinSearch: true, myThings: false });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByTestId('kin-my-things-item')).toHaveCount(0);
+  await expect(page.getByTestId('kin-open-my-things')).toHaveCount(0);
+  await expect(page.getByTestId('kin-mode-my-things')).toHaveCount(0);
 });
 
 test('Arabic UI strings render for KIN', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await mockMe(page, { kinSearch: true, language: 'ar' });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        answer: '',
+        citations: [],
+        options: [{ label: 'signature', reasoning: '', ownedItems: [], missingItems: [] }],
+        results: [{ title: 'قميص كتان', source: 'example.com', url: 'https://example.com/shirt', imageUrl: null }],
+      }),
+    });
+  });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'مبني من أجلك.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'نسّقها بطريقتك.' })).toBeVisible();
+  await expect(page.getByText('ابدأ بقطعة واحدة، واجعلها تعبّر عنك.')).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toHaveText('نسّق لي');
   await expect(page.getByTestId('kin-mode-travel')).toHaveText('السفر');
-  await expect(page.getByTestId('kin-submit')).toHaveText('اسأل كين');
+  await expect(page.getByTestId('kin-submit')).toHaveText('أنشئ إطلالاتي');
+  await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
+  await expectMobileControlAboveNavigation(page, 'kin-submit');
+  await page.getByTestId('kin-query').fill('نسّق قميصاً كتانياً');
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByRole('heading', { name: 'مختارة لذوقك.' })).toBeVisible();
+  await expect(page.getByTestId('kin-result-card')).toContainText('قميص كتان');
+  await expect(page.getByTestId('kin-new-suggestions')).toHaveText('عرض خيارات أكثر');
 });
 
 test('the creator workspace remains reachable from You after the center nav button became KIN', async ({ page }) => {
@@ -748,6 +835,8 @@ test('an uploaded photo becomes the styling reference, clearly labeled — even 
 
 test('a selected My Things item becomes the styling reference, served via the authorized per-item image route', async ({ page }) => {
   await mockMe(page, { kinSearch: true, myThings: true });
+  let sentBody: Record<string, unknown> | undefined;
+  let savedBody: Record<string, unknown> | undefined;
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
@@ -756,19 +845,70 @@ test('a selected My Things item becomes the styling reference, served via the au
       });
     }
   });
-  await page.route('**/api/kin/search', async (route) => { await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() }); });
+  await page.route('**/api/kin/search', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.route('**/api/kin/saved', async (route) => {
+    savedBody = route.request().postDataJSON();
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-kin').click();
-  await page.getByTestId('kin-query').fill('style this item');
-  await page.getByTestId('kin-my-things-item').selectOption('item-42');
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-style-with-kin').click();
+  await page.getByTestId('my-things-style-item').getByRole('button').click();
+  await page.getByTestId('my-things-style-continue').click();
   await page.getByTestId('kin-submit').click();
+  await expect.poll(() => sentBody?.query).toBe('Style my selected piece');
+  expect(sentBody?.myThingsItemIds).toEqual(['item-42']);
+  expect(sentBody?.occasion).toBe('Everyday');
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
+  await page.getByTestId('kin-save').click();
+  await expect(page.getByTestId('kin-save')).toHaveText('Saved');
+  expect(savedBody?.query).toBe(sentBody?.query);
   const pieceCard = page.getByTestId('kin-piece-card');
   await expect(pieceCard).toBeVisible();
   await expect(pieceCard).toContainText('Your piece');
   await pieceCard.getByRole('button', { name: 'Change', exact: true }).click();
-  await expect(page.getByTestId('kin-query')).toBeVisible();
-  await expect(page.getByTestId('kin-my-things-item')).toHaveValue('item-42');
+  await expect(page.getByTestId('my-things-style-continue')).toBeVisible();
+});
+
+test('choosing a photo replaces a preselected My Things piece everywhere before submission', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, myThings: true });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', createdAt: new Date().toISOString() }] }),
+      });
+    }
+  });
+  let photoCalls = 0;
+  let searchCalls = 0;
+  await page.route('**/api/kin/looks/photo*', async (route) => {
+    photoCalls += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.route('**/api/kin/search', async (route) => {
+    searchCalls += 1;
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-style-with-kin').click();
+  await page.getByTestId('my-things-style-item').getByRole('button').click();
+  await page.getByTestId('my-things-style-continue').click();
+  await expect(page.getByTestId('kin-styling-summary').locator('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
+
+  await page.getByTestId('kin-photo-input').setInputFiles({ name: 'replacement.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('replacement-photo') });
+  await expect(page.getByTestId('kin-styling-summary').getByRole('img', { name: 'Selected styling piece' })).toHaveAttribute('src', /^blob:/);
+  await expect(page.getByTestId('kin-styling-summary').locator('img[src="/api/closet-items/item-42/image"]')).toHaveCount(0);
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', /^blob:/);
+  expect(photoCalls).toBe(1);
+  expect(searchCalls).toBe(0);
 });
 
 test('multiple preselected My Things items render one compact count with an authorized thumbnail and no private key', async ({ page }) => {
@@ -878,10 +1018,9 @@ test('a web-search-result thumbnail can never render as the outfit reference, ev
   await page.getByTestId('kin-query').fill('a dinner outfit');
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-looks-options')).toBeVisible();
-  // No element anywhere in the option card may show a.example.com/1.jpg or
-  // b.example.com/2.jpg as if it were the outfit itself.
-  const optionCardImages = page.getByTestId('kin-look-option').locator('img');
-  await expect(optionCardImages).toHaveCount(0);
+  await expect(page.getByTestId('kin-piece-card')).toHaveCount(0);
+  await expect(page.getByTestId('kin-result-card').nth(0).locator('img')).toHaveAttribute('src', 'https://a.example.com/1.jpg');
+  await expect(page.getByTestId('kin-result-card').nth(1).locator('img')).toHaveAttribute('src', 'https://b.example.com/2.jpg');
 });
 
 // --- reference image correctness when the model's answer has no parsed
@@ -918,9 +1057,11 @@ test('a selected My Things item still becomes the styling reference when the ans
   });
   await page.route('**/api/kin/search', async (route) => { await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkPlainAnswerBody() }); });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-kin').click();
-  await page.getByTestId('kin-query').fill('style this item');
-  await page.getByTestId('kin-my-things-item').selectOption('item-42');
+  await page.getByTestId('nav-you').click();
+  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('my-things-style-with-kin').click();
+  await page.getByTestId('my-things-style-item').getByRole('button').click();
+  await page.getByTestId('my-things-style-continue').click();
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-answer')).toBeVisible();
   await expect(page.getByTestId('kin-looks-options')).toHaveCount(0);
@@ -955,7 +1096,7 @@ test('the search-limited note still appears in the plain-answer layout when the 
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-answer')).toBeVisible();
   await expect(page.getByTestId('kin-search-limited')).toBeVisible();
-  await expect(page.getByText('A tailored navy look for tonight, worn with minimal accessories.')).toBeVisible();
+  await expect(page.getByTestId('kin-result-guidance')).toContainText('A tailored navy look for tonight, worn with minimal accessories.');
 });
 
 test('the search-limited note appears only when the provider reports a structural web-search failure, alongside the real advice', async ({ page }) => {
@@ -969,10 +1110,11 @@ test('the search-limited note appears only when the provider reports a structura
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-looks-options')).toBeVisible();
   await expect(page.getByTestId('kin-search-limited')).toBeVisible();
-  await expect(page.getByText('A tailored navy look for tonight.')).toBeVisible();
+  await expect(page.getByTestId('kin-result-directions')).toContainText('Signature');
+  await expect(page.getByText('A tailored navy look for tonight.')).toHaveCount(0);
 });
 
-test('the button that regenerates the whole response is labeled "Get new suggestions", not "Swap a Piece"', async ({ page }) => {
+test('the approved Show more options button regenerates the whole response', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/search', async (route) => { await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() }); });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -980,7 +1122,7 @@ test('the button that regenerates the whole response is labeled "Get new suggest
   await page.getByTestId('kin-query').fill('a dinner outfit');
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-looks-options')).toBeVisible();
-  await expect(page.getByTestId('kin-new-suggestions')).toHaveText('Get new suggestions');
+  await expect(page.getByTestId('kin-new-suggestions')).toHaveText('Show more options');
   await expect(page.getByText('Swap a Piece')).toHaveCount(0);
 });
 
@@ -1030,4 +1172,33 @@ test('the explicit UI locale is also sent on a photo request, as a query-string 
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-looks-options')).toBeVisible();
   expect(new URL(sentUrl).searchParams.get('locale')).toBe('ar');
+});
+
+test('an Arabic blank-description photo request sends the localized fallback query and preserves the photo and occasion', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  let sentUrl = '';
+  let uploadedBody: Buffer | null = null;
+  let savedQuery: unknown;
+  await page.route('**/api/kin/looks/photo*', async (route) => {
+    sentUrl = route.request().url();
+    uploadedBody = route.request().postDataBuffer();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.route('**/api/kin/saved', async (route) => {
+    savedQuery = route.request().postDataJSON()?.query;
+    await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('blank-description-photo') });
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', /^blob:/);
+  const params = new URL(sentUrl).searchParams;
+  expect(params.get('query')).toBe('نسّق قطعتي المختارة');
+  expect(params.get('occasion')).toBe('Everyday');
+  expect(params.get('locale')).toBe('ar');
+  expect(uploadedBody?.toString()).toBe('blank-description-photo');
+  await page.getByTestId('kin-save').click();
+  await expect(page.getByTestId('kin-save')).toHaveText('تم الحفظ');
+  expect(savedQuery).toBe(params.get('query'));
 });

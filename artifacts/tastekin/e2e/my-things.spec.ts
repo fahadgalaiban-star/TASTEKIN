@@ -1167,20 +1167,22 @@ test('Style with KIN selects only owned items, preserves filters, sends 1–6 id
   await page.getByTestId('my-things-style-item').getByRole('button').click();
   await page.getByTestId('my-things-style-continue').click();
 
-  await expect(page.getByTestId('kin-styling-summary')).toContainText('Styling 2 items');
+  await expect(page.getByTestId('kin-styling-summary')).toContainText('Sneakers');
+  await expect(page.getByTestId('kin-styling-summary')).toContainText('Shirt');
   await page.getByTestId('kin-query').fill('Build one look');
   await page.getByTestId('kin-submit').click();
   await expect.poll(() => sentBody?.myThingsItemIds).toEqual(['owned-shoes', 'owned-shirt']);
   expect(sentBody?.myThingsItemId).toBeUndefined();
+  expect(sentBody?.query).toBe('Build one look');
 
-  await expect(page.getByTestId('kin-styling-summary')).toContainText('Styled with 2 items');
+  await expect(page.getByTestId('kin-piece-card')).toContainText('Styled with 2 items');
   items = items.filter((item) => item.id !== 'owned-shirt');
-  await page.getByTestId('kin-styling-summary').getByRole('button', { name: 'Change' }).click();
+  await page.getByTestId('kin-piece-card').getByRole('button', { name: 'Change' }).click();
   await expect(page.getByRole('heading', { name: 'Choose items' })).toBeVisible();
   await expect(page.getByTestId('my-things-style-item').filter({ has: page.locator('[aria-pressed="true"]') })).toHaveCount(1);
   await expect(page.getByRole('status').first()).toContainText('1 of 6 selected');
   await page.getByTestId('my-things-style-continue').click();
-  await expect(page.getByTestId('kin-styling-summary')).toContainText('Styling 1 item');
+  await expect(page.getByTestId('kin-styling-summary')).toContainText('Sneakers');
   await page.getByTestId('kin-mode-travel').click();
   await page.getByTestId('kin-destination').fill('Rome');
   await page.getByTestId('kin-travel-next').click();

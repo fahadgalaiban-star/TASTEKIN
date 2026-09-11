@@ -6,7 +6,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -1009,7 +1009,7 @@ function TastekinApp() {
     {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
-    {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
+    {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
@@ -2729,7 +2729,7 @@ const KIN_SPORT_SUBCHOICES: { value: KinSportSubchoice; en: string; ar: string }
   { value: 'pilates', en: 'Pilates', ar: 'بيلاتس' },
   { value: 'walking_places', en: 'Walking places', ar: 'أماكن للمشي' },
 ];
-function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: { ar: boolean; stylingItemIds: Set<string>; onChangeStylingItems: () => void; onUnavailable: () => void }) {
+function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingItems, onUnavailable }: { ar: boolean; stylingItemIds: Set<string>; onClearStylingItems: () => void; onChangeStylingItems: () => void; onUnavailable: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const allowed = session.status === 'authenticated' && session.featureFlags.kin_search === true;
@@ -2748,7 +2748,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const [budget, setBudget] = useState('');
   const [currency, setCurrency] = useState('USD');
   const [size, setSize] = useState('');
-  const [occasion, setOccasion] = useState('');
+  const [occasion, setOccasion] = useState('Everyday');
   const [destination, setDestination] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -2761,6 +2761,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const [errorMessage, setErrorMessage] = useState('');
   const [result, setResult] = useState<KinSearchResponse | null>(null);
   const [resultReference, setResultReference] = useState<KinLooksReference | null>(null);
+  const [submittedLooksQuery, setSubmittedLooksQuery] = useState<string | null>(null);
   const [travelPlan, setTravelPlan] = useState<KinTravelPlan | null>(null);
   const [savedNotice, setSavedNotice] = useState('');
   const [tripId, setTripId] = useState<string | null>(null);
@@ -2835,7 +2836,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
 
   const clearPhoto = () => {
     if (photoPreviewUrl) URL.revokeObjectURL(photoPreviewUrl);
-    setPhotoFile(null); setPhotoPreviewUrl(null); setPhotoError('');
+    setPhotoFile(null); setPhotoPreviewUrl(null); setPhotoError(''); setSubmittedLooksQuery(null);
   };
 
   const selectPhoto = (event: ChangeEvent<HTMLInputElement>) => {
@@ -2849,11 +2850,19 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
     setPhotoFile(selected);
     setPhotoPreviewUrl(URL.createObjectURL(selected));
     setSelectedItemId('');
+    setSubmittedLooksQuery(null);
+    onClearStylingItems();
   };
 
   const selectMyThingsItem = (id: string) => {
     setSelectedItemId(id);
+    setSubmittedLooksQuery(null);
     if (id) clearPhoto();
+  };
+
+  const changeStylingItems = () => {
+    setSubmittedLooksQuery(null);
+    onChangeStylingItems();
   };
 
   // The guided flow's chip labels, in whichever language the member is
@@ -2869,8 +2878,13 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
 
   const submit = async () => {
     const trimmed = query.trim();
-    if (mode === 'looks' && !trimmed) { setErrorMessage(t('Tell KIN what you need first.', 'أخبر كين بما تحتاجه أولاً.')); return; }
+    const hasStylingPiece = Boolean(photoFile || selectedItemId || stylingItemIds.size > 0);
+    if (mode === 'looks' && !trimmed && !hasStylingPiece) {
+      setErrorMessage(t('Add a piece or describe what you want to style first.', 'أضف قطعة أو صف ما تريد تنسيقه أولاً.'));
+      return;
+    }
     if (mode === 'travel' && !destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
+    setSubmittedLooksQuery(null);
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
@@ -2908,8 +2922,9 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
       }
 
       let response: Response;
+      const looksQuery = trimmed || t('Style my selected piece', 'نسّق قطعتي المختارة');
       if (submittedPhotoFile) {
-        const params = new URLSearchParams({ query: trimmed, locale: submittedLocale });
+        const params = new URLSearchParams({ query: looksQuery, locale: submittedLocale });
         if (location.trim()) params.set('location', location.trim());
         if (budget.trim()) params.set('budget', budget.trim());
         if (budget.trim() && currency.trim()) params.set('currency', currency.trim().toUpperCase());
@@ -2919,7 +2934,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
           method: 'POST', credentials: 'include', headers: { 'Content-Type': submittedPhotoFile.type }, body: submittedPhotoFile,
         });
       } else {
-        const body: Record<string, unknown> = { mode: 'looks', query: trimmed, locale: submittedLocale };
+        const body: Record<string, unknown> = { mode: 'looks', query: looksQuery, locale: submittedLocale };
         if (submittedItemId) body.myThingsItemId = submittedItemId;
         if (stylingItemIds.size > 0) body.myThingsItemIds = [...stylingItemIds];
         if (location.trim()) body.location = location.trim();
@@ -2930,12 +2945,19 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
         response = await fetch('/api/kin/search', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       if (response.status === 429) { setState('quota-exceeded'); return; }
+      if (response.status === 400) {
+        console.error('KIN request validation failed', await describeFailedResponse(response));
+        setErrorMessage(t('Please check your styling details and try again.', 'تحقق من تفاصيل التنسيق وحاول مرة أخرى.'));
+        setState('error');
+        return;
+      }
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as KinSearchResponse;
       setResult(payload);
       if (payload.status === 'unavailable') { setState('unavailable'); return; }
       const hasOptions = (payload.options?.length ?? 0) > 0;
       const looksReady = payload.answer.trim() || payload.results.length || hasOptions;
+      setSubmittedLooksQuery(looksQuery);
       setResultReference(
         !looksReady ? null
           : submittedPhotoFile ? { kind: 'photo', url: URL.createObjectURL(submittedPhotoFile) }
@@ -2958,13 +2980,13 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   };
 
   const saveRecommendation = async () => {
-    if (!result || result.status !== 'ok' || lookSaved || savingLookRef.current) return;
+    if (!result || result.status !== 'ok' || !submittedLooksQuery || lookSaved || savingLookRef.current) return;
     savingLookRef.current = true;
     setSavingLook(true);
     try {
       const response = await fetch('/api/kin/saved', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ completionStatus: 'ok', mode: 'looks', query: query.trim(), answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
+        body: JSON.stringify({ completionStatus: 'ok', mode: 'looks', query: submittedLooksQuery, answer: result.answer, options: result.options ?? null, citations: result.citations, results: result.results }),
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       setSavedNotice(t('Saved to your KIN history.', 'تم الحفظ في سجل كين.'));
@@ -3069,7 +3091,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
   const pieceCard = (firstStylingItemId || resultReference) && <div className="kin-piece-card" data-testid="kin-piece-card">
     {resultReference
       ? <div className="kin-piece-media" data-testid="kin-look-reference"><img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>
-      : <div className="kin-piece-media"><img src={`/api/closet-items/${firstStylingItemId}/image`} alt="" /></div>}
+      : <div className="kin-piece-media" data-testid="kin-look-reference"><img src={`/api/closet-items/${encodeURIComponent(firstStylingItemId!)}/image`} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>}
     <div className="kin-piece-info">
       <span className="kin-piece-kicker">{t('Your piece', 'قطعتك')}</span>
       <span className="kin-piece-desc">
@@ -3082,7 +3104,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
               : t('Your piece', 'قطعتك')}
       </span>
     </div>
-    <button type="button" className="kin-piece-change" onClick={resultReference ? backToForm : onChangeStylingItems}>{t('Change', 'تغيير')}</button>
+    <button type="button" className="kin-piece-change" onClick={resultReference ? backToForm : changeStylingItems}>{t('Change', 'تغيير')}</button>
   </div>;
 
   const advanceTravelStep = () => {
@@ -3173,68 +3195,49 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
     : null;
 
   if (view === 'looks-result') {
-    return <section data-testid="kin-screen">
-      <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={backToForm}><ArrowLeft size={18} /></button>
-      <span className="kin-kicker">{t('KIN Looks', 'كين لوكس')}</span>
-      <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
+    return <section className="kin-style-screen" data-testid="kin-screen">
+      <div className="kin-segmented" data-testid="kin-mode-toggle">
+        <button type="button" className="selected" data-testid="kin-mode-looks" onClick={backToForm}>{t('Style', 'نسّق لي')}</button>
+        {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
+        <button type="button" data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); backToForm(); }}>{t('Travel', 'السفر')}</button>
+      </div>
+
+      <div className="kin-style-heading">
+        <h1 className="kin-headline">{t('Made for your taste.', 'مختارة لذوقك.')}</h1>
+        {activeOption?.missingItems.length ? <p className="kin-subline" data-testid="kin-result-summary">{activeOption.missingItems.join(' · ')}</p> : null}
+      </div>
+
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
-      {statusPanel}
-      {state === 'ready' && result && result.status !== 'unavailable' && <>
+      {state !== 'ready' && statusPanel}
+
+      {state === 'ready' && result && result.status !== 'unavailable' && <div data-testid={looksOptions.length ? 'kin-looks-options' : 'kin-answer'}>
         {pieceCard}
+
         {result.status === 'partial' && <div className="workspace-notice" role="status" data-testid="kin-partial">{t('KIN found verified pieces, but the recommendation is incomplete. Try again for Signature, Safe, and Bold options.', 'وجد كين قطعًا موثقة، لكن التوصية غير مكتملة. حاول مرة أخرى للحصول على خيارات الإطلالة المميزة والآمنة والجريئة.')}</div>}
-        {activeOption ? <div data-testid="kin-looks-options">
-          <div className="kin-card" data-testid="kin-look-option">
-            <div className="kin-card-head">
-              <span className="kin-card-kicker">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].en, KIN_LOOKS_OPTION_COPY[activeOption.label].ar)}</span>
-              <span className="kin-badge">{t(KIN_LOOKS_OPTION_COPY[activeOption.label].badgeEn, KIN_LOOKS_OPTION_COPY[activeOption.label].badgeAr)}</span>
-            </div>
-            <div className="kin-card-caption"><FormattedText text={activeOption.reasoning} /></div>
-            {(activeOption.ownedItems.length > 0 || activeOption.missingItems.length > 0) && <div className="kin-tag-row" data-testid="kin-look-tags">
-              {activeOption.ownedItems.map((item, index) => <span key={`owned-${index}`} className="kin-tag owned">{t('Yours', 'ملكك')} · {item}</span>)}
-              {activeOption.missingItems.map((item, index) => <span key={`missing-${index}`} className="kin-tag">{t('Find similar', 'ابحث عن مثيل')} · {item}</span>)}
-            </div>}
-            {looksOptions.length > 1 && <div className="kin-dots" data-testid="kin-look-dots">
-              {looksOptions.map((option, index) => <span key={option.label} role="button" tabIndex={0} aria-label={t(KIN_LOOKS_OPTION_COPY[option.label].en, KIN_LOOKS_OPTION_COPY[option.label].ar)}
-                className={index === selectedOptionIndex ? 'active' : ''} onClick={() => setSelectedOptionIndex(index)}
-                onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') setSelectedOptionIndex(index); }} />)}
-            </div>}
-            {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
-            <div className="kin-card-actions">
-              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" aria-pressed={lookSaved} aria-busy={savingLook} disabled={lookSaved || savingLook} onClick={() => void saveRecommendation()}>{lookSaved ? t('Saved', 'تم الحفظ') : savingLook ? t('Saving…', 'جارٍ الحفظ…') : t('Save Look', 'احفظ الإطلالة')}</button>}
-              <button className="approved-button" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Get new suggestions', 'احصل على اقتراحات جديدة')}</button>
-            </div>
-            <div className="kin-link-row">
-              <button type="button" className="kin-link" data-testid="kin-add-look-to-trip" disabled={!tripId || addingLookToTrip || lookAddedToTrip} title={!tripId ? t('Plan a trip first to attach a look to it', 'خطّط لرحلة أولاً لإرفاق إطلالة بها') : undefined} onClick={() => void addLookToTrip(activeOption)}>
-                {lookAddedToTrip ? t('Added to Trip', 'أُضيف إلى الرحلة') : addingLookToTrip ? t('Adding…', 'جارٍ الإضافة…') : t('Add to Trip', 'أضف إلى الرحلة')}
-              </button>
-            </div>
-          </div>
-          {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
-        </div> : <div className="kin-card" data-testid="kin-answer">
-          <div className="kin-card-caption" style={{ margin: 16 }}><FormattedText text={result.answer} /></div>
-          {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited" style={{ margin: '0 16px 16px' }}>{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
+        {result.results.length === 0 && result.answer.trim() && <p className="kin-result-guidance" data-testid="kin-result-guidance">{result.answer}</p>}
+        {result.results.length === 0 && !result.answer.trim() && looksOptions.length > 0 && <div className="kin-result-directions" data-testid="kin-result-directions">
+          {looksOptions.map((option) => <span key={option.label}>{KIN_LOOKS_OPTION_COPY[option.label][ar ? 'ar' : 'en']}</span>)}
         </div>}
 
-        {result.citations.length > 0 && <div data-testid="kin-citations" style={{ marginTop: 14 }}>
-          <span className="form-label">{t('Sources', 'المصادر')}</span>
-          <ul style={{ margin: '6px 0 0', paddingInlineStart: 18 }}>
-            {result.citations.map((citation, index) => <li key={`${citation.url}-${index}`}><a href={citation.url} target="_blank" rel="noopener noreferrer">{citation.title || citation.url}</a></li>)}
-          </ul>
-        </div>}
-
-        {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results" style={{ marginTop: 14, marginBottom: 24 }}>
-          {/* Never a shopping link or price — KIN Style shows real search
-              results for reference only. Tapping enlarges the image. There
-              is no per-product save: KIN only ever saves the whole look
-              (the Save Look button above), since no per-item save endpoint
-              exists — a card-level save control would be misleading. */}
-          {result.results.map((card, index) => <button type="button" key={`${card.url}-${index}`} className="approved-collection kin-result-card" data-testid="kin-result-card" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={(event) => openResultLightbox(card, event.currentTarget)}>
-            <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
-            <strong>{card.title}</strong>
-            {card.source && <span>{card.source}</span>}
+        <div className="kin-result-grid" data-testid="kin-results">
+          {result.results.map((card, index) => <button type="button" key={`${card.url}-${index}`} className="kin-product-card" data-testid="kin-result-card" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={(event) => openResultLightbox(card, event.currentTarget)}>
+            <span className="kin-product-media"><img src={card.imageUrl || '/kin-placeholder.svg'} className="kin-product-img" alt="" /></span>
+            <span className="kin-product-copy">
+              <strong>{card.title}</strong>
+              {card.source && <span>{card.source}</span>}
+            </span>
           </button>)}
-        </div>}
-      </>}
+        </div>
+
+        <div className="kin-result-actions">
+          {result.status === 'ok' && <button className="kin-submit-btn" data-testid="kin-save" aria-pressed={lookSaved} aria-busy={savingLook} disabled={lookSaved || savingLook} onClick={() => void saveRecommendation()}>
+            {lookSaved ? t('Saved', 'تم الحفظ') : savingLook ? t('Saving…', 'جارٍ الحفظ…') : t('Save Look', 'احفظ الإطلالة')}
+          </button>}
+          <button className="kin-show-more-btn" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Show more options', 'عرض خيارات أكثر')}</button>
+        </div>
+        {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some images or sources couldn't be verified just now. Try again for more options.", 'تعذّر التحقق من بعض الصور أو المصادر الآن. حاول مجددًا للحصول على خيارات أكثر.')}</p>}
+        {savedNotice && <p className="settings-note" role="status" data-testid="kin-saved-notice">{savedNotice}</p>}
+      </div>}
 
       {enlargedResult && <div className="kin-lightbox" role="dialog" aria-modal="true" aria-label={enlargedResult.title} data-testid="kin-lightbox" onClick={closeResultLightbox}>
         <button ref={lightboxCloseRef} type="button" className="kin-lightbox-close" aria-label={t('Close', 'إغلاق')} onClick={(event) => { event.stopPropagation(); closeResultLightbox(); }}><X size={20} /></button>
@@ -3309,72 +3312,80 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
     </section>;
   }
 
-  return <section data-testid="kin-screen">
-    <span className="kin-kicker">{mode === 'looks' ? t('KIN Looks', 'كين لوكس') : t('KIN Travel', 'كين ترافل')}</span>
+  return <section className={mode === 'looks' ? 'kin-style-screen' : undefined} data-testid="kin-screen">
+    <div className="kin-segmented" data-testid="kin-mode-toggle">
+      <button type="button" className={mode === 'looks' ? 'selected' : ''} data-testid="kin-mode-looks" onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Style', 'نسّق لي')}</button>
+      {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
+      <button type="button" className={mode === 'travel' ? 'selected' : ''} data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
+    </div>
+
     {mode === 'looks' && (
       <>
-        <h1 className="kin-headline">{t('Built around you.', 'مبني من أجلك.')}</h1>
-        <p className="kin-subline">{t('Natural-language styling and travel help, grounded in live search.', 'مساعدة أسلوب وسفر بلغة طبيعية، مدعومة ببحث حي.')}</p>
-        <div className="kin-tabs">
-          <button type="button" data-testid="kin-mode-looks" className={mode === 'looks' ? 'selected' : ''} onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Style', 'نسّق لي')}</button>
-          <button type="button" data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
+        <div className="kin-style-heading">
+          <h1 className="kin-headline">{t('Style it your way.', 'نسّقها بطريقتك.')}</h1>
+          <p className="kin-subline">{t('Start with one piece. Make it feel like you.', 'ابدأ بقطعة واحدة، واجعلها تعبّر عنك.')}</p>
         </div>
+
+        <div className="kin-piece-preview" data-testid="kin-styling-summary">
+          <span className="kin-piece-label">{t('Your piece', 'قطعتك')}</span>
+          {(stylingItemIds.size > 0 || selectedItemId) ? (
+            <div className="kin-piece-preview-items">
+              {[...stylingItemIds, ...(selectedItemId ? [selectedItemId] : [])].map((id) => {
+                const item = myThingsItems.find(i => i.id === id);
+                return <div className="kin-piece-preview-item" key={id}>
+                  <img src={`/api/closet-items/${encodeURIComponent(id)}/image`} alt="" />
+                  {item && <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>}
+                </div>;
+              })}
+              <button type="button" className="kin-piece-refresh" data-testid="kin-piece-change" aria-label={t('Change your piece', 'غيّر قطعتك')} onClick={changeStylingItems}><RefreshCw size={16} /></button>
+            </div>
+          ) : photoPreviewUrl ? (
+             <>
+               <img src={photoPreviewUrl} className="kin-piece-preview-img" alt={t('Selected styling piece', 'قطعة التنسيق المختارة')} />
+               <button type="button" className="kin-piece-refresh" data-testid="kin-photo-clear" aria-label={t('Remove photo', 'إزالة الصورة')} onClick={clearPhoto}><RefreshCw size={16} /></button>
+             </>
+          ) : (
+             <span className="kin-piece-preview-empty"><ImagePlus size={42} aria-hidden="true" /><span>{t('Add one piece to begin', 'أضف قطعة واحدة للبدء')}</span></span>
+          )}
+        </div>
+
+        <div className="kin-piece-actions">
+           <label data-testid="kin-take-photo">
+              <Camera size={18} /> {t('Take a photo', 'التقط صورة')}
+              <input className="kin-file-input" aria-label={t('Add a clothing photo', 'أضف صورة قطعة ملابس')} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="kin-photo-input" onChange={selectPhoto} />
+           </label>
+           {myThingsEnabled && <button type="button" data-testid="kin-open-my-things" onClick={changeStylingItems}><Archive size={18} /> {t('My Things', 'أغراضي')}</button>}
+        </div>
+        {photoError && <p className="workspace-notice" role="alert" data-testid="kin-photo-error">{photoError}</p>}
+
+        <div className="kin-text-input">
+           <Pencil size={18} color="var(--tk-stone)" />
+           <input type="text" data-testid="kin-query" aria-label={t('Describe what you want to style', 'صف ما تريد تنسيقه')} placeholder={t('Or describe what you want to style…', 'أو صف ما تريد تنسيقه…')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
+        </div>
+
+        <span className="kin-occasion-label">{t("What's the occasion?", 'ما المناسبة؟')}</span>
+        <div className="kin-occasion-pills" data-testid="kin-occasion">
+           {[ { val: 'Everyday', en: 'Everyday', ar: 'يومي' }, { val: 'Dinner', en: 'Dinner', ar: 'عشاء' }, { val: 'Work', en: 'Work', ar: 'عمل' }, { val: 'Travel', en: 'Travel', ar: 'سفر' }].map(occ => (
+              <button key={occ.val} data-testid={`kin-occasion-${occ.val.toLowerCase()}`} type="button" aria-pressed={occasion === occ.val} className={occasion === occ.val ? 'selected' : ''} onClick={() => setOccasion(occ.val)}>{t(occ.en, occ.ar)}</button>
+           ))}
+        </div>
+
+        <details className="kin-preferences" data-testid="kin-preferences"><summary className="kin-more-prefs" data-testid="kin-more-preferences"><span><Settings2 size={16} /> {t('More preferences', 'تفضيلات إضافية')}</span><ChevronRight size={16} /></summary>
+           <div className="kin-preferences-body">
+             <label className="form-field"><span>{t('Location / country', 'الموقع / الدولة')}</span><input data-testid="kin-location" type="text" value={location} onChange={(event) => setLocation(event.target.value.slice(0, 200))} /></label>
+             <div className="form-two">
+               <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
+               <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
+             </div>
+             <label className="form-field"><span>{t('Size', 'المقاس')}</span><input data-testid="kin-size" type="text" value={size} onChange={(event) => setSize(event.target.value.slice(0, 50))} /></label>
+           </div>
+        </details>
+
+        <button className="kin-submit-btn" data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
+           <Sparkles size={18} /> {state === 'loading' ? t('Creating…', 'جارٍ الإنشاء…') : t('Create my looks', 'أنشئ إطلالاتي')}
+        </button>
       </>
     )}
-
-    {mode === 'looks' && <label className="form-field"><span>{t('What do you need?', 'ماذا تحتاج؟')}</span>
-      <textarea data-testid="kin-query" rows={3} value={query} onChange={(event) => setQuery(event.target.value.slice(0, 2000))}
-        placeholder={t('e.g. a dinner outfit in Paris, 14°C, smart casual', 'مثال: إطلالة عشاء في باريس، ١٤°م، أنيقة غير رسمية')} />
-    </label>}
-
-    {mode === 'looks' && myThingsEnabled && myThingsItems.length > 0 && (
-      stylingItemIds.size > 0 ? (
-        <div className="form-field" data-testid="kin-styling-summary">
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-            <span>{t(`Styling ${stylingItemIds.size} item${stylingItemIds.size > 1 ? 's' : ''}`, `تنسيق ${stylingItemIds.size} قطع`)}</span>
-            <button type="button" className="approved-button" style={{ minHeight: 32, padding: '0 10px', fontSize: 11 }} onClick={onChangeStylingItems}>{t('Change', 'تغيير')}</button>
-          </div>
-          <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 4 }}>
-            {[...stylingItemIds].map((id) => {
-              const item = myThingsItems.find(i => i.id === id);
-              if (!item) return null;
-              return <div key={id} style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 72, flex: '0 0 72px' }}>
-                <img src={`/api/closet-items/${id}/image`} alt="" style={{ width: 72, height: 72, borderRadius: 12, objectFit: 'cover' }} />
-                <span style={{ fontSize: 9, lineHeight: 1.2, color: 'var(--tk-stone)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>
-              </div>;
-            })}
-          </div>
-        </div>
-      ) : (
-        <label className="form-field"><span>{t('Use an item from My Things (optional)', 'استخدم غرضًا من أغراضي (اختياري)')}</span>
-          <select data-testid="kin-my-things-item" value={selectedItemId} onChange={(event) => selectMyThingsItem(event.target.value)}>
-            <option value="">{t('None', 'بلا')}</option>
-            {myThingsItems.map((item) => <option key={item.id} value={item.id}>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</option>)}
-          </select>
-        </label>
-      )
-    )}
-
-    {mode === 'looks' && !selectedItemId && stylingItemIds.size === 0 && <div className="form-field"><span>{t('Or add a photo (optional)', 'أو أضف صورة (اختياري)')}</span>
-      {photoPreviewUrl ? <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
-        <img src={photoPreviewUrl} alt="" style={{ width: 160, height: 160, objectFit: 'cover', borderRadius: 12, display: 'block' }} />
-        <button type="button" className="approved-button" data-testid="kin-photo-clear" onClick={clearPhoto}>{t('Remove photo', 'إزالة الصورة')}</button>
-      </div> : <label className="approved-button" style={{ display: 'inline-flex', width: 'fit-content' }}>
-        {t('Take or choose a photo', 'التقط أو اختر صورة')}
-        <input aria-label={t('Add a clothing photo', 'أضف صورة قطعة ملابس')} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" style={{ display: 'none' }} data-testid="kin-photo-input" onChange={selectPhoto} />
-      </label>}
-      {photoError && <p className="workspace-notice" role="alert" data-testid="kin-photo-error">{photoError}</p>}
-    </div>}
-
-    {mode === 'looks' && <details className="nested-details"><summary>{t('Optional details', 'تفاصيل اختيارية')}</summary><div className="details-body">
-      <label className="form-field"><span>{t('Location / country', 'الموقع / الدولة')}</span><input data-testid="kin-location" type="text" value={location} onChange={(event) => setLocation(event.target.value.slice(0, 200))} /></label>
-      <div className="form-two">
-        <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
-        <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
-      </div>
-      <label className="form-field"><span>{t('Size', 'المقاس')}</span><input data-testid="kin-size" type="text" value={size} onChange={(event) => setSize(event.target.value.slice(0, 50))} /></label>
-      <label className="form-field"><span>{t('Occasion', 'المناسبة')}</span><input data-testid="kin-occasion" type="text" value={occasion} onChange={(event) => setOccasion(event.target.value.slice(0, 200))} /></label>
-    </div></details>}
 
     {mode === 'travel' && <div data-testid="kin-travel-step" data-step={travelStep}>
       {travelStep === 1 && <>
@@ -3432,10 +3443,6 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
     </div>}
 
     {errorMessage && mode === 'looks' && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
-
-    {mode === 'looks' && <button className="approved-button primary wide" style={{ marginTop: 12 }} data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
-      {state === 'loading' ? t('Asking KIN…', 'جارٍ سؤال كين…') : t('Ask KIN', 'اسأل كين')}
-    </button>}
 
     {state === 'loading' && <p className="settings-note" data-testid="kin-loading">{t('KIN is searching the web…', 'كين يبحث على الويب…')}</p>}
 

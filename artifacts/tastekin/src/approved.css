@@ -637,3 +637,70 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-lightbox-caption { display:flex; flex-direction:column; align-items:center; gap:2px; color:var(--tk-text-inverse); text-align:center; }
 .kin-lightbox-caption strong { font-size:14px; }
 .kin-lightbox-caption span { font-size:11px; opacity:.75; }
+
+/* KIN Style — approved compact mobile input and results composition. */
+.kin-style-screen { padding-bottom:18px; }
+.kin-style-screen .kin-segmented { margin-bottom:18px; border:1px solid var(--tk-border); background:transparent; }
+.kin-style-screen .kin-segmented button { min-height:40px; color:var(--tk-ink); font-size:13px; font-weight:500; letter-spacing:0; text-transform:none; }
+.kin-style-screen .kin-segmented button.selected { color:var(--tk-text-inverse); font-weight:700; }
+.kin-style-heading { margin-bottom:14px; text-align:start; }
+.kin-style-heading .kin-headline { margin-bottom:2px; font-size:32px; line-height:1.08; }
+.kin-style-heading .kin-subline { margin:0; font-size:14px; line-height:1.45; }
+
+.kin-piece-preview { position:relative; display:flex; min-height:244px; align-items:center; justify-content:center; margin-bottom:8px; padding:14px; overflow:hidden; border:1px solid var(--tk-border); border-radius:16px; background:linear-gradient(135deg,var(--tk-card),var(--tk-surface-muted)); }
+.kin-piece-preview-img { display:block; width:100%; max-height:216px; object-fit:contain; }
+.kin-piece-preview-empty { display:flex; flex-direction:column; align-items:center; gap:10px; color:var(--tk-stone); font-size:12px; }
+.kin-piece-preview-empty svg { opacity:.55; }
+.kin-piece-label { position:absolute; z-index:1; top:12px; inset-inline-start:12px; padding:5px 9px; border-radius:7px; background:color-mix(in srgb,var(--tk-card) 92%,transparent); color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+.kin-piece-refresh { position:absolute; z-index:2; top:12px; inset-inline-end:12px; display:grid; width:36px; height:36px; place-items:center; border:1px solid color-mix(in srgb,var(--tk-border) 70%,transparent); border-radius:50%; background:color-mix(in srgb,var(--tk-card) 92%,transparent); color:var(--tk-ink); }
+.kin-piece-preview-items { display:flex; width:100%; align-items:center; justify-content:center; gap:10px; overflow-x:auto; }
+.kin-piece-preview-item { display:flex; flex:0 0 112px; min-width:0; flex-direction:column; gap:5px; }
+.kin-piece-preview-item img { display:block; width:112px; height:152px; border-radius:12px; object-fit:cover; }
+.kin-piece-preview-item span { overflow:hidden; color:var(--tk-stone); font-size:10px; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
+
+.kin-piece-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
+.kin-piece-actions button,.kin-piece-actions label { position:relative; display:flex; min-height:50px; align-items:center; justify-content:center; gap:9px; margin:0; padding:10px; border:1px solid var(--tk-border); border-radius:13px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:600; cursor:pointer; }
+.kin-piece-actions label:focus-within { outline:2px solid var(--tk-wine); outline-offset:2px; }
+.kin-file-input { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; }
+
+.kin-text-input { display:flex; width:100%; min-height:52px; align-items:center; gap:10px; margin-bottom:16px; padding:0 14px; border:1px solid var(--tk-border); border-radius:13px; background:var(--tk-card); color:var(--tk-ink); }
+.kin-text-input input { min-width:0; flex:1; border:0; outline:0; background:transparent; color:var(--tk-ink); font:inherit; font-size:13px; }
+.kin-text-input input::placeholder { color:var(--tk-stone); opacity:1; }
+.kin-occasion-label { display:block; margin-bottom:9px; color:var(--tk-ink); font-size:14px; font-weight:800; text-align:start; }
+.kin-occasion-pills { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-bottom:13px; }
+.kin-occasion-pills button { min-width:0; min-height:42px; padding:7px 4px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:600; }
+.kin-occasion-pills button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.kin-preferences { margin:0 0 12px; }
+.kin-preferences summary { list-style:none; }
+.kin-preferences summary::-webkit-details-marker { display:none; }
+.kin-more-prefs { display:flex; width:100%; min-height:48px; align-items:center; justify-content:space-between; padding:10px 14px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); color:var(--tk-ink); cursor:pointer; font-size:12px; font-weight:600; }
+.kin-more-prefs span { display:flex; align-items:center; gap:9px; }
+.kin-more-prefs > svg { transition:transform .18s ease; }
+.kin-preferences[open] .kin-more-prefs > svg { transform:rotate(90deg); }
+.approved-app[dir="rtl"] .kin-preferences[open] .kin-more-prefs > svg { transform:rotate(-90deg); }
+.kin-preferences-body { margin-top:8px; padding:14px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); }
+.kin-submit-btn { display:flex; width:100%; min-height:52px; align-items:center; justify-content:center; gap:9px; margin:0; padding:12px 16px; border:0; border-radius:12px; background:var(--tk-wine); color:var(--tk-text-inverse); font-size:14px; font-weight:800; }
+.kin-submit-btn:disabled { opacity:.65; cursor:not-allowed; }
+
+.kin-result-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin:0 0 16px; }
+.kin-result-guidance { display:-webkit-box; margin:0 0 14px; overflow:hidden; color:var(--tk-ink); font-size:13px; line-height:1.5; text-align:start; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+.kin-result-directions { display:flex; flex-wrap:wrap; gap:7px; margin:0 0 14px; }
+.kin-result-directions span { padding:7px 10px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:700; }
+.kin-product-card { display:flex; min-width:0; padding:0; overflow:hidden; flex-direction:column; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); color:var(--tk-ink); text-align:start; }
+.kin-product-media { display:block; width:100%; aspect-ratio:1/1.14; overflow:hidden; background:var(--tk-surface-muted); }
+.kin-product-img { display:block; width:100%; height:100%; object-fit:cover; }
+.kin-product-copy { display:flex; min-width:0; flex-direction:column; gap:2px; padding:9px 10px 10px; }
+.kin-product-copy strong,.kin-product-copy span { overflow:hidden; text-overflow:ellipsis; }
+.kin-product-copy strong { overflow-wrap:anywhere; font-size:12px; font-weight:700; line-height:1.35; white-space:normal; }
+.kin-product-copy span { white-space:nowrap; }
+.kin-product-copy span { color:var(--tk-stone); font-size:10px; }
+.kin-result-actions { display:flex; flex-direction:column; gap:9px; }
+.kin-show-more-btn { width:100%; min-height:48px; padding:10px 16px; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); font-size:13px; font-weight:700; }
+.kin-show-more-btn:disabled { opacity:.6; }
+
+@media (max-width:390px) {
+  .kin-style-heading .kin-headline { font-size:29px; }
+  .kin-piece-preview { min-height:226px; }
+  .kin-piece-preview-img { max-height:198px; }
+  .kin-occasion-pills button { font-size:10px; }
+}
