@@ -2913,8 +2913,9 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       }
 
       let response: Response;
+      const looksQuery = trimmed || t('Style my selected piece', 'نسّق قطعتي المختارة');
       if (submittedPhotoFile) {
-        const params = new URLSearchParams({ query: trimmed, locale: submittedLocale });
+        const params = new URLSearchParams({ query: looksQuery, locale: submittedLocale });
         if (location.trim()) params.set('location', location.trim());
         if (budget.trim()) params.set('budget', budget.trim());
         if (budget.trim() && currency.trim()) params.set('currency', currency.trim().toUpperCase());
@@ -2924,7 +2925,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
           method: 'POST', credentials: 'include', headers: { 'Content-Type': submittedPhotoFile.type }, body: submittedPhotoFile,
         });
       } else {
-        const body: Record<string, unknown> = { mode: 'looks', query: trimmed, locale: submittedLocale };
+        const body: Record<string, unknown> = { mode: 'looks', query: looksQuery, locale: submittedLocale };
         if (submittedItemId) body.myThingsItemId = submittedItemId;
         if (stylingItemIds.size > 0) body.myThingsItemIds = [...stylingItemIds];
         if (location.trim()) body.location = location.trim();
@@ -2935,6 +2936,12 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         response = await fetch('/api/kin/search', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       }
       if (response.status === 429) { setState('quota-exceeded'); return; }
+      if (response.status === 400) {
+        console.error('KIN request validation failed', await describeFailedResponse(response));
+        setErrorMessage(t('Please check your styling details and try again.', 'تحقق من تفاصيل التنسيق وحاول مرة أخرى.'));
+        setState('error');
+        return;
+      }
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as KinSearchResponse;
       setResult(payload);

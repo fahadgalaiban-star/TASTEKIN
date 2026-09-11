@@ -57,6 +57,7 @@ test('the bottom nav opens a real KIN page when the flag is on', async ({ page }
   await expect(page.getByTestId('kin-occasion-everyday')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.getByTestId('kin-submit')).toHaveText('Create my looks');
   await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
+  await expect(page.getByTestId('kin-mode-looks')).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(page.getByTestId('kin-mode-travel')).toBeVisible();
 });
 
@@ -494,6 +495,19 @@ test('submitting a blank query shows an inline error and never calls the endpoin
   expect(searchCalls).toBe(0);
 });
 
+test('a 400 validation response is shown as a request problem, not a temporary KIN outage', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.route('**/api/kin/search', async (route) => {
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'query is required' }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-query').fill('style this piece');
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-error')).toHaveText('Please check your styling details and try again.');
+  await expect(page.getByText('KIN is temporarily unavailable. Please try again shortly.')).toHaveCount(0);
+});
+
 test('loading state shows while the request is in flight, then opens the concise results screen without long narrative or shopping links', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/search', async (route) => {
@@ -569,7 +583,7 @@ test('external result cards render title and verified source, never a price or s
         citations: [],
         options: [{ label: 'signature', reasoning: 'A tailored look.', ownedItems: [], missingItems: [] }],
         results: [
-          { title: 'Wool Coat', source: 'example.com', url: 'https://example.com/coat', price: 240, currency: 'USD', imageUrl: null },
+          { title: 'Longline Double-Breasted Wool Coat', source: 'example.com', url: 'https://example.com/coat', price: 240, currency: 'USD', imageUrl: null },
         ],
       }),
     });
@@ -580,12 +594,14 @@ test('external result cards render title and verified source, never a price or s
   await page.getByTestId('kin-query').fill('a warm coat');
   await page.getByTestId('kin-submit').click();
   const card = page.getByTestId('kin-result-card');
-  await expect(card).toContainText('Wool Coat');
+  await expect(card).toContainText('Longline Double-Breasted Wool Coat');
   await expect(card).toContainText('example.com');
   await expect(card).not.toContainText('USD 240');
   await expect(card.locator('a')).toHaveCount(0);
   await expect(card).not.toHaveAttribute('href', /.*/);
   await expect(card.locator('img')).toHaveAttribute('src', '/kin-placeholder.svg');
+  await expect(card.locator('strong')).toHaveCSS('white-space', 'normal');
+  await expect(card.locator('strong')).toHaveCSS('overflow-wrap', 'anywhere');
   // No per-product save control exists — KIN never invents a per-item
   // save endpoint, so a result card is never given a misleading save
   // affordance of its own. Only "Save Look" (checked below) is real.
@@ -594,7 +610,7 @@ test('external result cards render title and verified source, never a price or s
 
   await card.click();
   await expect(page.getByTestId('kin-lightbox')).toBeVisible();
-  await expect(page.getByTestId('kin-lightbox')).toContainText('Wool Coat');
+  await expect(page.getByTestId('kin-lightbox')).toContainText('Longline Double-Breasted Wool Coat');
   await expect(page.getByTestId('kin-lightbox')).not.toContainText('USD 240');
   await expect(page.locator('a[href="https://example.com/coat"]')).toHaveCount(0);
   await page.getByLabel('Close', { exact: true }).click();
@@ -811,6 +827,7 @@ test('an uploaded photo becomes the styling reference, clearly labeled — even 
 
 test('a selected My Things item becomes the styling reference, served via the authorized per-item image route', async ({ page }) => {
   await mockMe(page, { kinSearch: true, myThings: true });
+  let sentBody: Record<string, unknown> | undefined;
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
@@ -819,7 +836,10 @@ test('a selected My Things item becomes the styling reference, served via the au
       });
     }
   });
-  await page.route('**/api/kin/search', async (route) => { await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() }); });
+  await page.route('**/api/kin/search', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
@@ -827,6 +847,9 @@ test('a selected My Things item becomes the styling reference, served via the au
   await page.getByTestId('my-things-style-item').getByRole('button').click();
   await page.getByTestId('my-things-style-continue').click();
   await page.getByTestId('kin-submit').click();
+  await expect.poll(() => sentBody?.query).toBe('Style my selected piece');
+  expect(sentBody?.myThingsItemIds).toEqual(['item-42']);
+  expect(sentBody?.occasion).toBe('Everyday');
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
   const pieceCard = page.getByTestId('kin-piece-card');
   await expect(pieceCard).toBeVisible();
@@ -1133,4 +1156,25 @@ test('the explicit UI locale is also sent on a photo request, as a query-string 
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-looks-options')).toBeVisible();
   expect(new URL(sentUrl).searchParams.get('locale')).toBe('ar');
+});
+
+test('an Arabic blank-description photo request sends the localized fallback query and preserves the photo and occasion', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  let sentUrl = '';
+  let uploadedBody: Buffer | null = null;
+  await page.route('**/api/kin/looks/photo*', async (route) => {
+    sentUrl = route.request().url();
+    uploadedBody = route.request().postDataBuffer();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('blank-description-photo') });
+  await page.getByTestId('kin-submit').click();
+  await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', /^blob:/);
+  const params = new URL(sentUrl).searchParams;
+  expect(params.get('query')).toBe('نسّق قطعتي المختارة');
+  expect(params.get('occasion')).toBe('Everyday');
+  expect(params.get('locale')).toBe('ar');
+  expect(uploadedBody?.toString()).toBe('blank-description-photo');
 });
