@@ -263,6 +263,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
 type FakeGooglePlacesMode =
   | { kind: "ok" }
   | { kind: "cross_day_collision" }
+  | { kind: "empty_success" }
   | { kind: "empty_type"; includedType: string }
   | { kind: "overnight" }
   | { kind: "malformed" }
@@ -296,6 +297,11 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
         if (mode.kind === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end("{not json"); return; }
+        if (mode.kind === "empty_success") {
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ places: [] }));
+          return;
+        }
         if (mode.kind === "empty_type" && parsedRequest.includedType === mode.includedType) {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ places: [] }));
@@ -1357,15 +1363,66 @@ async function main() {
       assert.match(parsed.system, /Never narrate your search process/i);
       assert.match(parsed.system, /Never.*resume or continue searching/i);
     });
-    await check("travel progress narration is rejected with a stable reason code and never returned as a plan", async () => {
+    await check("a seven-day Paris itinerary remains valid when the optional travel narrative is malformed", async () => {
       fakeAnthropicMode = { kind: "travel_progress" };
-      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Madrid" });
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "Paris",
+        startDate: "2026-09-15",
+        endDate: "2026-09-21",
+        interests: ["breakfast", "dinner", "cafes", "shopping", "pilates"],
+      });
       await expectStatus(response, 200);
-      assert.deepEqual(await response.json(), { status: "unavailable", reason: "invalid_plan", reasonCode: "KIN_TRAVEL_INVALID_PLAN" });
+      const payload = await response.json() as {
+        status: string;
+        plan: { narrative: string; days: Array<{ date: string | null; places: Array<{ slot: string | null; placeId: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.plan.days.length, 7);
+      assert.deepEqual(payload.plan.days.map((day) => day.date), [
+        "2026-09-15", "2026-09-16", "2026-09-17", "2026-09-18", "2026-09-19", "2026-09-20", "2026-09-21",
+      ]);
+      for (const day of payload.plan.days) {
+        assert.deepEqual(
+          day.places.filter((place) => place.slot !== null).map((place) => place.slot),
+          ["BREAKFAST", "COFFEE", "DINNER"],
+          "real meal places must remain complete and ordered despite malformed optional narrative",
+        );
+        assert.equal(new Set(day.places.map((place) => place.placeId)).size, day.places.length, "places must remain deduplicated within each day");
+      }
+      fakeAnthropicMode = { kind: "ok" };
+    });
+    await check("an undated Google-backed itinerary remains valid when the optional travel narrative is empty", async () => {
+      fakeAnthropicMode = { kind: "no_results" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", interests: ["shopping"] });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { narrative: string; days: Array<{ date: string | null; places: Array<{ placeId: string; mapsUrl: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.plan.narrative, "");
+      assert.equal(payload.plan.days.length, 1);
+      assert.equal(payload.plan.days[0].date, null);
+      assert.ok(payload.plan.days[0].places.length > 0, "an empty narrative must not bypass the requirement for real Google places");
+      assert.ok(payload.plan.days[0].places.every((place) => {
+        const mapsUrl = new URL(place.mapsUrl);
+        return mapsUrl.protocol === "https:" && mapsUrl.hostname === "maps.google.com";
+      }), "accepted provider Maps URLs must be preserved as secure Google Maps links");
       fakeAnthropicMode = { kind: "ok" };
     });
     await check("a place missing an address never gets a fabricated one (omitted, not guessed)", async () => {
       assert.ok(lastPlan!.days.some((day) => day.places.some((place) => place.formattedAddress === null)), "the 7th fake place has no address and must surface as null");
+    });
+    await check("a successful empty Google Places response cannot return a successful empty itinerary", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "empty_success" };
+      const anthropicBefore = anthropicRequestCount;
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(response, 200);
+      assert.equal(anthropicRequestCount, anthropicBefore + 1, "the request must pass provider normalization and reach the final post-resolution safeguard");
+      assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "ok" };
     });
     await check("Google Places malformed response: travel plan reports unavailable, never a fabricated itinerary", async () => {
       fakeGooglePlacesMode = { kind: "malformed" };
