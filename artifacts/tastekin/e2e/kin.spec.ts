@@ -529,12 +529,14 @@ test('external result cards render title and verified source, never a price or s
         status: 'ok',
         answer: 'Here is one option.',
         citations: [],
+        options: [{ label: 'signature', reasoning: 'A tailored look.', ownedItems: [], missingItems: [] }],
         results: [
           { title: 'Wool Coat', source: 'example.com', url: 'https://example.com/coat', price: 240, currency: 'USD', imageUrl: null },
         ],
       }),
     });
   });
+  await page.route('**/api/kin/saved', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' }); });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('a warm coat');
@@ -546,15 +548,28 @@ test('external result cards render title and verified source, never a price or s
   await expect(card.locator('a')).toHaveCount(0);
   await expect(card).not.toHaveAttribute('href', /.*/);
   await expect(card.locator('img')).toHaveAttribute('src', '/kin-placeholder.svg');
-  await expect(page.getByTestId('kin-result-save')).toBeVisible();
+  // No per-product save control exists — KIN never invents a per-item
+  // save endpoint, so a result card is never given a misleading save
+  // affordance of its own. Only "Save Look" (checked below) is real.
+  await expect(page.getByTestId('kin-result-save')).toHaveCount(0);
+  await expect(card.getByRole('button', { name: /save/i })).toHaveCount(0);
 
-  await page.getByTestId('kin-result-open').click();
+  await card.click();
   await expect(page.getByTestId('kin-lightbox')).toBeVisible();
   await expect(page.getByTestId('kin-lightbox')).toContainText('Wool Coat');
   await expect(page.getByTestId('kin-lightbox')).not.toContainText('USD 240');
   await expect(page.locator('a[href="https://example.com/coat"]')).toHaveCount(0);
   await page.getByLabel('Close', { exact: true }).click();
   await expect(page.getByTestId('kin-lightbox')).toHaveCount(0);
+
+  // The whole-look Save Look control is the only save action, and it
+  // reflects its own saved state once used.
+  const saveButton = page.getByTestId('kin-save');
+  await expect(saveButton).toHaveText('Save Look');
+  await expect(saveButton).toBeEnabled();
+  await saveButton.click();
+  await expect(saveButton).toHaveText('Saved');
+  await expect(saveButton).toBeDisabled();
 });
 
 test('the My Things item picker only appears when my_things is also enabled and items exist', async ({ page }) => {

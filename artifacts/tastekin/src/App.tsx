@@ -3164,7 +3164,7 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
             </div>}
             {result.webSearchDegraded && <p className="settings-note" role="status" data-testid="kin-search-limited">{t("Some current prices or availability couldn't be verified via search just now — the advice above is still real, but double-check specifics before you buy.", 'تعذّر التحقق من بعض الأسعار أو التوفر الحالي عبر البحث الآن — النصيحة أعلاه لا تزال حقيقية، لكن تحقق من التفاصيل قبل الشراء.')}</p>}
             <div className="kin-card-actions">
-              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" onClick={() => void saveRecommendation()}>{t('Save Look', 'احفظ الإطلالة')}</button>}
+              {result.status === 'ok' && <button className="approved-button primary" data-testid="kin-save" aria-pressed={lookSaved} disabled={lookSaved} onClick={() => void saveRecommendation()}>{lookSaved ? t('Saved', 'تم الحفظ') : t('Save Look', 'احفظ الإطلالة')}</button>}
               <button className="approved-button" data-testid="kin-new-suggestions" onClick={() => void submit()}>{t('Get new suggestions', 'احصل على اقتراحات جديدة')}</button>
             </div>
             <div className="kin-link-row">
@@ -3188,18 +3188,15 @@ function KinScreen({ ar, stylingItemIds, onChangeStylingItems, onUnavailable }: 
 
         {result.results.length > 0 && <div className="approved-grid" data-testid="kin-results" style={{ marginTop: 14, marginBottom: 24 }}>
           {/* Never a shopping link or price — KIN Style shows real search
-              results for reference only. Tapping enlarges the image; the
-              only real action per card is saving the whole look. */}
-          {result.results.map((card, index) => <div key={`${card.url}-${index}`} className="approved-collection kin-result-card" data-testid="kin-result-card">
-            <button type="button" className="kin-result-open" data-testid="kin-result-open" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={() => setEnlargedResult(card)}>
-              <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
-              <strong>{card.title}</strong>
-              {card.source && <span>{card.source}</span>}
-            </button>
-            <button type="button" className="kin-result-save" data-testid="kin-result-save" aria-label={lookSaved ? t('Saved', 'محفوظ') : t('Save', 'حفظ')} aria-pressed={lookSaved} disabled={result.status !== 'ok'} onClick={() => void saveRecommendation()}>
-              <Bookmark size={16} fill={lookSaved ? 'currentColor' : 'none'} />
-            </button>
-          </div>)}
+              results for reference only. Tapping enlarges the image. There
+              is no per-product save: KIN only ever saves the whole look
+              (the Save Look button above), since no per-item save endpoint
+              exists — a card-level save control would be misleading. */}
+          {result.results.map((card, index) => <button type="button" key={`${card.url}-${index}`} className="approved-collection kin-result-card" data-testid="kin-result-card" aria-label={t(`View ${card.title}`, `عرض ${card.title}`)} onClick={() => setEnlargedResult(card)}>
+            <img src={card.imageUrl || '/kin-placeholder.svg'} alt="" />
+            <strong>{card.title}</strong>
+            {card.source && <span>{card.source}</span>}
+          </button>)}
         </div>}
       </>}
 
