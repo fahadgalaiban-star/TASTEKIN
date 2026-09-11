@@ -403,20 +403,6 @@ function distributePlaces<T extends LocatedPlace>(places: T[], dayCount: number)
   return buckets;
 }
 
-const PROGRESS_NARRATION_PATTERNS = [
-  /\b(?:i(?:'ll| will)|let me|i need to)\s+(?:resume|continue|start|try|search|look)\b/i,
-  /\b(?:resume|continue|keep)\s+(?:searching|looking)\b/i,
-  /\b(?:cannot|can't|unable to)\s+access\b.*\b(?:real[- ]?time|web|search)\b/i,
-  /\b(?:reanudar[eé]|continuar[eé]|voy a)\b.*\b(?:buscar|b[uú]squeda)\b/i,
-  /\bno puedo acceder\b.*\b(?:tiempo real|b[uú]squeda)\b/i,
-  /\b(?:je vais|je dois)\b.*\b(?:chercher|rechercher)\b/i,
-];
-
-export function isValidTravelNarrative(narrative: string): boolean {
-  const trimmed = narrative.trim();
-  return trimmed.length >= 20 && !PROGRESS_NARRATION_PATTERNS.some((pattern) => pattern.test(trimmed));
-}
-
 /**
  * Sequential, not parallel — each leg is one Routes API call with its own
  * short timeout and no retry, and a same-destination itinerary never has
@@ -445,8 +431,8 @@ async function routeBetween(from: KinTravelNeighbour, to: KinTravelNeighbour): P
 }
 
 /**
- * Combines real Google Places/Routes data with a single Anthropic web
- * -search call (the narrative) into a day-by-day itinerary. Requires
+ * Combines real Google Places/Routes data with a single Anthropic web-search
+ * call (optional supporting narrative) into a day-by-day itinerary. Requires
  * Google Maps to be configured — without real places this endpoint has
  * nothing genuine to add over plain KIN Travel search, so it reports
  * unavailable rather than fabricating an itinerary.
@@ -461,7 +447,6 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
 
   const searchResult = await runKinSearch(request, myThingsItemContext, undefined, correlationId);
   if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason ?? "incomplete recommendation" };
-  if (!isValidTravelNarrative(searchResult.answer)) return { status: "unavailable", reason: "invalid travel narrative" };
 
   const days: KinTravelDay[] = [];
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {
@@ -488,7 +473,7 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
       routes: await routesForDay(dayPlaces),
     });
   }
-  if (!days.some((day) => day.places.length > 0)) return { status: "unavailable", reason: "invalid travel narrative" };
+  if (!days.some((day) => day.places.length > 0)) return { status: "unavailable", reason: "no places available" };
 
   return {
     status: "ok",
