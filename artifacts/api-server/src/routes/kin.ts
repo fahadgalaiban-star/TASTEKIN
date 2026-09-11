@@ -351,10 +351,11 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     res.status(400).json({ error: "invalid activity interest" });
     return;
   }
+  const dateWasSupplied = body.date !== undefined && body.date !== null;
   const rawDate = typeof body.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(body.date) ? body.date : null;
   const date = rawDate && new Date(`${rawDate}T00:00:00Z`).toISOString().slice(0, 10) === rawDate ? rawDate : null;
-  if (slot && !date) {
-    res.status(400).json({ error: "A valid date is required for a scheduled stop" });
+  if (dateWasSupplied && !date) {
+    res.status(400).json({ error: "date must be a valid YYYY-MM-DD value when supplied" });
     return;
   }
   const parseNeighbour = (value: unknown): { placeId: string; lat: number | null; lng: number | null } | null => {

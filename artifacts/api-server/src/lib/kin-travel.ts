@@ -250,6 +250,7 @@ async function activityBucketsForInterests(
   destination: string,
   dayCount: number,
   activityInterests: ActivityInterest[],
+  avoidPlaceIds: ReadonlySet<string> = new Set(),
 ): Promise<{ status: "ok"; buckets: TravelPlaceCandidate[][] } | { status: "unavailable"; reason: string }> {
   if (activityInterests.length === 0) return { status: "ok", buckets: Array.from({ length: dayCount }, () => []) };
   const results = await Promise.all(activityInterests.map((interest) => {
@@ -260,17 +261,23 @@ async function activityBucketsForInterests(
     return { status: "unavailable", reason: "activity places unavailable" };
   }
   const seen = new Set<string>();
-  const merged: TravelPlaceCandidate[] = [];
+  const preferred: TravelPlaceCandidate[] = [];
+  const colliding: TravelPlaceCandidate[] = [];
   for (const [index, result] of results.entries()) {
     if (result.status !== "ok") continue;
     for (const place of result.places) {
       if (!seen.has(place.placeId)) {
         seen.add(place.placeId);
-        merged.push({ ...place, requestedSlot: null, activityInterest: activityInterests[index] });
+        const candidate = { ...place, requestedSlot: null, activityInterest: activityInterests[index] };
+        (avoidPlaceIds.has(place.placeId) ? colliding : preferred).push(candidate);
       }
     }
   }
-  return { status: "ok", buckets: distributePlaces(merged, dayCount) };
+  // Food is assigned first for combined plans. Prefer activity candidates
+  // that are unused anywhere in that meal schedule; only fall back to
+  // colliding real results when the provider supplied no distinct activity.
+  const candidates = preferred.length > 0 ? preferred : colliding;
+  return { status: "ok", buckets: distributePlaces(candidates, dayCount) };
 }
 
 /**
@@ -288,9 +295,6 @@ async function placeBucketsForInterests(
   const foodIntents = foodIntentsForInterests(interests);
   const activityInterests = interests.filter(isActivityInterest);
 
-  const activityResult = await activityBucketsForInterests(request.destination!, dayCount, activityInterests);
-  if (activityResult.status !== "ok") return activityResult;
-
   if (foodIntents.length === 0) {
     if (activityInterests.length === 0) {
       const result = await searchPlaces(`top attractions and things to do in ${request.destination}`);
@@ -298,11 +302,16 @@ async function placeBucketsForInterests(
         ? { status: "ok", buckets: distributePlaces(result.places.map((place) => ({ ...place, requestedSlot: null })), dayCount), expectedSlots: null }
         : result;
     }
+    const activityResult = await activityBucketsForInterests(request.destination!, dayCount, activityInterests);
+    if (activityResult.status !== "ok") return activityResult;
     return { status: "ok", buckets: activityResult.buckets, expectedSlots: null };
   }
 
   const foodResult = await foodBucketsForIntents(request.destination!, request.startDate, dayCount, foodIntents);
   if (foodResult.status !== "ok") return foodResult;
+  const tripFoodIds = new Set(foodResult.buckets.flatMap((bucket) => bucket.map((place) => place.placeId)));
+  const activityResult = await activityBucketsForInterests(request.destination!, dayCount, activityInterests, tripFoodIds);
+  if (activityResult.status !== "ok") return activityResult;
 
   const buckets: TravelPlaceCandidate[][] = [];
   for (let dayIndex = 0; dayIndex < dayCount; dayIndex++) {

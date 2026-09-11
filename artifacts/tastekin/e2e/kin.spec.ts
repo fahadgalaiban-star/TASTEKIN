@@ -490,8 +490,29 @@ test('swapping an activity sends its server-issued activity category, never a cl
 });
 
 test('Arabic labels render correctly across all 3 Travel guided-flow screens, RTL-safe', async ({ page }) => {
-  await mockMe(page, { kinSearch: true, language: 'ar' });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { kinSearch: true, myThings: true, language: 'ar' });
+  await page.route('**/api/closet-items', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({ items: Array.from({ length: 7 }, (_, index) => ({
+          id: `arabic-item-${index + 1}`,
+          itemType: 'shirt',
+          primaryColor: 'blue',
+          style: null,
+          occasion: null,
+          season: null,
+          brand: null,
+          confirmationStatus: 'confirmed',
+          ownershipStatus: 'owned',
+          createdAt: new Date().toISOString(),
+        })) }),
+      });
+    }
+  });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-mode-travel').click();
 
@@ -515,6 +536,17 @@ test('Arabic labels render correctly across all 3 Travel guided-flow screens, RT
   await expect(page.getByRole('heading', { name: 'اختر من أغراضي' })).toBeVisible();
   await expect(page.getByText('اختر ما قد ترغب في أخذه معك')).toBeVisible();
   await expect(page.getByTestId('kin-travel-skip')).toHaveText('تخطَّ الآن');
+  const items = page.getByTestId('kin-wardrobe-item');
+  await expect(items).toHaveCount(7);
+  for (let index = 0; index < 7; index++) await items.nth(index).click();
+  const status = page.getByRole('status');
+  await expect(status).toHaveText('يمكنك اختيار ما يصل إلى 6 قطع.');
+  await expect(items.nth(6)).toHaveAttribute('aria-pressed', 'false');
+  const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
 });
 
 test('no horizontal overflow at 390px on any of the 3 Travel guided-flow screens', async ({ page }) => {

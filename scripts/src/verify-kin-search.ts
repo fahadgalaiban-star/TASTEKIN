@@ -261,6 +261,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
 
 type FakeGooglePlacesMode =
   | { kind: "ok" }
+  | { kind: "cross_day_collision" }
   | { kind: "empty_type"; includedType: string }
   | { kind: "overnight" }
   | { kind: "malformed" }
@@ -289,7 +290,7 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
         lastPlacesFieldMask = String(req.headers["x-goog-fieldmask"] || "");
         lastPlacesRequestBody = Buffer.concat(chunks).toString("utf8");
         placesRequestBodies.push(lastPlacesRequestBody);
-        const parsedRequest = JSON.parse(lastPlacesRequestBody) as { includedType?: string };
+        const parsedRequest = JSON.parse(lastPlacesRequestBody) as { includedType?: string; textQuery?: string };
         const mode = fakeGooglePlacesMode;
         if (mode.kind === "timeout") return;
         if (mode.kind === "http_error") { res.writeHead(mode.status); res.end(); return; }
@@ -300,8 +301,14 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
           return;
         }
         const coordinateOffsets = [0, 0.04, 0.001, 0.041, 0.002, 0.042, 0.003];
-        const places = Array.from({ length: 7 }, (_, i) => ({
-          id: `place-${i}`,
+        const crossDayIds = /breakfast/i.test(parsedRequest.textQuery ?? "")
+          ? ["breakfast-day-1", "shared-cross-day", "breakfast-alternative"]
+          : ["shopping-day-1", "shared-cross-day", "shopping-alternative"];
+        const placeIds = mode.kind === "cross_day_collision"
+          ? crossDayIds
+          : Array.from({ length: 7 }, (_, i) => `place-${i}`);
+        const places = placeIds.map((placeId, i) => ({
+          id: placeId,
           displayName: { text: `Fake Place ${i}` },
           formattedAddress: i === 2 ? undefined : `${i} Example Street`,
           location: { latitude: 48.85 + coordinateOffsets[i], longitude: 2.35 + coordinateOffsets[i] },
@@ -1493,6 +1500,27 @@ async function main() {
       assert.ok(places.findIndex((place) => place.slot === "COFFEE") < places.findIndex((place) => place.slot === "DINNER"), "coffee must never be ordered after dinner");
       assert.ok(places.some((place) => place.activityInterest === "museums"), "activity stops must retain their originating server category");
     });
+    await check("multi-day guided plans avoid cross-day food/activity placeId collisions when real alternatives exist", async () => {
+      fakeGooglePlacesMode = { kind: "cross_day_collision" };
+      const response = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "London",
+        interests: ["breakfast", "shopping"],
+        startDate: "2026-10-01",
+        endDate: "2026-10-02",
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as {
+        status: string;
+        plan: { days: Array<{ places: Array<{ placeId: string; slot: string | null; activityInterest?: string }> }> };
+      };
+      assert.equal(payload.status, "ok");
+      const places = payload.plan.days.flatMap((day) => day.places);
+      assert.equal(new Set(places.map((place) => place.placeId)).size, places.length, "unused candidates must prevent avoidable cross-day duplicates");
+      assert.ok(places.some((place) => place.placeId === "shared-cross-day" && place.slot === "BREAKFAST"), "the shared provider result remains the valid second-day breakfast");
+      assert.ok(places.some((place) => place.placeId === "shopping-alternative" && place.activityInterest === "shopping"), "the unused Shopping alternative must be preferred");
+      fakeGooglePlacesMode = { kind: "ok" };
+    });
     await check("an activity provider failure makes the guided plan honestly unavailable", async () => {
       fakeGooglePlacesMode = { kind: "http_error", status: 503 };
       const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Rome", interests: ["parks"] });
@@ -1551,6 +1579,12 @@ async function main() {
       const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: [] });
       assert.equal(response.status, 400);
     });
+    await check("myThingsItemIds: seven syntactically valid ids are rejected before private item lookup", async () => {
+      const sevenIds = Array.from({ length: 7 }, (_, index) => `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`);
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemIds: sevenIds });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "myThingsItemIds must be an array of 1-6 valid ids" });
+    });
     await check("myThingsItemIds takes precedence over the legacy singular myThingsItemId when both are sent", async () => {
       fakeAnthropicMode = { kind: "ok" };
       const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", myThingsItemId: ownedItemB, myThingsItemIds: [ownedItemA] });
@@ -1608,6 +1642,53 @@ async function main() {
       });
       await expectStatus(response, 200);
       assert.deepEqual(await response.json(), { status: "unavailable", reason: "unavailable" });
+    });
+    await check("an undated food stop swaps through Google Places without inventing a date", async () => {
+      fakeGooglePlacesMode = { kind: "ok" };
+      const planResponse = await userA.kinTravelPlan({
+        query: "plan my trip",
+        destination: "Lisbon",
+        interests: ["breakfast"],
+      });
+      await expectStatus(planResponse, 200);
+      const planPayload = await planResponse.json() as {
+        status: string;
+        plan: { days: Array<{ date: string | null; places: Array<{ placeId: string; slot: string | null }> }> };
+      };
+      assert.equal(planPayload.status, "ok");
+      const day = planPayload.plan.days[0];
+      assert.equal(day.date, null);
+      const breakfast = day.places.find((place) => place.slot === "BREAKFAST");
+      assert.ok(breakfast);
+      placesRequestBodies = [];
+      const response = await userA.request("/api/kin/travel/swap-place", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          destination: "Lisbon",
+          excludePlaceIds: day.places.map((place) => place.placeId),
+          slot: breakfast!.slot,
+          date: day.date,
+        }),
+      });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; place?: { placeId: string; slot: string | null; date?: string } };
+      assert.equal(payload.status, "ok");
+      assert.ok(payload.place && payload.place.placeId !== breakfast!.placeId, "the replacement must be a different provider result");
+      assert.equal(payload.place!.slot, "BREAKFAST");
+      assert.ok(!Object.prototype.hasOwnProperty.call(payload.place, "date"), "the swap must not invent a date");
+      const providerRequest = JSON.parse(placesRequestBodies.at(-1)!) as { textQuery: string; includedType?: string };
+      assert.match(providerRequest.textQuery, /breakfast/i);
+      assert.equal(providerRequest.includedType, "bakery");
+    });
+    await check("swap-place rejects a malformed supplied date while continuing to accept an absent date", async () => {
+      const response = await userA.request("/api/kin/travel/swap-place", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ destination: "Lisbon", slot: "BREAKFAST", date: "not-a-date" }),
+      });
+      assert.equal(response.status, 400);
+      assert.deepEqual(await response.json(), { error: "date must be a valid YYYY-MM-DD value when supplied" });
     });
     await check("activity swaps use only the seven validated server-controlled category searches", async () => {
       const cases = [
