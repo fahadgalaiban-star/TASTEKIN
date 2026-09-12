@@ -10,3 +10,4 @@ export * from "./moderation";
 export * from "./mutes";
 export * from "./my-circle";
 export * from "./taste-preferences";
+export * from "./video-uploads";

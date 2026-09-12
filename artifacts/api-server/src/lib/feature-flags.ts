@@ -48,6 +48,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "Private Circle of verified creators and their published edits.",
     defaultEnabled: false,
   },
+  {
+    key: "video_upload",
+    description: "User-uploaded video via Bunny Stream (backend foundation only in this phase — no upload endpoint, webhook, or UI is gated by this flag yet; it exists so later phases have a kill switch from day one). Missing Bunny configuration (BUNNY_STREAM_API_KEY/BUNNY_STREAM_LIBRARY_ID) never affects startup or any other feature while this flag is disabled.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];
