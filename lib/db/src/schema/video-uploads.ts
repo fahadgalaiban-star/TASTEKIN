@@ -1,4 +1,5 @@
-import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigint, index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 /**
  * Video Foundation, Phase 1 — the durable Bunny Stream upload/processing
@@ -14,12 +15,24 @@ import { index, integer, pgTable, text, timestamp, uniqueIndex, uuid } from "dri
  * creator_media_uploads' existing convention (creator_workspaces.creator_id
  * is a text primary key with no FK relationships pointing at it anywhere
  * in this schema).
+ *
+ * Phase 2A additions (see migration 0018): bunny_video_id is now nullable
+ * — a row is inserted as the durable "upload intent" record before Bunny
+ * is ever contacted, so an ambiguous provider timeout during creation
+ * still leaves a permanent, queryable record rather than silently
+ * vanishing. declared_* columns are client-reported metadata only — never
+ * proof of the real uploaded file's size or type, since video bytes never
+ * pass through this API (see routes/video-uploads.ts). deletion_pending /
+ * delete_failed mirror closet_media_uploads' existing cancel/delete
+ * fencing convention.
  */
 export const VIDEO_UPLOAD_STATES = [
   "uploading",
   "processing",
   "ready",
   "failed",
+  "deletion_pending",
+  "delete_failed",
   "deleted",
 ] as const;
 export type VideoUploadState = (typeof VIDEO_UPLOAD_STATES)[number];
@@ -29,18 +42,48 @@ export const videoUploads = pgTable("video_uploads", {
   creatorId: text("creator_id").notNull(),
   ownerUserId: text("owner_user_id").notNull(),
   bunnyLibraryId: text("bunny_library_id").notNull(),
-  bunnyVideoId: text("bunny_video_id").notNull(),
+  // Nullable: set only once Bunny's create-video call is confirmed to have
+  // succeeded (see reserveUploadIntent/finalizeCreateSuccess in
+  // video-upload-lifecycle.ts). A row with a null bunny_video_id and state
+  // "failed" records an ambiguous (timed-out) create attempt whose Bunny
+  // side effect could not be confirmed either way — see that file for why
+  // it is never automatically retried against the same row.
+  bunnyVideoId: text("bunny_video_id"),
   state: text("state").notNull().default("uploading"),
   durationSeconds: integer("duration_seconds"),
   width: integer("width"),
   height: integer("height"),
   posterUrl: text("poster_url"),
   errorReason: text("error_reason"),
+  // Client-declared metadata captured at request-upload time, for display
+  // and quota bookkeeping only — never treated as a verified fact about
+  // the bytes actually sent to Bunny over TUS (this API never sees them).
+  declaredFileName: text("declared_file_name"),
+  declaredSizeBytes: bigint("declared_size_bytes", { mode: "number" }),
+  declaredMimeType: text("declared_mime_type"),
+  // Optional client-supplied idempotency key (scoped per owner) so a
+  // retried request-upload call after a network blip reuses the same row
+  // and Bunny video instead of creating a duplicate — see
+  // reserveUploadIntent.
+  idempotencyKey: text("idempotency_key"),
+  retryCount: integer("retry_count").notNull().default(0),
+  lastError: text("last_error"),
+  lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+  // Throttle marker for server-side status reconciliation with Bunny (see
+  // reconcileWithBunny) — never updated more often than
+  // VIDEO_UPLOAD_RECONCILE_MIN_INTERVAL_MS apart for a given row.
+  lastReconciledAt: timestamp("last_reconciled_at", { withTimezone: true }),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("video_uploads_owner_user_id_idx").on(table.ownerUserId),
+  index("video_uploads_owner_created_idx").on(table.ownerUserId, table.createdAt),
+  index("video_uploads_owner_state_idx").on(table.ownerUserId, table.state),
   uniqueIndex("video_uploads_bunny_video_id_unique").on(table.bunnyVideoId),
+  uniqueIndex("video_uploads_owner_idempotency_key_unique")
+    .on(table.ownerUserId, table.idempotencyKey)
+    .where(sql`${table.idempotencyKey} is not null`),
   index("video_uploads_state_updated_idx").on(table.state, table.updatedAt),
 ]);
 

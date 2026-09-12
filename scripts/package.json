@@ -22,6 +22,7 @@
     "verify:closet-analysis": "tsx ./src/verify-closet-analysis.ts",
     "verify:kin-search": "tsx ./src/verify-kin-search.ts",
     "verify:circle": "tsx ./src/verify-circle.ts",
+    "verify:video-upload-lifecycle": "tsx ./src/verify-video-upload-lifecycle.ts",
     "verify:migrations": "tsx ./src/verify-migrations.ts",
     "reconcile:closet-media": "tsx ./src/reconcile-closet-media.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",

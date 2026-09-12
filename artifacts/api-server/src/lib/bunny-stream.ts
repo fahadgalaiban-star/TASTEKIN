@@ -25,6 +25,16 @@ import { createHash } from "node:crypto";
 const DEFAULT_BASE_URL = "https://video.bunnycdn.com";
 export const BUNNY_STREAM_TIMEOUT_MS = 8_000;
 
+/**
+ * Bunny's single global TUS resumable-upload endpoint (not scoped by
+ * library — that's what AuthorizationSignature/LibraryId in the upload's
+ * TUS metadata are for). Published here, not called from this file: no
+ * TUS client is implemented in this codebase yet, so this is only ever
+ * handed to an API response for a future client to use directly with a
+ * TUS library of its own.
+ */
+export const BUNNY_TUS_UPLOAD_ENDPOINT = "https://video.bunnycdn.com/tusupload";
+
 export type BunnyStreamDeps = {
   baseUrl?: string;
   apiKey?: string;
@@ -52,7 +62,11 @@ function resolveConfig(deps?: BunnyStreamDeps): ResolvedBunnyConfig | null {
     apiKey,
     libraryId,
     baseUrl: deps?.baseUrl ?? (process.env.BUNNY_STREAM_BASE_URL?.trim() || DEFAULT_BASE_URL),
-    timeoutMs: deps?.timeoutMs ?? BUNNY_STREAM_TIMEOUT_MS,
+    // BUNNY_STREAM_TIMEOUT_MS_OVERRIDE exists only so regression tests can
+    // exercise the timeout path in milliseconds instead of real seconds —
+    // never set in any real environment, exactly like index.ts's own
+    // MIGRATIONS_FOLDER_OVERRIDE.
+    timeoutMs: deps?.timeoutMs ?? (Number(process.env.BUNNY_STREAM_TIMEOUT_MS_OVERRIDE) || BUNNY_STREAM_TIMEOUT_MS),
   };
 }
 
