@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
-import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, type TusUploadAuthorization } from './video-upload';
+import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -842,7 +842,17 @@ function TastekinApp() {
       setProfileSaveState('error'); setProfileError(error instanceof Error ? error.message : 'Could not save your profile.');
     }
   };
-  const openComposer = (item?: CreatorEdit) => { discardPendingCrop(); setEditingId(item?.id || null); setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, previewImage: item.previewImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit()); go('composer'); };
+  // Lifted above the composer/creatorPreview screens (see VideoUploadController's
+  // comment near videoPublishBlockReason) so opening Preview and returning
+  // never unmounts the pagehide listener, the in-flight upload's
+  // AbortController, or the "committed" flag.
+  const videoUpload = useVideoUpload(ar, (video) => setEditForm((prev) => ({ ...prev, video })));
+  const openComposer = (item?: CreatorEdit) => {
+    discardPendingCrop(); setEditingId(item?.id || null);
+    setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, previewImage: item.previewImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit());
+    if (item?.video) videoUpload.hydrate(item.video); else videoUpload.reset();
+    go('composer');
+  };
   const commitEdit = async (status: EditStatus) => {
     let formToSave = editForm;
     const uploadedPaths: string[] = [];
@@ -985,6 +995,10 @@ function TastekinApp() {
   };
   const abandonComposer = () => go('add');
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('add'); };
+  // Shared by EditComposer and CreatorPreview: markCommitted() on the video
+  // controller must only run once this resolves true, so both callers await
+  // it rather than firing-and-forgetting the publish request.
+  const publishEdit = () => commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); return saved; });
   const goBack = () => {
     if (screen === 'composer' || screen === 'creatorPreview') { abandonComposer(); return; }
     go(screen === 'edit' ? editReturnScreenRef.current : screen === 'profileEdit' || screen === 'verificationApply' || screen === 'insights' ? 'profile' : screen === 'conversation' ? 'inbox' : screen === 'collection' ? 'collections' : screen === 'collectionManager' ? 'add' : screen === 'add' ? 'you' : screen === 'settings' ? settingsReturnScreenRef.current : screen === 'myThingsAdd' || screen === 'myThingsEdit' ? 'myThings' : screen === 'myThings' ? 'you' : 'home');
@@ -1019,8 +1033,8 @@ function TastekinApp() {
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
-    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
-    {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
+    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={publishEdit} />}
+    {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} videoUpload={videoUpload} onBack={() => go('composer')} onPublish={publishEdit} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('add')}>{t('Creator workspace', 'مساحة المبدع')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
@@ -4565,6 +4579,14 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
   const abortRef = useRef<AbortController | null>(null);
   const timerRef = useRef<number | null>(null);
   const committedRef = useRef(false);
+  // Remembered across a failure so retry() can resume the SAME upload
+  // attempt — a File object cannot be recovered any other way (it doesn't
+  // survive serialization), so retry is only ever offered while the
+  // composer that called select() is still mounted with the same file in
+  // memory; a full page reload always requires re-selecting the file, same
+  // as before this fix (see video-upload.ts's resumeUrlCache comment).
+  const fileRef = useRef<File | null>(null);
+  const keyRef = useRef<string | null>(null);
   // Always points at this render's onAttach closure (captures the current
   // form/onChange) — called once the upload's identity (uploadId/bunnyVideoId/
   // bunnyLibraryId) is known, which is at creation, not at readiness. This is
@@ -4584,6 +4606,8 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
   const reset = useCallback(() => {
     stopEverything();
     committedRef.current = false;
+    fileRef.current = null;
+    keyRef.current = null;
     setState(VIDEO_UPLOAD_IDLE);
   }, []);
 
@@ -4643,7 +4667,14 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
     }).catch((error) => {
       abortRef.current = null;
       if (error instanceof DOMException && error.name === 'AbortError') return;
-      setState((prev) => ({ ...prev, phase: 'failed', errorMessage: ar ? 'انقطع رفع الفيديو. أعد المحاولة.' : 'The video upload was interrupted. Try again.' }));
+      const expired = error instanceof TusAuthorizationExpiredError;
+      setState((prev) => ({
+        ...prev,
+        phase: 'failed',
+        errorMessage: expired
+          ? (ar ? 'انتهت صلاحية جلسة الرفع. أعد المحاولة لمتابعة الرفع من حيث توقف.' : 'Your upload session expired. Retry to resume from where it stopped.')
+          : (ar ? 'انقطع رفع الفيديو. أعد المحاولة لمتابعة الرفع من حيث توقف.' : 'The video upload was interrupted. Retry to resume from where it stopped.'),
+      }));
     });
   }, [ar, poll]);
 
@@ -4709,13 +4740,38 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
     }
     setState((prev) => ({ ...prev, durationSeconds: duration }));
     const key = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    fileRef.current = file;
+    keyRef.current = key;
     void requestUpload(file, key);
   }, [ar, requestUpload]);
+
+  // Resumes the SAME in-flight upload attempt after a failure (a network
+  // blip, an expired authorization) — reuses the exact File and
+  // Idempotency-Key select() originally used, so request-upload's own
+  // idempotent-replay path (video-upload-lifecycle.ts's reserveUploadIntent)
+  // reissues a fresh, non-expired TUS authorization for the SAME Bunny
+  // video rather than creating a second one. uploadVideoViaTus's own
+  // resumeUrlCache then means the resulting HEAD/PATCH calls resume from
+  // Bunny's own confirmed offset instead of restarting from zero. Never
+  // available for a client-validation failure (no video was ever created)
+  // or an "unresolved" outcome (video-upload-lifecycle.ts's own contract:
+  // an ambiguous create is never retried against the same key).
+  const retry = useCallback(() => {
+    const file = fileRef.current;
+    const key = keyRef.current;
+    if (!file || !key || stateRef.current.phase !== 'failed' || !stateRef.current.video) return;
+    stopEverything();
+    setState((prev) => ({ ...prev, phase: 'preparing', errorMessage: '' }));
+    void requestUpload(file, key, 0);
+  }, [requestUpload]);
 
   // Re-hydrates live status for a video already attached to the Edit being
   // opened (editing an existing draft/published video Edit) — never
   // re-uploads, just re-polls the row this app already knows about.
   const hydrate = useCallback((video: CreatorEditVideo) => {
+    stopEverything();
+    fileRef.current = null;
+    keyRef.current = null;
     setState({ ...VIDEO_UPLOAD_IDLE, phase: 'processing', video, committed: true });
     committedRef.current = true;
     poll(video.uploadId);
@@ -4741,10 +4797,32 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
     return () => window.removeEventListener('pagehide', onPageHide);
   }, []);
 
-  return { state, select, cancel, reset, hydrate, markCommitted };
+  return { state, select, cancel, reset, hydrate, markCommitted, retry };
 }
 
-function EditComposer({ ar, form, collections, busy, videoUploadEnabled, onChange, onCropPrepared, onBack, onDraft, onDraftComplete, onPreview, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onBack: () => void; onDraft: () => Promise<boolean>; onDraftComplete: () => void; onPreview: () => void; onPublish: () => void }) {
+/**
+ * The lifted useVideoUpload instance (see TastekinApp, where it's called
+ * exactly once) — passed down to EditComposer and CreatorPreview as a
+ * prop, instead of each component creating its own hook instance. Lifting
+ * it above the "composer" vs. "creatorPreview" screen means opening
+ * Preview and coming back never unmounts it: the pagehide listener, the
+ * in-flight upload's AbortController, and the "committed" flag all persist
+ * across that navigation, so a video mid-upload when the user clicks
+ * Preview is neither abandoned-and-uncleaned nor wrongly treated as safe.
+ */
+type VideoUploadController = ReturnType<typeof useVideoUpload>;
+
+/** Shared by EditComposer and CreatorPreview so both gate Publish on video readiness identically. */
+function videoPublishBlockReason(video: CreatorEditVideo | undefined, videoUpload: VideoUploadController, ar: boolean): string {
+  if (!video) return '';
+  if (videoUpload.state.phase === 'ready') return '';
+  if (videoUpload.state.phase === 'failed' || videoUpload.state.phase === 'unresolved') {
+    return videoUpload.state.errorMessage || (ar ? 'استبدل هذا الفيديو قبل النشر.' : 'Replace this video before publishing.');
+  }
+  return ar ? 'انتظر انتهاء معالجة الفيديو قبل النشر.' : 'Wait for the video to finish processing before publishing.';
+}
+
+function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUpload, onChange, onCropPrepared, onBack, onDraft, onDraftComplete, onPreview, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; videoUpload: VideoUploadController; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onBack: () => void; onDraft: () => Promise<boolean>; onDraftComplete: () => void; onPreview: () => void; onPublish: () => Promise<boolean> }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [imageError, setImageError] = useState('');
   const [publishError, setPublishError] = useState('');
@@ -4752,11 +4830,6 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, onChang
   const [pendingImage, setPendingImage] = useState<PreparedImage | null>(null);
   const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [mediaTab, setMediaTab] = useState<'photo' | 'video'>(form.video ? 'video' : 'photo');
-  const videoUpload = useVideoUpload(ar, (video) => onChange({ ...form, video }));
-  useEffect(() => {
-    if (form.video) videoUpload.hydrate(form.video);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
   const update = <K extends keyof EditForm>(key: K, value: EditForm[K]) => onChange({ ...form, [key]: value });
   const placeCategory = isPlaceCategory(form.category);
   const selectImage = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -4795,13 +4868,18 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, onChang
       default: return '';
     }
   })();
-  const videoBlockingMessage = () => {
-    if (mediaTab !== 'video' || !form.video) return '';
-    if (videoUpload.state.phase === 'ready') return '';
-    if (videoUpload.state.phase === 'failed' || videoUpload.state.phase === 'unresolved') return videoUpload.state.errorMessage || t('Replace this video before publishing.', 'استبدل هذا الفيديو قبل النشر.');
-    return t('Wait for the video to finish processing before publishing.', 'انتظر انتهاء معالجة الفيديو قبل النشر.');
+  const tryPublish = async () => {
+    const error = publishValidationMessage(form, ar) || videoPublishBlockReason(form.video, videoUpload, ar);
+    if (error) { setPublishError(error); return; }
+    setPublishError('');
+    const saved = await onPublish();
+    // Only a CONFIRMED save hands cleanup responsibility away from this
+    // video — a rejected/failed publish (a 409 conflict, a network error,
+    // the server's own video ownership/readiness/limit checks) must keep
+    // the pagehide/back-navigation safety net armed, exactly like saveDraft
+    // below already does for the draft path.
+    if (saved) videoUpload.markCommitted();
   };
-  const tryPublish = () => { const error = publishValidationMessage(form, ar) || videoBlockingMessage(); if (error) { setPublishError(error); return; } setPublishError(''); videoUpload.markCommitted(); onPublish(); };
   const handleBack = () => { if (videoUpload.state.video && !videoUpload.state.committed) void videoUpload.cancel(); onBack(); };
   const outfitItems = form.outfitItems || [];
   const updateOutfit = (index: number, key: keyof OutfitItem, value: string) => update('outfitItems', outfitItems.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
@@ -4834,6 +4912,7 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, onChang
         <span className={`video-status-badge video-status-${videoUpload.state.phase}`}>{videoUpload.state.phase === 'uploading' && <span className="video-progress-bar"><span style={{ width: `${videoUpload.state.progressPercent}%` }} /></span>}{videoStatusLabel}</span>
       </div>}
       {videoUpload.state.phase !== 'idle' && <div className="video-uploader-actions">
+        {videoUpload.state.phase === 'failed' && videoUpload.state.video && <button type="button" className="approved-button" onClick={() => { void videoUpload.retry(); }} disabled={busy}>{t('Retry upload', 'إعادة المحاولة')}</button>}
         <label className="approved-button video-replace-label">{t('Replace video', 'استبدال الفيديو')}<input aria-label={t('Replace video', 'استبدال الفيديو')} type="file" accept="video/mp4,video/quicktime" onChange={selectVideo} disabled={busy || videoUpload.state.phase === 'cancelling'} /></label>
         <button type="button" className="approved-button" onClick={removeVideo} disabled={busy || videoUpload.state.phase === 'cancelling'}>{t('Remove video', 'إزالة الفيديو')}</button>
       </div>}
@@ -4848,12 +4927,23 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, onChang
     </div></details>
     <details className="composer-details"><summary>{t('Accessibility & advanced', 'إمكانية الوصول والمتقدم')}</summary><div className="details-body"><Field label={t('Alt text', 'النص البديل')} value={form.altText} onChange={(value) => update('altText', value)} placeholder={t('Describe the image for everyone.', 'صف الصورة للجميع.')} /></div></details>
     {publishError && <p className="workspace-notice" role="alert">{publishError}</p>}
-    <div className="composer-actions"><button className={`approved-button ${draftState !== 'idle' ? 'primary' : ''}`} onClick={() => { void saveDraft(); }} disabled={processing || busy || draftState !== 'idle'}>{draftState === 'saving' ? t('Saving…', 'جارٍ الحفظ…') : draftState === 'saved' ? t('Draft saved ✓', 'تم حفظ المسودة ✓') : t('Save draft', 'حفظ كمسودة')}</button><button className="approved-button" onClick={onPreview} disabled={processing || busy || draftState !== 'idle'}>{t('Preview', 'معاينة')}</button><button className="approved-button primary" onClick={tryPublish} disabled={processing || busy || draftState !== 'idle'}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Publish', 'نشر')}</button></div>
+    <div className="composer-actions"><button className={`approved-button ${draftState !== 'idle' ? 'primary' : ''}`} onClick={() => { void saveDraft(); }} disabled={processing || busy || draftState !== 'idle'}>{draftState === 'saving' ? t('Saving…', 'جارٍ الحفظ…') : draftState === 'saved' ? t('Draft saved ✓', 'تم حفظ المسودة ✓') : t('Save draft', 'حفظ كمسودة')}</button><button className="approved-button" onClick={onPreview} disabled={processing || busy || draftState !== 'idle'}>{t('Preview', 'معاينة')}</button><button className="approved-button primary" onClick={() => { void tryPublish(); }} disabled={processing || busy || draftState !== 'idle'}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Publish', 'نشر')}</button></div>
   </section>;
 }
 function Field({ label, value, onChange, placeholder, multiline = false, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; multiline?: boolean; type?: string }) { return <label className="form-field"><span>{label}</span>{multiline ? <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} /> : <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />}</label>; }
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label className="form-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>; }
-function CreatorPreview({ ar, busy, edit, onBack, onPublish }: { ar: boolean; busy: boolean; edit: CreatorEdit; onBack: () => void; onPublish: () => void }) { const t = (en: string, arabic: string) => ar ? arabic : en; const [publishError, setPublishError] = useState(''); const tryPublish = () => { const error = publishValidationMessage(edit, ar); if (error) { setPublishError(error); return; } setPublishError(''); onPublish(); }; return <SimpleScreen kicker={t('Consumer preview', 'معاينة للمستهلك')} title={t('This is how it will appear.', 'هكذا سيظهر.') }><p>{edit.image ? t('Your wording, access label, and image appear exactly as they will in the consumer feed.', 'ستظهر كتابتك وعلامة الوصول والصورة كما ستظهر في تغذية المستهلك.') : t('Your place recommendation appears as an intentional no-photo card.', 'ستظهر توصية المكان كبطاقة مقصودة بلا صورة.')}</p><EditCard edit={edit} ar={ar} saved={false} onSave={() => undefined} onOpen={() => undefined} />{publishError && <p className="workspace-notice" role="alert">{publishError}</p>}<div className="composer-actions"><button className="approved-button" onClick={onBack} disabled={busy}>{t('Keep editing', 'متابعة التعديل')}</button><button className="approved-button primary" onClick={tryPublish} disabled={busy}>{t('Publish Edit', 'نشر التعديل')}</button></div></SimpleScreen>; }
+function CreatorPreview({ ar, busy, edit, videoUpload, onBack, onPublish }: { ar: boolean; busy: boolean; edit: CreatorEdit; videoUpload: VideoUploadController; onBack: () => void; onPublish: () => Promise<boolean> }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [publishError, setPublishError] = useState('');
+  const tryPublish = async () => {
+    const error = publishValidationMessage(edit, ar) || videoPublishBlockReason(edit.video, videoUpload, ar);
+    if (error) { setPublishError(error); return; }
+    setPublishError('');
+    const saved = await onPublish();
+    if (saved) videoUpload.markCommitted();
+  };
+  return <SimpleScreen kicker={t('Consumer preview', 'معاينة للمستهلك')} title={t('This is how it will appear.', 'هكذا سيظهر.') }><p>{edit.image ? t('Your wording, access label, and image appear exactly as they will in the consumer feed.', 'ستظهر كتابتك وعلامة الوصول والصورة كما ستظهر في تغذية المستهلك.') : t('Your place recommendation appears as an intentional no-photo card.', 'ستظهر توصية المكان كبطاقة مقصودة بلا صورة.')}</p><EditCard edit={edit} ar={ar} saved={false} onSave={() => undefined} onOpen={() => undefined} />{publishError && <p className="workspace-notice" role="alert">{publishError}</p>}<div className="composer-actions"><button className="approved-button" onClick={onBack} disabled={busy}>{t('Keep editing', 'متابعة التعديل')}</button><button className="approved-button primary" onClick={() => { void tryPublish(); }} disabled={busy}>{t('Publish Edit', 'نشر التعديل')}</button></div></SimpleScreen>;
+}
 function CollectionManager({ ar, collections, edits, form, editing, featuredCollectionIds, onChange, onOpenCollection, onNew, onSave, onToggleFeatured, onMoveFeatured }: { ar: boolean; collections: CreatorCollection[]; edits: CreatorEdit[]; form: CollectionForm; editing: string | null; featuredCollectionIds: string[]; onChange: (form: CollectionForm) => void; onOpenCollection: (item: CreatorCollection) => void; onNew: () => void; onSave: () => void; onToggleFeatured: (id: string) => void; onMoveFeatured: (id: string, direction: 'up' | 'down') => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const update = <K extends keyof CollectionForm>(key: K, value: CollectionForm[K]) => onChange({ ...form, [key]: value });

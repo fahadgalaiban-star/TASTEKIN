@@ -42,6 +42,14 @@ export function readVideoDuration(file: File): Promise<number> {
 export type TusUploadAuthorization = { endpoint: string; libraryId: string; videoId: string; expirationTime: number; signature: string };
 export type TusUploadProgress = { bytesUploaded: number; bytesTotal: number };
 
+/** Thrown specifically for a 401 from any TUS call (create/HEAD/PATCH) — an expired AuthorizationSignature/AuthorizationExpire pair, per Bunny's documented TUS error semantics. Distinguished from a generic network/interruption failure so the caller can surface "your session expired, retry" rather than a generic error — retrying (via the app's own request-upload replay mechanism, which reissues a fresh, non-expired signature for the SAME Bunny video) is exactly the right recovery either way. */
+export class TusAuthorizationExpiredError extends Error {
+  constructor() {
+    super('tus-authorization-expired');
+    this.name = 'TusAuthorizationExpiredError';
+  }
+}
+
 const TUS_RESUMABLE_VERSION = '1.0.0';
 const TUS_CHUNK_SIZE = 8 * 1024 * 1024;
 
@@ -82,6 +90,7 @@ async function createOrReuseTusUpload(file: File, auth: TusUploadAuthorization):
       LibraryId: auth.libraryId,
     },
   });
+  if (response.status === 401) throw new TusAuthorizationExpiredError();
   if (!response.ok) throw new Error(`create-${response.status}`);
   const location = response.headers.get('Location');
   if (!location) throw new Error('create-no-location');
@@ -92,6 +101,7 @@ async function createOrReuseTusUpload(file: File, auth: TusUploadAuthorization):
 
 async function confirmedOffset(uploadUrl: string): Promise<number> {
   const response = await fetch(uploadUrl, { method: 'HEAD', headers: { 'Tus-Resumable': TUS_RESUMABLE_VERSION } });
+  if (response.status === 401) throw new TusAuthorizationExpiredError();
   if (!response.ok) throw new Error(`head-${response.status}`);
   const offset = Number(response.headers.get('Upload-Offset'));
   return Number.isFinite(offset) ? offset : 0;
@@ -125,6 +135,7 @@ export async function uploadVideoViaTus(
       body: chunk,
       signal: options.signal,
     });
+    if (response.status === 401) throw new TusAuthorizationExpiredError();
     if (!response.ok) throw new Error(`patch-${response.status}`);
     const nextOffset = Number(response.headers.get('Upload-Offset'));
     offset = Number.isFinite(nextOffset) ? nextOffset : offset + chunk.size;

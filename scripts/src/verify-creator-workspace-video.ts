@@ -16,7 +16,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { db, featureFlags, videoUploads } from "@workspace/db";
+import { db, featureFlags, usersTable, videoUploads } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -233,12 +233,12 @@ async function main() {
     await expectStatus(await admin.setFlag("video_upload", true), 200);
 
     let freshCounter = 0;
-    async function freshOwner(): Promise<{ session: Session; revision: number }> {
+    async function freshOwner(): Promise<{ session: Session; revision: number; userId: string }> {
       freshCounter += 1;
       const session = new Session(server.baseUrl);
-      await session.signup(`workspace-video-${suffix}-${freshCounter}@example.com`, PASSWORD);
+      const account = await session.signup(`workspace-video-${suffix}-${freshCounter}@example.com`, PASSWORD);
       const workspace = await (await session.workspace()).json() as { revision: number };
-      return { session, revision: workspace.revision };
+      return { session, revision: workspace.revision, userId: account.user.id };
     }
 
     await check("a draft Edit can attach a video that is still processing (readiness is only required to publish)", async () => {
@@ -345,6 +345,93 @@ async function main() {
       const edit = baseEdit("cancel-publish-edit", { status: "published", video: { uploadId: id, bunnyVideoId: tus.videoId, bunnyLibraryId: tus.libraryId } });
       const response = await owner.session.saveWorkspace([edit], owner.revision);
       await expectStatus(response, 409);
+    });
+
+    // --- Phase 3B fix verification: feature-flag/limit/access-bypass and the
+    // publish/cancel race fence ------------------------------------------------
+
+    await check("PUT /api/creator-workspace rejects any edit carrying a video field with 403 while the video_upload flag is disabled — a direct API call cannot smuggle a video edit past a disabled flag", async () => {
+      const owner = await freshOwner();
+      const video = await createReadyVideo(owner.session, `flag-disabled-${suffix}`);
+      await expectStatus(await admin.setFlag("video_upload", false), 200);
+      try {
+        const edit = baseEdit("flag-disabled-edit", { status: "draft", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+        const response = await owner.session.saveWorkspace([edit], owner.revision);
+        await expectStatus(response, 403);
+        const body = await response.json() as { error: string };
+        assert.match(body.error, /not available right now/);
+      } finally {
+        await expectStatus(await admin.setFlag("video_upload", true), 200);
+      }
+    });
+
+    await check("a video Edit with access: 'locked' is rejected with 400 in this phase — paid/subscriber-only video stays out of scope even for a verified creator who could otherwise post locked content", async () => {
+      const owner = await freshOwner();
+      await db.update(usersTable).set({ isVerified: true }).where(eq(usersTable.id, owner.userId));
+      const video = await createReadyVideo(owner.session, `locked-${suffix}`);
+      const edit = baseEdit("locked-video-edit", { status: "draft", access: "locked", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+      const response = await owner.session.saveWorkspace([edit], owner.revision);
+      await expectStatus(response, 400);
+      const body = await response.json() as { error: string };
+      assert.match(body.error, /must be public in this phase/);
+    });
+
+    await check("request-upload rejects a declared sizeBytes over the 500MB limit before ever creating a Bunny video — a direct API call cannot reserve an over-limit upload", async () => {
+      const owner = await freshOwner();
+      const response = await owner.session.requestUpload({ ...validFile, sizeBytes: 500 * 1024 * 1024 + 1 }, `oversize-reserve-${suffix}`);
+      await expectStatus(response, 400);
+    });
+
+    await check("publishing an Edit is rejected with 409 if the video row's declared size exceeds the 500MB limit (defense-in-depth: the reservation-time check above means an honest client can never reach this state, so the row is forced over the limit directly to prove this second, independent gate)", async () => {
+      const owner = await freshOwner();
+      const video = await createReadyVideo(owner.session, `oversize-publish-${suffix}`);
+      await db.update(videoUploads).set({ declaredSizeBytes: 500 * 1024 * 1024 + 1 }).where(eq(videoUploads.id, video.id));
+      const edit = baseEdit("oversize-publish-edit", { status: "published", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+      const response = await owner.session.saveWorkspace([edit], owner.revision);
+      await expectStatus(response, 409);
+      const body = await response.json() as { error: string };
+      assert.match(body.error, /500MB/);
+    });
+
+    await check("publishing an Edit is rejected with 409 if Bunny's own (provider-verified) duration exceeds the 600-second limit, even though the video reached 'ready' (readiness and the duration cap are independent checks)", async () => {
+      const owner = await freshOwner();
+      const uploadResponse = await owner.session.requestUpload(validFile, `longduration-${suffix}`);
+      const { id, tus } = await uploadResponse.json() as { id: string; tus: { videoId: string; libraryId: string } };
+      videoStates.set(tus.videoId, { bunnyStatus: 3, length: 601, width: 1080, height: 1920 });
+      await sleep(80);
+      const status = await (await owner.session.getUpload(id)).json() as { state: string };
+      assert.equal(status.state, "ready", "fixture video must reach ready — duration-limit enforcement is separate from readiness");
+      const edit = baseEdit("long-duration-edit", { status: "published", video: { uploadId: id, bunnyVideoId: tus.videoId, bunnyLibraryId: tus.libraryId } });
+      const response = await owner.session.saveWorkspace([edit], owner.revision);
+      await expectStatus(response, 409);
+      const body = await response.json() as { error: string };
+      assert.match(body.error, /10-minute limit/);
+    });
+
+    await check("concurrent publish and cancel of the same video never both succeed, and a successful publish is never left referencing a video cancellation moved toward deletion (deterministic across repeated trials)", async () => {
+      const trials = 12;
+      for (let trial = 0; trial < trials; trial++) {
+        const owner = await freshOwner();
+        const video = await createReadyVideo(owner.session, `race-${suffix}-${trial}`);
+        const editId = `race-edit-${suffix}-${trial}`;
+        const edit = baseEdit(editId, { status: "published", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+        const [publishResponse, cancelResponse] = await Promise.all([
+          owner.session.saveWorkspace([edit], owner.revision),
+          owner.session.request(`/api/video-uploads/${encodeURIComponent(video.id)}/cancel`, { method: "POST" }),
+        ]);
+        const [row] = await db.select().from(videoUploads).where(eq(videoUploads.id, video.id));
+        assert.ok(row, `trial ${trial}: video upload row must still exist after the race`);
+        if (publishResponse.status === 200) {
+          assert.equal(row!.attachedEditId, editId, `trial ${trial}: a successful publish must durably attach the video row`);
+          assert.equal(row!.state, "ready", `trial ${trial}: a successful publish's video must never be moved toward deletion by the concurrent cancel`);
+          assert.notEqual(cancelResponse.status, 200, `trial ${trial}: cancel must not report a completed deletion when publish won the race`);
+        } else {
+          // Publish lost the race — the video's row must never have been
+          // durably attached, so a fresh save can retry cleanly and the
+          // cancel that won the race is free to actually delete it.
+          assert.equal(row!.attachedEditId, null, `trial ${trial}: a publish that lost the race must never attach the video`);
+        }
+      }
     });
   } finally {
     stopServer(server);

@@ -1,7 +1,7 @@
-// Video Foundation, Phase 2B — a targeted, literal SQL-replay test for
-// migrations 0017 -> 0018 -> 0019, run against a fresh, isolated, single-
-// purpose database that holds nothing but this test's own video_uploads
-// table.
+// Video Foundation, Phase 2B/3B — a targeted, literal SQL-replay test for
+// migrations 0017 -> 0018 -> 0019 -> 0020, run against a fresh, isolated,
+// single-purpose database that holds nothing but this test's own
+// video_uploads table.
 //
 // This is deliberately NOT the same thing as `pnpm --filter db run push`
 // (which reads the current TypeScript schema and reconciles the database
@@ -214,7 +214,44 @@ async function main() {
 
     console.log("Verified 0019 preserved all prior rows and added the recovery lease columns/index correctly.\n");
 
-    console.log("PASS: migrations 0017 -> 0018 -> 0019 replay cleanly against an isolated video_uploads baseline, preserving representative rows at every step.");
+    // --- apply 0020_video_upload_attachment.sql (Phase 3B publish/cancel race fix) ---
+    const sql0020 = await readMigration("0020_video_upload_attachment");
+    await client.query(sql0020);
+    console.log("Applied 0020_video_upload_attachment.sql");
+
+    const rowCountAfter0020 = await client.query(`SELECT count(*)::int AS n FROM video_uploads`);
+    assert.equal(rowCountAfter0020.rows[0].n, 6, "0020: all 6 surviving representative rows must still be present");
+
+    const attachedEditIdCol = await client.query<{ is_nullable: string; data_type: string }>(
+      `SELECT is_nullable, data_type FROM information_schema.columns WHERE table_name = 'video_uploads' AND column_name = 'attached_edit_id'`,
+    );
+    assert.equal(attachedEditIdCol.rows.length, 1, "0020: attached_edit_id column must exist");
+    assert.equal(attachedEditIdCol.rows[0].is_nullable, "YES", "0020: attached_edit_id must be nullable (unattached is the default state)");
+    assert.equal(attachedEditIdCol.rows[0].data_type, "text", "0020: attached_edit_id must be plain text, matching this table's existing convention");
+
+    const rowAAfter0020 = await client.query(
+      `SELECT attached_edit_id, state, bunny_video_id FROM video_uploads WHERE id = '11111111-1111-1111-1111-111111111111'`,
+    );
+    assert.equal(rowAAfter0020.rows[0].attached_edit_id, null, "0020: pre-existing rows default attached_edit_id to null (never retroactively attached)");
+    assert.equal(rowAAfter0020.rows[0].state, "ready", "0020: row A's state must remain untouched through this upgrade too");
+    assert.equal(rowAAfter0020.rows[0].bunny_video_id, "bunny-video-a");
+
+    // The column carries no uniqueness/foreign-key constraint of its own —
+    // multiple rows may legitimately reference the same editId transiently
+    // (e.g. a replace-video save that attaches the new row before detaching
+    // the old one in the same transaction), so this must succeed.
+    await client.query(
+      `UPDATE video_uploads SET attached_edit_id = 'edit-shared' WHERE id IN ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')`,
+    );
+    const sharedAttachment = await client.query(`SELECT count(*)::int AS n FROM video_uploads WHERE attached_edit_id = 'edit-shared'`);
+    assert.equal(sharedAttachment.rows[0].n, 2, "0020: attached_edit_id must not be uniquely constrained — two rows may share a value transiently");
+    await client.query(
+      `UPDATE video_uploads SET attached_edit_id = NULL WHERE id IN ('11111111-1111-1111-1111-111111111111', '22222222-2222-2222-2222-222222222222')`,
+    );
+
+    console.log("Verified 0020 preserved all prior rows and added the attached_edit_id column with the correct nullability/type/no-constraint shape.\n");
+
+    console.log("PASS: migrations 0017 -> 0018 -> 0019 -> 0020 replay cleanly against an isolated video_uploads baseline, preserving representative rows at every step.");
   } finally {
     await client.end();
   }

@@ -90,6 +90,30 @@ class VideoUploadApi {
   private tusOffsets = new Map<string, number>();
   private patchCallCounts = new Map<string, number>();
   private patchGates = new Map<string, { atCall: number; release: () => void; promise: Promise<void> }>();
+  private failAtCall = new Map<string, number>();
+  private expireAtCall = new Map<string, number>();
+  private expireNextHeadIds = new Set<string>();
+  private rowsByIdempotencyKey = new Map<string, string>();
+  private failNextSave = false;
+  readonly patchOffsetsSent = new Map<string, number[]>();
+
+  /** The `atCall`-th (1-indexed) PATCH for this Bunny video id fails as a
+   * dropped connection (never a response Bunny actually sent) — exactly
+   * what an interrupted upload looks like to uploadVideoViaTus(), which the
+   * app then surfaces as "the video upload was interrupted" with a Retry
+   * action. Keyed by call number (not "the next call") so a multi-chunk
+   * upload can deterministically fail a specific chunk regardless of how
+   * fast the fake responds relative to the test's own polling. */
+  failNextPatch(bunnyVideoId: string, atCall = 1) { this.failAtCall.set(bunnyVideoId, atCall); }
+  /** The `atCall`-th PATCH for this Bunny video id answers 401 — an expired
+   * AuthorizationSignature/AuthorizationExpire pair, per Bunny's TUS error
+   * semantics — which the app must surface distinctly ("session expired"). */
+  expireNextPatch(bunnyVideoId: string, atCall = 1) { this.expireAtCall.set(bunnyVideoId, atCall); }
+  expireNextHead(bunnyVideoId: string) { this.expireNextHeadIds.add(bunnyVideoId); }
+  /** The next PUT /api/creator-workspace answers 409, exactly like a real
+   * revision conflict or server-side rejection — used to prove a rejected
+   * publish never marks the video committed. */
+  failNextWorkspaceSave() { this.failNextSave = true; }
 
   /** Makes the first `times` request-upload calls answer 202 "still
    * creating" before the next one finally answers 201. Since the client
@@ -189,7 +213,9 @@ class VideoUploadApi {
     }
     const itemMatch = url.pathname.match(/^\/tus\/([^/]+)$/);
     if (request.method() === 'HEAD' && itemMatch) {
-      const offset = this.tusOffsets.get(itemMatch[1]) ?? 0;
+      const videoId = itemMatch[1];
+      if (this.expireNextHeadIds.delete(videoId)) { await route.fulfill({ status: 401, headers: this.corsHeaders() }); return; }
+      const offset = this.tusOffsets.get(videoId) ?? 0;
       await route.fulfill({ status: 200, headers: this.corsHeaders({ 'Upload-Offset': String(offset) }) });
       return;
     }
@@ -197,10 +223,16 @@ class VideoUploadApi {
       const videoId = itemMatch[1];
       const count = (this.patchCallCounts.get(videoId) ?? 0) + 1;
       this.patchCallCounts.set(videoId, count);
+      if (this.failAtCall.get(videoId) === count) { this.failAtCall.delete(videoId); await route.abort('failed'); return; }
+      if (this.expireAtCall.get(videoId) === count) { this.expireAtCall.delete(videoId); await route.fulfill({ status: 401, headers: this.corsHeaders() }); return; }
       const gate = this.patchGates.get(videoId);
       if (gate && gate.atCall === count) await gate.promise;
       const chunk = request.postDataBuffer();
       const currentOffset = this.tusOffsets.get(videoId) ?? 0;
+      const sentOffsetHeader = Number(request.headers()['upload-offset'] ?? currentOffset);
+      const history = this.patchOffsetsSent.get(videoId) ?? [];
+      history.push(sentOffsetHeader);
+      this.patchOffsetsSent.set(videoId, history);
       const nextOffset = currentOffset + (chunk?.byteLength ?? 0);
       this.tusOffsets.set(videoId, nextOffset);
       // Once every declared byte has been PATCHed, this upload has finished
@@ -237,6 +269,11 @@ class VideoUploadApi {
       if (request.method() === 'GET') { await route.fulfill({ json: owner ? this.workspace : { ...this.workspace, edits: [] } }); return; }
       if (request.method() === 'PUT') {
         if (!owner) { await route.fulfill({ status: 401, json: { error: 'Sign in to update the creator workspace' } }); return; }
+        if (this.failNextSave) {
+          this.failNextSave = false;
+          await route.fulfill({ status: 409, json: { error: 'Creator workspace changed on another device. Reload before saving.' } });
+          return;
+        }
         const payload = this.requestBody(route);
         this.workspace = { ...this.workspace, edits: payload.edits as Edit[], collections: payload.collections as unknown[], revision: this.workspace.revision + 1, updatedAt: new Date().toISOString() };
         await route.fulfill({ json: this.workspace });
@@ -270,6 +307,24 @@ class VideoUploadApi {
         await route.fulfill({ status: 202, json: { id: 'pending', state: 'creating', statusUrl: '/api/video-uploads/pending', retryAfter: 0 } });
         return;
       }
+      // Idempotent-replay: a request-upload call reusing the SAME
+      // Idempotency-Key as an existing, still-in-flight row (real server
+      // contract: reserveUploadIntent's "idempotent_replay" outcome) must
+      // reissue a fresh TUS authorization for the SAME Bunny video, never
+      // create a second one — this is the mechanism the app's own retry()
+      // relies on, so the fake models it rather than always minting a new
+      // upload on every call.
+      if (idempotencyKey) {
+        const existingId = this.rowsByIdempotencyKey.get(idempotencyKey);
+        const existingRow = existingId ? this.uploads.get(existingId) : undefined;
+        if (existingRow && (existingRow.state === 'uploading' || existingRow.state === 'processing')) {
+          await route.fulfill({
+            status: 201,
+            json: { id: existingRow.id, state: existingRow.state, replayed: true, tus: { endpoint: 'https://bunny.tastekin.test/tus', libraryId: existingRow.bunnyLibraryId, videoId: existingRow.bunnyVideoId, expirationTime: Math.floor(Date.now() / 1000) + 3600, signature: 'fake-signature-replay' } },
+          });
+          return;
+        }
+      }
       this.uploadCounter += 1;
       this.videoCounter += 1;
       const id = `video-upload-${this.uploadCounter}`;
@@ -279,6 +334,7 @@ class VideoUploadApi {
         id, state: 'uploading', declaredFileName: String(body.fileName ?? ''), declaredSizeBytes: Number(body.sizeBytes ?? 0), declaredMimeType: String(body.mimeType ?? ''),
         durationSeconds: null, width: null, height: null, posterUrl: null, errorReason: null, bunnyVideoId, bunnyLibraryId,
       });
+      if (idempotencyKey) this.rowsByIdempotencyKey.set(idempotencyKey, id);
       await route.fulfill({
         status: 201,
         json: { id, state: 'uploading', tus: { endpoint: 'https://bunny.tastekin.test/tus', libraryId: bunnyLibraryId, videoId: bunnyVideoId, expirationTime: Math.floor(Date.now() / 1000) + 3600, signature: 'fake-signature' } },
@@ -310,19 +366,19 @@ class VideoUploadApi {
   }
 }
 
-async function creatorPage(page: Page, api: VideoUploadApi) {
+async function creatorPage(page: Page, api: VideoUploadApi, options: { ar?: boolean } = {}) {
   await page.context().addCookies([{ name: 'sid', value: ownerSession, url: 'http://127.0.0.1:23385' }]);
   await fakeVideoDecoding(page);
   await api.attach(page);
-  await page.goto('/');
+  await page.goto(options.ar ? '/?lang=ar' : '/');
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: options.ar ? 'مساء الخير، Fheed Alaiban.' : 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
 }
 
-async function openComposer(page: Page) {
-  await page.getByRole('button', { name: 'New Edit' }).click();
-  await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+async function openComposer(page: Page, options: { ar?: boolean } = {}) {
+  await page.getByRole('button', { name: options.ar ? 'تعديل جديد' : 'New Edit' }).click();
+  await expect(page.getByRole('heading', { name: options.ar ? 'أنشئ تعديلاً' : 'Create an Edit' })).toBeVisible();
 }
 
 function videoFile(name: string, sizeBytes: number, mimeType = 'video/mp4') {
@@ -498,4 +554,202 @@ test('the existing photo crop-and-publish flow is completely unchanged with vide
   const saved = api.workspace.edits.find((edit) => edit.title === 'Unchanged photo flow' || edit.caption === 'Unchanged photo flow');
   expect(saved?.image).toMatch(/^\/objects\/uploads\//);
   expect(saved?.video).toBeUndefined();
+});
+
+// --- Phase 3B fixes: markCommitted timing, Preview lifecycle, Retry ---------
+
+test('a rejected publish leaves the composer open and the video uncommitted — closing the editor afterward still cancels it', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  api.markReady(uploadId);
+  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
+
+  api.failNextWorkspaceSave();
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  // The save was rejected — never navigated away, and markCommitted() must
+  // never have run, so the video is still this composer's responsibility.
+  await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+  expect(api.cancelledIds).not.toContain(uploadId);
+  expect(api.workspace.edits.find((edit) => edit.video)).toBeUndefined();
+
+  await page.getByRole('button', { name: 'Close editor' }).click();
+  await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
+});
+
+test('opening Preview while a video is mid-upload and returning to the composer preserves the upload — never abandons or re-uploads it', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  await expect(page.getByText(/Uploading…|Processing…/)).toBeVisible({ timeout: 8000 });
+
+  await page.getByRole('button', { name: 'Preview', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'This is how it will appear.' })).toBeVisible();
+  // Returning to the composer must not have unmounted the upload's own
+  // cleanup handler or abandoned the in-flight upload.
+  await page.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+  await expect(page.getByText(/Uploading…|Processing…/)).toBeVisible();
+  expect(api.cancelledIds).not.toContain(uploadId);
+  expect(api.requestUploadCalls).toHaveLength(1);
+
+  api.markReady(uploadId);
+  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  const saved = api.workspace.edits.find((edit) => edit.video);
+  expect(saved?.video?.uploadId).toBe(uploadId);
+});
+
+test('an interrupted upload is retried from the confirmed offset, reusing the same Bunny video and Idempotency-Key — never restarting from zero or creating a second video', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+
+  // 12MB forces two chunks (8MB then 4MB). The fake never adds network
+  // latency, so a "fail the very next PATCH" flag set only after the first
+  // chunk is observed can lose the race and miss both chunks entirely —
+  // failing chunk #2 by call count, armed before the upload even starts
+  // against this test's own first (and only) Bunny video id, is what makes
+  // this deterministic: the interruption always lands after exactly one
+  // chunk has already succeeded, giving a genuine non-zero offset to resume.
+  const bunnyVideoId = 'fake-bunny-video-1';
+  api.failNextPatch(bunnyVideoId, 2);
+
+  const fileSize = 12 * 1024 * 1024;
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', fileSize));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  expect(api.uploads.get(uploadId)?.bunnyVideoId).toBe(bunnyVideoId);
+  const firstKey = api.requestUploadCalls[0].idempotencyKey;
+  expect(firstKey).toBeTruthy();
+
+  await expect(page.getByText('The video upload was interrupted. Retry to resume from where it stopped.')).toBeVisible({ timeout: 8000 });
+  expect(api.uploads.size).toBe(1);
+  expect(api.patchOffsetsSent.get(bunnyVideoId)).toEqual([0]);
+
+  await page.getByRole('button', { name: 'Retry upload' }).click();
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(2);
+  expect(api.requestUploadCalls[1].idempotencyKey).toBe(firstKey);
+  await expect.poll(() => api.patchOffsetsSent.get(bunnyVideoId), { timeout: 8000 }).toEqual([0, 8 * 1024 * 1024]);
+  expect(api.uploads.size).toBe(1);
+
+  api.markReady(uploadId);
+  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  const saved = api.workspace.edits.find((edit) => edit.video);
+  expect(saved?.video).toMatchObject({ uploadId, bunnyVideoId });
+});
+
+test('a Retry that meets a 202 "still creating" response keeps polling with the same Idempotency-Key until it resolves', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  const bunnyVideoId = api.uploads.get(uploadId)!.bunnyVideoId;
+  const firstKey = api.requestUploadCalls[0].idempotencyKey;
+
+  api.failNextPatch(bunnyVideoId);
+  await expect(page.getByText('The video upload was interrupted. Retry to resume from where it stopped.')).toBeVisible({ timeout: 8000 });
+
+  api.scriptCreatingRetries(2);
+  await page.getByRole('button', { name: 'Retry upload' }).click();
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 40000 }).toBeGreaterThanOrEqual(4);
+  const keysUsed = new Set(api.requestUploadCalls.map((call) => call.idempotencyKey));
+  expect(keysUsed.size).toBe(1);
+  expect(Array.from(keysUsed)[0]).toBe(firstKey);
+  expect(api.uploads.size).toBe(1);
+  await expect(page.getByText(/Uploading…|Processing…/)).toBeVisible({ timeout: 8000 });
+});
+
+test('a PATCH answering 401 (expired authorization) is surfaced distinctly from a plain interruption, and Retry still recovers it', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  const bunnyVideoId = api.uploads.get(uploadId)!.bunnyVideoId;
+
+  api.expireNextPatch(bunnyVideoId);
+  await expect(page.getByText('Your upload session expired. Retry to resume from where it stopped.')).toBeVisible({ timeout: 8000 });
+  expect(api.uploads.size).toBe(1);
+
+  await page.getByRole('button', { name: 'Retry upload' }).click();
+  api.markReady(uploadId);
+  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
+  expect(api.uploads.size).toBe(1);
+});
+
+test('cancellation still works on a failed upload — Remove video clears it even while Retry is also offered', async ({ page }) => {
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  api.markFailed(uploadId);
+  await expect(page.getByRole('button', { name: 'Retry upload' })).toBeVisible({ timeout: 8000 });
+
+  await page.getByRole('button', { name: 'Remove video' }).click();
+  await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
+  await expect(page.getByLabel('Add video')).toBeVisible();
+});
+
+// --- 390×844 Arabic/RTL composer coverage -----------------------------------
+
+test('the video composer works end-to-end in Arabic/RTL at 390×844: tabs, upload, readiness, and publish', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api, { ar: true });
+  await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await openComposer(page, { ar: true });
+  await page.getByRole('tab', { name: 'فيديو' }).click();
+  await page.getByLabel('أضف فيديو').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  api.markReady(uploadId);
+  await expect(page.getByText('جاهز')).toBeVisible({ timeout: 45000 });
+
+  await page.getByRole('button', { name: 'نشر', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'مساء الخير، Fheed Alaiban.' })).toBeVisible();
+  const saved = api.workspace.edits.find((edit) => edit.video);
+  expect(saved?.video?.uploadId).toBe(uploadId);
+});
+
+test('a failed video in Arabic/RTL shows the localized error and Retry action, and Remove video still works', async ({ page }) => {
+  const api = new VideoUploadApi();
+  await creatorPage(page, api, { ar: true });
+  await openComposer(page, { ar: true });
+  await page.getByRole('tab', { name: 'فيديو' }).click();
+  await page.getByLabel('أضف فيديو').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  api.markFailed(uploadId);
+  await expect(page.getByText('تعذرت معالجة هذا الفيديو.')).toBeVisible({ timeout: 8000 });
+  await expect(page.getByRole('button', { name: 'إعادة المحاولة' })).toBeVisible();
+
+  await page.getByRole('button', { name: 'إزالة الفيديو' }).click();
+  await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
+  await expect(page.getByLabel('أضف فيديو')).toBeVisible();
 });
