@@ -6,10 +6,11 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
+import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, type TusUploadAuthorization } from './video-upload';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -57,9 +58,16 @@ type CreatorProfile = {
 };
 type PendingProfilePhoto = { file: File; url: string };
 
+// The Bunny video and library ids are captured once (from the
+// request-upload response's own `tus` block — GET status never returns
+// them) and resubmitted verbatim on every save; the server cross-checks
+// both against the persisted video_uploads row before ever accepting a
+// publish (see routes/creator-workspace.ts) — never trusted on the
+// strength of the client's own say-so.
+type CreatorEditVideo = { uploadId: string; bunnyVideoId: string; bunnyLibraryId: string };
 type CreatorEdit = {
   id: string; category: Exclude<Category, 'All'>; title: string; titleAr: string; caption: string; captionAr: string;
-  image?: string; sourceImage?: string; previewImage?: string; imageMetadata?: ImageMetadata; crop?: CropMetadata; location: string; locationAr: string; altText: string; access: Access; status: EditStatus; collectionIds: string[]; outfitItems?: OutfitItem[]; showOutfitDetails?: boolean;
+  image?: string; sourceImage?: string; previewImage?: string; imageMetadata?: ImageMetadata; crop?: CropMetadata; video?: CreatorEditVideo; location: string; locationAr: string; altText: string; access: Access; status: EditStatus; collectionIds: string[]; outfitItems?: OutfitItem[]; showOutfitDetails?: boolean;
   placeName?: string | null; locationLabel?: string | null; mapsUrl?: string | null; tasteRating?: number | null; creatorReview?: string | null;
   creatorUsername?: string; creatorName?: string; creatorVerified?: boolean; creatorAvatar?: string; following?: boolean;
 };
@@ -164,11 +172,12 @@ const isSafeMapsUrl = (value?: string | null) => {
 const blankEdit = (): EditForm => ({ category: 'Fashion', title: '', titleAr: '', caption: '', captionAr: '', location: '', locationAr: '', altText: '', access: 'public', collectionIds: [], placeName: null, locationLabel: null, mapsUrl: null, tasteRating: null, creatorReview: null });
 const publishValidationMessage = (edit: EditForm | CreatorEdit, ar: boolean) => {
   if (edit.mapsUrl?.trim() && !isSafeMapsUrl(edit.mapsUrl)) return ar ? 'استخدم رابطًا صالحًا من خرائط Google أو Apple.' : 'Use a valid Google Maps or Apple Maps link.';
-  if (!edit.image && edit.access === 'locked') return ar ? 'توصيات الأماكن بلا صورة يجب أن تكون عامة لأن التعديلات الخاصة تحتاج معاينة محمية.' : 'No-photo place recommendations must be public because subscriber-only edits need protected preview media.';
-  if (edit.image) return '';
-  if (!isPlaceCategory(edit.category)) return ar ? 'أضف صورة، أو اختر المطاعم أو الأماكن أو السفر لتوصية بلا صورة.' : 'Add a photo, or choose Restaurants, Places, or Travel for a no-photo recommendation.';
-  if (!edit.placeName?.trim()) return ar ? 'أضف اسم المكان لنشر توصية بلا صورة.' : 'Add the place name to publish a no-photo recommendation.';
-  if (!edit.locationLabel?.trim()) return ar ? 'أضف موقعًا مقروءًا لنشر توصية بلا صورة.' : 'Add a readable location to publish a no-photo recommendation.';
+  const hasMedia = Boolean(edit.image) || Boolean(edit.video);
+  if (!hasMedia && edit.access === 'locked') return ar ? 'التوصيات بلا صورة أو فيديو يجب أن تكون عامة لأن التعديلات الخاصة تحتاج معاينة محمية.' : 'Place recommendations with no photo or video must be public because subscriber-only edits need protected preview media.';
+  if (hasMedia) return '';
+  if (!isPlaceCategory(edit.category)) return ar ? 'أضف صورة أو فيديو، أو اختر المطاعم أو الأماكن أو السفر لتوصية بلا صورة.' : 'Add a photo or video, or choose Restaurants, Places, or Travel for a no-media recommendation.';
+  if (!edit.placeName?.trim()) return ar ? 'أضف اسم المكان لنشر توصية بلا صورة.' : 'Add the place name to publish a no-media recommendation.';
+  if (!edit.locationLabel?.trim()) return ar ? 'أضف موقعًا مقروءًا لنشر توصية بلا صورة.' : 'Add a readable location to publish a no-media recommendation.';
   if (!edit.tasteRating && !edit.creatorReview?.trim()) return ar ? 'أضف تقييم الذوق أو مراجعتك الشخصية للنشر.' : 'Add a Taste Rating or your personal review to publish.';
   return '';
 };
@@ -833,7 +842,7 @@ function TastekinApp() {
       setProfileSaveState('error'); setProfileError(error instanceof Error ? error.message : 'Could not save your profile.');
     }
   };
-  const openComposer = (item?: CreatorEdit) => { discardPendingCrop(); setEditingId(item?.id || null); setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, previewImage: item.previewImage, imageMetadata: item.imageMetadata, crop: item.crop, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit()); go('composer'); };
+  const openComposer = (item?: CreatorEdit) => { discardPendingCrop(); setEditingId(item?.id || null); setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, previewImage: item.previewImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit()); go('composer'); };
   const commitEdit = async (status: EditStatus) => {
     let formToSave = editForm;
     const uploadedPaths: string[] = [];
@@ -1010,7 +1019,7 @@ function TastekinApp() {
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
-    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
+    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} onBack={() => go('composer')} onPublish={() => { void commitEdit('published').then((saved) => { if (saved) finishSavedCreatorFlow(); }); }} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
@@ -4521,13 +4530,233 @@ function ProfileEditor({ ar, form, photo, busy, error, saved, onChange, onPhotoP
   return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || form.avatar} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div><div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{error}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
 }
 
-function EditComposer({ ar, form, collections, busy, onChange, onCropPrepared, onBack, onDraft, onDraftComplete, onPreview, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onBack: () => void; onDraft: () => Promise<boolean>; onDraftComplete: () => void; onPreview: () => void; onPublish: () => void }) {
+// --- Video Foundation, Phase 3A: the composer's upload state machine -------
+//
+// Video bytes go straight from the browser to Bunny over TUS (video-upload.ts)
+// — this hook only ever talks to this app's own /api/video-uploads/* routes
+// for lifecycle bookkeeping (request-upload/status/cancel), never to Bunny
+// directly except via uploadVideoViaTus.
+type VideoUploadPhase = 'idle' | 'preparing' | 'uploading' | 'processing' | 'ready' | 'failed' | 'unresolved' | 'cancelling';
+type VideoUploadValue = {
+  phase: VideoUploadPhase;
+  fileName: string | null;
+  progressPercent: number;
+  errorMessage: string;
+  posterUrl: string | null;
+  durationSeconds: number | null;
+  width: number | null;
+  height: number | null;
+  video: CreatorEditVideo | null;
+  // True once this video is part of a saved Edit (a successful Publish/Save
+  // draft, or hydrated from one already saved) — the composer's own
+  // back-navigation cleanup must only ever cancel a NEW, not-yet-saved
+  // attempt, never an already-published video someone is just viewing.
+  committed: boolean;
+};
+const VIDEO_UPLOAD_IDLE: VideoUploadValue = { phase: 'idle', fileName: null, progressPercent: 0, errorMessage: '', posterUrl: null, durationSeconds: null, width: null, height: null, video: null, committed: false };
+const VIDEO_STATUS_POLL_MS = 4000;
+const VIDEO_STATUS_POLL_RETRY_MS = 6000;
+const VIDEO_CREATING_POLL_MAX_ATTEMPTS = 20;
+
+function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void) {
+  const [state, setState] = useState<VideoUploadValue>(VIDEO_UPLOAD_IDLE);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const abortRef = useRef<AbortController | null>(null);
+  const timerRef = useRef<number | null>(null);
+  const committedRef = useRef(false);
+  // Always points at this render's onAttach closure (captures the current
+  // form/onChange) — called once the upload's identity (uploadId/bunnyVideoId/
+  // bunnyLibraryId) is known, which is at creation, not at readiness. This is
+  // what lets an in-progress video already satisfy "this Edit has media" and
+  // lets tryPublish's separate readiness check produce a specific "still
+  // processing" message instead of a generic "add a photo or video" one.
+  const onAttachRef = useRef(onAttach);
+  onAttachRef.current = onAttach;
+
+  const clearTimer = () => { if (timerRef.current !== null) { window.clearTimeout(timerRef.current); timerRef.current = null; } };
+  const stopEverything = () => { abortRef.current?.abort(); abortRef.current = null; clearTimer(); };
+
+  const cancelUploadId = (uploadId: string) => {
+    void fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}/cancel`, { method: 'POST', credentials: 'include' }).catch(() => undefined);
+  };
+
+  const reset = useCallback(() => {
+    stopEverything();
+    committedRef.current = false;
+    setState(VIDEO_UPLOAD_IDLE);
+  }, []);
+
+  // Explicit user action (Remove/Cancel button) — actually awaits the
+  // server-side cancel so the UI can show "cancelling…" briefly, unlike the
+  // fire-and-forget cancelUploadId used for a silent replace/pagehide.
+  const cancel = useCallback(async () => {
+    const uploadId = stateRef.current.video?.uploadId;
+    stopEverything();
+    if (!uploadId) { reset(); return; }
+    setState((prev) => ({ ...prev, phase: 'cancelling' }));
+    try { await fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}/cancel`, { method: 'POST', credentials: 'include' }); } catch { /* best-effort — Phase 2B's own recovery sweep is the durable backstop */ }
+    reset();
+  }, [reset]);
+
+  const poll = useCallback((uploadId: string) => {
+    clearTimer();
+    const tick = async () => {
+      try {
+        const response = await fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}`, { credentials: 'include', cache: 'no-store' });
+        if (!response.ok) { timerRef.current = window.setTimeout(tick, VIDEO_STATUS_POLL_RETRY_MS); return; }
+        const status = await response.json() as { state: string; posterUrl: string | null; durationSeconds: number | null; width: number | null; height: number | null; errorReason: string | null };
+        if (status.state === 'ready') {
+          setState((prev) => ({ ...prev, phase: 'ready', posterUrl: status.posterUrl, durationSeconds: status.durationSeconds, width: status.width, height: status.height, errorMessage: '' }));
+          return;
+        }
+        if (status.state === 'failed') {
+          setState((prev) => ({ ...prev, phase: 'failed', errorMessage: ar ? 'تعذرت معالجة هذا الفيديو.' : 'This video could not be processed.' }));
+          return;
+        }
+        if (status.state === 'create_ambiguous' || status.state === 'orphan_cleanup_pending' || status.state === 'delete_failed' || status.state === 'deletion_pending' || status.state === 'deleted') {
+          setState((prev) => ({ ...prev, phase: 'unresolved', errorMessage: ar ? 'تعذر تأكيد حالة هذا الفيديو. جرّب رفعه مجدداً.' : "This video's status could not be confirmed. Try uploading it again." }));
+          return;
+        }
+        setState((prev) => (prev.phase === 'uploading' ? prev : { ...prev, phase: 'processing' }));
+        timerRef.current = window.setTimeout(tick, VIDEO_STATUS_POLL_MS);
+      } catch {
+        timerRef.current = window.setTimeout(tick, VIDEO_STATUS_POLL_RETRY_MS);
+      }
+    };
+    void tick();
+  }, [ar]);
+
+  const startTus = useCallback((file: File, uploadId: string, auth: TusUploadAuthorization) => {
+    const controller = new AbortController();
+    abortRef.current = controller;
+    setState((prev) => ({ ...prev, phase: 'uploading', progressPercent: 0 }));
+    uploadVideoViaTus(file, auth, {
+      signal: controller.signal,
+      onProgress: ({ bytesUploaded, bytesTotal }) => {
+        setState((prev) => (prev.phase === 'uploading' ? { ...prev, progressPercent: bytesTotal > 0 ? Math.min(100, Math.round((bytesUploaded / bytesTotal) * 100)) : 0 } : prev));
+      },
+    }).then(() => {
+      abortRef.current = null;
+      setState((prev) => ({ ...prev, phase: 'processing', progressPercent: 100 }));
+      poll(uploadId);
+    }).catch((error) => {
+      abortRef.current = null;
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      setState((prev) => ({ ...prev, phase: 'failed', errorMessage: ar ? 'انقطع رفع الفيديو. أعد المحاولة.' : 'The video upload was interrupted. Try again.' }));
+    });
+  }, [ar, poll]);
+
+  // Calls request-upload with the SAME stable Idempotency-Key for this whole
+  // attempt — never mints a new one just because the server answered 202
+  // ("creating"); it just waits and asks again, per the API's own contract.
+  const requestUpload = useCallback(async (file: File, key: string, attempt = 0): Promise<void> => {
+    if (attempt > VIDEO_CREATING_POLL_MAX_ATTEMPTS) { setState((prev) => ({ ...prev, phase: 'failed', errorMessage: ar ? 'استغرق تجهيز الفيديو وقتاً طويلاً. أعد المحاولة.' : 'Preparing this video took too long. Try again.' })); return; }
+    let response: Response;
+    try {
+      response = await fetch('/api/video-uploads/request-upload', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': key },
+        body: JSON.stringify({ fileName: file.name, sizeBytes: file.size, mimeType: file.type }),
+      });
+    } catch {
+      setState((prev) => ({ ...prev, phase: 'failed', errorMessage: ar ? 'تعذر الاتصال بالخادم لبدء رفع الفيديو.' : 'Could not reach the server to start this video upload.' }));
+      return;
+    }
+    if (response.status === 202) {
+      const body = await response.json().catch(() => null) as { retryAfter?: number } | null;
+      const delayMs = Math.max(1000, (body?.retryAfter ?? 2) * 1000);
+      timerRef.current = window.setTimeout(() => { void requestUpload(file, key, attempt + 1); }, delayMs);
+      return;
+    }
+    if (response.status === 201) {
+      const body = await response.json() as { id: string; tus?: TusUploadAuthorization };
+      if (!body.tus) { setState((prev) => ({ ...prev, phase: 'failed', errorMessage: ar ? 'تعذر تجهيز رفع الفيديو.' : 'Could not prepare this video upload.' })); return; }
+      const video: CreatorEditVideo = { uploadId: body.id, bunnyVideoId: body.tus.videoId, bunnyLibraryId: body.tus.libraryId };
+      setState((prev) => ({ ...prev, video }));
+      onAttachRef.current(video);
+      startTus(file, body.id, body.tus);
+      return;
+    }
+    if (response.status === 502 || response.status === 504) {
+      const body = await response.json().catch(() => null) as { outcome?: string } | null;
+      if (body?.outcome === 'unresolved') {
+        setState((prev) => ({ ...prev, phase: 'unresolved', errorMessage: ar ? 'تعذر تأكيد إنشاء الفيديو. اختر الملف مجدداً للمحاولة.' : 'Could not confirm this video was created. Choose the file again to retry.' }));
+        return;
+      }
+    }
+    const errorBody = await response.json().catch(() => null) as { error?: string } | null;
+    setState((prev) => ({ ...prev, phase: 'failed', errorMessage: errorBody?.error || (ar ? 'تعذر بدء رفع الفيديو.' : 'Could not start this video upload.') }));
+  }, [ar, startTus]);
+
+  const select = useCallback(async (file: File) => {
+    stopEverything();
+    const previousUploadId = stateRef.current.video?.uploadId;
+    if (previousUploadId && !committedRef.current) cancelUploadId(previousUploadId);
+    committedRef.current = false;
+    const basicIssue = validateVideoFileBasics(file);
+    if (basicIssue === 'invalid-type') { setState({ ...VIDEO_UPLOAD_IDLE, phase: 'failed', fileName: file.name, errorMessage: ar ? 'اختر ملف فيديو بصيغة MP4 أو MOV.' : 'Choose an MP4 or MOV video file.' }); return; }
+    if (basicIssue === 'too-large') { setState({ ...VIDEO_UPLOAD_IDLE, phase: 'failed', fileName: file.name, errorMessage: ar ? 'الحجم الأقصى للفيديو 500 ميغابايت.' : 'The maximum video size is 500 MB.' }); return; }
+    setState({ ...VIDEO_UPLOAD_IDLE, phase: 'preparing', fileName: file.name });
+    let duration: number;
+    try { duration = await readVideoDuration(file); } catch {
+      setState({ ...VIDEO_UPLOAD_IDLE, phase: 'failed', fileName: file.name, errorMessage: ar ? 'تعذرت قراءة هذا الملف كفيديو.' : 'Could not read this file as a video.' });
+      return;
+    }
+    if (duration > VIDEO_MAX_DURATION_SECONDS) {
+      setState({ ...VIDEO_UPLOAD_IDLE, phase: 'failed', fileName: file.name, errorMessage: ar ? 'المدة القصوى للفيديو 10 دقائق.' : 'The maximum video length is 10 minutes.' });
+      return;
+    }
+    setState((prev) => ({ ...prev, durationSeconds: duration }));
+    const key = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    void requestUpload(file, key);
+  }, [ar, requestUpload]);
+
+  // Re-hydrates live status for a video already attached to the Edit being
+  // opened (editing an existing draft/published video Edit) — never
+  // re-uploads, just re-polls the row this app already knows about.
+  const hydrate = useCallback((video: CreatorEditVideo) => {
+    setState({ ...VIDEO_UPLOAD_IDLE, phase: 'processing', video, committed: true });
+    committedRef.current = true;
+    poll(video.uploadId);
+  }, [poll]);
+
+  const markCommitted = useCallback(() => { committedRef.current = true; setState((prev) => ({ ...prev, committed: true })); }, []);
+
+  useEffect(() => () => stopEverything(), []);
+
+  // Best-effort cleanup for a video that finished (or is mid-flight)
+  // uploading but was never attached to a saved Edit — mirrors the existing
+  // pendingMediaPaths pagehide cleanup used for photo uploads. Never blocks
+  // navigation; a beacon that doesn't land just leaves the row for Phase
+  // 2B's own bounded recovery sweep to eventually resolve.
+  useEffect(() => {
+    const onPageHide = () => {
+      if (committedRef.current) return;
+      const uploadId = stateRef.current.video?.uploadId;
+      if (!uploadId) return;
+      navigator.sendBeacon?.(`/api/video-uploads/${encodeURIComponent(uploadId)}/cancel`, new Blob([], { type: 'application/json' }));
+    };
+    window.addEventListener('pagehide', onPageHide);
+    return () => window.removeEventListener('pagehide', onPageHide);
+  }, []);
+
+  return { state, select, cancel, reset, hydrate, markCommitted };
+}
+
+function EditComposer({ ar, form, collections, busy, videoUploadEnabled, onChange, onCropPrepared, onBack, onDraft, onDraftComplete, onPreview, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onBack: () => void; onDraft: () => Promise<boolean>; onDraftComplete: () => void; onPreview: () => void; onPublish: () => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [imageError, setImageError] = useState('');
   const [publishError, setPublishError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [pendingImage, setPendingImage] = useState<PreparedImage | null>(null);
   const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [mediaTab, setMediaTab] = useState<'photo' | 'video'>(form.video ? 'video' : 'photo');
+  const videoUpload = useVideoUpload(ar, (video) => onChange({ ...form, video }));
+  useEffect(() => {
+    if (form.video) videoUpload.hydrate(form.video);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const update = <K extends keyof EditForm>(key: K, value: EditForm[K]) => onChange({ ...form, [key]: value });
   const placeCategory = isPlaceCategory(form.category);
   const selectImage = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -4541,12 +4770,39 @@ function EditComposer({ ar, form, collections, busy, onChange, onCropPrepared, o
     try {
       const renditions = await createCropRenditions(pendingImage, crop);
       const cropUrl = URL.createObjectURL(renditions.crop); const previewUrl = URL.createObjectURL(renditions.preview);
-      onChange({ ...form, image: cropUrl, crop });
+      if (form.video) void videoUpload.cancel();
+      onChange({ ...form, image: cropUrl, crop, video: undefined });
       onCropPrepared({ source: pendingImage.file, crop: renditions.crop, preview: renditions.preview, cropMetadata: crop, cropUrl, previewUrl });
       URL.revokeObjectURL(pendingImage.url); setPendingImage(null);
     } catch (error) { setImageError(error instanceof Error ? error.message : t('Could not apply your crop.', 'تعذر تطبيق الاقتصاص.')); } finally { setProcessing(false); }
   };
-  const tryPublish = () => { const error = publishValidationMessage(form, ar); if (error) { setPublishError(error); return; } setPublishError(''); onPublish(); };
+  const selectVideo = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]; event.target.value = '';
+    if (!file) return;
+    if (form.image || form.crop) onChange({ ...form, image: undefined, crop: undefined });
+    void videoUpload.select(file);
+  };
+  const removeVideo = () => { void videoUpload.cancel(); onChange({ ...form, video: undefined }); };
+  const videoStatusLabel = (() => {
+    switch (videoUpload.state.phase) {
+      case 'preparing': return t('Preparing…', 'جارٍ التجهيز…');
+      case 'uploading': return t(`Uploading… ${videoUpload.state.progressPercent}%`, `جارٍ الرفع… ${videoUpload.state.progressPercent}%`);
+      case 'processing': return t('Processing…', 'جارٍ المعالجة…');
+      case 'ready': return t('Ready', 'جاهز');
+      case 'failed': return videoUpload.state.errorMessage || t('This video failed.', 'فشل هذا الفيديو.');
+      case 'unresolved': return videoUpload.state.errorMessage || t('Could not confirm this video.', 'تعذر تأكيد هذا الفيديو.');
+      case 'cancelling': return t('Cancelling…', 'جارٍ الإلغاء…');
+      default: return '';
+    }
+  })();
+  const videoBlockingMessage = () => {
+    if (mediaTab !== 'video' || !form.video) return '';
+    if (videoUpload.state.phase === 'ready') return '';
+    if (videoUpload.state.phase === 'failed' || videoUpload.state.phase === 'unresolved') return videoUpload.state.errorMessage || t('Replace this video before publishing.', 'استبدل هذا الفيديو قبل النشر.');
+    return t('Wait for the video to finish processing before publishing.', 'انتظر انتهاء معالجة الفيديو قبل النشر.');
+  };
+  const tryPublish = () => { const error = publishValidationMessage(form, ar) || videoBlockingMessage(); if (error) { setPublishError(error); return; } setPublishError(''); videoUpload.markCommitted(); onPublish(); };
+  const handleBack = () => { if (videoUpload.state.video && !videoUpload.state.committed) void videoUpload.cancel(); onBack(); };
   const outfitItems = form.outfitItems || [];
   const updateOutfit = (index: number, key: keyof OutfitItem, value: string) => update('outfitItems', outfitItems.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
   const changeCategory = (value: Exclude<Category, 'All'>) => onChange(isPlaceCategory(value) ? { ...form, category: value } : { ...form, category: value, placeName: null, locationLabel: null, mapsUrl: null, tasteRating: null, creatorReview: null });
@@ -4556,15 +4812,32 @@ function EditComposer({ ar, form, collections, busy, onChange, onCropPrepared, o
     setDraftState('saving');
     const saved = await onDraft();
     if (!saved) { setDraftState('idle'); return; }
+    videoUpload.markCommitted();
     setDraftState('saved');
     window.setTimeout(onDraftComplete, 650);
   };
   if (pendingImage) return <CropEditor ar={ar} source={pendingImage} initialCrop={form.crop} error={imageError} busy={processing} onCancel={() => { URL.revokeObjectURL(pendingImage.url); setPendingImage(null); }} onConfirm={confirmCrop} />;
   return <section className="creator-composer">
     <span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span>
-    <div className="composer-title"><h1 className="approved-title">{t('Create an Edit', 'أنشئ تعديلاً')}</h1><button className="approved-icon" onClick={onBack} aria-label={t('Close editor', 'إغلاق المحرر')} disabled={busy}><X size={20} /></button></div>
-    {form.image ? <label className="image-uploader" style={{ aspectRatio: cropAspectRatio(form.crop?.aspect, form.crop) }}><img src={imageSrc(form.image)} alt={form.altText || ''} /><span><ImagePlus size={18} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Edit crop', 'تعديل الاقتصاص')}</span><input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectImage} disabled={processing || busy} /></label> : <label className="no-photo-uploader"><ImagePlus size={22} /><span><strong>{processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Add a photo', 'أضف صورة')}</strong><small>{placeCategory ? t('Optional for this place recommendation', 'اختيارية لتوصية المكان هذه') : t('Required to publish this Edit', 'مطلوبة لنشر هذا التعديل')}</small></span><input aria-label={t('Add photo', 'أضف صورة')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectImage} disabled={processing || busy} /></label>}
-    {imageError && <p className="workspace-notice" role="alert">{imageError}</p>}
+    <div className="composer-title"><h1 className="approved-title">{t('Create an Edit', 'أنشئ تعديلاً')}</h1><button className="approved-icon" onClick={handleBack} aria-label={t('Close editor', 'إغلاق المحرر')} disabled={busy}><X size={20} /></button></div>
+    {videoUploadEnabled && <div className="media-tab-toggle" role="tablist" aria-label={t('Media type', 'نوع الوسائط')}>
+      <button type="button" role="tab" aria-selected={mediaTab === 'photo'} className={mediaTab === 'photo' ? 'selected' : ''} onClick={() => setMediaTab('photo')} disabled={busy}><ImagePlus size={15} /> {t('Photo', 'صورة')}</button>
+      <button type="button" role="tab" aria-selected={mediaTab === 'video'} className={mediaTab === 'video' ? 'selected' : ''} onClick={() => setMediaTab('video')} disabled={busy}><VideoIcon size={15} /> {t('Video', 'فيديو')}</button>
+    </div>}
+    {(!videoUploadEnabled || mediaTab === 'photo') && <>
+      {form.image ? <label className="image-uploader" style={{ aspectRatio: cropAspectRatio(form.crop?.aspect, form.crop) }}><img src={imageSrc(form.image)} alt={form.altText || ''} /><span><ImagePlus size={18} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Edit crop', 'تعديل الاقتصاص')}</span><input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectImage} disabled={processing || busy} /></label> : <label className="no-photo-uploader"><ImagePlus size={22} /><span><strong>{processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Add a photo', 'أضف صورة')}</strong><small>{placeCategory ? t('Optional for this place recommendation', 'اختيارية لتوصية المكان هذه') : t('Required to publish this Edit', 'مطلوبة لنشر هذا التعديل')}</small></span><input aria-label={t('Add photo', 'أضف صورة')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectImage} disabled={processing || busy} /></label>}
+      {imageError && <p className="workspace-notice" role="alert">{imageError}</p>}
+    </>}
+    {videoUploadEnabled && mediaTab === 'video' && <>
+      {videoUpload.state.phase === 'idle' ? <label className="no-photo-uploader video-uploader-picker"><VideoIcon size={22} /><span><strong>{t('Add a video', 'أضف فيديو')}</strong><small>{t('MP4 or MOV, up to 10 minutes and 500MB. 9:16 (1080×1920) recommended — other ratios are accepted.', 'MP4 أو MOV، حتى 10 دقائق و500 ميغابايت. يُفضّل 9:16 (1080×1920) — النسب الأخرى مقبولة أيضاً.')}</small></span><input aria-label={t('Add video', 'أضف فيديو')} type="file" accept="video/mp4,video/quicktime" onChange={selectVideo} disabled={busy} /></label> : <div className="image-uploader video-uploader-status" style={{ aspectRatio: '9 / 16' }}>
+        {videoUpload.state.posterUrl ? <img src={imageSrc(videoUpload.state.posterUrl)} alt="" /> : <div className="video-uploader-placeholder"><VideoIcon size={28} /></div>}
+        <span className={`video-status-badge video-status-${videoUpload.state.phase}`}>{videoUpload.state.phase === 'uploading' && <span className="video-progress-bar"><span style={{ width: `${videoUpload.state.progressPercent}%` }} /></span>}{videoStatusLabel}</span>
+      </div>}
+      {videoUpload.state.phase !== 'idle' && <div className="video-uploader-actions">
+        <label className="approved-button video-replace-label">{t('Replace video', 'استبدال الفيديو')}<input aria-label={t('Replace video', 'استبدال الفيديو')} type="file" accept="video/mp4,video/quicktime" onChange={selectVideo} disabled={busy || videoUpload.state.phase === 'cancelling'} /></label>
+        <button type="button" className="approved-button" onClick={removeVideo} disabled={busy || videoUpload.state.phase === 'cancelling'}>{t('Remove video', 'إزالة الفيديو')}</button>
+      </div>}
+    </>}
     <Field label={t('Caption (optional)', 'الوصف (اختياري)')} value={form.caption} onChange={(value) => onChange({ ...form, caption: value, captionAr: value })} multiline placeholder={t('Share a thought, in any language…', 'شارك فكرة بأي لغة…')} />
     <span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')} disabled={busy}><Eye size={16} />{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')} disabled={busy}><LockKeyhole size={16} />{t('Subscribers Only', 'للمشتركين فقط')}</button></div>
     <details className="composer-details" open={placeCategory}><summary>{t('Add details', 'أضف تفاصيل')}</summary><div className="details-body">

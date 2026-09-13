@@ -1061,6 +1061,13 @@ components:
         brand: { type: string, maxLength: 160 }
         name: { type: string, maxLength: 240 }
         link: { type: string, maxLength: 1024 }
+    CreatorEditVideo:
+      type: object
+      required: [uploadId, bunnyVideoId, bunnyLibraryId]
+      properties:
+        uploadId: { type: string, minLength: 1, maxLength: 120 }
+        bunnyVideoId: { type: string, minLength: 1, maxLength: 200 }
+        bunnyLibraryId: { type: string, minLength: 1, maxLength: 200 }
     CreatorEdit:
       type: object
       required: [id, category, title, titleAr, caption, captionAr, location, locationAr, altText, access, status, collectionIds]
@@ -1076,6 +1083,7 @@ components:
         previewImage: { type: string, maxLength: 1024 }
         imageMetadata: { $ref: "#/components/schemas/CreatorImageMetadata" }
         crop: { $ref: "#/components/schemas/CreatorCrop" }
+        video: { $ref: "#/components/schemas/CreatorEditVideo" }
         outfitItems:
           type: array
           maxItems: 20

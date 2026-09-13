@@ -26,6 +26,7 @@
     "verify:video-upload-webhook-recovery": "tsx ./src/verify-video-upload-webhook-recovery.ts",
     "verify:migrations": "tsx ./src/verify-migrations.ts",
     "verify:video-upload-migration-replay": "tsx ./src/verify-video-upload-migration-replay.ts",
+    "verify:creator-workspace-video": "tsx ./src/verify-creator-workspace-video.ts",
     "reconcile:closet-media": "tsx ./src/reconcile-closet-media.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

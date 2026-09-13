@@ -28,6 +28,7 @@ export * from './creatorEdit';
 export * from './creatorEditAccess';
 export * from './creatorEditCategory';
 export * from './creatorEditStatus';
+export * from './creatorEditVideo';
 export * from './creatorImageMetadata';
 export * from './creatorInsightItem';
 export * from './creatorInsights';

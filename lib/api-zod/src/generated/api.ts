@@ -704,6 +704,12 @@ export const getCreatorWorkspaceResponseOneEditsItemCropOneSourceWidthMax = 1000
 
 export const getCreatorWorkspaceResponseOneEditsItemCropOneSourceHeightMax = 10000;
 
+export const getCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax = 120;
+
+export const getCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax = 200;
+
+export const getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax = 200;
+
 export const getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax = 100;
 
 export const getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemBrandMax = 160;
@@ -796,6 +802,11 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "outputWidth": zod.literal(1080).optional(),
   "outputHeight": zod.literal(1920).optional()
 })])).optional(),
+  "video": zod.object({
+  "uploadId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax),
+  "bunnyVideoId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax),
+  "bunnyLibraryId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax)
+}).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax),
   "brand": zod.string().max(getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemBrandMax),
@@ -882,6 +893,12 @@ export const saveCreatorWorkspaceBodyEditsItemCropOneRotationMax = 360;
 export const saveCreatorWorkspaceBodyEditsItemCropOneSourceWidthMax = 10000;
 
 export const saveCreatorWorkspaceBodyEditsItemCropOneSourceHeightMax = 10000;
+
+export const saveCreatorWorkspaceBodyEditsItemVideoUploadIdMax = 120;
+
+export const saveCreatorWorkspaceBodyEditsItemVideoBunnyVideoIdMax = 200;
+
+export const saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax = 200;
 
 export const saveCreatorWorkspaceBodyEditsItemOutfitItemsItemTypeMax = 100;
 
@@ -975,6 +992,11 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "outputWidth": zod.literal(1080).optional(),
   "outputHeight": zod.literal(1920).optional()
 })])).optional(),
+  "video": zod.object({
+  "uploadId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoUploadIdMax),
+  "bunnyVideoId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyVideoIdMax),
+  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax)
+}).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(saveCreatorWorkspaceBodyEditsItemOutfitItemsItemTypeMax),
   "brand": zod.string().max(saveCreatorWorkspaceBodyEditsItemOutfitItemsItemBrandMax),
@@ -1053,6 +1075,12 @@ export const saveCreatorWorkspaceResponseOneEditsItemCropOneRotationMax = 360;
 export const saveCreatorWorkspaceResponseOneEditsItemCropOneSourceWidthMax = 10000;
 
 export const saveCreatorWorkspaceResponseOneEditsItemCropOneSourceHeightMax = 10000;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax = 120;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax = 200;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax = 200;
 
 export const saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax = 100;
 
@@ -1146,6 +1174,11 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "outputWidth": zod.literal(1080).optional(),
   "outputHeight": zod.literal(1920).optional()
 })])).optional(),
+  "video": zod.object({
+  "uploadId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax),
+  "bunnyVideoId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax),
+  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax)
+}).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax),
   "brand": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemBrandMax),

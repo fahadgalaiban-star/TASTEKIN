@@ -286,6 +286,23 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .no-photo-uploader strong { font-size:13px; }
 .no-photo-uploader small { color:var(--tk-stone); font-size:11px; line-height:1.35; }
 .no-photo-uploader input { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; }
+.media-tab-toggle { display:flex; gap:6px; margin:12px 0 0; }
+.media-tab-toggle button { flex:1; min-height:38px; display:inline-flex; align-items:center; justify-content:center; gap:6px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-surface); color:var(--tk-stone); font-size:12px; font-weight:800; }
+.media-tab-toggle button.selected { border-color:var(--tk-wine); background:var(--tk-surface-muted); color:var(--tk-wine); }
+.media-tab-toggle button:disabled { opacity:.6; }
+.video-uploader-picker small { max-width:100%; }
+.video-uploader-status { display:block; max-width:220px; margin-inline:auto; background:#171416; cursor:default; }
+.video-uploader-status img { object-fit:contain; background:#171416; }
+.video-uploader-placeholder { display:grid; width:100%; height:100%; min-height:220px; place-items:center; color:var(--tk-text-inverse); opacity:.6; }
+.video-status-badge { position:absolute; inset-inline-start:10px; bottom:10px; display:inline-flex; align-items:center; gap:8px; max-width:calc(100% - 20px); padding:8px 10px; border-radius:999px; background:var(--tk-surface); color:var(--tk-wine); font-size:11px; font-weight:800; }
+.video-status-badge.video-status-failed, .video-status-badge.video-status-unresolved { background:var(--tk-warning-bg); color:var(--tk-warning-text); }
+.video-status-badge.video-status-ready { background:var(--tk-success-bg); color:var(--tk-success-text); }
+.video-progress-bar { position:relative; width:44px; height:4px; overflow:hidden; border-radius:999px; background:var(--tk-surface-muted); }
+.video-progress-bar span { position:absolute; inset-block:0; inset-inline-start:0; display:block; height:100%; border-radius:inherit; background:var(--tk-wine); }
+.video-uploader-actions { display:flex; gap:8px; margin:7px 0; }
+.video-uploader-actions .approved-button { flex:1; }
+.video-replace-label { position:relative; overflow:hidden; }
+.video-replace-label input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
 .upload-note { display:flex; align-items:flex-start; gap:6px; margin:0 0 16px; color:var(--tk-stone); font-size:10px; line-height:1.45; }
 .crop-editor { padding-bottom:16px; }
 .crop-editor .approved-kicker { margin-top:2px; }

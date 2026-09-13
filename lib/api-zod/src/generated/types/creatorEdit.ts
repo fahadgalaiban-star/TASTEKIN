@@ -9,6 +9,7 @@ import type { CreatorCrop } from './creatorCrop';
 import type { CreatorEditAccess } from './creatorEditAccess';
 import type { CreatorEditCategory } from './creatorEditCategory';
 import type { CreatorEditStatus } from './creatorEditStatus';
+import type { CreatorEditVideo } from './creatorEditVideo';
 import type { CreatorImageMetadata } from './creatorImageMetadata';
 import type { CreatorOutfitItem } from './creatorOutfitItem';
 
@@ -38,6 +39,7 @@ export interface CreatorEdit {
   previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
   crop?: CreatorCrop;
+  video?: CreatorEditVideo;
   /** @maxItems 20 */
   outfitItems?: CreatorOutfitItem[];
   showOutfitDetails?: boolean;
