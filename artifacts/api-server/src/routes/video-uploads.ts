@@ -1,6 +1,14 @@
 import { Router, type IRouter, type NextFunction, type Request, type Response } from "express";
 
-import { createBunnyVideo, deleteBunnyVideo, isBunnyStreamConfigured } from "../lib/bunny-stream";
+import {
+  BUNNY_WEBHOOK_SIGNATURE_ALGORITHM_HEADER,
+  BUNNY_WEBHOOK_SIGNATURE_HEADER,
+  BUNNY_WEBHOOK_SIGNATURE_VERSION_HEADER,
+  createBunnyVideo,
+  deleteBunnyVideo,
+  isBunnyStreamConfigured,
+  verifyBunnyWebhookSignature,
+} from "../lib/bunny-stream";
 import { requireCreator } from "../lib/creator-account";
 import { isFeatureEnabled } from "../lib/feature-flags";
 import {
@@ -20,6 +28,7 @@ import {
   validateDeclaredMetadata,
   VIDEO_UPLOAD_IN_PROGRESS_RETRY_AFTER_SECONDS,
 } from "../lib/video-upload-lifecycle";
+import { reconcileFromWebhook } from "../lib/video-upload-recovery";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -217,6 +226,83 @@ router.post("/video-uploads/:id/cancel", requireUserMw, videoUploadFlagMw, async
   req.log.warn({ reason: deleted.reason, uploadId: claimed.id, userId: user.id }, "Bunny video deletion failed");
   const finalRow = await finalizeCancelFailed(claimed.id, user.id, deleted.reason);
   res.status(202).json({ id: finalRow.id, state: finalRow.state, physicalDeletion: "pending" });
+});
+
+/**
+ * Bunny Stream webhook delivery. Deliberately mounted with no
+ * requireUserMw/videoUploadFlagMw ahead of signature verification — Bunny
+ * never has a session cookie for this app, and gating on the feature flag
+ * before authenticating the request would let an unauthenticated caller
+ * probe whether video_upload is enabled. Order matters:
+ *
+ *   1. Verify the signature over the exact raw body (see app.ts's
+ *      express.json({ verify }) callback, which is the only thing that
+ *      populates req.rawBody, scoped to exactly this path).
+ *   2. Only once authenticated, check the feature flag — if disabled,
+ *      acknowledge without processing (a 4xx/5xx here would make Bunny
+ *      retry-storm an endpoint we've deliberately turned off).
+ *   3. Parse VideoLibraryId/VideoGuid defensively and hand off to
+ *      reconcileFromWebhook, which re-fetches ground truth from Bunny's Get
+ *      Video endpoint rather than ever trusting this payload's own Status
+ *      field for a lifecycle decision (see bunny-stream.ts).
+ *
+ * Acknowledges 200 only after reconciliation completes — reconcileFromWebhook
+ * itself is a single fenced UPDATE (or a no-op), so there is no partial-work
+ * state that would need separate durable bookkeeping before ack.
+ */
+router.post("/video-uploads/webhook", async (req, res) => {
+  const rawBody = req.rawBody;
+  if (!rawBody) {
+    // Only possible if this route is ever reached by a path app.ts's verify
+    // callback didn't recognize (e.g. the route path drifts from
+    // BUNNY_WEBHOOK_PATH) — never fall back to re-serializing req.body,
+    // since that is not guaranteed byte-identical to what was signed.
+    res.status(400).json({ error: "Invalid request" });
+    return;
+  }
+
+  const verification = verifyBunnyWebhookSignature({
+    rawBody,
+    signatureHeader: req.get(BUNNY_WEBHOOK_SIGNATURE_HEADER),
+    versionHeader: req.get(BUNNY_WEBHOOK_SIGNATURE_VERSION_HEADER),
+    algorithmHeader: req.get(BUNNY_WEBHOOK_SIGNATURE_ALGORITHM_HEADER),
+  });
+  if (verification.status !== "ok") {
+    req.log.warn({ reason: verification.reason }, "Rejected Bunny webhook: invalid signature");
+    res.status(401).json({ error: "Invalid signature" });
+    return;
+  }
+
+  if (!(await isFeatureEnabled("video_upload"))) {
+    res.status(200).json({ received: true });
+    return;
+  }
+
+  const body = req.body;
+  const libraryId = body && typeof body === "object" && typeof (body as Record<string, unknown>).VideoLibraryId !== "undefined"
+    ? String((body as Record<string, unknown>).VideoLibraryId)
+    : undefined;
+  const videoGuidRaw = body && typeof body === "object" ? (body as Record<string, unknown>).VideoGuid : undefined;
+  const videoId = typeof videoGuidRaw === "string" && videoGuidRaw.length > 0 ? videoGuidRaw : undefined;
+  // Deliberately never reads body.Status here — see the header comment
+  // above and bunny-stream.ts on why a webhook event code and a Get Video
+  // resource status are not assumed interchangeable.
+  if (!libraryId || !videoId) {
+    req.log.warn("Rejected Bunny webhook: missing VideoLibraryId/VideoGuid");
+    res.status(400).json({ error: "Invalid payload" });
+    return;
+  }
+
+  const outcome = await reconcileFromWebhook(libraryId, videoId);
+  if (outcome === "identity_mismatch") {
+    req.log.warn({ videoId }, "Bunny webhook library id did not match the stored upload's library id");
+  } else if (outcome === "not_found") {
+    req.log.info({ videoId }, "Bunny webhook referenced an unknown video id");
+  }
+  // Always 200 once verification + a bounded lookup attempt have completed
+  // — "not_found"/"identity_mismatch" are not delivery failures Bunny
+  // should retry, they are facts about this event that a retry cannot fix.
+  res.status(200).json({ received: true });
 });
 
 export default router;

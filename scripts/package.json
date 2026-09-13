@@ -23,7 +23,9 @@
     "verify:kin-search": "tsx ./src/verify-kin-search.ts",
     "verify:circle": "tsx ./src/verify-circle.ts",
     "verify:video-upload-lifecycle": "tsx ./src/verify-video-upload-lifecycle.ts",
+    "verify:video-upload-webhook-recovery": "tsx ./src/verify-video-upload-webhook-recovery.ts",
     "verify:migrations": "tsx ./src/verify-migrations.ts",
+    "verify:video-upload-migration-replay": "tsx ./src/verify-video-upload-migration-replay.ts",
     "reconcile:closet-media": "tsx ./src/reconcile-closet-media.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

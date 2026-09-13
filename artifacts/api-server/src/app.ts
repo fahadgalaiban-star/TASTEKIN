@@ -10,6 +10,15 @@ import { readinessMiddleware } from "./middlewares/readiness-middleware";
 
 declare const __dirname: string;
 
+declare global {
+  namespace Express {
+    interface Request {
+      /** Set only for the Bunny Stream webhook path — see the express.json() verify callback below. */
+      rawBody?: Buffer;
+    }
+  }
+}
+
 const app: Express = express();
 
 // Replit (and most PaaS) terminate TLS at a single edge proxy in front of this
@@ -78,7 +87,24 @@ app.use(
 
 app.use(cors(corsOptionsDelegate));
 app.use(cookieParser());
-app.use(express.json());
+// The Bunny Stream webhook (routes/video-uploads.ts) must verify its
+// signature over the *exact* raw bytes Bunny sent — not a re-serialized
+// JSON.stringify(req.body), which is not guaranteed byte-identical (key
+// order, whitespace, unicode escaping can all differ). express.json()'s own
+// `verify` callback runs after parsing succeeds but is handed the original
+// buffer, so capturing it here — scoped to exactly this one path — changes
+// nothing about how any other route's body is parsed.
+const BUNNY_WEBHOOK_PATH = "/api/video-uploads/webhook";
+app.use(express.json({
+  // body-parser's own type for `verify` widens req to the bare Node
+  // http.IncomingMessage — narrow it back to express.Request to read
+  // originalUrl and set rawBody, exactly as Express itself does internally.
+  verify: (req: express.Request, _res, buf) => {
+    if (req.originalUrl?.split("?")[0] === BUNNY_WEBHOOK_PATH) {
+      req.rawBody = Buffer.from(buf);
+    }
+  },
+}));
 app.use(express.urlencoded({ extended: true }));
 
 // Gates every /api request on startup readiness before anything below ever
