@@ -119,27 +119,50 @@ export async function uploadVideoViaTus(
   auth: TusUploadAuthorization,
   options: { onProgress?: (progress: TusUploadProgress) => void; signal?: AbortSignal } = {},
 ): Promise<void> {
-  const uploadUrl = await createOrReuseTusUpload(file, auth);
-  let offset = await confirmedOffset(uploadUrl);
-  options.onProgress?.({ bytesUploaded: offset, bytesTotal: file.size });
-  while (offset < file.size) {
-    if (options.signal?.aborted) throw new DOMException('cancelled', 'AbortError');
-    const chunk = file.slice(offset, Math.min(offset + TUS_CHUNK_SIZE, file.size));
-    const response = await fetch(uploadUrl, {
-      method: 'PATCH',
-      headers: {
-        'Tus-Resumable': TUS_RESUMABLE_VERSION,
-        'Upload-Offset': String(offset),
-        'Content-Type': 'application/offset+octet-stream',
-      },
-      body: chunk,
-      signal: options.signal,
-    });
-    if (response.status === 401) throw new TusAuthorizationExpiredError();
-    if (!response.ok) throw new Error(`patch-${response.status}`);
-    const nextOffset = Number(response.headers.get('Upload-Offset'));
-    offset = Number.isFinite(nextOffset) ? nextOffset : offset + chunk.size;
+  try {
+    const uploadUrl = await createOrReuseTusUpload(file, auth);
+    let offset = await confirmedOffset(uploadUrl);
     options.onProgress?.({ bytesUploaded: offset, bytesTotal: file.size });
+    while (offset < file.size) {
+      if (options.signal?.aborted) throw new DOMException('cancelled', 'AbortError');
+      const chunk = file.slice(offset, Math.min(offset + TUS_CHUNK_SIZE, file.size));
+      const response = await fetch(uploadUrl, {
+        method: 'PATCH',
+        headers: {
+          'Tus-Resumable': TUS_RESUMABLE_VERSION,
+          'Upload-Offset': String(offset),
+          'Content-Type': 'application/offset+octet-stream',
+        },
+        body: chunk,
+        signal: options.signal,
+      });
+      if (response.status === 401) throw new TusAuthorizationExpiredError();
+      if (!response.ok) throw new Error(`patch-${response.status}`);
+      const nextOffset = Number(response.headers.get('Upload-Offset'));
+      offset = Number.isFinite(nextOffset) ? nextOffset : offset + chunk.size;
+      options.onProgress?.({ bytesUploaded: offset, bytesTotal: file.size });
+    }
+    resumeUrlCache.delete(auth.videoId);
+  } catch (error) {
+    // Every failure above collapses into one of two user-facing messages
+    // (App.tsx's startTus), which is deliberately vague to a viewer — but
+    // that must never mean the real cause is lost. A CORS block (Bunny's
+    // TUS server rejecting this origin, or a required response header not
+    // exposed cross-origin) surfaces to fetch() as a bare
+    // "TypeError: Failed to fetch" with no status at all, identical to a
+    // genuine dropped connection — this log line is what lets the browser's
+    // own Network tab (which does show the real CORS/HTTP reason) be found
+    // at all. Never logs AuthorizationSignature/AuthorizationExpire — only
+    // the public endpoint, the non-secret Bunny video id, and the
+    // browser's own error name/message.
+    if (!(error instanceof DOMException && error.name === 'AbortError')) {
+      console.error('[video-upload] direct-to-Bunny TUS request failed', {
+        endpoint: auth.endpoint,
+        videoId: auth.videoId,
+        errorName: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
+    }
+    throw error;
   }
-  resumeUrlCache.delete(auth.videoId);
 }

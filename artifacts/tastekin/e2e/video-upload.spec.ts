@@ -654,6 +654,32 @@ test('an interrupted upload is retried from the confirmed offset, reusing the sa
   expect(saved?.video).toMatchObject({ uploadId, bunnyVideoId });
 });
 
+test('a dropped TUS connection logs the real underlying error to the console instead of only the vague on-screen message', async ({ page }) => {
+  // Root-cause fix for "the video upload was interrupted" giving no way to
+  // tell a genuine dropped connection apart from Bunny's TUS endpoint
+  // rejecting the browser's origin (a CORS block) — both look identical to
+  // uploadVideoViaTus's caller (a rejected fetch()), so the UI message is
+  // deliberately the same vague copy either way. This proves the real
+  // error (name/message, endpoint, video id — never the signature) is
+  // still surfaced to the console, which is what the Network tab's own
+  // CORS/HTTP detail can then be found from.
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+
+  const consoleErrors: string[] = [];
+  page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
+
+  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const bunnyVideoId = api.uploads.get('video-upload-1')!.bunnyVideoId;
+  api.failNextPatch(bunnyVideoId);
+
+  await expect(page.getByText('The video upload was interrupted. Retry to resume from where it stopped.')).toBeVisible({ timeout: 8000 });
+  await expect.poll(() => consoleErrors.some((text) => text.includes('[video-upload] direct-to-Bunny TUS request failed'))).toBe(true);
+});
+
 test('a Retry that meets a 202 "still creating" response keeps polling with the same Idempotency-Key until it resolves', async ({ page }) => {
   test.setTimeout(60000);
   const api = new VideoUploadApi();
