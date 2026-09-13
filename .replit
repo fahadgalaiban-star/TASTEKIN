@@ -13,6 +13,28 @@ env = { "CI" = "true" }
 [workflows]
 runButton = "Project"
 
+# Development only — the "Project" run button previously pointed at no
+# defined workflow at all, so nothing started automatically and the API
+# server had to be launched by hand every session. This runs the web app
+# (Vite dev server, hot reload) and the API server side by side; the web
+# app's own dev proxy (see artifacts/tastekin/vite.config.ts) forwards
+# /api/* to the API server so the browser only ever talks to one origin —
+# the deployed app (see [deployment] above) is unaffected, since it always
+# builds once and serves everything from api-server on a single port.
+[[workflows.workflow]]
+name = "Project"
+mode = "parallel"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=5000 pnpm --filter @workspace/api-server run dev"
+waitForPort = 5000
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "PORT=23385 BASE_PATH=/ pnpm --filter @workspace/tastekin run dev"
+waitForPort = 23385
+
 [agent]
 stack = "PNPM_WORKSPACE"
 expertMode = true

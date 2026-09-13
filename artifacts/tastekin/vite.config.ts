@@ -27,6 +27,19 @@ if (!basePath) {
   );
 }
 
+// Dev-only: this app's own fetch() calls are relative ('/api/...'), which
+// only reach the API server when the two share one origin — true in
+// production (api-server serves the built frontend itself, see app.ts),
+// false for this Vite dev server, which runs as its own separate process.
+// Proxying /api here makes the browser's request stay same-origin (to this
+// dev server), while Vite's own Node-side proxy client makes the real
+// call to the API server — a plain server-to-server request that never
+// needs to satisfy the API's CORS policy at all, unlike a second real
+// cross-origin request from the browser would. Defaults to the API
+// server's own documented dev port (see replit.md); override with
+// API_DEV_PORT if the API is running somewhere else.
+const apiDevPort = Number(process.env.API_DEV_PORT ?? 5000);
+
 export default defineConfig({
   base: basePath,
   plugins: [
@@ -69,6 +82,12 @@ export default defineConfig({
     strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: `http://127.0.0.1:${apiDevPort}`,
+        changeOrigin: true,
+      },
+    },
     fs: {
       strict: true,
     },
@@ -77,5 +96,11 @@ export default defineConfig({
     port,
     host: '0.0.0.0',
     allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: `http://127.0.0.1:${apiDevPort}`,
+        changeOrigin: true,
+      },
+    },
   },
 });

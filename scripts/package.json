@@ -29,6 +29,7 @@
     "verify:creator-workspace-video": "tsx ./src/verify-creator-workspace-video.ts",
     "verify:video-playback": "tsx ./src/verify-video-playback.ts",
     "verify:creator-workspace-schema": "tsx ./src/verify-creator-workspace-schema.ts",
+    "verify:dev-proxy": "tsx ./src/verify-dev-proxy.ts",
     "reconcile:closet-media": "tsx ./src/reconcile-closet-media.ts",
     "backfill:onboarding": "tsx ./src/backfill-onboarding.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
