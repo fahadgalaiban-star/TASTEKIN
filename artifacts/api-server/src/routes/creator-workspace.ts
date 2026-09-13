@@ -25,6 +25,7 @@ import {
   isApprovedVideoSize,
   lockVideoUploadsForUpdate,
 } from "../lib/video-upload-lifecycle";
+import { attachResolvedPlayback, batchResolveVideoRows, collectVideoUploadIds } from "../lib/video-playback";
 
 const router: IRouter = Router();
 function noStoreAccountResponse(res: import("express").Response) {
@@ -368,13 +369,31 @@ function serializeWorkspace(workspace: Awaited<ReturnType<typeof getWorkspace>>)
   };
 }
 
+/**
+ * Phase 3B: resolves playback/poster URLs (server-side, from the live
+ * video_uploads row — never from anything already sitting in `edits`) for
+ * every video-bearing Edit in a single workspace's response, in one batched
+ * query. Behind the existing `video_upload` flag: while disabled, `edits`
+ * is returned completely unchanged — a raw `edit.video` with no playback
+ * fields is exactly today's (pre-3B) behavior, not a new exposure.
+ */
+async function withResolvedVideoPlayback(edits: Record<string, unknown>[], ownerUserId: string | null, creatorId: string): Promise<Record<string, unknown>[]> {
+  if (!ownerUserId || !(await isFeatureEnabled("video_upload"))) return edits;
+  const uploadIds = collectVideoUploadIds(edits);
+  if (!uploadIds.length) return edits;
+  const videoRowsById = await batchResolveVideoRows(uploadIds);
+  return attachResolvedPlayback(edits, videoRowsById, ownerUserId, creatorId);
+}
+
 router.get("/creator-workspace", async (req, res) => {
   noStoreAccountResponse(res);
   try {
     const authorization = req.user ? await ensureCreatorAccount(req.user) : null;
     const workspace = authorization?.ok ? authorization.workspace : await getWorkspace();
     if (authorization?.ok && workspace.ownerUserId === req.user?.id) {
-      res.json(GetCreatorWorkspaceResponse.parse(serializeWorkspace(workspace)));
+      const serialized = serializeWorkspace(workspace);
+      const edits = await withResolvedVideoPlayback(serialized.edits, workspace.ownerUserId, workspace.creatorId);
+      res.json(GetCreatorWorkspaceResponse.parse({ ...serialized, edits }));
       return;
     }
     const edits = (workspace.edits as Array<Record<string, unknown>>)
@@ -408,7 +427,8 @@ router.get("/creator-workspace", async (req, res) => {
     const collections = (workspace.collections as Array<Record<string, unknown>>)
       .filter((collection) => collection.access === "public" && (typeof collection.coverEditId !== "string" || !collection.coverEditId || publishedIds.has(collection.coverEditId)))
       .map((collection) => publicCollection(collection, publishedIds));
-    res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits, collections }));
+    const resolvedEdits = await withResolvedVideoPlayback(edits, workspace.ownerUserId, workspace.creatorId);
+    res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits: resolvedEdits, collections }));
   } catch (error) {
     req.log.error({ err: error }, "Unable to load creator workspace");
     res.status(500).json({ error: "Unable to load creator workspace" });
@@ -422,7 +442,12 @@ router.get("/creators/:username/workspace", async (req, res) => {
     if (!workspace) { res.status(404).json({ error: "Creator not found" }); return; }
     if (await areUsersBlocked(req.user?.id, workspace.ownerUserId ?? undefined)) { res.status(404).json({ error: "Creator not found" }); return; }
     const owner = Boolean(req.user && workspace.ownerUserId === req.user.id);
-    if (owner) { res.json(GetCreatorWorkspaceResponse.parse(serializeWorkspace(workspace))); return; }
+    if (owner) {
+      const serialized = serializeWorkspace(workspace);
+      const edits = await withResolvedVideoPlayback(serialized.edits, workspace.ownerUserId, workspace.creatorId);
+      res.json(GetCreatorWorkspaceResponse.parse({ ...serialized, edits }));
+      return;
+    }
     const username = normalizeProfile(workspace.profile).username;
     const edits: Array<Record<string, unknown>> = (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)
       .filter((edit) => edit.status === "published" && (edit.access === "public" || (edit.access === "locked" && typeof edit.previewImage === "string")))
@@ -433,7 +458,8 @@ router.get("/creators/:username/workspace", async (req, res) => {
     const collections = (workspace.collections as Array<Record<string, unknown>>)
       .filter((collection) => collection.access === "public")
       .map((collection) => publicCollection(collection, publishedIds));
-    res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits, collections }));
+    const resolvedEdits = await withResolvedVideoPlayback(edits, workspace.ownerUserId, workspace.creatorId);
+    res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits: resolvedEdits, collections }));
   } catch (error) {
     req.log.error({ err: error }, "Unable to load public creator workspace");
     res.status(500).json({ error: "Unable to load creator workspace" });
@@ -458,24 +484,38 @@ router.get("/public-feed", async (req, res) => {
     // the muter — it never affects what anyone else sees.
     const visibleRows = rows.filter(({ workspace }) =>
       !workspace.ownerUserId || (!blockedUserIds.has(workspace.ownerUserId) && !mutedIds.has(workspace.ownerUserId)));
-    const items = visibleRows.flatMap(({ workspace, verified }) => {
+    // Phase 3B: gate on the flag once for the whole feed page, and — when
+    // enabled — resolve every video-bearing edit's playback/poster URLs in
+    // exactly ONE batched query across every creator on this page, never
+    // one lookup per card/creator. Each workspace's own edits are matched
+    // back against that single shared map by ownerUserId/creatorId, so a
+    // row can never be attributed to the wrong creator's edit.
+    const videoPlaybackEnabled = await isFeatureEnabled("video_upload");
+    const perWorkspaceEdits = visibleRows.map(({ workspace, verified }) => {
       const profile = normalizeProfile(workspace.profile);
-      return (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)
+      const edits = (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)
         .filter((edit) => edit.status === "published" && (edit.access === "public" || (edit.access === "locked" && Boolean(verified) && typeof edit.previewImage === "string")))
-        .map((edit) => {
-          const publicEdit = edit.access === "locked"
-            ? { ...edit, image: typeof edit.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(profile.username)}/${edit.id}/preview` : edit.previewImage, sourceImage: undefined, previewImage: undefined }
-            : { ...edit, image: typeof edit.image === "string" && edit.image.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(profile.username)}/${edit.id}` : edit.image, sourceImage: undefined, previewImage: undefined };
-          return {
-            creatorUsername: profile.username,
-            creatorName: profile.displayName,
-            creatorVerified: Boolean(verified),
-            creatorAvatar: profile.avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
-            following: followedIds.has(workspace.creatorId),
-            workspaceUpdatedAt: workspace.updatedAt,
-            edit: publicEdit,
-          };
-        });
+        .map((edit) => edit.access === "locked"
+          ? { ...edit, image: typeof edit.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(profile.username)}/${edit.id}/preview` : edit.previewImage, sourceImage: undefined, previewImage: undefined }
+          : { ...edit, image: typeof edit.image === "string" && edit.image.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(profile.username)}/${edit.id}` : edit.image, sourceImage: undefined, previewImage: undefined });
+      return { workspace, verified, profile, edits };
+    });
+    const videoRowsById = videoPlaybackEnabled
+      ? await batchResolveVideoRows(perWorkspaceEdits.flatMap(({ edits }) => collectVideoUploadIds(edits)))
+      : new Map();
+    const items = perWorkspaceEdits.flatMap(({ workspace, verified, profile, edits }) => {
+      const resolvedEdits = videoPlaybackEnabled && workspace.ownerUserId
+        ? attachResolvedPlayback(edits, videoRowsById, workspace.ownerUserId, workspace.creatorId)
+        : edits;
+      return resolvedEdits.map((edit) => ({
+        creatorUsername: profile.username,
+        creatorName: profile.displayName,
+        creatorVerified: Boolean(verified),
+        creatorAvatar: profile.avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
+        following: followedIds.has(workspace.creatorId),
+        workspaceUpdatedAt: workspace.updatedAt,
+        edit,
+      }));
     }).sort((left, right) => right.workspaceUpdatedAt.getTime() - left.workspaceUpdatedAt.getTime())
       .map(({ workspaceUpdatedAt: _updatedAt, ...item }) => item);
     res.set("Cache-Control", "private, no-store");

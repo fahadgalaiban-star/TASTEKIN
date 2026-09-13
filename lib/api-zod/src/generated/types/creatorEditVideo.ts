@@ -22,4 +22,20 @@ export interface CreatorEditVideo {
      * @maxLength 200
      */
   bunnyLibraryId: string;
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  playbackUrl?: string | null;
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  posterUrl?: string | null;
+  /** @nullable */
+  durationSeconds?: number | null;
+  /** @nullable */
+  width?: number | null;
+  /** @nullable */
+  height?: number | null;
 }

@@ -1068,6 +1068,18 @@ components:
         uploadId: { type: string, minLength: 1, maxLength: 120 }
         bunnyVideoId: { type: string, minLength: 1, maxLength: 200 }
         bunnyLibraryId: { type: string, minLength: 1, maxLength: 200 }
+        # Playback fields below are resolved server-side (see
+        # artifacts/api-server/src/lib/video-playback.ts) from the
+        # video_uploads row's own state at response time — never trusted
+        # from a client-submitted edit. Present only when the row is
+        # "ready", correctly owned, and attached to this exact Edit;
+        # absent/null otherwise, in which case the client must show a
+        # safe placeholder rather than attempting playback.
+        playbackUrl: { type: ["string", "null"], maxLength: 2048 }
+        posterUrl: { type: ["string", "null"], maxLength: 2048 }
+        durationSeconds: { type: ["number", "null"] }
+        width: { type: ["number", "null"] }
+        height: { type: ["number", "null"] }
     CreatorEdit:
       type: object
       required: [id, category, title, titleAr, caption, captionAr, location, locationAr, altText, access, status, collectionIds]

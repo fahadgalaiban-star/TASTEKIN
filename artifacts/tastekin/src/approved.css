@@ -232,6 +232,29 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-detail-art.locked img { filter:blur(3px) saturate(.7); transform:scale(1.05); }
 .approved-detail-art.locked > div { position:absolute; inset:0; display:grid; place-content:center; justify-items:center; gap:10px; background:rgba(23,20,22,.38); color:var(--tk-text-inverse); text-align:center; }
 .approved-detail-art.locked > div strong { font-size:20px; }
+/* Phase 3B — video playback cards. .video-card-media mirrors .approved-art's
+   own box (position, 4:5, overflow, muted background) so it can stand in
+   for it directly on the Home feed (not nested inside a <button>, since it
+   contains its own interactive play/mute controls); .video-card-poster-only
+   instead fills whatever box its own parent <button className="approved-art">
+   already established (Profile/Saved/Explore), so the aspect ratio is set
+   exactly once either way. */
+.video-card-media { position:relative; display:block; width:100%; aspect-ratio:4 / 5; overflow:hidden; border:0; background:#171416; cursor:pointer; }
+.video-card-media.video-card-poster-only { aspect-ratio:auto; flex:1 1 auto; width:100%; height:100%; min-height:0; cursor:inherit; }
+.video-card-media video, .video-card-media img { width:100%; height:100%; display:block; object-fit:cover; background:#171416; }
+.video-card-media::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,transparent 55%,var(--tk-media-overlay)); pointer-events:none; }
+.video-card-placeholder { display:grid; width:100%; height:100%; min-height:160px; place-items:center; color:var(--tk-text-inverse); opacity:.6; }
+.video-duration-badge { position:absolute; z-index:1; inset-inline-end:8px; bottom:8px; padding:4px 8px; border-radius:999px; background:rgba(74,29,36,.94); color:var(--tk-text-inverse); font-size:10px; font-weight:800; line-height:1.4; }
+.video-card-controls { position:absolute; z-index:1; inset-inline-start:8px; bottom:8px; display:flex; gap:6px; }
+.video-control-button { display:grid; place-items:center; width:30px; height:30px; border:0; border-radius:50%; background:rgba(255,255,255,.85); color:var(--tk-ink); }
+.video-control-button:focus-visible { outline:2px solid var(--tk-text-inverse); outline-offset:2px; }
+.video-poster-play { position:absolute; z-index:1; inset:0; display:grid; place-items:center; margin:auto; width:46px; height:46px; border-radius:50%; background:rgba(255,255,255,.85); color:var(--tk-wine); pointer-events:none; }
+.video-detail-player { position:relative; width:100%; margin:15px 0 12px; overflow:hidden; border-radius:20px; background:#171416; }
+.video-detail-player video, .video-detail-player img { width:100%; height:100%; display:block; object-fit:contain; background:#171416; }
+.sr-only { position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+@media (prefers-reduced-motion: reduce) {
+  .video-card-media, .video-control-button { transition:none; }
+}
 .match { display:grid; grid-template-columns:1fr auto; gap:4px 12px; }
 .match b { color:var(--tk-wine); }
 .match p { grid-column:1/-1; }

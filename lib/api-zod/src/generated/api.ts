@@ -710,6 +710,10 @@ export const getCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax = 200;
 
 export const getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax = 200;
 
+export const getCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax = 2048;
+
+export const getCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax = 2048;
+
 export const getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax = 100;
 
 export const getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemBrandMax = 160;
@@ -805,7 +809,12 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "video": zod.object({
   "uploadId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax),
   "bunnyVideoId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax),
-  "bunnyLibraryId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax)
+  "bunnyLibraryId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax),
+  "playbackUrl": zod.string().max(getCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax).nullish(),
+  "posterUrl": zod.string().max(getCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax).nullish(),
+  "durationSeconds": zod.number().nullish(),
+  "width": zod.number().nullish(),
+  "height": zod.number().nullish()
 }).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax),
@@ -833,17 +842,8 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "description": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionMax),
   "descriptionAr": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
-  "coverEditId": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
-  "coverImage": zod.string().max(2000).optional(),
-  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
-  "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax),
-  "uploads": zod.array(zod.object({
-  "id": zod.string().min(1).max(200),
-  "type": zod.enum(['photo']),
-  "image": zod.string().max(2000),
-  "imageObjectPath": zod.string().max(2000).nullable().optional()
-})).max(60).optional(),
-  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
+  "coverEditId": zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
 })).max(getCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 }).and(zod.object({
@@ -899,6 +899,10 @@ export const saveCreatorWorkspaceBodyEditsItemVideoUploadIdMax = 120;
 export const saveCreatorWorkspaceBodyEditsItemVideoBunnyVideoIdMax = 200;
 
 export const saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax = 200;
+
+export const saveCreatorWorkspaceBodyEditsItemVideoPlaybackUrlMax = 2048;
+
+export const saveCreatorWorkspaceBodyEditsItemVideoPosterUrlMax = 2048;
 
 export const saveCreatorWorkspaceBodyEditsItemOutfitItemsItemTypeMax = 100;
 
@@ -995,7 +999,12 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "video": zod.object({
   "uploadId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoUploadIdMax),
   "bunnyVideoId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyVideoIdMax),
-  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax)
+  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax),
+  "playbackUrl": zod.string().max(saveCreatorWorkspaceBodyEditsItemVideoPlaybackUrlMax).nullish(),
+  "posterUrl": zod.string().max(saveCreatorWorkspaceBodyEditsItemVideoPosterUrlMax).nullish(),
+  "durationSeconds": zod.number().nullish(),
+  "width": zod.number().nullish(),
+  "height": zod.number().nullish()
 }).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(saveCreatorWorkspaceBodyEditsItemOutfitItemsItemTypeMax),
@@ -1023,17 +1032,8 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "description": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionMax),
   "descriptionAr": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
-  "coverEditId": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
-  "coverImage": zod.string().max(2000).optional(),
-  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
-  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax),
-  "uploads": zod.array(zod.object({
-  "id": zod.string().min(1).max(200),
-  "type": zod.enum(['photo']),
-  "image": zod.string().max(2000),
-  "imageObjectPath": zod.string().max(2000).nullable().optional()
-})).max(60).optional(),
-  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
+  "coverEditId": zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
+  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax)
 })).max(saveCreatorWorkspaceBodyCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 })
@@ -1081,6 +1081,10 @@ export const saveCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax = 120;
 export const saveCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax = 200;
 
 export const saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax = 200;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax = 2048;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax = 2048;
 
 export const saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax = 100;
 
@@ -1177,7 +1181,12 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "video": zod.object({
   "uploadId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax),
   "bunnyVideoId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax),
-  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax)
+  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax),
+  "playbackUrl": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax).nullish(),
+  "posterUrl": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax).nullish(),
+  "durationSeconds": zod.number().nullish(),
+  "width": zod.number().nullish(),
+  "height": zod.number().nullish()
 }).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax),
@@ -1205,17 +1214,8 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "description": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionMax),
   "descriptionAr": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
-  "coverEditId": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
-  "coverImage": zod.string().max(2000).optional(),
-  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
-  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax),
-  "uploads": zod.array(zod.object({
-  "id": zod.string().min(1).max(200),
-  "type": zod.enum(['photo']),
-  "image": zod.string().max(2000),
-  "imageObjectPath": zod.string().max(2000).nullable().optional()
-})).max(60).optional(),
-  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
+  "coverEditId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
+  "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax)
 })).max(saveCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 }).and(zod.object({
@@ -1263,7 +1263,7 @@ export const GetCreatorProfileResponse = zod.object({
   "city": zod.string().max(getCreatorProfileResponseCityMax),
   "country": zod.string().max(getCreatorProfileResponseCountryMax),
   "interests": zod.array(zod.string().min(1).max(getCreatorProfileResponseInterestsItemMax)).max(getCreatorProfileResponseInterestsMax),
-  "avatar": zod.string().max(getCreatorProfileResponseAvatarMax),
+  "avatar": zod.string().min(1).max(getCreatorProfileResponseAvatarMax),
   "avatarObjectPath": zod.string().max(getCreatorProfileResponseAvatarObjectPathMax).nullable(),
   "age": zod.number().min(getCreatorProfileResponseAgeMin).max(getCreatorProfileResponseAgeMax).nullable(),
   "dateOfBirth": zod.string().regex(getCreatorProfileResponseDateOfBirthRegExp).nullable(),
@@ -1347,7 +1347,7 @@ export const SaveCreatorProfileResponse = zod.object({
   "city": zod.string().max(saveCreatorProfileResponseCityMax),
   "country": zod.string().max(saveCreatorProfileResponseCountryMax),
   "interests": zod.array(zod.string().min(1).max(saveCreatorProfileResponseInterestsItemMax)).max(saveCreatorProfileResponseInterestsMax),
-  "avatar": zod.string().max(saveCreatorProfileResponseAvatarMax),
+  "avatar": zod.string().min(1).max(saveCreatorProfileResponseAvatarMax),
   "avatarObjectPath": zod.string().max(saveCreatorProfileResponseAvatarObjectPathMax).nullable(),
   "age": zod.number().min(saveCreatorProfileResponseAgeMin).max(saveCreatorProfileResponseAgeMax).nullable(),
   "dateOfBirth": zod.string().regex(saveCreatorProfileResponseDateOfBirthRegExp).nullable(),

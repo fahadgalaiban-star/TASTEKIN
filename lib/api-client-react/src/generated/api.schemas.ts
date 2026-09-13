@@ -584,6 +584,40 @@ export interface CreatorProfileInput {
   avatarObjectPath: string | null;
 }
 
+export interface CreatorEditVideo {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  uploadId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  bunnyVideoId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  bunnyLibraryId: string;
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  playbackUrl?: string | null;
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  posterUrl?: string | null;
+  /** @nullable */
+  durationSeconds?: number | null;
+  /** @nullable */
+  width?: number | null;
+  /** @nullable */
+  height?: number | null;
+}
+
 export type CreatorEditCategory = typeof CreatorEditCategory[keyof typeof CreatorEditCategory];
 
 
@@ -643,6 +677,7 @@ export interface CreatorEdit {
   previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
   crop?: CreatorCrop;
+  video?: CreatorEditVideo;
   /** @maxItems 20 */
   outfitItems?: CreatorOutfitItem[];
   showOutfitDetails?: boolean;
