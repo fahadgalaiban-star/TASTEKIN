@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 /**
  * Video Foundation, Phase 1 — a server-only wrapper around Bunny Stream's
@@ -260,4 +260,183 @@ export function createBunnyTusUploadAuthorization(
   const expirationTime = Math.floor(Date.now() / 1000) + Math.max(1, Math.floor(ttlSeconds));
   const signature = computeBunnyTusSignature({ libraryId: config.libraryId, apiKey: config.apiKey, expirationTime, videoId });
   return { status: "ok", authorization: { libraryId: config.libraryId, videoId, expirationTime, signature } };
+}
+
+export type BunnyListVideosItem = { videoId: string; title: string | null; bunnyStatus: number };
+export type BunnyListVideosPageResult =
+  | { status: "ok"; items: BunnyListVideosItem[]; totalItems: number; currentPage: number; itemsPerPage: number }
+  | { status: "unavailable"; reason: string };
+
+const LIST_VIDEOS_MAX_ITEMS_PER_PAGE = 1000;
+
+/**
+ * Fetches one page of Bunny's List Videos response for the configured
+ * library — used only by video-upload-recovery.ts's orphan search
+ * (findOrphanCandidateByTitle), never by ordinary create/status/cancel
+ * flows. Defensively validates every item's shape exactly like
+ * getBunnyVideoStatus, since this response drives an identity match that
+ * a later step may act on (adopting or deleting a video) — a malformed
+ * item is never silently skipped or coerced, the whole page is rejected.
+ */
+export async function listBunnyVideosPage(page: number, itemsPerPage: number, deps?: BunnyStreamDeps): Promise<BunnyListVideosPageResult> {
+  const config = resolveConfig(deps);
+  if (!config) return { status: "unavailable", reason: "not configured" };
+  if (!Number.isInteger(page) || page < 1) return { status: "unavailable", reason: "invalid page" };
+  if (!Number.isInteger(itemsPerPage) || itemsPerPage < 1 || itemsPerPage > LIST_VIDEOS_MAX_ITEMS_PER_PAGE) {
+    return { status: "unavailable", reason: "invalid itemsPerPage" };
+  }
+  try {
+    const url = new URL(`${config.baseUrl}/library/${encodeURIComponent(config.libraryId)}/videos`);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("itemsPerPage", String(itemsPerPage));
+    const response = await fetch(url, {
+      method: "GET",
+      headers: requestHeaders(config),
+      signal: AbortSignal.timeout(config.timeoutMs),
+    });
+    if (!response.ok) return { status: "unavailable", reason: `HTTP ${response.status}` };
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      return { status: "unavailable", reason: "malformed response" };
+    }
+    if (!payload || typeof payload !== "object") return { status: "unavailable", reason: "malformed response" };
+    const record = payload as Record<string, unknown>;
+    if (!Array.isArray(record.items) || typeof record.totalItems !== "number" || typeof record.currentPage !== "number" || typeof record.itemsPerPage !== "number") {
+      return { status: "unavailable", reason: "malformed response" };
+    }
+    const items: BunnyListVideosItem[] = [];
+    for (const raw of record.items) {
+      if (!raw || typeof raw !== "object") return { status: "unavailable", reason: "malformed response" };
+      const item = raw as Record<string, unknown>;
+      if (!isPlausibleVideoId(item.guid) || typeof item.status !== "number") return { status: "unavailable", reason: "malformed response" };
+      items.push({ videoId: item.guid, title: typeof item.title === "string" ? item.title : null, bunnyStatus: item.status });
+    }
+    return { status: "ok", items, totalItems: record.totalItems, currentPage: record.currentPage, itemsPerPage: record.itemsPerPage };
+  } catch (error) {
+    return { status: "unavailable", reason: timeoutReason(error) };
+  }
+}
+
+const ORPHAN_SEARCH_PAGE_SIZE = 100;
+const ORPHAN_SEARCH_MAX_PAGES = 50;
+
+export type BunnyOrphanLookupResult =
+  | { status: "found"; videoId: string; bunnyStatus: number }
+  | { status: "not_found" }
+  | { status: "ambiguous"; count: number }
+  | { status: "unavailable"; reason: string };
+
+/**
+ * Pages through every video in `libraryId` looking for an *exact* title
+ * match — used by video-upload-recovery.ts to find a possible orphan left
+ * by an ambiguous create (see routes/video-uploads.ts: the Bunny video's
+ * title is always the video_uploads row's own stable UUID, never the
+ * user's filename, precisely so this search can be exact rather than a
+ * fuzzy/substring guess). `libraryId` is always the caller's own
+ * parameter, never overridable via `deps` — the same "never trust a
+ * possibly-stale env var over the row's own persisted library id"
+ * discipline the rest of this file already follows for reconcile/cancel.
+ *
+ * Never returns a match on anything less than full, successful
+ * pagination: running out of the page budget, a provider error on any
+ * page, or more than one exact match all come back as "unavailable" /
+ * "ambiguous" rather than guessing — the caller (recoverAmbiguousUpload)
+ * treats every one of those the same way: leave the row's state
+ * unresolved and try again later, never adopt or delete on a guess.
+ */
+export async function findOrphanCandidateByTitle(
+  libraryId: string,
+  title: string,
+  deps?: Omit<BunnyStreamDeps, "libraryId">,
+): Promise<BunnyOrphanLookupResult> {
+  const matches: BunnyListVideosItem[] = [];
+  for (let page = 1; page <= ORPHAN_SEARCH_MAX_PAGES; page += 1) {
+    const result = await listBunnyVideosPage(page, ORPHAN_SEARCH_PAGE_SIZE, { ...deps, libraryId });
+    if (result.status !== "ok") return { status: "unavailable", reason: result.reason };
+    for (const item of result.items) {
+      if (item.title === title) matches.push(item);
+    }
+    const totalPages = Math.max(1, Math.ceil(result.totalItems / result.itemsPerPage));
+    if (page >= totalPages) {
+      if (matches.length === 0) return { status: "not_found" };
+      if (matches.length > 1) return { status: "ambiguous", count: matches.length };
+      return { status: "found", videoId: matches[0].videoId, bunnyStatus: matches[0].bunnyStatus };
+    }
+  }
+  return { status: "unavailable", reason: "incomplete pagination" };
+}
+
+// --- Webhook signature verification -----------------------------------------
+//
+// Bunny Stream signs webhook deliveries with three headers:
+// X-BunnyStream-Signature-Version ("v1"), X-BunnyStream-Signature-Algorithm
+// ("hmac-sha256"), and X-BunnyStream-Signature (a lowercase-hex HMAC-SHA256
+// of the exact raw request body, keyed with the library's Read-Only API
+// key). This is a distinct, lower-privilege credential from
+// BUNNY_STREAM_API_KEY (which can create/delete videos) — never fall back
+// to reusing the write key here. Deliberately unable to verify egress
+// documentation live in this environment; if Bunny's dashboard ever shows
+// different header names for a specific library, update
+// BUNNY_WEBHOOK_SIGNATURE_HEADER et al. below rather than the callers.
+
+export const BUNNY_WEBHOOK_SIGNATURE_VERSION = "v1";
+export const BUNNY_WEBHOOK_SIGNATURE_ALGORITHM = "hmac-sha256";
+export const BUNNY_WEBHOOK_SIGNATURE_HEADER = "x-bunnystream-signature";
+export const BUNNY_WEBHOOK_SIGNATURE_VERSION_HEADER = "x-bunnystream-signature-version";
+export const BUNNY_WEBHOOK_SIGNATURE_ALGORITHM_HEADER = "x-bunnystream-signature-algorithm";
+
+export type BunnyWebhookDeps = { readOnlyApiKey?: string };
+
+/** Lazily read, never at module import time — same discipline as resolveConfig above, and a wholly separate credential from it. */
+function resolveWebhookSecret(deps?: BunnyWebhookDeps): string | null {
+  const key = deps?.readOnlyApiKey ?? process.env.BUNNY_STREAM_READONLY_API_KEY?.trim();
+  return key || null;
+}
+
+export function isBunnyWebhookConfigured(deps?: BunnyWebhookDeps): boolean {
+  return resolveWebhookSecret(deps) !== null;
+}
+
+const HEX64_RE = /^[0-9a-f]{64}$/i;
+
+/** Constant-time hex comparison — never short-circuits on the first differing byte, and never throws on mismatched lengths (checked explicitly first). */
+function safeCompareHex(expectedHex: string, providedHex: string): boolean {
+  if (expectedHex.length !== providedHex.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(expectedHex, "hex"), Buffer.from(providedHex, "hex"));
+  } catch {
+    return false;
+  }
+}
+
+export type VerifyBunnyWebhookSignatureParams = {
+  rawBody: Buffer;
+  signatureHeader: string | undefined;
+  versionHeader: string | undefined;
+  algorithmHeader: string | undefined;
+};
+
+export type VerifyBunnyWebhookSignatureResult =
+  | { status: "ok" }
+  | { status: "invalid"; reason: string };
+
+/**
+ * Verifies a webhook delivery's signature against the exact raw body
+ * bytes as received — never a re-serialized JSON.stringify(req.body),
+ * which is not guaranteed to reproduce Bunny's original byte-for-byte
+ * payload (key order, whitespace, unicode escaping can all differ). The
+ * signing secret is never logged; the provided/expected signatures are
+ * never logged either (see routes/video-uploads.ts's webhook handler).
+ */
+export function verifyBunnyWebhookSignature(params: VerifyBunnyWebhookSignatureParams, deps?: BunnyWebhookDeps): VerifyBunnyWebhookSignatureResult {
+  const secret = resolveWebhookSecret(deps);
+  if (!secret) return { status: "invalid", reason: "not configured" };
+  if (params.versionHeader !== BUNNY_WEBHOOK_SIGNATURE_VERSION) return { status: "invalid", reason: "unsupported signature version" };
+  if (params.algorithmHeader !== BUNNY_WEBHOOK_SIGNATURE_ALGORITHM) return { status: "invalid", reason: "unsupported signature algorithm" };
+  if (!params.signatureHeader || !HEX64_RE.test(params.signatureHeader)) return { status: "invalid", reason: "missing or malformed signature" };
+  const expected = createHmac("sha256", secret).update(params.rawBody).digest("hex");
+  if (!safeCompareHex(expected, params.signatureHeader.toLowerCase())) return { status: "invalid", reason: "signature mismatch" };
+  return { status: "ok" };
 }

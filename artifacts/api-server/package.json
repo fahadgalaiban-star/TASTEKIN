@@ -11,7 +11,8 @@
     "test:taste-match": "node ./scripts/test-taste-match.mjs",
     "test:owner-discovery": "node ./scripts/test-owner-discovery.mjs",
     "test:circle": "node ./scripts/test-circle.mjs",
-    "test:bunny-stream": "node ./scripts/test-bunny-stream.mjs"
+    "test:bunny-stream": "node ./scripts/test-bunny-stream.mjs",
+    "reconcile:video-uploads": "node --enable-source-maps ./dist/cli/reconcile-video-uploads.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
