@@ -98,10 +98,21 @@ function VideoPlaceholder({ className = '' }: { className?: string }) {
  * threshold, when the page is hidden, or when a different Home card starts
  * — never more than one playing at once. Respects prefers-reduced-motion
  * by never auto-starting; the visible play button still works on tap.
+ *
+ * `active` gates every byte of network use: the HLS source is only ever
+ * attached (native `.src`, or a new hls.js instance) once this card has
+ * become visibility-eligible or the user has explicitly pressed Play —
+ * never merely on mount. Leaving the visibility threshold (or the page
+ * going hidden) tears the source back down immediately via the same
+ * cleanup used on unmount, so a scrolled-past or backgrounded card stops
+ * buffering rather than continuing in the background. `preload="none"`
+ * on the `<video>` element itself means nothing loads even incidentally
+ * before `active` flips true.
  */
 export function HomeVideoCard({ id, video, ar, onOpen }: { id: string; video: PlaybackVideo; ar: boolean; onOpen: () => void }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [active, setActive] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [muted, setMuted] = useState(true);
   const [failed, setFailed] = useState(false);
@@ -109,31 +120,34 @@ export function HomeVideoCard({ id, video, ar, onOpen }: { id: string; video: Pl
 
   const pause = () => { videoRef.current?.pause(); };
 
+  // The only place this component ever attaches (or tears down) a real
+  // playback source — strictly gated on `active`, so an offscreen/inactive
+  // card never initializes HLS or downloads anything.
   useEffect(() => {
     const videoEl = videoRef.current;
-    if (!videoEl || !hasResolvedPlayback(video) || failed) return;
+    if (!active || !videoEl || !hasResolvedPlayback(video) || failed) return undefined;
     const cleanup = attachHlsSource(videoEl, video.playbackUrl, () => setFailed(true));
-    return cleanup;
+    exclusivePlayback.claim(id, pause);
+    void videoEl.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
+    return () => {
+      videoEl.pause();
+      cleanup();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [video.playbackUrl, failed]);
+  }, [active, id, video.playbackUrl, failed]);
 
   useEffect(() => {
     const container = containerRef.current;
-    const videoEl = videoRef.current;
-    if (!container || !videoEl || !hasResolvedPlayback(video) || failed) return undefined;
-    const attemptPlay = () => {
-      if (prefersReducedMotion()) return;
-      exclusivePlayback.claim(id, pause);
-      void videoEl.play().then(() => setPlaying(true)).catch(() => setPlaying(false));
-    };
+    if (!container || !hasResolvedPlayback(video) || failed) return undefined;
+    const deactivate = () => { setActive(false); setPlaying(false); exclusivePlayback.release(id); };
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
-        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) attemptPlay();
-        else { videoEl.pause(); exclusivePlayback.release(id); }
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) { if (!prefersReducedMotion()) setActive(true); }
+        else deactivate();
       }
     }, { threshold: [0, 0.6] });
     observer.observe(container);
-    const onVisibilityChange = () => { if (document.hidden) { videoEl.pause(); exclusivePlayback.release(id); } };
+    const onVisibilityChange = () => { if (document.hidden) deactivate(); };
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       observer.disconnect();
@@ -145,13 +159,23 @@ export function HomeVideoCard({ id, video, ar, onOpen }: { id: string; video: Pl
 
   const togglePlay = (event: React.MouseEvent) => {
     event.stopPropagation();
-    const videoEl = videoRef.current;
-    if (!videoEl) return;
     // Branches on the `playing` state (not `videoEl.paused`) so this stays
     // correct under a test-mocked play()/pause() that doesn't update the
     // native `.paused` getter, and to avoid a stale-DOM-vs-state race.
-    if (!playing) { exclusivePlayback.claim(id, pause); void videoEl.play().then(() => setPlaying(true)).catch(() => undefined); }
-    else { videoEl.pause(); setPlaying(false); exclusivePlayback.release(id); }
+    if (!playing) {
+      // Not yet activated (e.g. pressed before ever becoming visibility-
+      // eligible): activating attaches the source, which itself claims
+      // exclusive playback and calls play() once attached.
+      if (!active) { setActive(true); return; }
+      const videoEl = videoRef.current;
+      if (!videoEl) return;
+      exclusivePlayback.claim(id, pause);
+      void videoEl.play().then(() => setPlaying(true)).catch(() => undefined);
+    } else {
+      videoRef.current?.pause();
+      setPlaying(false);
+      exclusivePlayback.release(id);
+    }
   };
   const toggleMute = (event: React.MouseEvent) => {
     event.stopPropagation();
@@ -166,14 +190,14 @@ export function HomeVideoCard({ id, video, ar, onOpen }: { id: string; video: Pl
   }
 
   return (
-    <div className="video-card-media" ref={containerRef} data-testid={`home-video-${id}`} data-playing={playing ? 'true' : 'false'} role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOpen(); }} aria-label={t('Open Edit', 'فتح التعديل')}>
+    <div className="video-card-media" ref={containerRef} data-testid={`home-video-${id}`} data-playing={playing ? 'true' : 'false'} data-active={active ? 'true' : 'false'} role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onOpen(); }} aria-label={t('Open Edit', 'فتح التعديل')}>
       <video
         ref={videoRef}
         poster={video.posterUrl ?? undefined}
         muted={muted}
         loop
         playsInline
-        preload="metadata"
+        preload="none"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onError={() => setFailed(true)}

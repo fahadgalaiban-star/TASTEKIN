@@ -76,9 +76,18 @@ async function fakePlaybackEnvironment(page: Page) {
       return type === 'application/vnd.apple.mpegurl' ? 'probably' : '';
     };
     const fakeSrc = new WeakMap<HTMLMediaElement, string>();
+    // Records every real (attempted) src assignment, tagged by the owning
+    // Home card's own testid — this is how tests prove an offscreen card
+    // never initializes playback (zero entries) and that only the
+    // visibility-eligible card does (exactly one entry, for the right id).
+    (window as unknown as { __srcAssignments: Array<{ testId: string | null; value: string }> }).__srcAssignments = [];
     Object.defineProperty(HTMLMediaElement.prototype, 'src', {
       configurable: true,
-      set(value: string) { fakeSrc.set(this, value); },
+      set(value: string) {
+        fakeSrc.set(this, value);
+        const owner = typeof this.closest === 'function' ? this.closest('[data-testid^="home-video-"]') : null;
+        (window as unknown as { __srcAssignments: Array<{ testId: string | null; value: string }> }).__srcAssignments.push({ testId: owner?.getAttribute('data-testid') ?? null, value });
+      },
       get() { return fakeSrc.get(this) || ''; },
     });
     HTMLMediaElement.prototype.play = function () {
@@ -140,6 +149,12 @@ async function setIntersecting(page: Page, testId: string, isIntersecting: boole
     return (window as unknown as { __setIntersecting: (testId: string, isIntersecting: boolean, ratio?: number) => Promise<boolean> }).__setIntersecting(testId, isIntersecting, ratio);
   }, { testId, isIntersecting, ratio });
   if (!fired) throw new Error(`setIntersecting: no IntersectionObserver ever registered [data-testid="${testId}"]`);
+}
+
+/** Every real `.src` assignment made so far, optionally filtered to one Home card's own testid — see the `__srcAssignments` recorder installed by fakePlaybackEnvironment. */
+async function srcAssignments(page: Page, testId?: string): Promise<Array<{ testId: string | null; value: string }>> {
+  const all = await page.evaluate(() => (window as unknown as { __srcAssignments: Array<{ testId: string | null; value: string }> }).__srcAssignments);
+  return testId ? all.filter((entry) => entry.testId === testId) : all;
 }
 
 class PlaybackApi {
@@ -299,7 +314,33 @@ test('a sufficiently visible Home video autoplays muted and playsInline, and onl
   await expect(card1).toHaveAttribute('data-playing', 'false');
 });
 
-test('a Home video pauses once it scrolls below the visibility threshold', async ({ page }) => {
+test('an offscreen Home video makes zero media requests, and only the visibility-eligible card initializes playback', async ({ page }) => {
+  const api = new PlaybackApi();
+  api.edits = [baseEdit('video-1', { video: videoRef('1') }), baseEdit('video-2', { video: videoRef('2') })];
+  await viewerPage(page, api);
+
+  const card1 = page.getByTestId('home-video-video-1');
+  const card2 = page.getByTestId('home-video-video-2');
+  await expect(card1).toBeVisible();
+  await expect(card2).toBeVisible();
+
+  // Neither card is visibility-eligible yet, and preload is "none" — no
+  // src has ever been assigned to either <video>, so no HLS/native media
+  // request of any kind can have happened.
+  await expect(card1).toHaveAttribute('data-active', 'false');
+  await expect(card2).toHaveAttribute('data-active', 'false');
+  expect(await srcAssignments(page)).toHaveLength(0);
+  await expect(card1.locator('video')).toHaveJSProperty('preload', 'none');
+
+  // Only card 1 becomes eligible — only card 1 may initialize.
+  await setIntersecting(page, 'home-video-video-1', true, 0.8);
+  await expect(card1).toHaveAttribute('data-active', 'true');
+  expect(await srcAssignments(page, 'home-video-video-1')).toHaveLength(1);
+  expect(await srcAssignments(page, 'home-video-video-2')).toHaveLength(0);
+  await expect(card2).toHaveAttribute('data-active', 'false');
+});
+
+test('a Home video pauses and tears down its source once it scrolls below the visibility threshold — re-entering reinitializes it', async ({ page }) => {
   const api = new PlaybackApi();
   api.edits = [baseEdit('video-1', { video: videoRef('1') })];
   await viewerPage(page, api);
@@ -307,9 +348,21 @@ test('a Home video pauses once it scrolls below the visibility threshold', async
   const card = page.getByTestId('home-video-video-1');
   await setIntersecting(page, 'home-video-video-1', true, 0.8);
   await expect(card).toHaveAttribute('data-playing', 'true');
+  await expect(card).toHaveAttribute('data-active', 'true');
+  expect(await srcAssignments(page, 'home-video-video-1')).toHaveLength(1);
 
   await setIntersecting(page, 'home-video-video-1', false, 0);
   await expect(card).toHaveAttribute('data-playing', 'false');
+  await expect(card).toHaveAttribute('data-active', 'false');
+  // Deactivating must not itself re-attach a source — still exactly one.
+  expect(await srcAssignments(page, 'home-video-video-1')).toHaveLength(1);
+
+  // Scrolling back into view reinitializes from scratch (a fresh
+  // attachment), proving the source was actually torn down rather than
+  // merely paused.
+  await setIntersecting(page, 'home-video-video-1', true, 0.8);
+  await expect(card).toHaveAttribute('data-playing', 'true');
+  expect(await srcAssignments(page, 'home-video-video-1')).toHaveLength(2);
 });
 
 test('a playing Home video pauses when the page becomes hidden', async ({ page }) => {
@@ -323,6 +376,22 @@ test('a playing Home video pauses when the page becomes hidden', async ({ page }
 
   await page.evaluate(() => (window as unknown as { __setDocumentHidden: (v: boolean) => void }).__setDocumentHidden(true));
   await expect(card).toHaveAttribute('data-playing', 'false');
+  await expect(card).toHaveAttribute('data-active', 'false');
+});
+
+test('pressing Play before a card ever becomes visibility-eligible still initializes and plays it', async ({ page }) => {
+  const api = new PlaybackApi();
+  api.edits = [baseEdit('video-1', { video: videoRef('1') })];
+  await viewerPage(page, api);
+
+  const card = page.getByTestId('home-video-video-1');
+  await expect(card).toHaveAttribute('data-active', 'false');
+  expect(await srcAssignments(page, 'home-video-video-1')).toHaveLength(0);
+
+  await card.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect(card).toHaveAttribute('data-active', 'true');
+  await expect(card).toHaveAttribute('data-playing', 'true');
+  expect(await srcAssignments(page, 'home-video-video-1')).toHaveLength(1);
 });
 
 test('mute/unmute and play/pause controls work on a Home video card', async ({ page }) => {

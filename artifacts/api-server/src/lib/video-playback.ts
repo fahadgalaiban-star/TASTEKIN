@@ -120,10 +120,15 @@ export function attachResolvedPlayback<T extends EditLike>(
     if (!resolved) return edit;
     return {
       ...edit,
+      // bunnyVideoId/bunnyLibraryId come from the persisted, validated
+      // `row` here — never from `video` (the client-submitted edit.video
+      // JSON) — for the same reason playbackUrl/posterUrl already do:
+      // nothing in this response should ever echo back provider identity
+      // that wasn't independently verified server-side this request.
       video: {
         uploadId: video.uploadId,
-        bunnyVideoId: video.bunnyVideoId,
-        bunnyLibraryId: video.bunnyLibraryId,
+        bunnyVideoId: row.bunnyVideoId,
+        bunnyLibraryId: row.bunnyLibraryId,
         playbackUrl: resolved.playbackUrl,
         posterUrl: resolved.posterUrl,
         durationSeconds: resolved.durationSeconds,

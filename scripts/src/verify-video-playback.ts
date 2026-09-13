@@ -208,20 +208,20 @@ async function main() {
     await expectStatus(await admin.setFlag("video_upload", true), 200);
 
     let freshCounter = 0;
-    async function freshOwner(): Promise<{ session: Session; revision: number; username: string }> {
+    async function freshOwner(): Promise<{ session: Session; revision: number; username: string; ownerUserId: string }> {
       freshCounter += 1;
       const session = new Session(server.baseUrl);
       const account = await session.signup(`playback-${suffix}-${freshCounter}@example.com`, PASSWORD);
       const workspace = await (await session.workspace()).json() as { revision: number };
       // Read the username directly off the row rather than GET
-      // /creator-profile: a fresh non-founder account's default avatar is ""
-      // (see initialProfile in creator-account.ts), which fails that
-      // endpoint's own response schema (min length 1) — a pre-existing,
-      // unrelated gap this suite works around rather than depends on.
+      // /creator-profile: this app's own GET /api/creator-profile now
+      // correctly returns 200 for a fresh account's empty avatar (see
+      // verify-creator-workspace-schema.ts), but reading straight from the
+      // DB here keeps this suite's fixtures independent of that endpoint.
       const [row] = await db.select({ profile: creatorWorkspaces.profile }).from(creatorWorkspaces).where(eq(creatorWorkspaces.ownerUserId, account.user.id));
       const username = (row?.profile as { username?: string } | undefined)?.username;
       assert.ok(username, "a freshly created creator workspace must always have a username");
-      return { session, revision: workspace.revision, username: username! };
+      return { session, revision: workspace.revision, username: username!, ownerUserId: account.user.id };
     }
     /** Reuses the same signed-in session against the CDN-less server (same cookie is meaningless cross-process, so re-derive via the shared DB instead: just re-signup isn't possible for the same email — instead this helper is only ever used read-side, unauthenticated, against public endpoints that don't need a session on serverNoCdn.) */
     const publicSession = new Session(serverNoCdn.baseUrl);
@@ -345,6 +345,32 @@ async function main() {
       const ownerView = await (await owner.session.workspace()).json() as { edits: Array<{ id: string; video?: VideoField }> };
       const seen = ownerView.edits.find((item) => item.id === "mismatch-attach-edit");
       assert.equal(seen?.video?.playbackUrl, undefined, "playback must never be resolved for an Edit the video row isn't actually attached to");
+    });
+
+    await check("attachResolvedPlayback returns bunnyVideoId/bunnyLibraryId from the persisted video_uploads row, never a stale or tampered value sitting in the workspace's own stored edit.video JSON", async () => {
+      const owner = await freshOwner();
+      const video = await createReadyVideo(owner.session, `identity-source-${suffix}`);
+      const edit = baseEdit("identity-source-edit", { status: "published", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+      await expectStatus(await owner.session.saveWorkspace([edit], owner.revision), 200);
+      // Directly corrupt the bunnyVideoId/bunnyLibraryId sitting in the
+      // workspace's own stored edit.video JSON — this state can never be
+      // reached through the API itself (the PUT handler cross-checks these
+      // against the row at save time and rejects a mismatch with 409), but
+      // attachResolvedPlayback must independently refuse to echo it back if
+      // it were ever present, exactly like it refuses to build a URL from
+      // client-submitted identity.
+      const [workspaceRow] = await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.ownerUserId, owner.ownerUserId));
+      assert.ok(workspaceRow, "the fixture workspace must exist");
+      const tamperedEdits = (workspaceRow.edits as Array<Record<string, unknown>>).map((item) =>
+        item.id === "identity-source-edit"
+          ? { ...item, video: { ...(item.video as Record<string, unknown>), bunnyVideoId: "tampered-video-id", bunnyLibraryId: "tampered-library-id" } }
+          : item);
+      await db.update(creatorWorkspaces).set({ edits: tamperedEdits }).where(eq(creatorWorkspaces.ownerUserId, owner.ownerUserId));
+      const ownerView = await (await owner.session.workspace()).json() as { edits: Array<{ id: string; video?: VideoField }> };
+      const seen = ownerView.edits.find((item) => item.id === "identity-source-edit");
+      assert.equal(seen?.video?.bunnyVideoId, video.bunnyVideoId, "bunnyVideoId in the response must come from the row, never the tampered stored JSON");
+      assert.equal(seen?.video?.bunnyLibraryId, video.bunnyLibraryId, "bunnyLibraryId in the response must come from the row, never the tampered stored JSON");
+      assert.ok(seen?.video?.playbackUrl?.includes(video.bunnyVideoId), "playbackUrl must still be derived from the row's own bunnyVideoId, not the tampered one");
     });
   } finally {
     stopServer(server);

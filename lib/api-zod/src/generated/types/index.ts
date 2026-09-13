@@ -22,6 +22,8 @@ export * from './conversationPreview';
 export * from './creator';
 export * from './creatorCollection';
 export * from './creatorCollectionAccess';
+export * from './creatorCollectionUploadsItem';
+export * from './creatorCollectionUploadsItemType';
 export * from './creatorCrop';
 export * from './creatorCropAspect';
 export * from './creatorEdit';
