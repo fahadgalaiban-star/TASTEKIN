@@ -433,6 +433,50 @@ async function main() {
         }
       }
     });
+
+    await check("PUT /api/creator-workspace rejects the entire request with 400 if the same video uploadId is referenced by more than one Edit — duplicate attachment is refused before any attach/detach/persist work", async () => {
+      const owner = await freshOwner();
+      const video = await createReadyVideo(owner.session, `dup-attach-${suffix}`);
+      const editA = baseEdit("dup-edit-a", { status: "published", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+      const editB = baseEdit("dup-edit-b", { status: "published", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
+      const revisionBefore = owner.revision;
+      const response = await owner.session.saveWorkspace([editA, editB], owner.revision);
+      await expectStatus(response, 400);
+      const body = await response.json() as { error: string };
+      assert.match(body.error, /same video cannot be attached to more than one Edit/);
+
+      // Neither Edit was persisted and the workspace revision did not change.
+      const workspaceAfter = await (await owner.session.workspace()).json() as { revision: number; edits: Array<{ id: string }> };
+      assert.equal(workspaceAfter.revision, revisionBefore, "a rejected save must never bump the workspace revision");
+      assert.ok(!workspaceAfter.edits.some((edit) => edit.id === "dup-edit-a" || edit.id === "dup-edit-b"), "neither duplicate-referencing Edit may be persisted");
+
+      // attached_edit_id remains unchanged — still null, since this video
+      // was never attached to any Edit before this rejected attempt.
+      const [row] = await db.select().from(videoUploads).where(eq(videoUploads.id, video.id));
+      assert.equal(row!.attachedEditId, null, "a rejected save must never attach the video to any Edit");
+      assert.equal(row!.state, "ready", "a rejected save must never touch the video row's state");
+    });
+
+    await check("a normal single attachment, and a legitimate replacement with a different video, both still succeed after the duplicate-uploadId check", async () => {
+      const owner = await freshOwner();
+      const videoOne = await createReadyVideo(owner.session, `dup-ok-single-${suffix}`);
+      const edit = baseEdit("dup-ok-edit", { status: "published", video: { uploadId: videoOne.id, bunnyVideoId: videoOne.bunnyVideoId, bunnyLibraryId: videoOne.bunnyLibraryId } });
+      const saved = await owner.session.saveWorkspace([edit], owner.revision);
+      await expectStatus(saved, 200);
+      const savedBody = await saved.json() as { revision: number };
+      const [rowOne] = await db.select().from(videoUploads).where(eq(videoUploads.id, videoOne.id));
+      assert.equal(rowOne!.attachedEditId, "dup-ok-edit", "a single legitimate attachment must still succeed");
+
+      // Replace with a different, second video on the same Edit.
+      const videoTwo = await createReadyVideo(owner.session, `dup-ok-replace-${suffix}`);
+      const editReplaced = baseEdit("dup-ok-edit", { status: "published", video: { uploadId: videoTwo.id, bunnyVideoId: videoTwo.bunnyVideoId, bunnyLibraryId: videoTwo.bunnyLibraryId } });
+      const replaced = await owner.session.saveWorkspace([editReplaced], savedBody.revision);
+      await expectStatus(replaced, 200);
+      const [rowOneAfterReplace] = await db.select().from(videoUploads).where(eq(videoUploads.id, videoOne.id));
+      const [rowTwoAfterReplace] = await db.select().from(videoUploads).where(eq(videoUploads.id, videoTwo.id));
+      assert.equal(rowOneAfterReplace!.attachedEditId, null, "the replaced-away video must be detached");
+      assert.equal(rowTwoAfterReplace!.attachedEditId, "dup-ok-edit", "the new video must become attached");
+    });
   } finally {
     stopServer(server);
     await new Promise((resolve) => fakeBunny.server.close(resolve));

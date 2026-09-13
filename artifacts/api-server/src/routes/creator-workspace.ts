@@ -576,6 +576,28 @@ router.put("/creator-workspace", async (req, res) => {
     }
   }
 
+  // A video can only ever be durably attached to one Edit (see
+  // attachVideoUploadsToEdit/attached_edit_id below) — reject the entire
+  // request up front, before any attach/detach/persist work begins, if the
+  // same uploadId is referenced by more than one edit in this save. Purely
+  // a shape check on the submitted payload (no DB read needed), so it can
+  // never leave the workspace, its revision, or any video_uploads row
+  // touched. A legitimate single Edit keeping or replacing its own video
+  // with a different uploadId is unaffected.
+  {
+    const seenUploadIds = new Set<string>();
+    for (const edit of parsed.data.edits as EditRecord[]) {
+      if (!hasVideoField(edit)) continue;
+      const uploadId = (edit.video as { uploadId?: unknown }).uploadId;
+      if (typeof uploadId !== "string") continue;
+      if (seenUploadIds.has(uploadId)) {
+        res.status(400).json({ error: "The same video cannot be attached to more than one Edit" });
+        return;
+      }
+      seenUploadIds.add(uploadId);
+    }
+  }
+
   try {
     const workspaceId = authorization.workspace.creatorId;
     const ownerId = req.user!.id;
