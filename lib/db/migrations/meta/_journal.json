@@ -127,6 +127,13 @@
       "when": 1788800000000,
       "tag": "0017_video_uploads",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1789000000000,
+      "tag": "0018_video_upload_lifecycle",
+      "breakpoints": true
     }
   ]
 }
