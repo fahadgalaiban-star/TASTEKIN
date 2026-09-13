@@ -25,14 +25,30 @@ import { sql } from "drizzle-orm";
  * pass through this API (see routes/video-uploads.ts). deletion_pending /
  * delete_failed mirror closet_media_uploads' existing cancel/delete
  * fencing convention.
+ *
+ * "creating" (added post-Phase-2A-review): the brief window between the
+ * intent row being inserted and Bunny's create-video call resolving — its
+ * id is never returned to a client until it leaves this state. See
+ * api-server's video-upload-lifecycle.ts for why this exists (a genuinely
+ * concurrent duplicate request-upload call must never be told to use a
+ * new Idempotency-Key just because the winning call hasn't finished yet).
+ *
+ * "create_ambiguous" / "orphan_cleanup_pending" (added post-Phase-2A-review):
+ * a create timeout or connection loss can happen after Bunny actually
+ * created the video but before this API learned its id. These states keep
+ * that possibility structurally distinct from a definite "failed" — see
+ * finalizeCreateAmbiguous and claimCancellation in video-upload-lifecycle.ts.
  */
 export const VIDEO_UPLOAD_STATES = [
+  "creating",
   "uploading",
   "processing",
   "ready",
   "failed",
+  "create_ambiguous",
   "deletion_pending",
   "delete_failed",
+  "orphan_cleanup_pending",
   "deleted",
 ] as const;
 export type VideoUploadState = (typeof VIDEO_UPLOAD_STATES)[number];

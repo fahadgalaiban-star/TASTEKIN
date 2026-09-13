@@ -4,9 +4,11 @@ import { createBunnyVideo, deleteBunnyVideo, isBunnyStreamConfigured } from "../
 import { requireCreator } from "../lib/creator-account";
 import { isFeatureEnabled } from "../lib/feature-flags";
 import {
+  AMBIGUOUS_CREATE_REASONS,
   claimCancellation,
   finalizeCancelDeleted,
   finalizeCancelFailed,
+  finalizeCreateAmbiguous,
   finalizeCreateFailure,
   finalizeCreateSuccess,
   getOwnedUpload,
@@ -16,6 +18,7 @@ import {
   reserveUploadIntent,
   serializeVideoUpload,
   validateDeclaredMetadata,
+  VIDEO_UPLOAD_IN_PROGRESS_RETRY_AFTER_SECONDS,
 } from "../lib/video-upload-lifecycle";
 import { requireUser } from "./engagement";
 
@@ -34,6 +37,10 @@ async function videoUploadFlagMw(_req: Request, res: Response, next: NextFunctio
     return;
   }
   next();
+}
+
+function statusUrlFor(id: string): string {
+  return `/api/video-uploads/${id}`;
 }
 
 /**
@@ -72,7 +79,27 @@ router.post("/video-uploads/request-upload", requireUserMw, videoUploadFlagMw, a
   const reservation = await reserveUploadIntent(workspace.creatorId, userId, bunnyLibraryId, declared, idempotencyKey);
   if (reservation.outcome === "rate_limited") { res.status(429).json({ error: "Too many upload attempts. Try again later." }); return; }
   if (reservation.outcome === "concurrency_limited") { res.status(429).json({ error: "Too many uploads in progress. Wait for one to finish first." }); return; }
-  if (reservation.outcome === "idempotency_conflict") { res.status(409).json({ error: "This Idempotency-Key was already used. Use a new key to start a new upload." }); return; }
+  if (reservation.outcome === "idempotency_conflict") {
+    const error = reservation.reason === "metadata_mismatch"
+      ? "This Idempotency-Key was already used with different upload details. Use a new key for a different upload."
+      : "This Idempotency-Key was already used and has been resolved. Use a new key to start a new upload.";
+    res.status(409).json({ error });
+    return;
+  }
+
+  if (reservation.outcome === "in_progress") {
+    // A genuinely concurrent duplicate call arrived while the winning call
+    // for this exact key is still waiting on Bunny — never told to use a
+    // new key (that request may well succeed), just to check back shortly.
+    res.set("Retry-After", String(VIDEO_UPLOAD_IN_PROGRESS_RETRY_AFTER_SECONDS));
+    res.status(202).json({
+      id: reservation.row.id,
+      state: reservation.row.state,
+      statusUrl: statusUrlFor(reservation.row.id),
+      retryAfter: VIDEO_UPLOAD_IN_PROGRESS_RETRY_AFTER_SECONDS,
+    });
+    return;
+  }
 
   if (reservation.outcome === "idempotent_replay") {
     const tusAuthorization = issueTusUploadAuthorization(reservation.row);
@@ -82,15 +109,32 @@ router.post("/video-uploads/request-upload", requireUserMw, videoUploadFlagMw, a
   }
 
   const { row } = reservation;
-  const created = await createBunnyVideo(declared.fileName, { libraryId: bunnyLibraryId });
+  // The Bunny video's title is the upload's own stable internal id, never
+  // the user's declared filename — this is what would let a future
+  // (Phase 2B) reconciliation job locate a possible orphan on Bunny's side
+  // by listing videos in this library and matching titles against
+  // create_ambiguous rows. The user's actual filename is preserved
+  // separately in declared_file_name for the application's own display.
+  const created = await createBunnyVideo(row.id, { libraryId: bunnyLibraryId });
   if (created.status !== "ok") {
+    if (AMBIGUOUS_CREATE_REASONS.has(created.reason)) {
+      await finalizeCreateAmbiguous(row.id, userId, created.reason);
+      req.log.warn({ reason: created.reason, uploadId: row.id, userId }, "Bunny video creation outcome unresolved");
+      res.status(created.reason === "timeout" ? 504 : 502).json({
+        id: row.id,
+        state: "create_ambiguous",
+        outcome: "unresolved",
+        error: "This upload's creation status could not be confirmed. Do not retry with the same key — check its status, or start a new attempt with a new key.",
+      });
+      return;
+    }
     await finalizeCreateFailure(row.id, userId, created.reason);
     req.log.warn({ reason: created.reason, uploadId: row.id, userId }, "Bunny video creation failed");
     // The row itself is the durable record of this attempt (see
     // finalizeCreateFailure) — its id is still returned here so the client
     // can inspect it via GET /:id, even though its state is already
     // terminal ("failed") and it will never be retried automatically.
-    res.status(created.reason === "timeout" ? 504 : 502).json({ id: row.id, error: "Unable to start this upload right now. Try again with a new request." });
+    res.status(502).json({ id: row.id, error: "Unable to start this upload right now. Try again with a new request." });
     return;
   }
 
@@ -131,6 +175,13 @@ router.post("/video-uploads/:id/cancel", requireUserMw, videoUploadFlagMw, async
     const current = await getOwnedUpload(id, user.id);
     if (!current) { res.status(404).json({ error: "Upload not found" }); return; }
     if (current.state === "deleted") { res.status(200).json({ id: current.id, state: current.state, physicalDeletion: "completed" }); return; }
+    if (current.state === "orphan_cleanup_pending") {
+      // Repeated cancel call on an already-ambiguous row — nothing new to
+      // do (Phase 2B owns actually resolving it), restate the same honest
+      // "unknown" outcome rather than pretending it's settled.
+      res.status(202).json({ id: current.id, state: current.state, physicalDeletion: "unknown" });
+      return;
+    }
     // "deletion_pending": another cancel call for this same row is
     // actively in flight right now — report the in-progress state rather
     // than racing it with a second concurrent Bunny delete call.
@@ -138,7 +189,19 @@ router.post("/video-uploads/:id/cancel", requireUserMw, videoUploadFlagMw, async
     return;
   }
 
+  if (claimed.state === "orphan_cleanup_pending") {
+    // This row's create call never got far enough to receive a Bunny
+    // video id (see finalizeCreateAmbiguous) — there is nothing to call
+    // Bunny's delete endpoint with, and no way to honestly claim the
+    // physical asset (if one even exists) has been deleted.
+    res.status(202).json({ id: claimed.id, state: claimed.state, physicalDeletion: "unknown" });
+    return;
+  }
+
   if (!claimed.bunnyVideoId) {
+    // A definite create rejection ("failed") never had a Bunny video at
+    // all — physicalDeletion is honestly "completed" because there was
+    // never anything on Bunny's side to delete.
     const finalRow = await finalizeCancelDeleted(claimed.id, user.id);
     res.status(200).json({ id: finalRow.id, state: finalRow.state, physicalDeletion: "completed" });
     return;

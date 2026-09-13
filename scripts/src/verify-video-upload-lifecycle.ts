@@ -46,6 +46,7 @@ type VideoState = { bunnyStatus: number; length?: number | null; width?: number 
 type Override = "not_found" | "http_error" | "timeout" | "malformed" | "wrong_identity";
 
 let createMode: "ok" | "timeout" | "http_error" | "malformed" = "ok";
+let createDelayMs = 0;
 let videoCounter = 0;
 let createCallCount = 0;
 const videoStates = new Map<string, VideoState>();
@@ -68,14 +69,22 @@ function startFakeBunny(): Promise<{ server: http.Server; baseUrl: string }> {
 
         if (req.method === "POST" && createMatch) {
           createCallCount += 1;
-          if (createMode === "timeout") return; // never respond
-          if (createMode === "http_error") { res.writeHead(500); res.end(); return; }
-          if (createMode === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({})); return; }
-          videoCounter += 1;
-          const guid = `fake-video-${videoCounter}`;
-          videoStates.set(guid, { bunnyStatus: 0 });
-          res.writeHead(200, { "content-type": "application/json" });
-          res.end(JSON.stringify({ guid }));
+          const respond = () => {
+            if (createMode === "timeout") return; // never respond
+            if (createMode === "http_error") { res.writeHead(500); res.end(); return; }
+            if (createMode === "malformed") { res.writeHead(200, { "content-type": "application/json" }); res.end(JSON.stringify({})); return; }
+            videoCounter += 1;
+            const guid = `fake-video-${videoCounter}`;
+            videoStates.set(guid, { bunnyStatus: 0 });
+            res.writeHead(200, { "content-type": "application/json" });
+            res.end(JSON.stringify({ guid }));
+          };
+          // createDelayMs exists only to give a true-concurrency test a
+          // controlled window in which a second, genuinely simultaneous
+          // request-upload call is guaranteed to observe the first one's
+          // row still in "creating" — never used for any other check.
+          if (createDelayMs > 0) setTimeout(respond, createDelayMs);
+          else respond();
           return;
         }
 
@@ -338,7 +347,7 @@ async function main() {
       }
     });
 
-    await check("processing-to-ready reconciliation happens without any webhook: uploading → processing → ready, with real Bunny metadata persisted", async () => {
+    await check("processing-to-ready reconciliation happens without any webhook: uploading → processing → ready (status 3), with real Bunny metadata persisted", async () => {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `flow-${suffix}`);
       await expectStatus(response, 201);
@@ -351,7 +360,7 @@ async function main() {
       await sleep(80);
       assert.equal((await (await owner.getUpload(id)).json() as { state: string }).state, "processing");
 
-      videoStates.set(videoId, { bunnyStatus: 4, length: 42, width: 1080, height: 1920 });
+      videoStates.set(videoId, { bunnyStatus: 3, length: 42, width: 1080, height: 1920 });
       await sleep(80);
       const ready = await (await owner.getUpload(id)).json() as Record<string, unknown>;
       assert.equal(ready.state, "ready");
@@ -360,25 +369,48 @@ async function main() {
       assert.equal(ready.height, 1920);
     });
 
-    await check("a 'Finished' status without valid playback metadata is never marked ready", async () => {
+    await check("status 3 (Finished) without valid playback metadata is never marked ready", async () => {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `noplayback-${suffix}`);
       const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
-      videoStates.set(tus.videoId, { bunnyStatus: 4, length: 0, width: null, height: null });
+      videoStates.set(tus.videoId, { bunnyStatus: 3, length: 0, width: null, height: null });
       await sleep(80);
       const status = await (await owner.getUpload(id)).json() as { state: string };
       assert.notEqual(status.state, "ready");
     });
 
-    await check("a known Bunny failure status (5/6) marks the upload failed with a sanitized reason", async () => {
+    await check("status 5 (Failed) marks the upload failed with a sanitized reason", async () => {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `fail-${suffix}`);
       const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
-      videoStates.set(tus.videoId, { bunnyStatus: 6 });
+      videoStates.set(tus.videoId, { bunnyStatus: 5 });
       await sleep(80);
       const status = await (await owner.getUpload(id)).json() as { state: string; errorReason: string };
       assert.equal(status.state, "failed");
       assert.ok(status.errorReason && !status.errorReason.includes(TEST_API_KEY));
+    });
+
+    await check("status 4, 6, 7, 8, and an unrecognized numeric status are all treated as non-terminal processing, never ready or failed (Get Video's status enum is not assumed to match webhook event codes)", async () => {
+      for (const bunnyStatus of [4, 6, 7, 8, 999]) {
+        const owner = await freshUser();
+        const response = await owner.requestUpload(validFile, `nonterminal-${bunnyStatus}-${suffix}`);
+        const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
+        videoStates.set(tus.videoId, { bunnyStatus });
+        await sleep(80);
+        const status = await (await owner.getUpload(id)).json() as { state: string };
+        assert.equal(status.state, "processing", `status ${bunnyStatus} must map to "processing", got "${status.state}"`);
+      }
+    });
+
+    await check("status 6 specifically is never treated as a failure, even though it overlaps a documented webhook 'PresignedUploadStarted' code — no irreversible failed transition without authoritative confirmation for this exact field", async () => {
+      const owner = await freshUser();
+      const response = await owner.requestUpload(validFile, `status6-${suffix}`);
+      const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
+      videoStates.set(tus.videoId, { bunnyStatus: 6 });
+      await sleep(80);
+      const status = await (await owner.getUpload(id)).json() as { state: string };
+      assert.equal(status.state, "processing");
+      assert.notEqual(status.state, "failed");
     });
 
     await check("wrong provider identity in the status response is rejected — never trusted, never changes state", async () => {
@@ -468,23 +500,25 @@ async function main() {
       assert.equal(reused.status, 409);
     });
 
-    await check("an ambiguous provider-create timeout is recorded durably as failed, never silently retried, and the key is permanently spent", async () => {
+    await check("an ambiguous provider-create timeout is recorded structurally as create_ambiguous (never a plain 'failed'), never silently retried, and the key is permanently spent", async () => {
       const owner = await freshUser();
       const key = `ambiguous-${suffix}`;
       const before = createCallCount;
       createMode = "timeout";
-      let payload: { id: string };
+      let payload: { id: string; state: string; outcome: string };
       try {
         const response = await owner.requestUpload(validFile, key);
         assert.equal(response.status, 504);
-        payload = await response.json() as { id: string };
+        payload = await response.json() as { id: string; state: string; outcome: string };
         assert.ok(payload.id, "the durable intent row's id must still be returned even on an ambiguous create failure");
+        assert.equal(payload.state, "create_ambiguous");
+        assert.equal(payload.outcome, "unresolved");
       } finally {
         createMode = "ok";
       }
 
       const [row] = await db.select().from(videoUploads).where(eq(videoUploads.id, payload.id));
-      assert.equal(row.state, "failed");
+      assert.equal(row.state, "create_ambiguous", "an ambiguous outcome must never be conflated with a definite 'failed'");
       assert.equal(row.bunnyVideoId, null);
 
       const retried = await owner.requestUpload(validFile, key);
@@ -492,9 +526,74 @@ async function main() {
       assert.equal(createCallCount, before + 1, "an ambiguous timeout must count as exactly one create attempt, never more");
 
       const cancelled = await owner.cancelUpload(payload.id);
-      await expectStatus(cancelled, 200);
-      const cancelledBody = await cancelled.json() as { physicalDeletion: string };
-      assert.equal(cancelledBody.physicalDeletion, "completed", "cancelling a row with no Bunny video yet must skip the provider call and finalize immediately");
+      await expectStatus(cancelled, 202);
+      const cancelledBody = await cancelled.json() as { state: string; physicalDeletion: string };
+      assert.equal(cancelledBody.state, "orphan_cleanup_pending", "cancelling an ambiguous row must land in a structured unresolved-cleanup state, not silently 'deleted'");
+      assert.equal(cancelledBody.physicalDeletion, "unknown", "physicalDeletion must never claim 'completed' when no Bunny video id was ever confirmed — a real orphan may still exist");
+
+      const [afterCancel] = await db.select().from(videoUploads).where(eq(videoUploads.id, payload.id));
+      assert.equal(afterCancel.state, "orphan_cleanup_pending");
+
+      const repeatedCancel = await owner.cancelUpload(payload.id);
+      await expectStatus(repeatedCancel, 202);
+      assert.equal((await repeatedCancel.json() as { physicalDeletion: string }).physicalDeletion, "unknown", "repeated cancel on an orphan_cleanup_pending row must stay honest, not flip to 'completed'");
+    });
+
+    await check("reusing an Idempotency-Key with materially different declared file metadata is refused as a conflict, regardless of the original's resolution state", async () => {
+      const owner = await freshUser();
+      const key = `mismatch-${suffix}`;
+      const first = await owner.requestUpload(validFile, key);
+      await expectStatus(first, 201);
+      const differentFile = { fileName: "a-completely-different-file.mov", sizeBytes: 999, mimeType: "video/quicktime" };
+      const second = await owner.requestUpload(differentFile, key);
+      assert.equal(second.status, 409, "the same key with different upload details must never be treated as a valid replay");
+    });
+
+    await check("true concurrency: two genuinely simultaneous request-upload calls with the same Idempotency-Key produce exactly one Bunny video and one row — the duplicate is told to check back, never to use a new key", async () => {
+      const owner = await freshUser();
+      const key = `truly-concurrent-${suffix}`;
+      const before = createCallCount;
+      // Must stay comfortably under the server's configured
+      // BUNNY_STREAM_TIMEOUT_MS_OVERRIDE (300ms, see startServer below) —
+      // long enough for a second, genuinely simultaneous request to land
+      // while the first is still waiting on Bunny, short enough that the
+      // winner's own create call never times out.
+      createDelayMs = 150;
+      let first: Response, second: Response;
+      try {
+        [first, second] = await Promise.all([
+          owner.requestUpload(validFile, key),
+          owner.requestUpload(validFile, key),
+        ]);
+      } finally {
+        createDelayMs = 0;
+      }
+      const statuses = [first.status, second.status].sort();
+      assert.deepEqual(statuses, [201, 202], `expected exactly one 201 (the winner) and one 202 (the in-progress duplicate), got ${statuses}`);
+      const winner = first.status === 201 ? first : second;
+      const duplicate = first.status === 201 ? second : first;
+
+      const winnerBody = await winner.json() as { id: string };
+      const duplicateBody = await duplicate.json() as { id: string; state: string; statusUrl: string; retryAfter: number };
+      assert.equal(duplicateBody.id, winnerBody.id, "the duplicate response must carry the same internal upload id as the winner");
+      assert.equal(duplicateBody.state, "creating");
+      assert.equal(duplicateBody.statusUrl, `/api/video-uploads/${winnerBody.id}`);
+      assert.ok(duplicateBody.retryAfter > 0);
+      assert.equal(duplicate.headers.get("retry-after"), String(duplicateBody.retryAfter));
+      assert.ok(!JSON.stringify(duplicateBody).toLowerCase().includes("use a new key"), "a genuinely in-progress duplicate must never be told to use a new key");
+
+      assert.equal(createCallCount, before + 1, "exactly one Bunny create call must happen no matter how many simultaneous duplicate requests arrive");
+      const rows = await db.select().from(videoUploads).where(eq(videoUploads.idempotencyKey, key));
+      assert.equal(rows.length, 1, "exactly one database row must exist for this idempotency key");
+
+      // After the delayed create resolves, the same key + same metadata must replay the same identity, still without a second Bunny call.
+      await sleep(600);
+      const replay = await owner.requestUpload(validFile, key);
+      await expectStatus(replay, 201);
+      const replayBody = await replay.json() as { id: string; replayed?: boolean };
+      assert.equal(replayBody.id, winnerBody.id);
+      assert.equal(replayBody.replayed, true);
+      assert.equal(createCallCount, before + 1, "replaying after the original resolved must still never call Bunny create again");
     });
 
     await check("cancel retries: a failed Bunny delete leaves the row retryable, and a second cancel call succeeds", async () => {
@@ -528,7 +627,7 @@ async function main() {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `race-${suffix}`);
       const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
-      videoStates.set(tus.videoId, { bunnyStatus: 4, length: 42, width: 1080, height: 1920 });
+      videoStates.set(tus.videoId, { bunnyStatus: 3, length: 42, width: 1080, height: 1920 });
       await Promise.all([owner.cancelUpload(id), owner.getUpload(id)]);
       const [row] = await db.select().from(videoUploads).where(eq(videoUploads.id, id));
       assert.ok(["deletion_pending", "delete_failed", "deleted"].includes(row.state), `expected a cancel-related terminal state, got ${row.state}`);
