@@ -38,6 +38,17 @@ import { sql } from "drizzle-orm";
  * created the video but before this API learned its id. These states keep
  * that possibility structurally distinct from a definite "failed" — see
  * finalizeCreateAmbiguous and claimCancellation in video-upload-lifecycle.ts.
+ *
+ * Phase 2B additions (see migration 0019): recovery_lease_until /
+ * recovery_lease_token fence the List-Videos-based orphan recovery sweep
+ * (video-upload-recovery.ts) the same way closet_media_uploads' existing
+ * cleanup_lease_until/cleanup_claim_token fence its own storage-cleanup
+ * sweep — a short transaction claims the lease, the Bunny call happens
+ * outside any transaction, and a second short transaction finalizes only
+ * if the claim token still matches. Every other Phase 2B recovery path
+ * (retrying delete_failed, re-polling missed uploading/processing rows)
+ * reuses Phase 2A's already-atomic, already-fenced functions directly and
+ * needs no lease of its own.
  */
 export const VIDEO_UPLOAD_STATES = [
   "creating",
@@ -90,6 +101,11 @@ export const videoUploads = pgTable("video_uploads", {
   // VIDEO_UPLOAD_RECONCILE_MIN_INTERVAL_MS apart for a given row.
   lastReconciledAt: timestamp("last_reconciled_at", { withTimezone: true }),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  // Fences the orphan-recovery sweep (video-upload-recovery.ts) — see the
+  // Phase 2B comment above. Null except while a recovery attempt is
+  // actively claimed.
+  recoveryLeaseUntil: timestamp("recovery_lease_until", { withTimezone: true }),
+  recoveryLeaseToken: uuid("recovery_lease_token"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
@@ -101,6 +117,7 @@ export const videoUploads = pgTable("video_uploads", {
     .on(table.ownerUserId, table.idempotencyKey)
     .where(sql`${table.idempotencyKey} is not null`),
   index("video_uploads_state_updated_idx").on(table.state, table.updatedAt),
+  index("video_uploads_recovery_lease_idx").on(table.state, table.recoveryLeaseUntil),
 ]);
 
 export type VideoUpload = typeof videoUploads.$inferSelect;
