@@ -519,10 +519,7 @@ export interface CreatorProfileSettings {
      * @items.maxLength 60
      */
   interests: string[];
-  /**
-     * @minLength 1
-     * @maxLength 1024
-     */
+  /** @maxLength 1024 */
   avatar: string;
   /**
      * @maxLength 1024
@@ -584,6 +581,40 @@ export interface CreatorProfileInput {
   avatarObjectPath: string | null;
 }
 
+export interface CreatorEditVideo {
+  /**
+     * @minLength 1
+     * @maxLength 120
+     */
+  uploadId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  bunnyVideoId: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  bunnyLibraryId: string;
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  playbackUrl?: string | null;
+  /**
+     * @maxLength 2048
+     * @nullable
+     */
+  posterUrl?: string | null;
+  /** @nullable */
+  durationSeconds?: number | null;
+  /** @nullable */
+  width?: number | null;
+  /** @nullable */
+  height?: number | null;
+}
+
 export type CreatorEditCategory = typeof CreatorEditCategory[keyof typeof CreatorEditCategory];
 
 
@@ -643,6 +674,7 @@ export interface CreatorEdit {
   previewImage?: string;
   imageMetadata?: CreatorImageMetadata;
   crop?: CreatorCrop;
+  video?: CreatorEditVideo;
   /** @maxItems 20 */
   outfitItems?: CreatorOutfitItem[];
   showOutfitDetails?: boolean;
@@ -696,6 +728,29 @@ export const CreatorCollectionAccess = {
   locked: 'locked',
 } as const;
 
+export type CreatorCollectionUploadsItemType = typeof CreatorCollectionUploadsItemType[keyof typeof CreatorCollectionUploadsItemType];
+
+
+export const CreatorCollectionUploadsItemType = {
+  photo: 'photo',
+} as const;
+
+export type CreatorCollectionUploadsItem = {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  id: string;
+  type: CreatorCollectionUploadsItemType;
+  /** @maxLength 2000 */
+  image: string;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  imageObjectPath?: string | null;
+};
+
 export interface CreatorCollection {
   /**
      * @minLength 1
@@ -711,10 +766,7 @@ export interface CreatorCollection {
   /** @maxLength 2000 */
   descriptionAr: string;
   access: CreatorCollectionAccess;
-  /**
-     * @minLength 1
-     * @maxLength 120
-     */
+  /** @maxLength 120 */
   coverEditId: string;
   /**
      * @maxItems 100
@@ -722,6 +774,21 @@ export interface CreatorCollection {
      * @items.maxLength 120
      */
   editIds: string[];
+  /** @maxLength 2000 */
+  coverImage?: string;
+  /**
+     * @maxLength 2000
+     * @nullable
+     */
+  coverImageObjectPath?: string | null;
+  /** @maxItems 60 */
+  uploads?: CreatorCollectionUploadsItem[];
+  /**
+     * @maxItems 260
+     * @items.minLength 1
+     * @items.maxLength 200
+     */
+  itemOrder?: string[];
 }
 
 export interface CreatorWorkspaceInput {

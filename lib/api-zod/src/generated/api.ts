@@ -710,6 +710,10 @@ export const getCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax = 200;
 
 export const getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax = 200;
 
+export const getCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax = 2048;
+
+export const getCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax = 2048;
+
 export const getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax = 100;
 
 export const getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemBrandMax = 160;
@@ -758,6 +762,22 @@ export const getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax = 120;
 
 export const getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax = 100;
 
+export const getCreatorWorkspaceResponseOneCollectionsItemCoverImageMax = 2000;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemCoverImageObjectPathMax = 2000;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemUploadsItemIdMax = 200;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageMax = 2000;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageObjectPathMax = 2000;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemUploadsMax = 60;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemItemOrderItemMax = 200;
+
+export const getCreatorWorkspaceResponseOneCollectionsItemItemOrderMax = 260;
+
 export const getCreatorWorkspaceResponseOneCollectionsMax = 100;
 
 
@@ -805,7 +825,12 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "video": zod.object({
   "uploadId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax),
   "bunnyVideoId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax),
-  "bunnyLibraryId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax)
+  "bunnyLibraryId": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax),
+  "playbackUrl": zod.string().max(getCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax).nullish(),
+  "posterUrl": zod.string().max(getCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax).nullish(),
+  "durationSeconds": zod.number().nullish(),
+  "width": zod.number().nullish(),
+  "height": zod.number().nullish()
 }).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(getCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax),
@@ -834,16 +859,16 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "descriptionAr": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
   "coverEditId": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
-  "coverImage": zod.string().max(2000).optional(),
-  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
   "editIds": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemEditIdsMax),
+  "coverImage": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemCoverImageMax).optional(),
+  "coverImageObjectPath": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemCoverImageObjectPathMax).nullish(),
   "uploads": zod.array(zod.object({
-  "id": zod.string().min(1).max(200),
+  "id": zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemUploadsItemIdMax),
   "type": zod.enum(['photo']),
-  "image": zod.string().max(2000),
-  "imageObjectPath": zod.string().max(2000).nullable().optional()
-})).max(60).optional(),
-  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
+  "image": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageMax),
+  "imageObjectPath": zod.string().max(getCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageObjectPathMax).nullish()
+})).max(getCreatorWorkspaceResponseOneCollectionsItemUploadsMax).optional(),
+  "itemOrder": zod.array(zod.string().min(1).max(getCreatorWorkspaceResponseOneCollectionsItemItemOrderItemMax)).max(getCreatorWorkspaceResponseOneCollectionsItemItemOrderMax).optional()
 })).max(getCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 }).and(zod.object({
@@ -900,6 +925,10 @@ export const saveCreatorWorkspaceBodyEditsItemVideoBunnyVideoIdMax = 200;
 
 export const saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax = 200;
 
+export const saveCreatorWorkspaceBodyEditsItemVideoPlaybackUrlMax = 2048;
+
+export const saveCreatorWorkspaceBodyEditsItemVideoPosterUrlMax = 2048;
+
 export const saveCreatorWorkspaceBodyEditsItemOutfitItemsItemTypeMax = 100;
 
 export const saveCreatorWorkspaceBodyEditsItemOutfitItemsItemBrandMax = 160;
@@ -948,6 +977,22 @@ export const saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax = 120;
 
 export const saveCreatorWorkspaceBodyCollectionsItemEditIdsMax = 100;
 
+export const saveCreatorWorkspaceBodyCollectionsItemCoverImageMax = 2000;
+
+export const saveCreatorWorkspaceBodyCollectionsItemCoverImageObjectPathMax = 2000;
+
+export const saveCreatorWorkspaceBodyCollectionsItemUploadsItemIdMax = 200;
+
+export const saveCreatorWorkspaceBodyCollectionsItemUploadsItemImageMax = 2000;
+
+export const saveCreatorWorkspaceBodyCollectionsItemUploadsItemImageObjectPathMax = 2000;
+
+export const saveCreatorWorkspaceBodyCollectionsItemUploadsMax = 60;
+
+export const saveCreatorWorkspaceBodyCollectionsItemItemOrderItemMax = 200;
+
+export const saveCreatorWorkspaceBodyCollectionsItemItemOrderMax = 260;
+
 export const saveCreatorWorkspaceBodyCollectionsMax = 100;
 
 
@@ -995,7 +1040,12 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "video": zod.object({
   "uploadId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoUploadIdMax),
   "bunnyVideoId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyVideoIdMax),
-  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax)
+  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemVideoBunnyLibraryIdMax),
+  "playbackUrl": zod.string().max(saveCreatorWorkspaceBodyEditsItemVideoPlaybackUrlMax).nullish(),
+  "posterUrl": zod.string().max(saveCreatorWorkspaceBodyEditsItemVideoPosterUrlMax).nullish(),
+  "durationSeconds": zod.number().nullish(),
+  "width": zod.number().nullish(),
+  "height": zod.number().nullish()
 }).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(saveCreatorWorkspaceBodyEditsItemOutfitItemsItemTypeMax),
@@ -1024,16 +1074,16 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "descriptionAr": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
   "coverEditId": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemCoverEditIdMax),
-  "coverImage": zod.string().max(2000).optional(),
-  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
   "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemEditIdsMax),
+  "coverImage": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemCoverImageMax).optional(),
+  "coverImageObjectPath": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemCoverImageObjectPathMax).nullish(),
   "uploads": zod.array(zod.object({
-  "id": zod.string().min(1).max(200),
+  "id": zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemUploadsItemIdMax),
   "type": zod.enum(['photo']),
-  "image": zod.string().max(2000),
-  "imageObjectPath": zod.string().max(2000).nullable().optional()
-})).max(60).optional(),
-  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
+  "image": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemUploadsItemImageMax),
+  "imageObjectPath": zod.string().max(saveCreatorWorkspaceBodyCollectionsItemUploadsItemImageObjectPathMax).nullish()
+})).max(saveCreatorWorkspaceBodyCollectionsItemUploadsMax).optional(),
+  "itemOrder": zod.array(zod.string().min(1).max(saveCreatorWorkspaceBodyCollectionsItemItemOrderItemMax)).max(saveCreatorWorkspaceBodyCollectionsItemItemOrderMax).optional()
 })).max(saveCreatorWorkspaceBodyCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 })
@@ -1081,6 +1131,10 @@ export const saveCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax = 120;
 export const saveCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax = 200;
 
 export const saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax = 200;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax = 2048;
+
+export const saveCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax = 2048;
 
 export const saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax = 100;
 
@@ -1130,6 +1184,22 @@ export const saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax = 120;
 
 export const saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax = 100;
 
+export const saveCreatorWorkspaceResponseOneCollectionsItemCoverImageMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemCoverImageObjectPathMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemUploadsItemIdMax = 200;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageObjectPathMax = 2000;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemUploadsMax = 60;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemItemOrderItemMax = 200;
+
+export const saveCreatorWorkspaceResponseOneCollectionsItemItemOrderMax = 260;
+
 export const saveCreatorWorkspaceResponseOneCollectionsMax = 100;
 
 
@@ -1177,7 +1247,12 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "video": zod.object({
   "uploadId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoUploadIdMax),
   "bunnyVideoId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyVideoIdMax),
-  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax)
+  "bunnyLibraryId": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemVideoBunnyLibraryIdMax),
+  "playbackUrl": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemVideoPlaybackUrlMax).nullish(),
+  "posterUrl": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemVideoPosterUrlMax).nullish(),
+  "durationSeconds": zod.number().nullish(),
+  "width": zod.number().nullish(),
+  "height": zod.number().nullish()
 }).optional(),
   "outfitItems": zod.array(zod.object({
   "type": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemOutfitItemsItemTypeMax),
@@ -1206,16 +1281,16 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "descriptionAr": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemDescriptionArMax),
   "access": zod.enum(['public', 'locked']),
   "coverEditId": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemCoverEditIdMax),
-  "coverImage": zod.string().max(2000).optional(),
-  "coverImageObjectPath": zod.string().max(2000).nullable().optional(),
   "editIds": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemEditIdsMax),
+  "coverImage": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemCoverImageMax).optional(),
+  "coverImageObjectPath": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemCoverImageObjectPathMax).nullish(),
   "uploads": zod.array(zod.object({
-  "id": zod.string().min(1).max(200),
+  "id": zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemUploadsItemIdMax),
   "type": zod.enum(['photo']),
-  "image": zod.string().max(2000),
-  "imageObjectPath": zod.string().max(2000).nullable().optional()
-})).max(60).optional(),
-  "itemOrder": zod.array(zod.string().min(1).max(200)).max(260).optional()
+  "image": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageMax),
+  "imageObjectPath": zod.string().max(saveCreatorWorkspaceResponseOneCollectionsItemUploadsItemImageObjectPathMax).nullish()
+})).max(saveCreatorWorkspaceResponseOneCollectionsItemUploadsMax).optional(),
+  "itemOrder": zod.array(zod.string().min(1).max(saveCreatorWorkspaceResponseOneCollectionsItemItemOrderItemMax)).max(saveCreatorWorkspaceResponseOneCollectionsItemItemOrderMax).optional()
 })).max(saveCreatorWorkspaceResponseOneCollectionsMax),
   "expectedRevision": zod.number().min(1).optional()
 }).and(zod.object({

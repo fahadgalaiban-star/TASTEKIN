@@ -11,6 +11,7 @@ import {
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
+import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -64,7 +65,14 @@ type PendingProfilePhoto = { file: File; url: string };
 // both against the persisted video_uploads row before ever accepting a
 // publish (see routes/creator-workspace.ts) — never trusted on the
 // strength of the client's own say-so.
-type CreatorEditVideo = { uploadId: string; bunnyVideoId: string; bunnyLibraryId: string };
+// playbackUrl/posterUrl/durationSeconds/width/height are resolved
+// server-side (see artifacts/api-server/src/lib/video-playback.ts) from the
+// live video_uploads row at response time — present only once that row is
+// "ready", correctly owned, and attached to this exact Edit. Never treat
+// their absence as an error: it just means playback isn't available yet
+// (or the video_upload flag is off), so the UI must fall back to a safe
+// placeholder rather than guessing a URL from bunnyVideoId/bunnyLibraryId.
+type CreatorEditVideo = { uploadId: string; bunnyVideoId: string; bunnyLibraryId: string; playbackUrl?: string | null; posterUrl?: string | null; durationSeconds?: number | null; width?: number | null; height?: number | null };
 type CreatorEdit = {
   id: string; category: Exclude<Category, 'All'>; title: string; titleAr: string; caption: string; captionAr: string;
   image?: string; sourceImage?: string; previewImage?: string; imageMetadata?: ImageMetadata; crop?: CropMetadata; video?: CreatorEditVideo; location: string; locationAr: string; altText: string; access: Access; status: EditStatus; collectionIds: string[]; outfitItems?: OutfitItem[]; showOutfitDetails?: boolean;
@@ -1025,7 +1033,7 @@ function TastekinApp() {
       <div className="approved-feed">
         {homeFeedTab === 'my-circle' && circleLoading && <div className="approved-empty">{ar ? 'جارٍ التحميل...' : 'Loading...'}</div>}
         {homeFeedTab === 'my-circle' && circleError && <div className="workspace-notice" role="alert">{ar ? 'تعذر تحميل دائرتك.' : 'Could not load your circle.'}<button type="button" onClick={() => void Promise.all([refetchCircleMembers(), refetchCircleFeed()])}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
-        {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeed.map((item) => <EditCard key={`${item.creatorUsername || 'self'}:${item.id}`} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}
+        {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeed.map((item) => <EditCard key={`${item.creatorUsername || 'self'}:${item.id}`} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} videoAutoplay />)}
         {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}
       </div>
     </>}
@@ -1696,8 +1704,16 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
   </>;
 }
 
-function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void; onOpenProfile?: () => void }) {
+function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutoplay = false }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void; onOpenProfile?: () => void; videoAutoplay?: boolean }) {
   const caption = publicCaptionLine(edit, ar);
+  if (edit.video) {
+    return <article className="approved-card" data-testid={`edit-card-${edit.id}`}>
+      <CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} />
+      {videoAutoplay ? <HomeVideoCard id={edit.id} video={edit.video} ar={ar} onOpen={onOpen} /> : <button className="approved-art" onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><PosterVideoCard video={edit.video} ar={ar} /></button>}
+      {caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}
+      {!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}
+    </article>;
+  }
   const noPhoto = !edit.image;
   if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
   return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
@@ -1709,11 +1725,12 @@ function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSu
   const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
   return <SimpleScreen kicker={locked ? (ar ? 'للمشتركين فقط' : 'Subscribers only') : (ar ? 'تعديل عام' : 'Public Edit')} title={detailTitle}>
     {edit.image && <div className={`approved-detail-art ${locked ? 'locked' : ''}`} style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} />{locked && <div><LockKeyhole size={26} />{caption && <strong>{caption}</strong>}</div>}</div>}
+    {edit.video && <VideoDetailPlayer video={edit.video} ar={ar} />}
     {isPlaceCategory(edit.category) && caption && caption !== detailTitle && <p className="edit-detail-caption">{caption}</p>}
-    {!edit.image && <div className={`place-detail-panel ${locked ? 'locked' : ''}`}>{locked && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} showName={false} /></div>}
+    {!edit.image && !edit.video && <div className={`place-detail-panel ${locked ? 'locked' : ''}`}>{locked && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} showName={false} /></div>}
     {!edit.placeName && (edit.location || edit.locationAr) && <div className="approved-location"><MapPin size={14} />{placeLocation(edit, ar)}</div>}
     {locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>
-      {isPlaceCategory(edit.category) && edit.image && <PlaceDetails edit={edit} ar={ar} showName={false} />}
+      {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} />}
       {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
       <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} onSave={onSave} onSignIn={onSignIn} />
       <button className={`approved-button wide ${saved ? 'primary' : ''}`} onClick={onSave}>{saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'احفظ هذا التعديل' : 'Save this edit')}</button>
@@ -4290,12 +4307,15 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       {publishedEdits.map((edit) => {
         const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
-        return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
+        return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
           {edit.image ? <>
             <span className="profile-grid-media">
               <img src={imageSrc(edit.image)} alt={edit.altText} />
               {edit.access === 'locked' && <span className="profile-grid-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}
             </span>
+            {caption && <span className="profile-grid-caption">{caption}</span>}
+          </> : edit.video ? <>
+            <PosterVideoCard video={edit.video} ar={ar} />
             {caption && <span className="profile-grid-caption">{caption}</span>}
           </> : <span className="place-grid-preview">
             <span className="place-grid-eyebrow">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>
