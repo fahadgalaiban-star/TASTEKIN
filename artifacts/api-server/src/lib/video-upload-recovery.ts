@@ -142,19 +142,25 @@ export type AmbiguousRecoveryOutcome = "resolved" | "unresolved" | "skipped";
  * upload's stable internal UUID, never the user's filename, precisely so
  * this match can be exact instead of a filename-based guess).
  *
- *  - Confirmed absent (no match after full pagination): a
- *    "create_ambiguous" row becomes "failed" (nothing was ever created);
- *    an "orphan_cleanup_pending" row becomes "deleted" (nothing needed
- *    deleting — the cancel the user asked for is now confirmed complete).
  *  - Confirmed present (exactly one match): a "create_ambiguous" row
  *    adopts the discovered id and returns to normal "uploading" flow — a
  *    later reconcile call brings its status fully up to date. An
- *    "orphan_cleanup_pending" row is deleted now that its id is finally
- *    known, following the exact same ok/failed split as a live cancel.
- *  - Anything else (multiple matches, a provider error, or incomplete
- *    pagination) leaves the row exactly as it was — still unresolved,
- *    never guessed at — with its attempt count bumped so a bounded number
- *    of future sweeps can keep trying.
+ *    "orphan_cleanup_pending" row is only ever marked "deleted" once a
+ *    direct deleteBunnyVideo call against that exact id confirms it (an
+ *    "ok" result, which itself already treats a 404 as success) — never
+ *    on the strength of a List Videos absence, which is not the
+ *    per-video-confirmed signal "do not claim cleanup completed without
+ *    confirmed provider deletion/404" requires.
+ *  - Anything else — no match, multiple matches, a provider error, or
+ *    incomplete pagination — leaves the row exactly as it was, still
+ *    unresolved, never guessed at: a List Videos search finding zero
+ *    matches is not proof the video doesn't exist on Bunny (e.g. listing
+ *    endpoints can lag a create, or a page boundary can shift under a
+ *    concurrent mutation elsewhere in the library), so it gets the exact
+ *    same conservative treatment as an inconclusive search — the lease is
+ *    released and the attempt count bumped so a bounded number of future
+ *    sweeps can keep trying, rather than ever adopting a guess or
+ *    declaring a possibly-still-live video "failed"/"deleted".
  */
 export async function recoverAmbiguousUpload(row: Pick<VideoUpload, "id" | "ownerUserId" | "state" | "bunnyLibraryId" | "retryCount">): Promise<AmbiguousRecoveryOutcome> {
   if (row.state !== "create_ambiguous" && row.state !== "orphan_cleanup_pending") return "skipped";
@@ -165,19 +171,6 @@ export async function recoverAmbiguousUpload(row: Pick<VideoUpload, "id" | "owne
   const token = claimed.recoveryLeaseToken;
 
   const lookup = await findOrphanCandidateByTitle(claimed.bunnyLibraryId, claimed.id);
-
-  if (lookup.status === "not_found") {
-    if (claimed.state === "create_ambiguous") {
-      await finalizeRecovery(claimed.id, claimed.ownerUserId, token, claimed.state, {
-        state: "failed",
-        lastError: sanitizeProviderError("recovery", "no matching video found on provider"),
-        lastAttemptAt: new Date(),
-      });
-    } else {
-      await finalizeRecovery(claimed.id, claimed.ownerUserId, token, claimed.state, { state: "deleted", deletedAt: new Date() });
-    }
-    return "resolved";
-  }
 
   if (lookup.status === "found") {
     if (claimed.state === "create_ambiguous") {
@@ -203,7 +196,17 @@ export async function recoverAmbiguousUpload(row: Pick<VideoUpload, "id" | "owne
     return "resolved";
   }
 
-  const reason = lookup.status === "ambiguous" ? `multiple candidates (${lookup.count})` : lookup.reason;
+  // "not_found" (a completed search with zero exact-title matches),
+  // "ambiguous" (more than one exact-title match), and "unavailable" (a
+  // provider error or incomplete pagination) are all inconclusive in the
+  // same way — none of them is a confirmed, per-video result — so all
+  // three get the identical conservative outcome: release the lease,
+  // leave state/bunnyVideoId untouched, and bump the attempt bookkeeping.
+  const reason = lookup.status === "not_found"
+    ? "no matching video found on provider"
+    : lookup.status === "ambiguous"
+      ? `multiple candidates (${lookup.count})`
+      : lookup.reason;
   await releaseRecoveryLease(claimed.id, claimed.ownerUserId, token, claimed.state, reason);
   return "unresolved";
 }

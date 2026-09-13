@@ -527,20 +527,27 @@ async function main() {
       assert.equal(row?.bunnyVideoId, guid);
     });
 
-    await check("reconcile CLI: a stale 'creating' row with no matching provider video resolves to failed, never guessed at", async () => {
+    await check("reconcile CLI: a stale 'creating' row with no matching provider video is reclaimed into create_ambiguous and left unresolved, never guessed at", async () => {
       const { userId } = await freshUser();
       const staleCreatedAt = new Date(Date.now() - 60_000);
       const created = await insertRow({ ownerUserId: userId, state: "creating", createdAt: staleCreatedAt, updatedAt: staleCreatedAt, bunnyVideoId: null });
-      // No matching video anywhere in the fake provider's library.
+      // No matching video anywhere in the fake provider's library. A List
+      // Videos search finding zero matches is not proof the video doesn't
+      // exist on Bunny (the listing endpoint can lag a create) — it must
+      // never be treated as confirmed absence.
+      const before = await getRow(created.id);
       const result = await runReconcileCli(env);
       assert.equal(result.code, 0, result.stdout);
       const row = await getRow(created.id);
-      assert.equal(row?.state, "failed", "confirmed-absent must resolve to failed, not linger or get guessed at");
+      assert.equal(row?.state, "create_ambiguous", "a zero-match lookup must leave the row unresolved (reclaimed to create_ambiguous), never resolve it to failed");
+      assert.equal(row?.bunnyVideoId, null);
+      assert.ok((row?.retryCount ?? 0) > (before?.retryCount ?? 0), "an unresolved zero-match attempt should still bump retryCount so it is eventually bounded");
+      assert.equal(row?.recoveryLeaseUntil, null, "the lease must be released, not left held, once the attempt completes");
     });
 
     // --- exact-match and pagination behavior ---
 
-    await check("reconcile CLI: orphan search matches by EXACT title only — a superstring/prefix near-miss is never adopted", async () => {
+    await check("reconcile CLI: orphan search matches by EXACT title only — a superstring/prefix near-miss leaves the row unresolved, never adopted or failed", async () => {
       const { userId } = await freshUser();
       const created = await insertRow({ ownerUserId: userId, state: "create_ambiguous", bunnyVideoId: null, retryCount: 0 });
       videoStore.set(`fake-near-miss-super-${suffix}`, { title: `${created.id}-extra`, status: 0 });
@@ -548,7 +555,29 @@ async function main() {
       const result = await runReconcileCli(env);
       assert.equal(result.code, 0, result.stdout);
       const row = await getRow(created.id);
-      assert.equal(row?.state, "failed", "near-miss titles must never be treated as a match");
+      assert.equal(row?.state, "create_ambiguous", "near-miss titles must never be treated as a match, and a zero-exact-match result must never resolve to failed");
+      assert.equal(row?.bunnyVideoId, null);
+      assert.ok((row?.retryCount ?? 0) > 0, "a zero-match attempt should still bump retryCount");
+    });
+
+    await check("reconcile CLI: an orphan_cleanup_pending row with zero exact-title matches is left unresolved — physical deletion is never claimed without a confirmed provider delete/404", async () => {
+      const { userId } = await freshUser();
+      const created = await insertRow({ ownerUserId: userId, state: "orphan_cleanup_pending", bunnyVideoId: null, retryCount: 0 });
+      // No matching video anywhere in the fake provider's library, and
+      // deliberately no unrelated deletes recorded for this id — the fix
+      // under test is that a List-Videos absence alone must never be
+      // treated as "nothing needed deleting."
+      const deleteCallsBefore = deleteCallCount;
+      const before = await getRow(created.id);
+      const result = await runReconcileCli(env);
+      assert.equal(result.code, 0, result.stdout);
+      const row = await getRow(created.id);
+      assert.equal(row?.state, "orphan_cleanup_pending", "a zero-match lookup must never resolve an orphan_cleanup_pending row to deleted");
+      assert.notEqual(row?.state, "deleted", "physical deletion must never be reported/claimed as completed without a confirmed provider delete/404");
+      assert.equal(row?.deletedAt, null);
+      assert.equal(deleteCallCount, deleteCallsBefore, "no Delete Video call was ever made for this id — nothing was confirmed, so nothing may be claimed deleted");
+      assert.ok((row?.retryCount ?? 0) > (before?.retryCount ?? 0), "an unresolved zero-match attempt should still bump retryCount so it is eventually bounded");
+      assert.equal(row?.recoveryLeaseUntil, null, "the lease must be released, not left held, once the attempt completes");
     });
 
     await check("reconcile CLI: orphan search paginates across multiple pages to find an exact match on a later page", async () => {
