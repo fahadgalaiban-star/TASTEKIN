@@ -1,5 +1,5 @@
 import { db, videoUploads, type VideoUpload } from "@workspace/db";
-import { and, eq, gte, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, sql } from "drizzle-orm";
 
 import {
   BUNNY_TUS_UPLOAD_ENDPOINT,
@@ -20,7 +20,24 @@ import {
 export const VIDEO_UPLOAD_RATE_LIMIT_MAX = 20;
 export const VIDEO_UPLOAD_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000;
 export const VIDEO_UPLOAD_MAX_CONCURRENT = 3;
-export const VIDEO_UPLOAD_MAX_DECLARED_BYTES = 4 * 1024 * 1024 * 1024;
+/**
+ * The approved product limit (500MB), enforced here at reservation time
+ * (validateDeclaredMetadata, below) against the client's own declared
+ * sizeBytes, and again at publication time (routes/creator-workspace.ts)
+ * against the same declared_size_bytes column. Both checks read the same
+ * client-declared number — Bunny's Get Video response never exposes a
+ * verified byte-size field this app captures (only duration/width/height
+ * — see reconcileWithBunny/BunnyVideoMetadata), so there is currently no
+ * provider-verified size to check instead. This is a disclosed, real
+ * limitation: a client that lies about sizeBytes and successfully
+ * transfers more than 500MB of actual TUS bytes to Bunny would not be
+ * caught by either check. Duration (isApprovedVideoDuration, below) does
+ * not have this gap, since Bunny's own post-encode metadata is what's
+ * checked there.
+ */
+export const VIDEO_UPLOAD_MAX_APPROVED_BYTES = 500 * 1024 * 1024;
+/** Provider-verified (Bunny Get Video) upper bound, enforced only at publication — see isApprovedVideoDuration. */
+export const VIDEO_UPLOAD_MAX_APPROVED_DURATION_SECONDS = 10 * 60;
 export const VIDEO_UPLOAD_MAX_FILENAME_LENGTH = 255;
 export const VIDEO_UPLOAD_ALLOWED_MIME_TYPES = new Set([
   "video/mp4",
@@ -108,7 +125,7 @@ export function validateDeclaredMetadata(body: unknown): DeclaredMetadata | null
   const fileName = typeof record.fileName === "string" ? record.fileName.trim() : "";
   if (!fileName || fileName.length > VIDEO_UPLOAD_MAX_FILENAME_LENGTH || /[\x00-\x1f]/.test(fileName)) return null;
   const sizeBytes = record.sizeBytes;
-  if (typeof sizeBytes !== "number" || !Number.isInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > VIDEO_UPLOAD_MAX_DECLARED_BYTES) return null;
+  if (typeof sizeBytes !== "number" || !Number.isInteger(sizeBytes) || sizeBytes <= 0 || sizeBytes > VIDEO_UPLOAD_MAX_APPROVED_BYTES) return null;
   const mimeType = typeof record.mimeType === "string" ? record.mimeType.trim().toLowerCase() : "";
   if (!VIDEO_UPLOAD_ALLOWED_MIME_TYPES.has(mimeType)) return null;
   return { fileName, sizeBytes, mimeType };
@@ -431,17 +448,28 @@ export async function reconcileWithBunny(row: VideoUpload): Promise<VideoUpload>
  * "orphan_cleanup_pending" rather than "deletion_pending", since there is
  * no confirmed bunny_video_id to ever call Bunny's delete endpoint with —
  * see routes/video-uploads.ts for how the two are told apart and reported.
+ *
+ * `attached_edit_id is null` is the publish/cancel race fix: once
+ * routes/creator-workspace.ts has durably attached this row to a saved
+ * Edit (attachVideoUploadsToEdit, inside the same transaction that locked
+ * the row via lockVideoUploadsForUpdate), this UPDATE's WHERE clause can
+ * never match it again — a cancel arriving concurrently with that
+ * transaction blocks on the row lock until it commits, then sees
+ * attached_edit_id set and affects zero rows here, rather than racing past
+ * and deleting a video a publish just made durable. routes/video-uploads.ts
+ * reports this distinctly (see its handling of a null claim result against
+ * a still-"ready"/"uploading"/etc. row with attached_edit_id set).
  */
 export async function claimCancellation(id: string, ownerUserId: string): Promise<VideoUpload | null> {
   const [row] = await db.update(videoUploads)
     .set({ state: "deletion_pending", updatedAt: new Date() })
-    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), inArray(videoUploads.state, [...NORMAL_CANCELLABLE_STATES])))
+    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), inArray(videoUploads.state, [...NORMAL_CANCELLABLE_STATES]), isNull(videoUploads.attachedEditId)))
     .returning();
   if (row) return row;
 
   const [ambiguousRow] = await db.update(videoUploads)
     .set({ state: "orphan_cleanup_pending", updatedAt: new Date() })
-    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.state, "create_ambiguous")))
+    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.state, "create_ambiguous"), isNull(videoUploads.attachedEditId)))
     .returning();
   return ambiguousRow ?? null;
 }
@@ -473,6 +501,61 @@ export async function finalizeCancelFailed(id: string, ownerUserId: string, reas
   const [current] = await db.select().from(videoUploads).where(eq(videoUploads.id, id));
   if (!current) throw new Error("video upload disappeared mid-cancel");
   return current;
+}
+
+/**
+ * Publication-time approval checks — see the constants above for exactly
+ * what is and is not provider-verified. Both are read directly off the
+ * row (never re-derived), since routes/creator-workspace.ts already holds
+ * that row locked (see lockVideoUploadsForUpdate) by the time it calls
+ * these.
+ */
+export function isApprovedVideoDuration(durationSeconds: number | null): boolean {
+  return typeof durationSeconds === "number" && durationSeconds > 0 && durationSeconds <= VIDEO_UPLOAD_MAX_APPROVED_DURATION_SECONDS;
+}
+/** See VIDEO_UPLOAD_MAX_APPROVED_BYTES's own comment: declaredSizeBytes is client-declared, never a provider-verified fact about bytes actually sent. */
+export function isApprovedVideoSize(declaredSizeBytes: number | null): boolean {
+  return typeof declaredSizeBytes === "number" && declaredSizeBytes > 0 && declaredSizeBytes <= VIDEO_UPLOAD_MAX_APPROVED_BYTES;
+}
+
+/** The transaction type db.transaction's callback receives — named here so routes/creator-workspace.ts can pass its own open transaction into the row-locking/attach/detach helpers below without re-deriving this type itself. */
+export type VideoUploadsTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Publish/cancel race fix: locks the given video_uploads rows with
+ * SELECT ... FOR UPDATE for the remaining lifetime of the CALLER's open
+ * transaction (routes/creator-workspace.ts) — never wraps a Bunny network
+ * call, since Bunny is never contacted here or anywhere else in this
+ * file's cancel/attach/detach path. While these rows are locked, a
+ * concurrent claimCancellation() UPDATE against the same id blocks at the
+ * database level until this transaction commits or rolls back; once it
+ * commits (having set attached_edit_id — see attachVideoUploadsToEdit),
+ * claimCancellation's own attached_edit_id IS NULL condition makes that
+ * blocked UPDATE affect zero rows, so the cancellation is refused rather
+ * than racing past a video a publish just attached. Ids are sorted first
+ * so two overlapping saves that both happen to reference more than one
+ * shared video row always acquire their locks in the same order.
+ */
+export async function lockVideoUploadsForUpdate(tx: VideoUploadsTx, ids: string[]): Promise<VideoUpload[]> {
+  if (!ids.length) return [];
+  const sorted = Array.from(new Set(ids)).sort();
+  return tx.select().from(videoUploads).where(inArray(videoUploads.id, sorted)).for("update");
+}
+
+/** Marks these rows as durably referenced by `editId` — call only after validating ownership/identity/readiness against the SAME locked rows lockVideoUploadsForUpdate returned. */
+export async function attachVideoUploadsToEdit(tx: VideoUploadsTx, ids: string[], editId: string, ownerUserId: string): Promise<void> {
+  if (!ids.length) return;
+  await tx.update(videoUploads)
+    .set({ attachedEditId: editId, updatedAt: new Date() })
+    .where(and(inArray(videoUploads.id, ids), eq(videoUploads.ownerUserId, ownerUserId)));
+}
+
+/** Frees rows that WERE referenced by `editId` in the previously-saved workspace but no longer are in the new one — only if still attached to exactly this edit, so an unrelated concurrent attachment is never clobbered. */
+export async function detachVideoUploadsFromEdit(tx: VideoUploadsTx, ids: string[], editId: string, ownerUserId: string): Promise<void> {
+  if (!ids.length) return;
+  await tx.update(videoUploads)
+    .set({ attachedEditId: null, updatedAt: new Date() })
+    .where(and(inArray(videoUploads.id, ids), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.attachedEditId, editId)));
 }
 
 export function serializeVideoUpload(row: VideoUpload) {

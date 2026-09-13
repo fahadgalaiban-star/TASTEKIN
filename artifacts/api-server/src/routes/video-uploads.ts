@@ -191,6 +191,16 @@ router.post("/video-uploads/:id/cancel", requireUserMw, videoUploadFlagMw, async
       res.status(202).json({ id: current.id, state: current.state, physicalDeletion: "unknown" });
       return;
     }
+    if (current.attachedEditId) {
+      // The publish/cancel race fix (see claimCancellation/
+      // attachVideoUploadsToEdit in video-upload-lifecycle.ts): this row is
+      // durably referenced by a saved Edit, so claimCancellation's WHERE
+      // clause could never match it. Remove the video from that Edit (and
+      // save) first — only then does attached_edit_id clear and this
+      // upload become cancellable again.
+      res.status(409).json({ error: "This video is part of a saved Edit and can't be cancelled directly. Remove it from the Edit and save first." });
+      return;
+    }
     // "deletion_pending": another cancel call for this same row is
     // actively in flight right now — report the in-progress state rather
     // than racing it with a second concurrent Bunny delete call.

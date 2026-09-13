@@ -106,6 +106,17 @@ export const videoUploads = pgTable("video_uploads", {
   // actively claimed.
   recoveryLeaseUntil: timestamp("recovery_lease_until", { withTimezone: true }),
   recoveryLeaseToken: uuid("recovery_lease_token"),
+  // Phase 3A publish-race fix: set atomically, in the SAME transaction that
+  // saves a creator_workspaces edit referencing this video, to the id of
+  // the edit that now references it — and cleared (back to null) only when
+  // a later save of that same workspace no longer references it. While
+  // non-null, cancellation (claimCancellation in this file) refuses to
+  // touch the row at all: a video already durably part of a saved Edit can
+  // never be cancelled/deleted out from under that Edit, closing the
+  // publish/cancel race between routes/creator-workspace.ts and
+  // routes/video-uploads.ts's cancel endpoint. See lockVideoUploadsForUpdate
+  // / attachVideoUploadsToEdit / detachVideoUploadsFromEdit below.
+  attachedEditId: text("attached_edit_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [

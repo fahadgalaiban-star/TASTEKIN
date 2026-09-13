@@ -16,7 +16,15 @@ import {
 } from "../lib/creator-workspace-seed";
 import { creatorByUsername, ensureCreatorAccount } from "../lib/creator-account";
 import { areUsersBlocked, blockedCounterpartIds } from "../lib/blocks";
+import { isFeatureEnabled } from "../lib/feature-flags";
 import { mutedUserIds } from "../lib/mutes";
+import {
+  attachVideoUploadsToEdit,
+  detachVideoUploadsFromEdit,
+  isApprovedVideoDuration,
+  isApprovedVideoSize,
+  lockVideoUploadsForUpdate,
+} from "../lib/video-upload-lifecycle";
 
 const router: IRouter = Router();
 function noStoreAccountResponse(res: import("express").Response) {
@@ -28,6 +36,7 @@ const legacyLockedPreviews: Record<string, string> = {
   "training-week": "/tastekin-media/training-week-preview.webp",
 };
 const privateObjectPath = /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/;
+const VIDEO_UPLOAD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Categories that accept place detail fields (placeName, locationLabel, mapsUrl, tasteRating, creatorReview) */
 const PLACE_CATEGORIES = new Set(["Restaurants", "Places", "Travel"]);
@@ -37,9 +46,18 @@ const MAPS_URL_PATTERN = /^https:\/\/(www\.)?(google\.com\/maps|maps\.google\.co
 
 type EditRecord = Record<string, unknown>;
 
+/** True whenever `edit.video` is present and shaped like a video reference — never assumes more than that; identity/ownership/readiness are verified separately (see the transactional check in the PUT handler) since that needs a DB read. */
+function hasVideoField(edit: EditRecord): boolean {
+  return Boolean(edit.video) && typeof edit.video === "object";
+}
+
 function validatePlaceFields(edit: EditRecord): string | null {
   const category = typeof edit.category === "string" ? edit.category : "";
   const hasImage = typeof edit.image === "string" && edit.image.length > 0;
+  // A video satisfies the same "this Edit has media" requirement a photo
+  // does — the no-media rules below only ever cared about there being
+  // something to show, never specifically a photo.
+  const hasMedia = hasImage || hasVideoField(edit);
   const isPublished = edit.status === "published";
 
   // Place fields are only accepted for place-like categories
@@ -69,16 +87,16 @@ function validatePlaceFields(edit: EditRecord): string | null {
     }
   }
 
-  // No-photo rules
-  if (!hasImage) {
-    // Published no-photo edits are only allowed for place categories
+  // No-media rules (a video satisfies these exactly like a photo would)
+  if (!hasMedia) {
+    // Published no-media edits are only allowed for place categories
     if (isPublished && !PLACE_CATEGORIES.has(category)) {
-      return "A photo is required to publish this edit";
+      return "A photo or video is required to publish this edit";
     }
     if (isPublished && edit.access === "locked") {
-      return "Photo-free place edits must be public because subscriber-only edits require protected preview media";
+      return "Photo/video-free place edits must be public because subscriber-only edits require protected preview media";
     }
-    // Published no-photo place edits require placeName, locationLabel, and at least rating or review
+    // Published no-media place edits require placeName, locationLabel, and at least rating or review
     if (isPublished && PLACE_CATEGORIES.has(category)) {
       const placeName = typeof edit.placeName === "string" ? edit.placeName.trim() : "";
       const locationLabel = typeof edit.locationLabel === "string" ? edit.locationLabel.trim() : "";
@@ -96,6 +114,32 @@ function validatePlaceFields(edit: EditRecord): string | null {
     }
   }
 
+  return null;
+}
+
+/**
+ * Photo and video are mutually exclusive media for one Edit — checked here
+ * purely on shape (cheap, synchronous, no DB) before the transaction below
+ * does the DB-backed ownership/identity/readiness check for any edit that
+ * declares a video. This runs for every edit regardless of draft/published
+ * status, unlike the video-readiness gate in validatePlaceFields' no-media
+ * rules (only published edits require a *ready* video).
+ */
+function validateVideoField(edit: EditRecord): string | null {
+  if (!hasVideoField(edit)) return null;
+  const hasImage = (typeof edit.image === "string" && edit.image.length > 0)
+    || (typeof edit.sourceImage === "string" && edit.sourceImage.length > 0)
+    || (typeof edit.previewImage === "string" && edit.previewImage.length > 0);
+  if (hasImage) {
+    return "An Edit cannot have both a photo and a video — remove one before saving";
+  }
+  // Paid/subscriber-only video is explicitly out of scope for this phase —
+  // a video Edit must be public, draft or published, regardless of the
+  // creator's verified/subscription status (which is what access: "locked"
+  // otherwise only depends on for a photo Edit).
+  if (edit.access === "locked") {
+    return "Video Edits must be public in this phase — subscriber-only video is not yet supported";
+  }
   return null;
 }
 
@@ -505,13 +549,52 @@ router.put("/creator-workspace", async (req, res) => {
     res.status(403).json({ error: "Subscriber-only content is available only to verified TASTEKIN creators" });
     return;
   }
+  // A video field must never survive into a saved Edit while the feature is
+  // disabled — this is the actual publish/persist path video-uploads.ts's
+  // own videoUploadFlagMw does not (and cannot) cover, since that
+  // middleware only gates request-upload/status/cancel, never this route.
+  // Checked before the transaction: a disabled flag is a hard 403, not a
+  // conflict/validation error a client would retry.
+  if ((parsed.data.edits as EditRecord[]).some(hasVideoField) && !(await isFeatureEnabled("video_upload"))) {
+    res.status(403).json({ error: "Video is not available right now" });
+    return;
+  }
 
-  // Validate place fields and no-photo rules for each edit
+  // Validate place fields, no-media rules, and photo/video mutual exclusivity
+  // for each edit. Video ownership/identity/readiness needs a DB read and is
+  // checked separately inside the transaction below.
   for (const edit of parsed.data.edits as EditRecord[]) {
     const placeError = validatePlaceFields(edit);
     if (placeError) {
       res.status(400).json({ error: placeError });
       return;
+    }
+    const videoError = validateVideoField(edit);
+    if (videoError) {
+      res.status(400).json({ error: videoError });
+      return;
+    }
+  }
+
+  // A video can only ever be durably attached to one Edit (see
+  // attachVideoUploadsToEdit/attached_edit_id below) — reject the entire
+  // request up front, before any attach/detach/persist work begins, if the
+  // same uploadId is referenced by more than one edit in this save. Purely
+  // a shape check on the submitted payload (no DB read needed), so it can
+  // never leave the workspace, its revision, or any video_uploads row
+  // touched. A legitimate single Edit keeping or replacing its own video
+  // with a different uploadId is unaffected.
+  {
+    const seenUploadIds = new Set<string>();
+    for (const edit of parsed.data.edits as EditRecord[]) {
+      if (!hasVideoField(edit)) continue;
+      const uploadId = (edit.video as { uploadId?: unknown }).uploadId;
+      if (typeof uploadId !== "string") continue;
+      if (seenUploadIds.has(uploadId)) {
+        res.status(400).json({ error: "The same video cannot be attached to more than one Edit" });
+        return;
+      }
+      seenUploadIds.add(uploadId);
     }
   }
 
@@ -563,11 +646,68 @@ router.put("/creator-workspace", async (req, res) => {
         if (uploads.length !== privatePaths.length || uploads.some((upload) => upload.creatorId !== workspaceId || upload.ownerUserId !== ownerId || (upload.state !== "pending" && upload.state !== "committed"))) return { kind: "media" as const };
         await tx.update(creatorMediaUploads).set({ state: "committed", updatedAt: new Date() }).where(and(inArray(creatorMediaUploads.objectPath, privatePaths), eq(creatorMediaUploads.ownerUserId, ownerId)));
       }
+      // Video edits: verify the referenced video_uploads row belongs to this
+      // exact creator/owner, that the client-submitted bunnyVideoId/bunnyLibraryId
+      // pair still matches the persisted row (never trust a resubmitted id pair
+      // without cross-checking server state — this is the only defense against
+      // a stale or tampered reference surviving into a saved Edit), and — only
+      // for edits actually being published — that the row has reached "ready"
+      // and stays within the approved size/duration limits.
+      //
+      // Publish/cancel race fix: the rows are SELECT ... FOR UPDATE locked
+      // (lockVideoUploadsForUpdate) for the rest of this transaction, never
+      // a plain SELECT — this is what makes attachVideoUploadsToEdit below
+      // durable against a concurrent cancel: claimCancellation's UPDATE
+      // (video-upload-lifecycle.ts) blocks on these same rows until this
+      // transaction commits or rolls back, then either sees attached_edit_id
+      // already set (cancel refused) or finds the row untouched (this save
+      // never committed, cancel proceeds normally) — never a moment where
+      // both a successful publish and a successful cancel can be true for
+      // the same row. Nothing here calls Bunny; that never happens on this
+      // route at all.
+      const videoEdits = (parsed.data.edits as EditRecord[])
+        .filter(hasVideoField)
+        .map((edit) => ({ edit, video: edit.video as { uploadId: string; bunnyVideoId: string; bunnyLibraryId: string } }));
+      const newVideoRefs = videoEdits
+        .filter(({ video }) => VIDEO_UPLOAD_ID_RE.test(video.uploadId))
+        .map(({ edit, video }) => ({ editId: String(edit.id), uploadId: video.uploadId }));
+      const oldVideoRefs = (current.edits as EditRecord[])
+        .filter(hasVideoField)
+        .map((edit) => ({ edit, video: edit.video as { uploadId?: unknown } }))
+        .filter(({ video }) => typeof video.uploadId === "string" && VIDEO_UPLOAD_ID_RE.test(video.uploadId))
+        .map(({ edit, video }) => ({ editId: String(edit.id), uploadId: video.uploadId as string }));
+      const newUploadIds = new Set(newVideoRefs.map((ref) => ref.uploadId));
+      const allRelevantUploadIds = Array.from(new Set([...newUploadIds, ...oldVideoRefs.map((ref) => ref.uploadId)]));
+      const videoRowsById = new Map((await lockVideoUploadsForUpdate(tx, allRelevantUploadIds)).map((row) => [row.id, row]));
+
+      if (videoEdits.length) {
+        for (const { edit, video } of videoEdits) {
+          const row = VIDEO_UPLOAD_ID_RE.test(video.uploadId) ? videoRowsById.get(video.uploadId) : undefined;
+          if (!row || row.ownerUserId !== ownerId || row.creatorId !== workspaceId) return { kind: "video" as const };
+          if (row.bunnyVideoId !== video.bunnyVideoId || row.bunnyLibraryId !== video.bunnyLibraryId) return { kind: "video" as const };
+          if (edit.status === "published") {
+            if (row.state !== "ready") return { kind: "video-not-ready" as const };
+            if (!isApprovedVideoDuration(row.durationSeconds)) return { kind: "video-duration" as const };
+            if (!isApprovedVideoSize(row.declaredSizeBytes)) return { kind: "video-size" as const };
+          }
+        }
+      }
       const [workspace] = await tx.update(creatorWorkspaces)
         .set({ edits: parsed.data.edits, collections: parsed.data.collections, revision: sql`${creatorWorkspaces.revision} + 1`, updatedAt: new Date() })
         .where(sql`${creatorWorkspaces.creatorId} = ${workspaceId} and ${creatorWorkspaces.ownerUserId} = ${ownerId} and ${creatorWorkspaces.revision} = ${parsed.data.expectedRevision}`)
         .returning();
-      return workspace ? { kind: "saved" as const, workspace } : { kind: "conflict" as const };
+      if (!workspace) return { kind: "conflict" as const };
+
+      // Only now, with the workspace save itself durable, flip attachment:
+      // newly-referenced rows become uncancellable (attachVideoUploadsToEdit),
+      // and rows this same workspace referenced before but no longer does
+      // become cancellable again (detachVideoUploadsFromEdit) — e.g. a
+      // replaced or removed video, freed for Phase 2B's own recovery sweep
+      // or a later explicit cancel.
+      for (const ref of newVideoRefs) await attachVideoUploadsToEdit(tx, [ref.uploadId], ref.editId, ownerId);
+      for (const ref of oldVideoRefs) if (!newUploadIds.has(ref.uploadId)) await detachVideoUploadsFromEdit(tx, [ref.uploadId], ref.editId, ownerId);
+
+      return { kind: "saved" as const, workspace };
     });
     if (result.kind === "owner") {
       res.status(403).json({ error: "This creator workspace belongs to another account" });
@@ -575,6 +715,22 @@ router.put("/creator-workspace", async (req, res) => {
     }
     if (result.kind === "media") {
       res.status(409).json({ error: "One or more private uploads were removed before this Edit could be saved. Choose the image again and retry." });
+      return;
+    }
+    if (result.kind === "video") {
+      res.status(409).json({ error: "The referenced video is no longer available or doesn't belong to this account. Choose it again and retry." });
+      return;
+    }
+    if (result.kind === "video-not-ready") {
+      res.status(409).json({ error: "This Edit's video must finish processing before it can be published." });
+      return;
+    }
+    if (result.kind === "video-duration") {
+      res.status(409).json({ error: "This Edit's video is longer than the 10-minute limit and can't be published." });
+      return;
+    }
+    if (result.kind === "video-size") {
+      res.status(409).json({ error: "This Edit's video is larger than the 500MB limit and can't be published." });
       return;
     }
     if (result.kind === "edit-id") {
