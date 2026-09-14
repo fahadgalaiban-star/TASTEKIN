@@ -1,4 +1,80 @@
- await page.goto('/', { waitUntil: 'domcontentloaded' });
+import { expect, test, type Page } from '@playwright/test';
+
+type MeOptions = { authenticated?: boolean; kinSearch?: boolean; myThings?: boolean; language?: 'en' | 'ar' };
+
+function meBody({ authenticated = true, kinSearch = true, myThings = false, language = 'en' }: MeOptions = {}) {
+  return JSON.stringify({
+    user: authenticated ? { id: 'kin-e2e-user', email: 'kin-e2e@tastekin.test' } : null,
+    role: 'consumer',
+    creator: null,
+    isAdmin: false,
+    language,
+    notifyPush: true,
+    notifyEmail: true,
+    subscribed: false,
+    supportEmail: null,
+    needsOnboarding: false,
+    onboardingStep: 'done',
+    googleAuthConfigured: false,
+    featureFlags: { kin_search: kinSearch, my_things: myThings },
+  });
+}
+
+async function mockMe(page: Page, options: MeOptions = {}) {
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: meBody(options) });
+  });
+}
+
+async function expectMobileControlAboveNavigation(page: Page, testId: string) {
+  const control = page.getByTestId(testId);
+  await control.scrollIntoViewIfNeeded();
+  await expect(control).toBeVisible();
+  const layout = await page.evaluate((id) => {
+    const element = document.querySelector<HTMLElement>(`[data-testid="${id}"]`);
+    const navigation = document.querySelector<HTMLElement>('[data-testid="primary-navigation"]');
+    if (!element || !navigation) throw new Error(`Missing mobile layout element: ${id}`);
+    return {
+      scrollWidth: document.documentElement.scrollWidth,
+      clientWidth: document.documentElement.clientWidth,
+      elementBottom: element.getBoundingClientRect().bottom,
+      navigationTop: navigation.getBoundingClientRect().top,
+    };
+  }, testId);
+  expect(layout.scrollWidth).toBe(layout.clientWidth);
+  expect(layout.elementBottom).toBeLessThanOrEqual(layout.navigationTop);
+}
+
+test('the bottom nav opens a real KIN page when the flag is on', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
+  await expect(page.getByText('Start with one piece. Make it feel like you.')).toBeVisible();
+  await expect(page.getByTestId('kin-styling-summary')).toBeVisible();
+  await expect(page.getByTestId('kin-take-photo')).toContainText('Take a photo');
+  await expect(page.getByTestId('kin-query')).toHaveAttribute('placeholder', 'Or describe what you want to style…');
+  await expect(page.getByTestId('kin-occasion-everyday')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('kin-submit')).toHaveText('Create my looks');
+  await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
+  await expect(page.getByTestId('kin-mode-looks')).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(page.getByTestId('kin-mode-travel')).toBeVisible();
+});
+
+test('the guard sends KIN back to You when the flag is off', async ({ page }) => {
+  await mockMe(page, { kinSearch: false });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await expect(page.getByTestId('kin-submit')).toHaveCount(0);
+  await expect(page.getByTestId('open-settings')).toBeVisible();
+});
+
+test('the guard sends KIN back to You when the session becomes unauthenticated mid-session', async ({ page }) => {
+  let authenticated = true;
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: meBody({ authenticated, kinSearch: true }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await expect(page.getByTestId('kin-submit')).toBeVisible();
 
