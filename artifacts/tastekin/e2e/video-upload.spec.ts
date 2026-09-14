@@ -199,6 +199,12 @@ class VideoUploadApi {
     };
   }
 
+  private hasTusAuthorizationHeaders(route: Route): boolean {
+    const headers = route.request().headers();
+    return ['authorizationsignature', 'authorizationexpire', 'videoid', 'libraryid']
+      .every((name) => typeof headers[name] === 'string' && headers[name].length > 0);
+  }
+
   private async handleTusRoute(route: Route, url: URL) {
     const request = route.request();
     if (request.method() === 'OPTIONS') {
@@ -213,6 +219,7 @@ class VideoUploadApi {
     }
     const itemMatch = url.pathname.match(/^\/tus\/([^/]+)$/);
     if (request.method() === 'HEAD' && itemMatch) {
+      if (!this.hasTusAuthorizationHeaders(route)) { await route.fulfill({ status: 400, headers: this.corsHeaders() }); return; }
       const videoId = itemMatch[1];
       if (this.expireNextHeadIds.delete(videoId)) { await route.fulfill({ status: 401, headers: this.corsHeaders() }); return; }
       const offset = this.tusOffsets.get(videoId) ?? 0;
@@ -220,6 +227,7 @@ class VideoUploadApi {
       return;
     }
     if (request.method() === 'PATCH' && itemMatch) {
+      if (!this.hasTusAuthorizationHeaders(route)) { await route.fulfill({ status: 400, headers: this.corsHeaders() }); return; }
       const videoId = itemMatch[1];
       const count = (this.patchCallCounts.get(videoId) ?? 0) + 1;
       this.patchCallCounts.set(videoId, count);

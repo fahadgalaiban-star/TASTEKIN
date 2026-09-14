@@ -26,14 +26,12 @@ name = "Project"
 mode = "parallel"
 
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=5000 pnpm --filter @workspace/api-server run dev"
-waitForPort = 5000
+task = "workflow.run"
+args = "artifacts/api-server: API Server"
 
 [[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=23385 BASE_PATH=/ pnpm --filter @workspace/tastekin run dev"
-waitForPort = 23385
+task = "workflow.run"
+args = "artifacts/tastekin: web"
 
 [agent]
 stack = "PNPM_WORKSPACE"
@@ -51,3 +49,20 @@ packages = ["glib", "nss", "nspr", "dbus", "atk", "at-spi2-atk", "cups", "libdrm
 
 [userenv.development]
 FHEED_OWNER_ID = ""
+BUNNY_STREAM_CDN_HOSTNAME = "vz-99755baf-b81.b-cdn.net"
+
+[[ports]]
+localPort = 8080
+externalPort = 8080
+
+[[ports]]
+localPort = 8081
+externalPort = 8081
+
+[[ports]]
+localPort = 8082
+externalPort = 3000
+
+[[ports]]
+localPort = 23385
+externalPort = 80
