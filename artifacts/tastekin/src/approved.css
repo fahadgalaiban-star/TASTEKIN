@@ -593,7 +593,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-map path.route { fill:none; stroke:var(--tk-wine); stroke-width:1.6; }
 
 .kin-timeline { position:relative; }
-.kin-timeline-item { position:relative; display:grid; grid-template-columns:72px 24px 1fr; gap:0px; margin-bottom:12px; }
+.kin-timeline-item { position:relative; display:grid; grid-template-columns:24px minmax(0,1fr); gap:0px; margin-bottom:12px; }
 .kin-timeline-hours { padding-top:15px; color:var(--tk-wine); font-size:10px; text-align:end; line-height:1.25; }
 .kin-timeline-rail { position:relative; display:flex; justify-content:center; }
 .kin-timeline-rail::before { content:''; position:absolute; top:20px; bottom:-28px; width:1px; border-inline-start:1px dashed var(--tk-border); }

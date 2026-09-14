@@ -367,6 +367,22 @@ test('compact Travel cards expose distinct Maps names, send server identities fo
   await expect(place.getByRole('link', { name: 'Open A very long place name that remains constrained inside its compact card in Google Maps' })).toHaveAttribute('href', mapsUrl);
   await expect(page.getByRole('link', { name: 'Open Second Gallery in Google Maps' })).toHaveAttribute('href', secondMapsUrl);
   await expect(place).toContainText('Google contributor');
+  const card = place.locator('.kin-timeline-card');
+  const body = place.locator('.kin-timeline-body');
+  const name = place.locator('.kin-timeline-name');
+  const credit = place.locator('.kin-photo-credit');
+  const [placeBox, cardBox, bodyBox, nameBox, creditBox] = await Promise.all([
+    place.boundingBox(),
+    card.boundingBox(),
+    body.boundingBox(),
+    name.boundingBox(),
+    credit.boundingBox(),
+  ]);
+  expect(placeBox?.width).toBeGreaterThan(300);
+  expect(cardBox?.width).toBeGreaterThan(280);
+  expect(bodyBox?.width).toBeGreaterThan(120);
+  expect(nameBox?.width).toBeGreaterThan(120);
+  expect(creditBox?.width).toBeGreaterThan(120);
   const swap = place.getByTestId('kin-swap-place');
   const add = place.getByTestId('kin-add-to-trip');
   const maps = place.getByRole('link', { name: 'Open A very long place name that remains constrained inside its compact card in Google Maps' });

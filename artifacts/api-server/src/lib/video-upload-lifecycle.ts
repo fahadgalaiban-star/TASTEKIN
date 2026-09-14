@@ -329,10 +329,10 @@ export function issueTusUploadAuthorization(row: Pick<VideoUpload, "bunnyLibrary
  * documentation enumerates (at minimum) 0-8 across contexts; only two
  * values are treated as authoritative and terminal here:
  *
- *  - 3 (Finished) plus valid positive duration/width/height => "ready".
+ *  - 4 (Finished) plus valid positive duration/width/height => "ready".
  *  - 5 (Failed) => "failed", unconditionally.
  *
- * Every other numeric value — 0, 1, 2, 4, 6, 7, 8, and anything not yet
+ * Every other numeric value — 0, 1, 2, 3, 6, 7, 8, and anything not yet
  * assigned a documented meaning — is treated as non-terminal and maps to
  * "processing" (0 is the sole exception: see NOT_YET_UPLOADED_STATUS,
  * which leaves state at "uploading" since Bunny hasn't received any bytes
@@ -345,7 +345,7 @@ export function issueTusUploadAuthorization(row: Pick<VideoUpload, "bunnyLibrary
  * failed transition on a status code whose meaning for *this specific
  * field* is not established.
  */
-const READY_STATUS = 3;
+const READY_STATUS = 4;
 const KNOWN_FAILURE_STATUSES = new Set([5]);
 const NOT_YET_UPLOADED_STATUS = 0;
 
