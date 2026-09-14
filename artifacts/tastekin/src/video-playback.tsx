@@ -47,7 +47,15 @@ function attachHlsSource(videoEl: HTMLVideoElement, src: string, onFatalError: (
   }
   if (Hls.isSupported()) {
     const hls = new Hls();
-    hls.on(Hls.Events.ERROR, (_event, data) => { if (data.fatal) onFatalError(); });
+    hls.on(Hls.Events.ERROR, (_event, data) => {
+      if (!data.fatal) return;
+      console.error('[video-playback] fatal HLS error', {
+        type: data.type,
+        details: data.details,
+        responseStatus: data.response?.code ?? null,
+      });
+      onFatalError();
+    });
     hls.loadSource(src);
     hls.attachMedia(videoEl);
     return () => hls.destroy();

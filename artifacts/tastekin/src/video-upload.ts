@@ -53,6 +53,15 @@ export class TusAuthorizationExpiredError extends Error {
 const TUS_RESUMABLE_VERSION = '1.0.0';
 const TUS_CHUNK_SIZE = 8 * 1024 * 1024;
 
+function tusAuthorizationHeaders(auth: TusUploadAuthorization): Record<string, string> {
+  return {
+    AuthorizationSignature: auth.signature,
+    AuthorizationExpire: String(auth.expirationTime),
+    VideoId: auth.videoId,
+    LibraryId: auth.libraryId,
+  };
+}
+
 function base64(value: string): string {
   return typeof btoa === 'function' ? btoa(value) : Buffer.from(value, 'utf-8').toString('base64');
 }
@@ -84,10 +93,7 @@ async function createOrReuseTusUpload(file: File, auth: TusUploadAuthorization):
       'Tus-Resumable': TUS_RESUMABLE_VERSION,
       'Upload-Length': String(file.size),
       'Upload-Metadata': `filetype ${base64(file.type || 'application/octet-stream')}`,
-      AuthorizationSignature: auth.signature,
-      AuthorizationExpire: String(auth.expirationTime),
-      VideoId: auth.videoId,
-      LibraryId: auth.libraryId,
+      ...tusAuthorizationHeaders(auth),
     },
   });
   if (response.status === 401) throw new TusAuthorizationExpiredError();
@@ -99,8 +105,11 @@ async function createOrReuseTusUpload(file: File, auth: TusUploadAuthorization):
   return resolved;
 }
 
-async function confirmedOffset(uploadUrl: string): Promise<number> {
-  const response = await fetch(uploadUrl, { method: 'HEAD', headers: { 'Tus-Resumable': TUS_RESUMABLE_VERSION } });
+async function confirmedOffset(uploadUrl: string, auth: TusUploadAuthorization): Promise<number> {
+  const response = await fetch(uploadUrl, {
+    method: 'HEAD',
+    headers: { 'Tus-Resumable': TUS_RESUMABLE_VERSION, ...tusAuthorizationHeaders(auth) },
+  });
   if (response.status === 401) throw new TusAuthorizationExpiredError();
   if (!response.ok) throw new Error(`head-${response.status}`);
   const offset = Number(response.headers.get('Upload-Offset'));
@@ -121,7 +130,7 @@ export async function uploadVideoViaTus(
 ): Promise<void> {
   try {
     const uploadUrl = await createOrReuseTusUpload(file, auth);
-    let offset = await confirmedOffset(uploadUrl);
+    let offset = await confirmedOffset(uploadUrl, auth);
     options.onProgress?.({ bytesUploaded: offset, bytesTotal: file.size });
     while (offset < file.size) {
       if (options.signal?.aborted) throw new DOMException('cancelled', 'AbortError');
@@ -132,6 +141,7 @@ export async function uploadVideoViaTus(
           'Tus-Resumable': TUS_RESUMABLE_VERSION,
           'Upload-Offset': String(offset),
           'Content-Type': 'application/offset+octet-stream',
+          ...tusAuthorizationHeaders(auth),
         },
         body: chunk,
         signal: options.signal,

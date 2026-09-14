@@ -36,9 +36,9 @@ if (!basePath) {
 // call to the API server — a plain server-to-server request that never
 // needs to satisfy the API's CORS policy at all, unlike a second real
 // cross-origin request from the browser would. Defaults to the API
-// server's own documented dev port (see replit.md); override with
+// server artifact's declared development port; override with
 // API_DEV_PORT if the API is running somewhere else.
-const apiDevPort = Number(process.env.API_DEV_PORT ?? 5000);
+const apiDevPort = Number(process.env.API_DEV_PORT ?? 8080);
 
 export default defineConfig({
   base: basePath,
