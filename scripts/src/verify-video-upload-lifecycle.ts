@@ -347,7 +347,7 @@ async function main() {
       }
     });
 
-    await check("processing-to-ready reconciliation happens without any webhook: uploading → processing → ready (status 3), with real Bunny metadata persisted", async () => {
+    await check("processing-to-ready reconciliation happens without any webhook: uploading → processing → ready (status 4), with real Bunny metadata persisted", async () => {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `flow-${suffix}`);
       await expectStatus(response, 201);
@@ -360,7 +360,7 @@ async function main() {
       await sleep(80);
       assert.equal((await (await owner.getUpload(id)).json() as { state: string }).state, "processing");
 
-      videoStates.set(videoId, { bunnyStatus: 3, length: 42, width: 1080, height: 1920 });
+      videoStates.set(videoId, { bunnyStatus: 4, length: 42, width: 1080, height: 1920 });
       await sleep(80);
       const ready = await (await owner.getUpload(id)).json() as Record<string, unknown>;
       assert.equal(ready.state, "ready");
@@ -369,11 +369,11 @@ async function main() {
       assert.equal(ready.height, 1920);
     });
 
-    await check("status 3 (Finished) without valid playback metadata is never marked ready", async () => {
+    await check("status 4 (Finished) without valid playback metadata is never marked ready", async () => {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `noplayback-${suffix}`);
       const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
-      videoStates.set(tus.videoId, { bunnyStatus: 3, length: 0, width: null, height: null });
+      videoStates.set(tus.videoId, { bunnyStatus: 4, length: 0, width: null, height: null });
       await sleep(80);
       const status = await (await owner.getUpload(id)).json() as { state: string };
       assert.notEqual(status.state, "ready");
@@ -390,8 +390,8 @@ async function main() {
       assert.ok(status.errorReason && !status.errorReason.includes(TEST_API_KEY));
     });
 
-    await check("status 4, 6, 7, 8, and an unrecognized numeric status are all treated as non-terminal processing, never ready or failed (Get Video's status enum is not assumed to match webhook event codes)", async () => {
-      for (const bunnyStatus of [4, 6, 7, 8, 999]) {
+    await check("status 3, 6, 7, 8, and an unrecognized numeric status are all treated as non-terminal processing, never ready or failed (Get Video's status enum is not assumed to match webhook event codes)", async () => {
+      for (const bunnyStatus of [3, 6, 7, 8, 999]) {
         const owner = await freshUser();
         const response = await owner.requestUpload(validFile, `nonterminal-${bunnyStatus}-${suffix}`);
         const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
@@ -627,7 +627,7 @@ async function main() {
       const owner = await freshUser();
       const response = await owner.requestUpload(validFile, `race-${suffix}`);
       const { id, tus } = await response.json() as { id: string; tus: { videoId: string } };
-      videoStates.set(tus.videoId, { bunnyStatus: 3, length: 42, width: 1080, height: 1920 });
+      videoStates.set(tus.videoId, { bunnyStatus: 4, length: 42, width: 1080, height: 1920 });
       await Promise.all([owner.cancelUpload(id), owner.getUpload(id)]);
       const [row] = await db.select().from(videoUploads).where(eq(videoUploads.id, id));
       assert.ok(["deletion_pending", "delete_failed", "deleted"].includes(row.state), `expected a cancel-related terminal state, got ${row.state}`);
