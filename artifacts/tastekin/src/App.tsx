@@ -4801,14 +4801,15 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
 
   useEffect(() => () => stopEverything(), []);
 
-  // Best-effort cleanup for a video that finished (or is mid-flight)
-  // uploading but was never attached to a saved Edit — mirrors the existing
-  // pendingMediaPaths pagehide cleanup used for photo uploads. Never blocks
-  // navigation; a beacon that doesn't land just leaves the row for Phase
-  // 2B's own bounded recovery sweep to eventually resolve.
+  // Best-effort cleanup only while bytes are still actively uploading.
+  // Once TUS completes, the durable row must survive pagehide so iOS Safari
+  // backgrounding/BFCache cannot delete a processing or ready video before
+  // the creator returns and saves the Edit. Explicit Remove/replace/close
+  // actions still cancel uncommitted uploads through their own paths.
   useEffect(() => {
     const onPageHide = () => {
       if (committedRef.current) return;
+      if (stateRef.current.phase !== 'uploading') return;
       const uploadId = stateRef.current.video?.uploadId;
       if (!uploadId) return;
       navigator.sendBeacon?.(`/api/video-uploads/${encodeURIComponent(uploadId)}/cancel`, new Blob([], { type: 'application/json' }));

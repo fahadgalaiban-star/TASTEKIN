@@ -490,6 +490,26 @@ test('upload progress is rendered mid-upload, then the video reaches ready and u
   expect(saved?.status).toBe('published');
 });
 
+test('iOS-style pagehide does not cancel a video after TUS completes while Bunny is processing it', async ({ page }) => {
+  test.setTimeout(60000);
+  const api = new VideoUploadApi();
+  await creatorPage(page, api);
+  await openComposer(page);
+  await page.getByRole('tab', { name: 'Video' }).click();
+  await page.getByLabel('Add video').setInputFiles(videoFile('iphone-clip.mov', 1024));
+  await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
+  const uploadId = 'video-upload-1';
+  await expect(page.getByText('Processing…')).toBeVisible({ timeout: 8000 });
+
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pagehide', { persisted: true })));
+  await page.waitForTimeout(250);
+  expect(api.cancelledIds).not.toContain(uploadId);
+
+  api.markReady(uploadId);
+  await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
+  expect(api.cancelledIds).not.toContain(uploadId);
+});
+
 test('replacing a selected video cancels the previous upload and publishes with the new one', async ({ page }) => {
   test.setTimeout(60000);
   const api = new VideoUploadApi();
