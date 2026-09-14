@@ -1,777 +1,282 @@
-// Regression coverage for the production KIN Looks 500 caused by an
-// unapplied migration (kin_search_usage — the table KIN's daily-quota
-// reservation writes to before ever calling Claude):
-//
-//   - RUN_MIGRATIONS_ON_BOOT is off by default: a database missing the
-//     latest tracked migrations still fails exactly as it does in
-//     production today (documents the "before" state, and guarantees the
-//     opt-in never changes behavior for local dev, preview, or any other
-//     verify:* suite that doesn't set it).
-//   - RUN_MIGRATIONS_ON_BOOT=true applies every not-yet-applied migration
-//     from lib/db/migrations — via Drizzle's own tracked ledger, never
-//     hand-edited, never manual SQL — before the server opens its HTTP
-//     listener, and the previously-failing request succeeds immediately
-//     after.
-//   - Running it again against an already-migrated database is a safe,
-//     fast no-op (idempotency).
-//   - Two instances booting at once against the same not-yet-migrated
-//     database (Autoscale can start more than one at a time) never race:
-//     an advisory lock serializes them, and the ledger ends up with
-//     exactly one row per migration, never duplicated.
-//   - A migration failure is fatal: the server must never start accepting
-//     traffic with a schema it doesn't match.
-//
-// Runs the compiled api-server against a REAL Postgres database (point
-// DATABASE_URL at a disposable/test database — this drops and recreates
-// tables in it — never production) and a real, minimal fake Anthropic
-// provider, and drives it over real HTTP.
-//
-// Usage:
-//   pnpm --filter db run push-force   # schema onto DATABASE_URL first
-//   DATABASE_URL=postgresql://... pnpm --filter scripts run verify:migrations
+/**
+ * Verifies the API startup/migration boundary against a disposable database.
+ *
+ * The direct migration runner is invoked explicitly once to establish a
+ * complete isolated schema. The production-style API is then started twice
+ * with the legacy RUN_MIGRATIONS_ON_BOOT flag still present, proving normal
+ * startup ignores it and leaves both schema and Drizzle ledger unchanged.
+ *
+ * Usage:
+ *   DATABASE_URL=postgresql://... pnpm --filter scripts run verify:migrations
+ */
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
-import crypto from "node:crypto";
-import fs from "node:fs";
-import http from "node:http";
-import os from "node:os";
+import { createHash, randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { createServer } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { db, pool, runPendingMigrations } from "@workspace/db";
-import { sql } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
+import pg from "pg";
 
-const here = path.dirname(fileURLToPath(import.meta.url));
-const repoRoot = path.resolve(here, "../..");
-const serverEntry = path.join(repoRoot, "artifacts/api-server/dist/index.mjs");
-const realMigrationsFolder = path.join(repoRoot, "lib/db/migrations");
+const { Pool } = pg;
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const apiEntry = path.join(repoRoot, "artifacts/api-server/dist/index.mjs");
+const migrationsFolder = path.join(repoRoot, "lib/db/migrations");
+const migrationJournalPath = path.join(migrationsFolder, "meta/_journal.json");
+const configuredDatabaseUrl = process.env.DATABASE_URL;
 
-if (!process.env.DATABASE_URL) {
-  console.error("DATABASE_URL is required — point this at a disposable test database already schema-pushed via `pnpm --filter db run push-force`, never production.");
-  process.exit(1);
+if (!configuredDatabaseUrl) {
+  throw new Error("DATABASE_URL is required to create a disposable verification database.");
 }
-const databaseUrl = process.env.DATABASE_URL;
+const baseDatabaseUrl: string = configuredDatabaseUrl;
 
-// A tiny real HTTP server standing in for Anthropic — just enough for KIN
-// Looks to reach "ok", so a 500 can only mean the database call failed.
-function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
+type Snapshot = {
+  schemaDump: string;
+  columns: unknown[];
+  indexes: unknown[];
+  constraints: unknown[];
+  migrationLedger: unknown[];
+};
+
+type RunningServer = {
+  child: ChildProcess;
+  baseUrl: string;
+  output: () => string;
+};
+
+function quoteIdentifier(value: string): string {
+  return `"${value.replaceAll('"', '""')}"`;
+}
+
+function disposableUrl(baseUrl: string, databaseName: string): string {
+  const url = new URL(baseUrl);
+  url.pathname = `/${databaseName}`;
+  return url.toString();
+}
+
+async function captureCommand(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    const child = spawn(command, args, { cwd: repoRoot, env, stdio: ["ignore", "pipe", "pipe"] });
+    let output = "";
+    child.stdout?.setEncoding("utf8");
+    child.stderr?.setEncoding("utf8");
+    child.stdout?.on("data", (chunk: string) => { output += chunk; });
+    child.stderr?.on("data", (chunk: string) => { output += chunk; });
+    child.once("error", reject);
+    child.once("exit", (code) => code === 0 ? resolve(output) : reject(new Error(`${command} exited ${code}:\n${output}`)));
+  });
+}
+
+async function runCommand(command: string, args: string[], env: NodeJS.ProcessEnv): Promise<void> {
+  await captureCommand(command, args, env);
+}
+
+async function seedReviewedMigrationLedger(pool: pg.Pool): Promise<void> {
+  const journal = JSON.parse(await readFile(migrationJournalPath, "utf8")) as {
+    entries: Array<{ tag: string; when: number }>;
+  };
+  await pool.query("CREATE SCHEMA IF NOT EXISTS drizzle");
+  await pool.query(`
+    CREATE TABLE drizzle.__drizzle_migrations (
+      id serial PRIMARY KEY,
+      hash text NOT NULL,
+      created_at bigint
+    )
+  `);
+  for (const entry of journal.entries) {
+    const sql = await readFile(path.join(migrationsFolder, `${entry.tag}.sql`));
+    const hash = createHash("sha256").update(sql).digest("hex");
+    await pool.query(
+      "INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)",
+      [hash, entry.when],
+    );
+  }
+}
+
+async function unusedPort(): Promise<number> {
   return new Promise((resolve, reject) => {
-    const server = http.createServer((req, res) => {
-      if (req.method !== "POST" || req.url !== "/v1/messages") { res.writeHead(404); res.end(); return; }
-      res.writeHead(200, { "content-type": "application/json" });
-      res.end(JSON.stringify({
-        id: "msg_fake", type: "message", role: "assistant", model: "claude-sonnet-5",
-        stop_sequence: null, usage: { input_tokens: 5, output_tokens: 5 }, stop_reason: "end_turn",
-        content: [{ type: "text", text: "A warm, editorial answer.", citations: null }],
-      }));
-    });
+    const server = createServer();
+    server.once("error", reject);
     server.listen(0, "127.0.0.1", () => {
       const address = server.address();
-      if (address && typeof address === "object") resolve({ server, port: address.port });
-      else reject(new Error("failed to bind fake Anthropic server"));
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("Could not allocate a verification port."));
+        return;
+      }
+      server.close((error) => error ? reject(error) : resolve(address.port));
     });
-    server.on("error", reject);
   });
 }
 
-/** Drops the tables introduced by the two most recent tracked migrations (0012, 0013) and the migration ledger itself — simulating "production has never run a migration," the actual reported state. */
-async function resetToPreKinState() {
-  await db.execute(sql`DROP TABLE IF EXISTS kin_trip_items, kin_trips, kin_saved_recommendations, kin_search_usage CASCADE`);
-  await db.execute(sql`DROP SCHEMA IF EXISTS drizzle CASCADE`);
-}
-
-async function ledgerRowCount(): Promise<number> {
-  const exists = await db.execute(sql`select exists (select from information_schema.tables where table_schema = 'drizzle' and table_name = '__drizzle_migrations') as exists`);
-  if (!(exists.rows[0] as { exists: boolean }).exists) return 0;
-  const result = await db.execute(sql`select count(*)::int as count from drizzle.__drizzle_migrations`);
-  return (result.rows[0] as { count: number }).count;
-}
-
-/**
- * Builds a ledger that stops exactly at `throughTag` — reproducing the
- * real reported Production state (the ledger records 0012/0013 with
- * hashes matching the deployed files) without ever touching the real
- * ledger by hand: a temp migrations folder holding only the migration
- * files up to and including `throughTag` (a trimmed copy of the real
- * meta/_journal.json, plus copies of just those .sql files) is handed to
- * Drizzle's own migrate(), so every ledger row it writes is exactly what
- * Drizzle itself would have written after a real boot that stopped there.
- */
-async function buildLedgerThrough(throughTag: string): Promise<void> {
-  const journal = JSON.parse(fs.readFileSync(path.join(realMigrationsFolder, "meta/_journal.json"), "utf8")) as {
-    version: string;
-    dialect: string;
-    entries: Array<{ idx: number; version: string; when: number; tag: string; breakpoints: boolean }>;
-  };
-  const cutoffIdx = journal.entries.findIndex((entry) => entry.tag === throughTag);
-  assert.notEqual(cutoffIdx, -1, `${throughTag} must exist in meta/_journal.json`);
-  const trimmedEntries = journal.entries.slice(0, cutoffIdx + 1);
-
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kin-ledger-fixture-"));
-  try {
-    fs.mkdirSync(path.join(tempDir, "meta"));
-    fs.writeFileSync(path.join(tempDir, "meta/_journal.json"), JSON.stringify({ ...journal, entries: trimmedEntries }));
-    for (const entry of trimmedEntries) {
-      fs.copyFileSync(path.join(realMigrationsFolder, `${entry.tag}.sql`), path.join(tempDir, `${entry.tag}.sql`));
-    }
-    await migrate(db, { migrationsFolder: tempDir });
-  } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
-  }
-}
-
-/** Drops only the KIN tables, leaving the ledger exactly as-is — the actual reported mismatch (ledger says 0012/0013 applied; the tables they create are absent), as opposed to resetToPreKinState's "migrations never ran at all." */
-async function dropKinTablesOnly() {
-  await db.execute(sql`DROP TABLE IF EXISTS kin_trip_items, kin_trips, kin_saved_recommendations, kin_search_usage CASCADE`);
-}
-
-/**
- * Re-applies 0014's own SQL directly (not through migrate() — the ledger
- * may already record 0014 as done, in which case migrate() would see
- * nothing pending and skip it) to restore a database left in the
- * ledger-says-done-but-tables-missing state by an earlier check. Safe
- * because 0014 is itself idempotent (IF NOT EXISTS / duplicate_object
- * guarded); this never touches the ledger.
- */
-async function restoreKinTables(): Promise<void> {
-  const fileSql = fs.readFileSync(path.join(realMigrationsFolder, "0014_kin_ledger_schema_repair.sql"), "utf8");
-  for (const statement of fileSql.split("--> statement-breakpoint")) {
-    const trimmed = statement.trim();
-    if (trimmed) await db.execute(sql.raw(trimmed));
-  }
-}
-
-const REQUIRED_KIN_TABLES = ["kin_search_usage", "kin_saved_recommendations", "kin_trips", "kin_trip_items"];
-
-async function missingKinTables(): Promise<string[]> {
-  const missing: string[] = [];
-  for (const table of REQUIRED_KIN_TABLES) {
-    const result = await db.execute(sql`select to_regclass(${"public." + table}) as reg`);
-    if (!(result.rows[0] as { reg: string | null }).reg) missing.push(table);
-  }
-  return missing;
-}
-
-/** Every foreign key and index migrations 0012/0013 (recreated by 0014) are supposed to have left behind. */
-async function kinConstraintAndIndexNames(): Promise<{ constraints: string[]; indexes: string[] }> {
-  const constraints = await db.execute(sql`
-    select conname from pg_constraint
-    where conname in (
-      'kin_search_usage_owner_user_id_users_id_fk',
-      'kin_saved_recommendations_owner_user_id_users_id_fk',
-      'kin_trips_owner_user_id_users_id_fk',
-      'kin_trip_items_trip_id_kin_trips_id_fk',
-      'kin_trip_items_owner_user_id_users_id_fk'
-    )
-  `);
-  const indexes = await db.execute(sql`
-    select indexname from pg_indexes
-    where indexname in (
-      'kin_search_usage_owner_created_idx',
-      'kin_saved_recommendations_owner_created_idx',
-      'kin_trips_owner_created_idx',
-      'kin_trip_items_trip_idx',
-      'kin_trip_items_owner_idx'
-    )
-  `);
+async function snapshot(pool: pg.Pool, databaseUrl: string): Promise<Snapshot> {
+  const [rawSchemaDump, columns, indexes, constraints, migrationLedger] = await Promise.all([
+    captureCommand(
+      "pg_dump",
+      ["--schema-only", "--no-owner", "--no-privileges", "--no-comments", databaseUrl],
+      process.env,
+    ),
+    pool.query(`
+      SELECT table_schema, table_name, ordinal_position, column_name, data_type,
+             is_nullable, COALESCE(column_default, '') AS column_default
+      FROM information_schema.columns
+      WHERE table_schema IN ('public', 'drizzle')
+      ORDER BY table_schema, table_name, ordinal_position
+    `),
+    pool.query(`
+      SELECT schemaname, tablename, indexname, indexdef
+      FROM pg_indexes
+      WHERE schemaname IN ('public', 'drizzle')
+      ORDER BY schemaname, tablename, indexname
+    `),
+    pool.query(`
+      SELECT n.nspname AS schema_name, c.relname AS table_name,
+             con.conname AS constraint_name, pg_get_constraintdef(con.oid) AS definition
+      FROM pg_constraint con
+      JOIN pg_class c ON c.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname IN ('public', 'drizzle')
+      ORDER BY n.nspname, c.relname, con.conname
+    `),
+    pool.query(`
+      SELECT id, hash, created_at
+      FROM drizzle.__drizzle_migrations
+      ORDER BY id
+    `),
+  ]);
   return {
-    constraints: (constraints.rows as Array<{ conname: string }>).map((row) => row.conname).sort(),
-    indexes: (indexes.rows as Array<{ indexname: string }>).map((row) => row.indexname).sort(),
+    schemaDump: rawSchemaDump
+      .split("\n")
+      .filter((line) => !line.startsWith("-- Dumped from") && !line.startsWith("-- Dumped by") && !line.startsWith("\\restrict ") && !line.startsWith("\\unrestrict "))
+      .join("\n"),
+    columns: columns.rows,
+    indexes: indexes.rows,
+    constraints: constraints.rows,
+    migrationLedger: migrationLedger.rows,
   };
 }
 
-async function migrationRowCountFor(tag: string): Promise<number> {
-  // Drizzle's ledger stores each migration's sha256 hash, not its tag —
-  // recover the count by tag via the same hash the real folder produces.
-  const query = fs.readFileSync(path.join(realMigrationsFolder, `${tag}.sql`), "utf8");
-  const hash = crypto.createHash("sha256").update(query).digest("hex");
-  const result = await db.execute(sql`select count(*)::int as count from drizzle.__drizzle_migrations where hash = ${hash}`);
-  return (result.rows[0] as { count: number }).count;
-}
-
-/**
- * A throwaway single-file migration folder containing exactly `sqlBody` —
- * used only to fabricate wedged-statement fixtures for the cancellation
- * tests below. Caller must fs.rmSync the returned path.
- *
- * Drizzle's migrate() decides whether to run a migration by comparing its
- * journal `when` against the newest `created_at` already in
- * drizzle.__drizzle_migrations — a ledger shared by every migrationsFolder
- * against the same database, real ones included. `when` here is set far
- * beyond any realistic real value so this fixture is never mistaken for
- * "already applied" by a database this suite has already migrated.
- */
-function writeSingleMigrationFolder(sqlBody: string): string {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "kin-cancellation-fixture-"));
-  fs.mkdirSync(path.join(tempDir, "meta"));
-  fs.writeFileSync(path.join(tempDir, "0000_fixture.sql"), sqlBody);
-  fs.writeFileSync(
-    path.join(tempDir, "meta/_journal.json"),
-    JSON.stringify({ version: "7", dialect: "postgresql", entries: [{ idx: 0, version: "7", when: 9_999_999_999_999, tag: "0000_fixture", breakpoints: true }] }),
-  );
-  return tempDir;
-}
-
-const MIGRATION_ADVISORY_LOCK_KEY = 727_273_001_001;
-
-/** True if the migration advisory lock is currently free — acquires it non-blockingly (pg_try_advisory_lock) and immediately releases it if so. */
-async function migrationLockIsFree(): Promise<boolean> {
-  const client = await pool.connect();
-  try {
-    const result = await client.query("SELECT pg_try_advisory_lock($1) AS acquired", [MIGRATION_ADVISORY_LOCK_KEY]);
-    const acquired = (result.rows[0] as { acquired: boolean }).acquired;
-    if (acquired) await client.query("SELECT pg_advisory_unlock($1)", [MIGRATION_ADVISORY_LOCK_KEY]);
-    return acquired;
-  } finally {
-    client.release();
-  }
-}
-
-/** Count of backends still actively running a pg_sleep — proof (or disproof) that migration SQL is really still executing server-side, independent of whatever the client-side promise did. */
-async function activeSleepBackendCount(): Promise<number> {
-  const result = await pool.query("SELECT count(*)::int AS n FROM pg_stat_activity WHERE query LIKE 'SELECT pg_sleep%' AND state = 'active'");
-  return (result.rows[0] as { n: number }).n;
-}
-
-let nextPort = 24900;
-let fakeAnthropicPort = 0;
-
-type Server = { port: number; process: ChildProcess; baseUrl: string; stdout: string };
-
-type SpawnedServer = { port: number; process: ChildProcess; baseUrl: string; getStdout: () => string };
-
-/** Spawns the built server against the disposable test database, returning immediately (no readiness wait) — callers decide what to poll for and how long to wait. */
-function spawnServer(extraEnv: Record<string, string | undefined>): SpawnedServer {
-  const port = nextPort;
-  nextPort += 1;
-  const env: Record<string, string> = {
-    ...(process.env as Record<string, string>),
-    PORT: String(port),
-    NODE_ENV: "production",
-    DATABASE_URL: databaseUrl,
-    ANTHROPIC_API_KEY: "fake-test-key",
-    ANTHROPIC_BASE_URL: `http://127.0.0.1:${fakeAnthropicPort}`,
-    PRIVATE_OBJECT_DIR: "/closet-test-bucket/my-things",
-    KIN_SEARCH_DAILY_LIMIT: "1000",
-  };
-  for (const [key, value] of Object.entries(extraEnv)) {
-    if (value === undefined) delete env[key];
-    else env[key] = value;
-  }
-  const child = spawn("node", [serverEntry], { env, stdio: ["ignore", "pipe", "pipe"] });
-  let stdout = "";
-  child.stdout.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-  child.stderr.on("data", (chunk: Buffer) => { stdout += chunk.toString(); });
-  return { port, process: child, baseUrl: `http://127.0.0.1:${port}`, getStdout: () => stdout };
-}
-
-/** Polls until `check` returns true, the process exits, or `deadlineMs` elapses. Returns which of those happened. */
-async function pollUntil(server: SpawnedServer, check: () => Promise<boolean>, deadlineMs = 15_000): Promise<"met" | "exited" | "timeout"> {
-  const deadline = Date.now() + deadlineMs;
-  let exited = false;
-  const onExit = () => { exited = true; };
-  server.process.on("exit", onExit);
-  try {
-    while (Date.now() < deadline) {
-      if (exited) return "exited";
-      try {
-        if (await check()) return "met";
-      } catch {
-        // not up yet / transient — keep polling
-      }
-      await new Promise((r) => setTimeout(r, 100));
+async function waitForReady(server: RunningServer): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  while (Date.now() < deadline) {
+    if (server.child.exitCode !== null) {
+      throw new Error(`API exited before readiness with code ${server.child.exitCode}:\n${server.output()}`);
     }
-    return exited ? "exited" : "timeout";
-  } finally {
-    server.process.off("exit", onExit);
+    try {
+      const response = await fetch(`${server.baseUrl}/api/healthz`);
+      if (response.ok) {
+        assert.deepEqual(await response.json(), { status: "ok" });
+        return;
+      }
+    } catch {
+      // The listener may not have bound yet.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
   }
+  throw new Error(`API did not become ready:\n${server.output()}`);
 }
 
-async function healthzBody(baseUrl: string): Promise<{ status?: string } | undefined> {
-  const response = await fetch(`${baseUrl}/api/healthz`);
-  if (!response.ok) return undefined;
-  return (await response.json()) as { status?: string };
-}
-
-/**
- * Starts the built server and waits for it to become truly ready — or, if
- * it never does within the deadline, returns whatever it logged so the
- * caller can assert on the failure.
- *
- * "Ready" here means GET /api/healthz's body reports { status: "ok" } —
- * not merely that the request succeeded. The port opens (and /api/healthz
- * starts answering 200) immediately, before migrations run, with a
- * { status: "starting" } body (see readiness-middleware.ts); this waits
- * past that to the point migrations have actually finished and the app is
- * really serving. Phase 13 below drives spawnServer/pollUntil directly to
- * observe the earlier "starting" window instead.
- */
-async function startServer(extraEnv: Record<string, string | undefined>): Promise<{ ready: true; server: Server } | { ready: false; stdout: string; process: ChildProcess }> {
-  const server = spawnServer(extraEnv);
-  const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl))?.status === "ok");
-  if (outcome === "met") {
-    return { ready: true, server: { port: server.port, process: server.process, baseUrl: server.baseUrl, stdout: server.getStdout() } };
-  }
-  return { ready: false, stdout: server.getStdout(), process: server.process };
-}
-
-function stopServer(proc: ChildProcess) {
-  proc.kill();
-}
-
-async function signupAndEnableKin(baseUrl: string, email: string): Promise<string> {
-  const signup = await fetch(`${baseUrl}/api/auth/signup`, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email, password: "regression-test-1234" }),
+async function startProductionStyleApi(databaseUrl: string): Promise<RunningServer> {
+  const port = await unusedPort();
+  let captured = "";
+  const child = spawn(process.execPath, ["--enable-source-maps", apiEntry], {
+    cwd: repoRoot,
+    env: {
+      ...process.env,
+      DATABASE_URL: databaseUrl,
+      NODE_ENV: "production",
+      PORT: String(port),
+      RUN_MIGRATIONS_ON_BOOT: "true",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
   });
-  assert.equal(signup.status, 201, `signup for ${email} should succeed`);
-  const cookie = (signup.headers.get("set-cookie") ?? "").split(";")[0];
-  assert.ok(cookie, "signup must set a session cookie");
-  await db.execute(sql`update users set onboarding_completed_at = now() where email = ${email}`);
-  await db.execute(sql`
-    insert into feature_flags (key, description, enabled) values ('kin_search', 'KIN', true)
-    on conflict (key) do update set enabled = true
-  `);
-  return cookie;
-}
-
-async function kinLooks(baseUrl: string, cookie: string): Promise<number> {
-  const response = await fetch(`${baseUrl}/api/kin/search`, {
-    method: "POST", headers: { "content-type": "application/json", cookie },
-    body: JSON.stringify({ mode: "looks", query: "a dinner outfit" }),
-  });
-  return response.status;
-}
-
-const results: Array<{ name: string; ok: boolean; error?: string }> = [];
-async function check(name: string, fn: () => Promise<void>) {
+  child.stdout!.setEncoding("utf8");
+  child.stderr!.setEncoding("utf8");
+  child.stdout!.on("data", (chunk: string) => { captured += chunk; });
+  child.stderr!.on("data", (chunk: string) => { captured += chunk; });
+  const server = { child, baseUrl: `http://127.0.0.1:${port}`, output: () => captured };
   try {
-    await fn();
-    results.push({ name, ok: true });
-    console.log(`  ok — ${name}`);
+    await waitForReady(server);
+    return server;
   } catch (error) {
-    results.push({ name, ok: false, error: error instanceof Error ? error.message : String(error) });
-    console.log(`  FAIL — ${name}`);
-    console.log(`    ${error instanceof Error ? error.message : error}`);
+    await stopServer(server);
+    throw error;
   }
 }
 
-async function main() {
-  const anthropic = await startFakeAnthropic();
-  fakeAnthropicPort = anthropic.port;
+async function stopServer(server: RunningServer): Promise<void> {
+  if (server.child.exitCode !== null) return;
+  server.child.kill("SIGTERM");
+  const exitedAfterTerm = await Promise.race([
+    new Promise<boolean>((resolve) => server.child.once("exit", () => resolve(true))),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 3_000)),
+  ]);
+  if (exitedAfterTerm || server.child.exitCode !== null) return;
+  server.child.kill("SIGKILL");
+  await Promise.race([
+    new Promise<void>((resolve) => server.child.once("exit", () => resolve())),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error("API verification child did not exit after SIGKILL.")), 3_000)),
+  ]);
+}
+
+async function verifyStart(
+  number: number,
+  databaseUrl: string,
+  pool: pg.Pool,
+  expectedSnapshot: Snapshot,
+): Promise<void> {
+  const server = await startProductionStyleApi(databaseUrl);
+  try {
+    assert.doesNotMatch(server.output(), /Running pending database migrations|Database migrations up to date/);
+  } finally {
+    await stopServer(server);
+  }
+  assert.deepEqual(await snapshot(pool, databaseUrl), expectedSnapshot);
+  console.log(`✓ production-style startup ${number} succeeded without schema or ledger mutation`);
+}
+
+async function main(): Promise<void> {
+  const databaseName = `tastekin_startup_verify_${randomUUID().replaceAll("-", "")}`;
+  const adminPool = new Pool({ connectionString: baseDatabaseUrl, max: 1 });
+  const isolatedUrl = disposableUrl(baseDatabaseUrl, databaseName);
+  let isolatedPool: pg.Pool | undefined;
+  let workspacePool: pg.Pool | undefined;
 
   try {
-    console.log("Phase 1: RUN_MIGRATIONS_ON_BOOT unset (today's actual behavior) — reproduces the reported 500.");
-    await resetToPreKinState();
-    {
-      const started = await startServer({});
-      assert.ok(started.ready, "server must still start even with no migration step (unaffected by default)");
-      const server = (started as { ready: true; server: Server }).server;
-      try {
-        await check("with the env var unset, a database missing kin_search_usage still 500s on KIN Looks (the reported bug, unpatched)", async () => {
-          const cookie = await signupAndEnableKin(server.baseUrl, `migtest-before-${Date.now()}@example.com`);
-          const status = await kinLooks(server.baseUrl, cookie);
-          assert.equal(status, 500);
-        });
-        await check("no migration log lines appear when the env var is unset", async () => {
-          assert.doesNotMatch(server.stdout, /Running pending database migrations/);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
+    await adminPool.query(`CREATE DATABASE ${quoteIdentifier(databaseName)}`);
+    await runCommand(
+      "pnpm",
+      ["--filter", "@workspace/db", "run", "push-force"],
+      { ...process.env, DATABASE_URL: isolatedUrl },
+    );
+    isolatedPool = new Pool({ connectionString: isolatedUrl, max: 2 });
+    await seedReviewedMigrationLedger(isolatedPool);
 
-    console.log("\nPhase 2: RUN_MIGRATIONS_ON_BOOT=true — migrates before accepting traffic, and the same request now succeeds.");
-    await resetToPreKinState();
-    {
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      assert.ok(started.ready, "server must start once migrations complete");
-      const server = (started as { ready: true; server: Server }).server;
-      try {
-        await check("the migration log line appears, and the port opens well before migrations finish", async () => {
-          const listeningAt = server.stdout.indexOf("Server listening");
-          const runningAt = server.stdout.indexOf("Running pending database migrations");
-          const upToDateAt = server.stdout.indexOf("Database migrations up to date");
-          assert.ok(listeningAt !== -1 && runningAt !== -1 && upToDateAt !== -1, "all three log lines must appear");
-          // Not asserting listeningAt < runningAt here: app.listen()'s own
-          // "listening" event is asynchronous, so the synchronous log line
-          // that immediately follows the (synchronous) listen() call can
-          // legitimately appear first in the log even though the listener
-          // was registered first in the code — log order across a sync/
-          // async boundary isn't proof of execution order. What actually
-          // matters (the port answering real HTTP requests before
-          // migrations run) is proven directly over HTTP in Phase 13, not
-          // inferred from log text here.
-          assert.ok(listeningAt < upToDateAt, "the port must be open well before migrations finish");
-        });
-        await check("the ledger records exactly one row per migration file", async () => {
-          assert.equal(await ledgerRowCount(), 15);
-        });
-        await check("KIN Looks now succeeds — kin_search_usage exists and quota reservation no longer throws", async () => {
-          const cookie = await signupAndEnableKin(server.baseUrl, `migtest-after-${Date.now()}@example.com`);
-          const status = await kinLooks(server.baseUrl, cookie);
-          assert.equal(status, 200);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
+    process.env.DATABASE_URL = isolatedUrl;
+    const dbModule = await import("@workspace/db");
+    workspacePool = dbModule.pool;
+    await dbModule.runPendingMigrations(migrationsFolder);
+    console.log("✓ direct migration runner verified the disposable schema and reviewed ledger");
 
-    console.log("\nPhase 3: idempotency — running again against an already-migrated database is a safe no-op.");
-    {
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      assert.ok(started.ready, "a second run against an already-migrated database must still start cleanly");
-      const server = (started as { ready: true; server: Server }).server;
-      try {
-        await check("re-running migrations changes nothing and still reaches 'Server listening'", async () => {
-          assert.match(server.stdout, /Database migrations up to date/);
-          assert.equal(await ledgerRowCount(), 15);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
+    const before = await snapshot(isolatedPool, isolatedUrl);
+    assert.ok(before.migrationLedger.length > 0, "Expected the isolated Drizzle ledger to contain migrations.");
 
-    console.log("\nPhase 4: concurrent boots (Autoscale can start more than one instance at once) never race.");
-    await resetToPreKinState();
-    {
-      const [a, b] = await Promise.all([
-        startServer({ RUN_MIGRATIONS_ON_BOOT: "true" }),
-        startServer({ RUN_MIGRATIONS_ON_BOOT: "true" }),
-      ]);
-      try {
-        await check("both concurrently-booting instances start successfully", async () => {
-          assert.ok(a.ready, "first instance must start");
-          assert.ok(b.ready, "second instance must start");
-        });
-        await check("the ledger ends up with exactly one row per migration, never duplicated by the race", async () => {
-          assert.equal(await ledgerRowCount(), 15);
-        });
-      } finally {
-        if (a.ready) stopServer((a as { ready: true; server: Server }).server.process);
-        else stopServer((a as { ready: false; process: ChildProcess }).process);
-        if (b.ready) stopServer((b as { ready: true; server: Server }).server.process);
-        else stopServer((b as { ready: false; process: ChildProcess }).process);
-      }
-    }
-
-    console.log("\nPhase 5: a migration failure is fatal, but the port still opens immediately — never accepting traffic with a schema the app doesn't match, while never holding up the Replit port-open check either.");
-    {
-      // Bad credentials fail authentication near-instantly (single-digit
-      // milliseconds) — too fast to reliably win an HTTP race against from
-      // outside the process, so this checks the log for what actually
-      // happened rather than trying to catch the "starting" window live.
-      // The meaningful, previously-broken behavior this proves: the port
-      // opens at all (the log line is present) even for a failure this
-      // fast — under the old before-listen migration order, it never did.
-      const brokenUrl = databaseUrl.replace(/:\/\/[^@]*@/, "://baduser:badpass@");
-      const server = spawnServer({ RUN_MIGRATIONS_ON_BOOT: "true", DATABASE_URL: brokenUrl });
-      try {
-        await check("even a near-instant migration failure still opens the port first, then exits non-zero with the structured error logged, never reaching ready", async () => {
-          const outcome = await pollUntil(server, async () => false, 15_000);
-          assert.equal(outcome, "exited", "the process must exit");
-          assert.match(server.getStdout(), /Server listening/, "the port opens unconditionally, before migrations are even attempted");
-          assert.doesNotMatch(server.getStdout(), /"status":"ok"/, "no response ever reported real readiness");
-          assert.match(server.getStdout(), /Database migration failed/);
-          assert.match(server.getStdout(), /password authentication failed/);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
-    {
-      // A slower, non-timeout failure (an explicit divide-by-zero, not a
-      // wedged statement) — long enough to observe the "starting" window
-      // live over real HTTP, proving the port-open fix holds for an
-      // ordinary migration failure too, not just the fast auth-rejection
-      // case above or the timeout/termination cases in Phases 11-12.
-      const fixture = writeSingleMigrationFolder("SELECT pg_sleep(2);\n--> statement-breakpoint\nSELECT 1/0;");
-      const server = spawnServer({ RUN_MIGRATIONS_ON_BOOT: "true", MIGRATIONS_FOLDER_OVERRIDE: fixture });
-      try {
-        await check("the port answers 'starting' during a slow migration that will ultimately fail", async () => {
-          const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl))?.status === "starting", 2_000);
-          assert.equal(outcome, "met");
-        });
-        await check("once the migration's SQL error surfaces, the process exits non-zero, having never reached ready", async () => {
-          const outcome = await pollUntil(server, async () => false, 15_000);
-          assert.equal(outcome, "exited", "the process must exit");
-          assert.doesNotMatch(server.getStdout(), /"status":"ok"/, "no response ever reported real readiness");
-          assert.match(server.getStdout(), /Database migration failed/);
-          assert.match(server.getStdout(), /division by zero/);
-        });
-      } finally {
-        stopServer(server.process);
-        fs.rmSync(fixture, { recursive: true, force: true });
-      }
-    }
-
-    console.log("\nPhase 6: the reported Production incident — ledger records 0012/0013 as applied (real hashes, via Drizzle's own migrate()), but the tables those migrations create are absent. Migration 0014 repairs this additively.");
-    await resetToPreKinState();
-    await buildLedgerThrough("0013_kin_looks_travel");
-    await dropKinTablesOnly();
-    {
-      await check("fixture reproduces the exact reported state: ledger has 0000-0013 (14 rows), KIN tables are absent", async () => {
-        assert.equal(await ledgerRowCount(), 14);
-        assert.deepEqual(await missingKinTables(), REQUIRED_KIN_TABLES);
-      });
-
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      assert.ok(started.ready, "server must start once 0014 repairs the missing tables");
-      const server = (started as { ready: true; server: Server }).server;
-      try {
-        await check("the port opens before migration 0014 (the only one pending) applies", async () => {
-          assert.match(server.stdout, /Database migrations up to date/);
-          const listeningAt = server.stdout.indexOf("Server listening");
-          const upToDateAt = server.stdout.indexOf("Database migrations up to date");
-          assert.ok(upToDateAt !== -1 && listeningAt !== -1 && listeningAt < upToDateAt, "the port must open before the repair migration runs, not after");
-        });
-        await check("every required KIN table now exists", async () => {
-          assert.deepEqual(await missingKinTables(), []);
-        });
-        await check("every required KIN foreign key and index now exists", async () => {
-          const { constraints, indexes } = await kinConstraintAndIndexNames();
-          assert.equal(constraints.length, 5, `expected 5 FK constraints, found: ${constraints.join(", ")}`);
-          assert.equal(indexes.length, 5, `expected 5 indexes, found: ${indexes.join(", ")}`);
-        });
-        await check("0014 is recorded in the ledger exactly once, alongside the pre-existing 0000-0013 rows", async () => {
-          assert.equal(await ledgerRowCount(), 15);
-          assert.equal(await migrationRowCountFor("0014_kin_ledger_schema_repair"), 1);
-        });
-        await check("KIN Looks now succeeds end-to-end", async () => {
-          const cookie = await signupAndEnableKin(server.baseUrl, `migtest-repair-${Date.now()}@example.com`);
-          const status = await kinLooks(server.baseUrl, cookie);
-          assert.equal(status, 200);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
-
-    console.log("\nPhase 7: repeat and concurrent startup from the just-repaired database remain idempotent.");
-    {
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      assert.ok(started.ready, "a repeat boot after the repair must still start cleanly");
-      const server = (started as { ready: true; server: Server }).server;
-      try {
-        await check("re-running after the repair changes nothing — 0014 stays recorded exactly once", async () => {
-          assert.match(server.stdout, /Database migrations up to date/);
-          assert.equal(await ledgerRowCount(), 15);
-          assert.equal(await migrationRowCountFor("0014_kin_ledger_schema_repair"), 1);
-          assert.deepEqual(await missingKinTables(), []);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
-    {
-      const [a, b] = await Promise.all([
-        startServer({ RUN_MIGRATIONS_ON_BOOT: "true" }),
-        startServer({ RUN_MIGRATIONS_ON_BOOT: "true" }),
-      ]);
-      try {
-        await check("two instances concurrently booting against the already-repaired database both start successfully", async () => {
-          assert.ok(a.ready, "first instance must start");
-          assert.ok(b.ready, "second instance must start");
-        });
-        await check("concurrent boots never duplicate the 0014 ledger row", async () => {
-          assert.equal(await ledgerRowCount(), 15);
-          assert.equal(await migrationRowCountFor("0014_kin_ledger_schema_repair"), 1);
-        });
-      } finally {
-        if (a.ready) stopServer((a as { ready: true; server: Server }).server.process);
-        else stopServer((a as { ready: false; process: ChildProcess }).process);
-        if (b.ready) stopServer((b as { ready: true; server: Server }).server.process);
-        else stopServer((b as { ready: false; process: ChildProcess }).process);
-      }
-    }
-
-    console.log("\nPhase 8: a healthy database (every KIN object already present) is left unchanged by 0014.");
-    {
-      await check("before re-verifying: the database is fully healthy (no missing KIN objects, ledger at 15)", async () => {
-        assert.deepEqual(await missingKinTables(), []);
-        assert.equal(await ledgerRowCount(), 15);
-      });
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      assert.ok(started.ready, "booting a healthy database must succeed");
-      const server = (started as { ready: true; server: Server }).server;
-      try {
-        await check("a healthy database boots cleanly with no schema changes and no duplicated ledger rows", async () => {
-          assert.match(server.stdout, /Database migrations up to date/);
-          assert.equal(await ledgerRowCount(), 15);
-          assert.deepEqual(await missingKinTables(), []);
-          const { constraints, indexes } = await kinConstraintAndIndexNames();
-          assert.equal(constraints.length, 5);
-          assert.equal(indexes.length, 5);
-        });
-      } finally {
-        stopServer(server.process);
-      }
-    }
-
-    console.log("\nPhase 9: the ledger claiming success is not trusted blindly — if required KIN objects are absent even after migrate() reports up to date, startup fails with an explicit diagnostic instead of opening the HTTP listener.");
-    await dropKinTablesOnly();
-    {
-      await check("fixture: ledger is fully at 0014, but the KIN tables were dropped again after the fact", async () => {
-        assert.equal(await ledgerRowCount(), 15);
-        assert.deepEqual(await missingKinTables(), REQUIRED_KIN_TABLES);
-      });
-      const started = await startServer({ RUN_MIGRATIONS_ON_BOOT: "true" });
-      await check("the port still opens (the listener line appears), but startup fails with an explicit ledger/schema mismatch diagnostic and never becomes ready", async () => {
-        assert.equal(started.ready, false, "the server must not report ready");
-        assert.match(started.stdout, /Server listening/, "the port opens immediately regardless of what migrations later find");
-        assert.doesNotMatch(started.stdout, /"status":"ok"/, "no response ever reported real readiness");
-        assert.match(started.stdout, /Database migration failed/);
-        assert.match(started.stdout, /ledger reports every migration applied/);
-        assert.match(started.stdout, /kin_search_usage/);
-      });
-    }
-
-    console.log("\nPhase 10: lock_timeout reliably bounds pg_advisory_lock (the mechanism runPendingMigrations relies on to bound lock acquisition) — proven directly at the Postgres level, not left as an assumption.");
-    {
-      const holder = await pool.connect();
-      try {
-        await holder.query("SELECT pg_advisory_lock($1)", [MIGRATION_ADVISORY_LOCK_KEY]);
-        await check("a session blocked on pg_advisory_lock with lock_timeout set is canceled at the configured bound, not left hanging", async () => {
-          const waiter = await pool.connect();
-          try {
-            await waiter.query("SET lock_timeout = 1500");
-            const start = Date.now();
-            await assert.rejects(
-              waiter.query("SELECT pg_advisory_lock($1)", [MIGRATION_ADVISORY_LOCK_KEY]),
-              /lock timeout/i,
-            );
-            const elapsed = Date.now() - start;
-            assert.ok(elapsed >= 1000 && elapsed < 5000, `expected cancellation near the 1500ms bound, took ${elapsed}ms`);
-          } finally {
-            waiter.release();
-          }
-        });
-      } finally {
-        await holder.query("SELECT pg_advisory_unlock($1)", [MIGRATION_ADVISORY_LOCK_KEY]);
-        holder.release();
-      }
-    }
-
-    console.log("\nPhase 11: a wedged migration statement is canceled server-side (statement_timeout), not merely abandoned client-side — the previous Promise.race-only approach left the SQL running and the lock held.");
-    {
-      process.env.MIGRATION_STATEMENT_TIMEOUT_MS = "1500";
-      process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS = "5000";
-      const fixture = writeSingleMigrationFolder("SELECT pg_sleep(300);");
-      try {
-        const start = Date.now();
-        let caught: unknown;
-        try {
-          await runPendingMigrations(fixture);
-        } catch (error) {
-          caught = error;
-        }
-        const elapsed = Date.now() - start;
-        await check("runPendingMigrations rejects near the statement_timeout bound, not after the full wedged duration", async () => {
-          assert.ok(caught, "runPendingMigrations must reject");
-          assert.ok(elapsed < 10_000, `took ${elapsed}ms — statement_timeout (1500ms) should have canceled this long before pg_sleep(300)'s 300000ms`);
-        });
-        await check("the advisory lock is immediately free afterward — the failed statement did not leave it held", async () => {
-          assert.equal(await migrationLockIsFree(), true);
-        });
-        await check("no backend is left actually running the sleep — the statement was truly canceled server-side, not just abandoned", async () => {
-          assert.equal(await activeSleepBackendCount(), 0);
-        });
-      } finally {
-        fs.rmSync(fixture, { recursive: true, force: true });
-        delete process.env.MIGRATION_STATEMENT_TIMEOUT_MS;
-        delete process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS;
-      }
-    }
-
-    console.log("\nPhase 12: many individually-fast statements whose sum exceeds the whole-run bound force-terminate the backend — the one case statement_timeout alone can't cover.");
-    {
-      process.env.MIGRATION_STATEMENT_TIMEOUT_MS = "10000"; // no single 1s sleep trips this
-      process.env.MIGRATION_RUN_TIMEOUT_MS = "3000"; // ten of them cumulatively will
-      process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS = "5000";
-      const fixture = writeSingleMigrationFolder(Array(10).fill("SELECT pg_sleep(1);").join("\n--> statement-breakpoint\n"));
-      try {
-        const start = Date.now();
-        let caught: unknown;
-        try {
-          await runPendingMigrations(fixture);
-        } catch (error) {
-          caught = error;
-        }
-        const elapsed = Date.now() - start;
-        await check("runPendingMigrations rejects near the whole-run bound, not after the full ~10s cumulative duration", async () => {
-          assert.ok(caught instanceof Error, "runPendingMigrations must reject");
-          assert.equal((caught as Error).name, "MigrationTimeoutError");
-          assert.ok(elapsed < 6000, `took ${elapsed}ms — the 3000ms run timeout should have force-terminated this well before the full ~10s`);
-        });
-        await check("the advisory lock is immediately free afterward — forced termination released it as a side effect of ending the session", async () => {
-          assert.equal(await migrationLockIsFree(), true);
-        });
-        await check("no backend is left actually running any of the sleeps — the connection was truly terminated, not merely abandoned", async () => {
-          assert.equal(await activeSleepBackendCount(), 0);
-        });
-      } finally {
-        fs.rmSync(fixture, { recursive: true, force: true });
-        delete process.env.MIGRATION_STATEMENT_TIMEOUT_MS;
-        delete process.env.MIGRATION_RUN_TIMEOUT_MS;
-        delete process.env.MIGRATION_LOCK_ACQUIRE_TIMEOUT_MS;
-      }
-    }
-
-    console.log("\nPhase 13: the Replit port-open timeout fix — the HTTP listener opens, and GET /api and GET /api/healthz answer immediately, before migrations run; every other /api route 503s until they finish; then the app serves normally.");
-    await restoreKinTables(); // undo Phase 9's fixture so this phase starts from a healthy database
-    {
-      const fixture = writeSingleMigrationFolder("SELECT pg_sleep(3);");
-      const server = spawnServer({ RUN_MIGRATIONS_ON_BOOT: "true", MIGRATIONS_FOLDER_OVERRIDE: fixture });
-      try {
-        await check("the port opens immediately — well before the 3s migration could possibly finish", async () => {
-          const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl)) !== undefined, 2_000);
-          assert.equal(outcome, "met", "GET /api/healthz must answer almost immediately, not after migrations");
-        });
-        await check("starting: GET /api/healthz and GET /api answer 200 with status 'starting'", async () => {
-          const healthz = await fetch(`${server.baseUrl}/api/healthz`);
-          assert.equal(healthz.status, 200);
-          assert.deepEqual(await healthz.json(), { status: "starting" });
-          const bare = await fetch(`${server.baseUrl}/api`);
-          assert.equal(bare.status, 200);
-          assert.deepEqual(await bare.json(), { status: "starting" });
-        });
-        await check("starting: every other /api route answers 503, never touching the database", async () => {
-          const health = await fetch(`${server.baseUrl}/api/health`);
-          assert.equal(health.status, 503);
-          const me = await fetch(`${server.baseUrl}/api/me`);
-          assert.equal(me.status, 503);
-        });
-        await check("ready: once migrations finish, GET /api/healthz reports 'ok' and normal routing resumes", async () => {
-          const outcome = await pollUntil(server, async () => (await healthzBody(server.baseUrl))?.status === "ok", 15_000);
-          assert.equal(outcome, "met", "the server must eventually become ready");
-          const bare = await fetch(`${server.baseUrl}/api`);
-          assert.equal(bare.status, 404, "the bare /api 404 must be restored once ready");
-          const me = await fetch(`${server.baseUrl}/api/me`);
-          assert.equal(me.status, 200, "real routes must serve normally once ready");
-        });
-      } finally {
-        stopServer(server.process);
-        fs.rmSync(fixture, { recursive: true, force: true });
-      }
-    }
+    await verifyStart(1, isolatedUrl, isolatedPool, before);
+    await verifyStart(2, isolatedUrl, isolatedPool, before);
   } finally {
-    anthropic.server.close();
+    await isolatedPool?.end().catch(() => {});
+    await workspacePool?.end().catch(() => {});
+    await adminPool.query(
+      "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+      [databaseName],
+    ).catch(() => {});
+    await adminPool.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(databaseName)}`).catch(() => {});
+    await adminPool.end().catch(() => {});
   }
-
-  console.log("\nResults:");
-  const failed = results.filter((result) => !result.ok);
-  for (const result of results) console.log(`  ${result.ok ? "PASS" : "FAIL"} — ${result.name}`);
-  if (failed.length) {
-    console.error(`\n${failed.length} of ${results.length} checks failed.`);
-    process.exit(1);
-  }
-  console.log(`\nAll ${results.length} migration regression checks passed.`);
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
