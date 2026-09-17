@@ -143,12 +143,12 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .composer-actions .approved-button.primary:disabled { opacity:1; background:var(--tk-wine); color:var(--tk-text-inverse); cursor:wait; }
 .approved-actions.profile-visitor-actions { grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) 44px 44px; gap:7px; }
 .profile-insights-button { min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
-.profile-follow-button, .profile-circle-button { min-width:0; padding-inline:10px; white-space:nowrap; }
-.profile-circle-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; color:var(--tk-wine); }
-.profile-circle-button.active { background:var(--tk-wine); color:var(--tk-text-inverse); }
-.profile-circle-button svg { width:18px; height:18px; flex:0 0 18px; }
-.profile-visitor-button { width:48px; min-height:46px; display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
-.profile-visitor-button:hover { background:var(--tk-surface-muted); }
+.profile-follow-button, .profile-message-button { min-width:0; padding-inline:10px; white-space:nowrap; }
+.profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; color:var(--tk-wine); }
+.profile-circle-icon-button { width:44px; min-height:44px; display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
+.profile-circle-icon-button:hover { background:var(--tk-surface-muted); }
+.profile-circle-icon-button.active { background:var(--tk-wine); border-color:var(--tk-wine); color:var(--tk-text-inverse); }
+.profile-circle-icon-button svg { width:18px; height:18px; flex:0 0 18px; }
 .profile-featured { margin:0 0 18px; }
 .profile-featured-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 9px; }
 .profile-featured-head h2 { margin:0; color:var(--tk-ink); font-size:12px; font-weight:800; letter-spacing:-.015em; }
