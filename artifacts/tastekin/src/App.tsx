@@ -4268,11 +4268,11 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     </SimpleScreen>;
   }
 
-  return <section className={`creator-profile ${!ownerView ? 'creator-profile-travel' : ''}`}>
-    {!ownerView && <div className="profile-cover" data-testid="profile-cover">
+  return <section className="creator-profile creator-profile-travel">
+    <div className="profile-cover" data-testid="profile-cover">
       {coverEdit?.image ? <img src={imageSrc(coverEdit.image)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
       {coverLocation && <span className="profile-cover-caption">{coverLocation}</span>}
-    </div>}
+    </div>
     <div className="approved-profile-head">
       <Avatar profile={profile} />
       <div className="profile-head-copy">
@@ -4348,11 +4348,11 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
     <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}{myCircleEnabled && !owner && profile.verified && <div className="profile-circle-control"><button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button><span className="profile-circle-label">{ar ? 'دائرتي' : 'My Circle'}</span></div>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
-    {!ownerView && <div className="profile-travel-stats" data-testid="profile-travel-stats">
+    <div className="profile-travel-stats" data-testid="profile-travel-stats">
       <div className="profile-travel-stat"><strong>—</strong><span>{ar ? 'الدول' : 'Countries'}</span></div>
       <div className="profile-travel-stat"><strong>{travelStats.cities}</strong><span>{ar ? 'المدن' : 'Cities'}</span></div>
       <div className="profile-travel-stat"><strong>{travelStats.trips}</strong><span>{ar ? 'رحلات' : 'Trips'}</span></div>
-    </div>}
+    </div>
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
       <div className="profile-featured-strip">
@@ -4367,11 +4367,11 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       </div>
     </section>}
     <div className="approved-tabs"><button className="active">{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
-    {!ownerView && <div className="profile-travel-tabs" role="tablist" aria-label={ar ? 'تصفية حسب النوع' : 'Filter by type'}>
+    <div className="profile-travel-tabs" role="tablist" aria-label={ar ? 'تصفية حسب النوع' : 'Filter by type'}>
       {travelTabs.map((tab) => <button key={tab.id} type="button" role="tab" data-testid={`profile-travel-tab-${tab.id}`} className={activeTravelTab === tab.id ? 'active' : ''} aria-selected={activeTravelTab === tab.id} onClick={() => setActiveTravelTab(tab.id)}>{ar ? tab.ar : tab.en}</button>)}
-    </div>}
-    <div className={`approved-grid profile-edits-grid ${!ownerView ? 'profile-travel-grid' : ''}`} data-testid="profile-edits-grid" data-active-category={ownerView ? 'All' : activeTravelTab}>
-      {(ownerView ? publishedEdits : travelEdits).map((edit) => {
+    </div>
+    <div className="approved-grid profile-edits-grid profile-travel-grid" data-testid="profile-edits-grid" data-active-category={activeTravelTab}>
+      {travelEdits.map((edit) => {
         const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
         return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
@@ -4393,7 +4393,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
           </span>}
         </button>;
       })}
-      {!(ownerView ? publishedEdits : travelEdits).length && <div className="profile-edits-empty">{ownerView || activeTravelTab === 'All' ? (ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.') : (ar ? `لا يوجد محتوى في ${travelTabs.find((tab) => tab.id === activeTravelTab)?.ar} بعد.` : `Nothing in ${travelTabs.find((tab) => tab.id === activeTravelTab)?.en} yet.`)}</div>}
+      {!travelEdits.length && <div className="profile-edits-empty">{activeTravelTab === 'All' ? (ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.') : (ar ? `لا يوجد محتوى في ${travelTabs.find((tab) => tab.id === activeTravelTab)?.ar} بعد.` : `Nothing in ${travelTabs.find((tab) => tab.id === activeTravelTab)?.en} yet.`)}</div>}
     </div>
   </section>;
 }

@@ -192,7 +192,7 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'ltr');
 });
 
-test('renders the default creator feed without profile category filters', async ({ page }) => {
+test('renders the default creator feed and the owner profile travel layout without stale category filters', async ({ page }) => {
   await page.route('**/api/public-feed', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -212,11 +212,16 @@ test('renders the default creator feed without profile category filters', async 
   await openConsumerProfile(page);
 
   // fheed-profile-mini is this same signed-in creator's own profile — the
-  // owner view, which the travel redesign deliberately leaves unchanged
-  // (no cover, no stats, no travel tabs; see the genuinely-different-creator
-  // "noura.studio" case below for the visitor-facing travel tab row).
+  // owner view, which now shares the travel-first layout (cover, stats,
+  // travel tabs) with the visitor view; only Follow/Message/My Circle stay
+  // hidden and Edit profile/Insights/overflow menu remain owner-only.
   await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
-  await expect(page.locator('[data-testid^="profile-travel-tab-"]')).toHaveCount(0);
+  await expect(page.getByTestId('profile-cover')).toBeVisible();
+  for (const tab of ['All', 'Trips', 'Stays', 'Food', 'Places', 'Tips', 'Style']) {
+    await expect(page.getByTestId(`profile-travel-tab-${tab}`)).toBeVisible();
+  }
+  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
   await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'All');
   await expect(page.locator('.approved-logo')).toHaveCount(0);
   await expect(page.getByText(/^Age \d+$/)).toHaveCount(0);

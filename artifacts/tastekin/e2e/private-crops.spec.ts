@@ -575,9 +575,13 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByTestId('nav-explore').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await page.getByTestId('fheed-profile-mini').click();
-  // fheed-profile-mini opens this same signed-in creator's OWNER view,
-  // which the travel redesign leaves untouched — no travel tab row here.
-  await expect(page.locator('[data-testid^="profile-travel-tab-"]')).toHaveCount(0);
+  // fheed-profile-mini opens this same signed-in creator's own OWNER view,
+  // which now shares the travel-first layout (cover, stats, travel tabs)
+  // with the visitor view — only Follow/Message/My Circle stay hidden.
+  await expect(page.getByTestId('profile-cover')).toBeVisible();
+  await expect(page.getByTestId('profile-travel-tab-All')).toBeVisible();
+  await expect(page.getByTestId('profile-travel-tab-Food')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
   const profilePlaceCard = page.locator('.place-grid-card');
   await expect(profilePlaceCard).toContainText('Alba Table');
   await expect(profilePlaceCard).toContainText('Kuwait City, Kuwait');
@@ -599,8 +603,9 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
   // "View profile" alone still opens the OWNER view (Edit profile/Insights
-  // are visible above) — the travel redesign leaves that unchanged.
-  await expect(page.locator('[data-testid^="profile-travel-tab-"]')).toHaveCount(0);
+  // are visible above), which now also shows the travel tab row.
+  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
+  await expect(page.getByTestId('profile-travel-tab-Food')).toBeVisible();
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await context.close();
