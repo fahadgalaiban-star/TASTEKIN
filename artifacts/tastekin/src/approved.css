@@ -121,7 +121,29 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-avatar { width:72px; height:72px; display:grid; flex:0 0 72px; place-items:center; border:3px solid var(--tk-wine); border-radius:50%; background:var(--tk-surface-muted); color:var(--tk-wine); font-size:20px; font-weight:800; }
 .approved-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; object-position:center; }
 .identity .approved-avatar { width:58px; height:58px; flex-basis:58px; font-size:16px; }
+.profile-cover { position:relative; margin:0 -16px 6px; width:calc(100% + 32px); aspect-ratio:16 / 9; overflow:hidden; border-radius:0 0 18px 18px; background:var(--tk-surface-muted); }
+.profile-cover img { width:100%; height:100%; display:block; object-fit:cover; object-position:center; }
+.profile-cover-fallback { width:100%; height:100%; background:linear-gradient(155deg,var(--tk-burgundy) 0%,var(--tk-surface-muted) 100%); }
+.profile-cover-caption { position:absolute; z-index:1; bottom:10px; inset-inline-end:14px; padding:5px 10px; border-radius:999px; background:var(--tk-media-overlay); color:var(--tk-text-inverse); font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
 .approved-profile-head { display:flex; align-items:flex-start; gap:14px; padding-top:12px; }
+.creator-profile-travel .profile-cover + .approved-profile-head { padding-top:0; }
+/* The avatar overlaps the cover's bottom edge on its own negative margin —
+   the name/handle column next to it (.profile-head-copy) is unaffected and
+   stays in normal flow below the cover, so only the avatar visually rides
+   up onto the photo. */
+.creator-profile-travel .approved-profile-head > .approved-avatar { margin-top:-38px; border:3px solid var(--tk-page); background:var(--tk-page); box-shadow:0 3px 10px rgba(38,25,23,.2); }
+.creator-profile-travel .profile-bio { margin-top:6px; }
+.creator-profile-travel .approved-match { margin:8px 0 0; }
+.creator-profile-travel .profile-taste-meta { margin:5px 0 0; }
+.creator-profile-travel .approved-actions.profile-visitor-actions { margin:10px 0 10px; }
+.profile-travel-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin:0 0 4px; padding:8px 4px; border-top:1px solid var(--tk-border); border-bottom:1px solid var(--tk-border); }
+.profile-travel-stat { display:flex; flex-direction:column; align-items:center; gap:2px; }
+.profile-travel-stat strong { font-size:17px; font-weight:800; color:var(--tk-ink); letter-spacing:-.02em; }
+.profile-travel-stat span { font-size:10px; font-weight:700; color:var(--tk-stone); text-transform:uppercase; letter-spacing:.05em; }
+.profile-travel-tabs { display:flex; gap:8px; overflow-x:auto; margin:6px -16px 10px; padding:0 16px 4px; scrollbar-width:none; }
+.profile-travel-tabs::-webkit-scrollbar { display:none; }
+.profile-travel-tabs button { flex:0 0 auto; padding:8px 15px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-surface); color:var(--tk-text-secondary); font-size:12px; font-weight:700; white-space:nowrap; }
+.profile-travel-tabs button.active { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .creator-profile .approved-profile-head > .approved-avatar { width:88px; height:88px; flex-basis:88px; }
 .approved-profile-head > .profile-head-copy { display:grid; min-width:0; gap:4px; padding-top:3px; }
 .approved-name { display:flex; align-items:center; gap:7px; }
@@ -141,14 +163,16 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-actions { display:grid; grid-template-columns:1fr 1.55fr; gap:9px; margin:12px 0 17px; }
 .approved-actions.profile-owner-actions { grid-template-columns:minmax(0,1fr) minmax(0,.9fr) 48px; }
 .composer-actions .approved-button.primary:disabled { opacity:1; background:var(--tk-wine); color:var(--tk-text-inverse); cursor:wait; }
-.approved-actions.profile-visitor-actions { grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) 44px 44px; gap:7px; }
+.approved-actions.profile-visitor-actions { grid-template-columns:minmax(0,1fr) minmax(0,1.4fr) minmax(48px,auto) 44px; align-items:start; gap:7px; }
 .profile-insights-button { min-width:0; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
 .profile-follow-button, .profile-message-button { min-width:0; padding-inline:10px; white-space:nowrap; }
 .profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; color:var(--tk-wine); }
+.profile-circle-control { display:flex; flex-direction:column; align-items:center; gap:4px; }
 .profile-circle-icon-button { width:44px; min-height:44px; display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
 .profile-circle-icon-button:hover { background:var(--tk-surface-muted); }
 .profile-circle-icon-button.active { background:var(--tk-wine); border-color:var(--tk-wine); color:var(--tk-text-inverse); }
 .profile-circle-icon-button svg { width:18px; height:18px; flex:0 0 18px; }
+.profile-circle-label { font-size:9px; font-weight:700; color:var(--tk-stone); text-align:center; white-space:nowrap; }
 .profile-featured { margin:0 0 18px; }
 .profile-featured-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 9px; }
 .profile-featured-head h2 { margin:0; color:var(--tk-ink); font-size:12px; font-weight:800; letter-spacing:-.015em; }
@@ -162,6 +186,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .profile-featured-card strong { display:-webkit-box; margin:8px 0 2px; overflow:hidden; font-size:12px; font-weight:700; line-height:1.25; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
 .profile-featured-card small { display:block; color:var(--tk-stone); font-size:10px; }
 .approved-tabs { display:grid; grid-template-columns:repeat(3,1fr); margin:4px 0 17px; border-bottom:1px solid var(--tk-border); }
+.creator-profile-travel .approved-tabs { margin:4px 0 8px; }
 .approved-tabs button { position:relative; padding:13px 5px 11px; border:0; background:transparent; color:var(--tk-text-secondary); font-size:12px; font-weight:700; }
 .approved-tabs button.active { color:var(--tk-wine); }
 .approved-tabs button.active::after { content:""; position:absolute; inset-inline:8px; bottom:-1px; height:3px; border-radius:3px; background:var(--tk-wine); }
@@ -189,6 +214,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .place-grid-preview .taste-rating-label { font-size:10px; }
 .place-grid-preview p { display:-webkit-box; margin:1px 0 0; overflow:hidden; color:var(--tk-text-secondary); font-size:10px; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
 .profile-edits-empty { grid-column:1 / -1; padding:24px 14px; border:1px dashed var(--tk-border); border-radius:16px; color:var(--tk-text-secondary); font-size:12px; line-height:1.5; text-align:center; }
+.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
 .approved-collection img { width:100%; height:145px; display:block; object-fit:cover; }
 .approved-collection span { display:block; padding:0 11px 12px; color:var(--tk-wine); font-size:11px; font-weight:700; }
 .approved-collection-hero { width:100%; height:218px; display:block; border-radius:20px; object-fit:cover; }
