@@ -101,6 +101,25 @@ const categories: { id: Category; en: string; ar: string }[] = [
   { id: 'PersonalCare', en: 'Personal Care', ar: 'عناية شخصية' }, { id: 'HealthFitness', en: 'Health & Fitness', ar: 'صحة ولياقة' },
   { id: 'Decor', en: 'Decor', ar: 'ديكور' }, { id: 'Books', en: 'Books', ar: 'كتب' }, { id: 'Vlogs', en: 'Vlogs', ar: 'فلوقات' },
 ];
+// Travel-first visitor profile redesign — a fixed row of 7 tabs is always
+// shown (per design spec), but filtering only ever uses the existing
+// `Category` values already on each Edit. 'Stays' and 'Tips' have no
+// corresponding Category in the data model (there is no lodging or
+// travel-advice category), so they intentionally map to nothing and always
+// render an honest empty state rather than fabricating content for them.
+type TravelTab = 'All' | 'Trips' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style';
+const travelTabs: { id: TravelTab; en: string; ar: string }[] = [
+  { id: 'All', en: 'All', ar: 'الكل' },
+  { id: 'Trips', en: 'Trips', ar: 'رحلات' },
+  { id: 'Stays', en: 'Stays', ar: 'إقامات' },
+  { id: 'Food', en: 'Food', ar: 'طعام' },
+  { id: 'Places', en: 'Places', ar: 'أماكن' },
+  { id: 'Tips', en: 'Tips', ar: 'نصائح' },
+  { id: 'Style', en: 'Style', ar: 'ستايل' },
+];
+const travelTabCategory: Partial<Record<TravelTab, Exclude<Category, 'All'>>> = {
+  Trips: 'Travel', Food: 'Restaurants', Places: 'Places', Style: 'Fashion',
+};
 const media = (name: string) => `/tastekin-media/${name}`;
 const TASTE_SEAL_IMAGE = tasteSealImage;
 const defaultCreatorProfile: CreatorProfile = {
@@ -4195,6 +4214,42 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     void fetch(`/api/creators/${encodeURIComponent(profile.username)}/views`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId: null }) });
   }, [ownerView, profile.username]);
 
+  // Travel-first visitor redesign — derived entirely from this creator's own
+  // published Edits, never fabricated or hardcoded. See travelStats below
+  // for the honest limits of what the current data model can compute.
+  const [activeTravelTab, setActiveTravelTab] = useState<TravelTab>('All');
+  useEffect(() => setActiveTravelTab('All'), [profile.username]);
+  const travelEdits = useMemo(() => {
+    if (activeTravelTab === 'All') return publishedEdits;
+    const mapped = travelTabCategory[activeTravelTab];
+    return mapped ? publishedEdits.filter((edit) => edit.category === mapped) : [];
+  }, [publishedEdits, activeTravelTab]);
+  // Trips is exact (published Travel-category Edits). Cities counts each
+  // distinct free-text `location` a creator has written on a published
+  // Edit — real content, never a placeholder. Countries has no dedicated
+  // field anywhere in the schema (only a single freeform location string
+  // per Edit, inconsistently formatted as "City, Country" or just a place
+  // name, e.g. "Mayfair, London") — guessing it from that string risks a
+  // confidently wrong number, so it is intentionally left unset (rendered
+  // as "—") until a real per-Edit country field exists.
+  const travelStats = useMemo(() => {
+    const trips = publishedEdits.filter((edit) => edit.category === 'Travel').length;
+    const cityNames = new Set<string>();
+    for (const edit of publishedEdits) {
+      const location = (edit.location || edit.locationAr || '').trim();
+      if (location) cityNames.add(location);
+    }
+    return { trips, cities: cityNames.size };
+  }, [publishedEdits]);
+  // No per-edit `createdAt` reaches the client, so "first in array order"
+  // (the same convention collectionCoverImage already uses below) is the
+  // only ordering available — never invented. Prefers a real Travel photo;
+  // falls back to any other published photo; falls back to a plain CSS
+  // gradient (no image at all) only when the creator has published no
+  // photos yet, rather than ever substituting a stock or demo image.
+  const coverEdit = useMemo(() => publishedEdits.find((edit) => edit.category === 'Travel' && edit.image) || publishedEdits.find((edit) => edit.image) || null, [publishedEdits]);
+  const coverLocation = coverEdit ? placeLocation(coverEdit, ar) : '';
+
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
   const { data: matchData } = useGetTasteMatch(profile.username, {
@@ -4213,7 +4268,11 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     </SimpleScreen>;
   }
 
-  return <section className="creator-profile">
+  return <section className={`creator-profile ${!ownerView ? 'creator-profile-travel' : ''}`}>
+    {!ownerView && <div className="profile-cover" data-testid="profile-cover">
+      {coverEdit?.image ? <img src={imageSrc(coverEdit.image)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
+      {coverLocation && <span className="profile-cover-caption">{coverLocation}</span>}
+    </div>}
     <div className="approved-profile-head">
       <Avatar profile={profile} />
       <div className="profile-head-copy">
@@ -4287,8 +4346,13 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
 
     {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
     {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
-    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}{myCircleEnabled && !owner && profile.verified && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <CircleSparkleIcon className="circle-orbit-icon" />}</button>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
+    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}{myCircleEnabled && !owner && profile.verified && <div className="profile-circle-control"><button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button><span className="profile-circle-label">{ar ? 'دائرتي' : 'My Circle'}</span></div>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
+    {!ownerView && <div className="profile-travel-stats" data-testid="profile-travel-stats">
+      <div className="profile-travel-stat"><strong>—</strong><span>{ar ? 'الدول' : 'Countries'}</span></div>
+      <div className="profile-travel-stat"><strong>{travelStats.cities}</strong><span>{ar ? 'المدن' : 'Cities'}</span></div>
+      <div className="profile-travel-stat"><strong>{travelStats.trips}</strong><span>{ar ? 'رحلات' : 'Trips'}</span></div>
+    </div>}
     {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
       <div className="profile-featured-strip">
@@ -4303,8 +4367,11 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       </div>
     </section>}
     <div className="approved-tabs"><button className="active">{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
-    <div className="approved-grid profile-edits-grid" data-testid="profile-edits-grid" data-active-category="All">
-      {publishedEdits.map((edit) => {
+    {!ownerView && <div className="profile-travel-tabs" role="tablist" aria-label={ar ? 'تصفية حسب النوع' : 'Filter by type'}>
+      {travelTabs.map((tab) => <button key={tab.id} type="button" role="tab" data-testid={`profile-travel-tab-${tab.id}`} className={activeTravelTab === tab.id ? 'active' : ''} aria-selected={activeTravelTab === tab.id} onClick={() => setActiveTravelTab(tab.id)}>{ar ? tab.ar : tab.en}</button>)}
+    </div>}
+    <div className={`approved-grid profile-edits-grid ${!ownerView ? 'profile-travel-grid' : ''}`} data-testid="profile-edits-grid" data-active-category={ownerView ? 'All' : activeTravelTab}>
+      {(ownerView ? publishedEdits : travelEdits).map((edit) => {
         const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
         return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
@@ -4326,7 +4393,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
           </span>}
         </button>;
       })}
-      {!publishedEdits.length && <div className="profile-edits-empty">{ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.'}</div>}
+      {!(ownerView ? publishedEdits : travelEdits).length && <div className="profile-edits-empty">{ownerView || activeTravelTab === 'All' ? (ar ? 'لا توجد تعديلات منشورة بعد.' : 'No published Edits yet.') : (ar ? `لا يوجد محتوى في ${travelTabs.find((tab) => tab.id === activeTravelTab)?.ar} بعد.` : `Nothing in ${travelTabs.find((tab) => tab.id === activeTravelTab)?.en} yet.`)}</div>}
     </div>
   </section>;
 }

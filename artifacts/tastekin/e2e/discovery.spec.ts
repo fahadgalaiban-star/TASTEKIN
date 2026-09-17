@@ -211,7 +211,12 @@ test('renders the default creator feed without profile category filters', async 
   await page.reload();
   await openConsumerProfile(page);
 
+  // fheed-profile-mini is this same signed-in creator's own profile — the
+  // owner view, which the travel redesign deliberately leaves unchanged
+  // (no cover, no stats, no travel tabs; see the genuinely-different-creator
+  // "noura.studio" case below for the visitor-facing travel tab row).
   await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
+  await expect(page.locator('[data-testid^="profile-travel-tab-"]')).toHaveCount(0);
   await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'All');
   await expect(page.locator('.approved-logo')).toHaveCount(0);
   await expect(page.getByText(/^Age \d+$/)).toHaveCount(0);
@@ -328,6 +333,21 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
   await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
   await expect(page.getByText('No published Edits yet.')).toBeVisible();
+
+  // A genuine visitor to a different creator's profile — this is where the
+  // travel redesign (cover, stats, and the fixed travel tab row) actually
+  // applies. noura.studio has no published Edits at all here, so the cover
+  // safely falls back to a plain gradient rather than any photo.
+  const cover = page.getByTestId('profile-cover');
+  await expect(cover).toBeVisible();
+  await expect(cover.locator('img')).toHaveCount(0);
+  for (const tab of ['All', 'Trips', 'Stays', 'Food', 'Places', 'Tips', 'Style']) {
+    await expect(page.getByTestId(`profile-travel-tab-${tab}`)).toBeVisible();
+  }
+  await expect(page.getByTestId('profile-travel-tab-All')).toHaveClass(/active/);
+  await page.getByTestId('profile-travel-tab-Trips').click();
+  await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'Trips');
+  await expect(page.getByText('Nothing in Trips yet.')).toBeVisible();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
 

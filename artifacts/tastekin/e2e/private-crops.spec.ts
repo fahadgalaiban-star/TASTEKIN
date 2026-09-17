@@ -575,10 +575,9 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.getByTestId('nav-explore').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await page.getByTestId('fheed-profile-mini').click();
-  await expect(page.getByTestId('profile-category-All')).toBeVisible();
-  await expect(page.getByTestId('profile-category-Fashion')).toBeVisible();
-  await expect(page.getByTestId('profile-category-Restaurants')).toBeVisible();
-  await expect(page.getByTestId('profile-category-Books')).toHaveCount(0);
+  // fheed-profile-mini opens this same signed-in creator's OWNER view,
+  // which the travel redesign leaves untouched — no travel tab row here.
+  await expect(page.locator('[data-testid^="profile-travel-tab-"]')).toHaveCount(0);
   const profilePlaceCard = page.locator('.place-grid-card');
   await expect(profilePlaceCard).toContainText('Alba Table');
   await expect(profilePlaceCard).toContainText('Kuwait City, Kuwait');
@@ -599,8 +598,9 @@ test('a no-photo restaurant recommendation validates, persists, and displays wit
   await page.reload();
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
-  await expect(page.getByTestId('profile-category-Restaurants')).toBeVisible();
-  await expect(page.getByTestId('profile-category-Books')).toHaveCount(0);
+  // "View profile" alone still opens the OWNER view (Edit profile/Insights
+  // are visible above) — the travel redesign leaves that unchanged.
+  await expect(page.locator('[data-testid^="profile-travel-tab-"]')).toHaveCount(0);
   await page.getByTestId('nav-home').click();
   await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
   await context.close();
