@@ -93,6 +93,7 @@ type ConversationMessage = { id: string; senderUserId: string; body: string; cre
 type ConversationPreview = { id: string; participantName: string; participantAvatar: string | null; lastMessage: string | null; lastMessageAt: string | null; unreadCount: number };
 type Conversation = ConversationPreview & { messages: ConversationMessage[] };
 type CreatorInsights = { profileViews: number; totalLikes: number; totalSaves: number; totalComments: number; edits: Array<{ editId: string; likes: number; saves: number; comments: number; views: number }> };
+type SavedList = { id: string; name: string; editIds: string[]; createdAt: string; updatedAt: string };
 
 const categories: { id: Category; en: string; ar: string }[] = [
   { id: 'All', en: 'All', ar: 'الكل' }, { id: 'Fashion', en: 'Fashion & Outfits', ar: 'أزياء وإطلالات' },
@@ -370,6 +371,10 @@ function TastekinApp() {
   }, [homeFeedTab, myCircleEnabled]);
   const [saved, setSaved] = useState<string[]>([]);
   const savedHydrationVersion = useRef(0);
+  const [savedLists, setSavedLists] = useState<SavedList[]>([]);
+  const [activeSavedListId, setActiveSavedListId] = useState<string | null>(null);
+  const [savedListCreatorOpen, setSavedListCreatorOpen] = useState(false);
+  const [savedListPickerEditId, setSavedListPickerEditId] = useState<string | null>(null);
   const [following, setFollowing] = useState(false);
   // Real subscription state is introduced with Stripe entitlements in Phase 3;
   // until then this is the server's own honest answer (see GET /api/me),
@@ -552,6 +557,32 @@ function TastekinApp() {
       })
       .catch(() => undefined);
   }, [session.status, session.revision]);
+  const loadSavedLists = useCallback(async () => {
+    if (session.status !== 'authenticated') { setSavedLists([]); setActiveSavedListId(null); return; }
+    try {
+      const response = await fetch('/api/me/saved-lists', { credentials: 'include', cache: 'no-store' });
+      setSavedLists(response.ok ? await response.json() as SavedList[] : []);
+    } catch { setSavedLists([]); }
+  }, [session.status]);
+  useEffect(() => { void loadSavedLists(); }, [loadSavedLists, session.revision]);
+  const createSavedList = async (name: string) => {
+    const response = await fetch('/api/me/saved-lists', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) });
+    if (!response.ok) throw new Error(await describeFailedResponse(response));
+    const list = await response.json() as SavedList;
+    setSavedLists((current) => [...current, list]);
+    setActiveSavedListId(list.id);
+  };
+  const updateSavedListItem = async (listId: string, editId: string, active: boolean) => {
+    const previous = savedLists;
+    setSavedLists((current) => current.map((list) => list.id === listId ? { ...list, editIds: active ? Array.from(new Set([...list.editIds, editId])) : list.editIds.filter((id) => id !== editId) } : list));
+    try {
+      const response = await fetch(`/api/me/saved-lists/${encodeURIComponent(listId)}/edits/${encodeURIComponent(editId)}`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active }) });
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+    } catch (error) {
+      setSavedLists(previous);
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
   const applyWorkspaceSnapshot = (edits: CreatorEdit[], collections: CreatorCollection[], revision: number) => {
     creatorEditsRef.current = edits; creatorCollectionsRef.current = collections; workspaceRevisionRef.current = revision;
     setCreatorEdits(edits); setCreatorCollections(collections); setWorkspaceRevision(revision);
@@ -799,6 +830,7 @@ function TastekinApp() {
         method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !wasSaved }),
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
+      if (!wasSaved && savedLists.length) setSavedListPickerEditId(id);
     } catch (err) {
       setSaved(saved);
       const detail = err instanceof Error ? err.message : String(err);
@@ -1118,7 +1150,7 @@ function TastekinApp() {
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onPublish={publishEdit} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} videoUpload={videoUpload} onBack={() => go('composer')} onPublish={publishEdit} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
-    {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
+    {screen === 'saved' && <SavedScreen ar={ar} saved={saved} lists={savedLists} activeListId={activeSavedListId} edits={publicFeedEdits} onSelectList={setActiveSavedListId} onCreateList={() => setSavedListCreatorOpen(true)} onOpen={openEdit} onUnsave={(id) => void toggleSaved(id)} />}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => openComposer()}>{t('Create an Edit', 'إنشاء منشور')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
@@ -1145,7 +1177,10 @@ function TastekinApp() {
     {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} initialSelectedStyleIds={kinStylingItemIds} onStyleSelectionChange={(ids) => setKinStylingItemIds(new Set(ids))} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
-   </main>{screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
+   </main>
+    <CreateSavedListDrawer ar={ar} open={savedListCreatorOpen} onClose={() => setSavedListCreatorOpen(false)} onCreate={createSavedList} />
+    <SavedListPicker ar={ar} editId={savedListPickerEditId} lists={savedLists} onClose={() => setSavedListPickerEditId(null)} onToggle={updateSavedListItem} />
+    {screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
    </div></TasteSessionContext.Provider>;
 }
 
@@ -1788,6 +1823,59 @@ function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutopla
   const noPhoto = !edit.image;
   if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
   return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
+}
+
+function SavedScreen({ ar, saved, lists, activeListId, edits, onSelectList, onCreateList, onOpen, onUnsave }: { ar: boolean; saved: string[]; lists: SavedList[]; activeListId: string | null; edits: CreatorEdit[]; onSelectList: (id: string | null) => void; onCreateList: () => void; onOpen: (edit: CreatorEdit) => void; onUnsave: (id: string) => void }) {
+  const activeList = lists.find((list) => list.id === activeListId);
+  const visibleIds = activeList ? activeList.editIds.filter((id) => saved.includes(id)) : saved;
+  const visibleEdits = visibleIds.map((id) => edits.find((edit) => edit.id === id)).filter((edit): edit is CreatorEdit => Boolean(edit));
+  return <SimpleScreen kicker={ar ? 'مكتبتك' : 'Your library'} title={ar ? 'المحفوظات' : 'Saved'}>
+    <p>{ar ? 'كل ما تحفظه، منظماً بطريقتك.' : 'Everything you save, organised your way.'}</p>
+    <div className="saved-list-pills" aria-label={ar ? 'قوائم المحفوظات' : 'Saved lists'}>
+      <button className={!activeListId ? 'active' : ''} onClick={() => onSelectList(null)}>{ar ? 'كل المحفوظات' : 'All Saved'}</button>
+      {lists.map((list) => <button key={list.id} className={activeListId === list.id ? 'active' : ''} onClick={() => onSelectList(list.id)}>{list.name}</button>)}
+      <button className="saved-list-add" aria-label={ar ? 'إنشاء قائمة' : 'Create list'} onClick={onCreateList}><Plus size={18} /></button>
+    </div>
+    <div className="saved-list-heading"><h2>{activeList?.name || (ar ? 'كل المحفوظات' : 'All Saved')}</h2><span>{visibleEdits.length} {ar ? 'منشورات' : visibleEdits.length === 1 ? 'post' : 'posts'}</span></div>
+    {visibleEdits.length ? <div className="saved-grid">{visibleEdits.map((edit) => <SavedGridCard key={edit.id} edit={edit} ar={ar} onOpen={() => onOpen(edit)} onUnsave={() => onUnsave(edit.id)} />)}</div> : <Empty text={ar ? 'لا توجد محفوظات في هذه القائمة بعد.' : 'Nothing saved in this list yet.'} />}
+  </SimpleScreen>;
+}
+
+function SavedGridCard({ edit, ar, onOpen, onUnsave }: { edit: CreatorEdit; ar: boolean; onOpen: () => void; onUnsave: () => void }) {
+  const caption = publicCaptionLine(edit, ar);
+  const thumbnail = edit.video?.posterUrl || edit.image || edit.previewImage;
+  const canonicalCategory = travelTabs.find((tab) => tab.id !== 'All' && travelTabCategory[tab.id] === edit.category);
+  return <article className="saved-grid-card" data-testid={`saved-grid-${edit.id}`}>
+    <button className="saved-grid-media" onClick={onOpen} aria-label={ar ? `فتح ${caption}` : `Open ${caption}`}>
+      {thumbnail ? <img src={imageSrc(thumbnail)} alt={edit.altText || ''} /> : <span><VideoIcon size={24} /></span>}
+      <small>{canonicalCategory ? (ar ? canonicalCategory.ar : canonicalCategory.en) : displayCategory(edit.category, ar ? 'ar' : 'en')}</small>
+    </button>
+    <div className="saved-grid-copy">
+      <button className="saved-grid-caption" onClick={onOpen}>{caption}</button>
+      <div><span>{edit.creatorName || edit.creatorUsername || (ar ? 'منشئ TASTEKIN' : 'TASTEKIN creator')}</span><button className="approved-save saved" onClick={onUnsave} aria-label={ar ? 'إزالة من المحفوظات' : 'Remove from saved'}><Bookmark size={17} fill="currentColor" /></button></div>
+    </div>
+  </article>;
+}
+
+function CreateSavedListDrawer({ ar, open, onClose, onCreate }: { ar: boolean; open: boolean; onClose: () => void; onCreate: (name: string) => Promise<void> }) {
+  const [name, setName] = useState('');
+  const [busy, setBusy] = useState(false);
+  return <Drawer.Root open={open} onOpenChange={(next) => { if (!next) { setName(''); onClose(); } }}>
+    <Drawer.Portal><Drawer.Overlay className="approved-drawer-overlay" /><Drawer.Content className="approved-drawer-content saved-list-sheet" aria-label={ar ? 'إنشاء قائمة محفوظات' : 'Create Saved list'}>
+      <label>{ar ? 'اسم القائمة' : 'List name'}<input autoFocus value={name} maxLength={60} onChange={(event) => setName(event.target.value)} /></label>
+      <button className="approved-button primary wide" disabled={busy || !name.trim()} onClick={() => { setBusy(true); void onCreate(name.trim()).then(() => { setName(''); onClose(); }).catch((error) => window.alert(error instanceof Error ? error.message : String(error))).finally(() => setBusy(false)); }}>{ar ? 'إنشاء' : 'Create'}</button>
+    </Drawer.Content></Drawer.Portal>
+  </Drawer.Root>;
+}
+
+function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean; editId: string | null; lists: SavedList[]; onClose: () => void; onToggle: (listId: string, editId: string, active: boolean) => void }) {
+  return <Drawer.Root open={Boolean(editId)} onOpenChange={(next) => { if (!next) onClose(); }}>
+    <Drawer.Portal><Drawer.Overlay className="approved-drawer-overlay" /><Drawer.Content className="approved-drawer-content saved-list-sheet" aria-label={ar ? 'إضافة إلى القوائم' : 'Add to lists'}>
+      <h2>{ar ? 'إضافة إلى قائمة' : 'Add to a list'}</h2>
+      <div className="saved-list-options">{lists.map((list) => <label key={list.id}><input type="checkbox" checked={Boolean(editId && list.editIds.includes(editId))} onChange={(event) => { if (editId) onToggle(list.id, editId, event.target.checked); }} />{list.name}</label>)}</div>
+      <button className="approved-button primary wide" onClick={onClose}>{ar ? 'تم' : 'Done'}</button>
+    </Drawer.Content></Drawer.Portal>
+  </Drawer.Root>;
 }
 function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSubscribe, onSignIn }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void; onSignIn: () => void }) {
   const locked = edit.access === 'locked';

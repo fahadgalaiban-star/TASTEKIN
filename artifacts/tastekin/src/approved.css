@@ -75,6 +75,31 @@ button { font:inherit; cursor:pointer; }
 .approved-card-title { padding:0; border:0; background:transparent; color:var(--tk-ink); font-size:15px; font-weight:800; line-height:1.18; text-align:start; }
 .approved-save { padding:2px; border:0; background:transparent; color:var(--tk-text-secondary); }
 .approved-save.saved { color:var(--tk-wine); }
+.saved-list-pills { display:flex; gap:8px; overflow-x:auto; margin:2px -16px 16px; padding:2px 16px 6px; scrollbar-width:none; }
+.saved-list-pills::-webkit-scrollbar { display:none; }
+.saved-list-pills button { min-height:42px; flex:0 0 auto; padding:0 16px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-surface); color:var(--tk-ink); font-size:12px; white-space:nowrap; }
+.saved-list-pills button.active { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.saved-list-pills button.saved-list-add { width:42px; padding:0; display:grid; place-items:center; border-color:var(--tk-wine); color:var(--tk-wine); }
+.saved-list-heading { display:flex; align-items:center; justify-content:space-between; margin:0 2px 10px; }
+.saved-list-heading h2 { margin:0; font-size:20px; letter-spacing:-.035em; }
+.saved-list-heading span { color:var(--tk-stone); font-size:11px; }
+.saved-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 12px; }
+.saved-grid-card { min-width:0; }
+.saved-grid-media { position:relative; display:block; width:100%; aspect-ratio:1 / 1.2; overflow:hidden; padding:0; border:0; border-radius:17px; background:var(--tk-surface-muted); color:var(--tk-wine); }
+.saved-grid-media img { width:100%; height:100%; display:block; object-fit:cover; }
+.saved-grid-media > span { width:100%; height:100%; display:grid; place-items:center; }
+.saved-grid-media small { position:absolute; inset-inline-start:9px; bottom:9px; max-width:calc(100% - 18px); overflow:hidden; padding:5px 8px; border-radius:999px; background:var(--tk-surface); color:var(--tk-wine); font-size:8px; font-weight:800; text-overflow:ellipsis; white-space:nowrap; }
+.saved-grid-copy { padding:8px 2px 0; }
+.saved-grid-caption { width:100%; min-height:34px; overflow:hidden; padding:0; border:0; background:transparent; color:var(--tk-ink); font-size:11px; font-weight:600; line-height:1.45; text-align:start; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; }
+.saved-grid-copy > div { display:flex; align-items:center; justify-content:space-between; gap:5px; }
+.saved-grid-copy span { min-width:0; overflow:hidden; color:var(--tk-stone); font-size:9px; text-overflow:ellipsis; white-space:nowrap; }
+.saved-grid-copy .approved-save { flex:0 0 auto; }
+.saved-list-sheet { display:grid; gap:14px; }
+.saved-list-sheet h2 { margin:0; font-size:20px; }
+.saved-list-sheet label { display:grid; gap:7px; color:var(--tk-ink); font-size:12px; font-weight:700; }
+.saved-list-sheet input[type="text"], .saved-list-sheet label > input:not([type]) { width:100%; min-height:46px; padding:0 13px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-surface); color:var(--tk-ink); }
+.saved-list-options { display:grid; gap:10px; }
+.saved-list-options label { grid-template-columns:auto 1fr; align-items:center; }
 .place-card { position:relative; overflow:visible; border:1px solid var(--tk-border); background:var(--tk-surface); box-shadow:0 8px 24px var(--tk-shadow-soft); }
 .place-card-main { position:relative; width:100%; display:grid; gap:10px; padding:18px; border:0; background:linear-gradient(135deg,var(--tk-surface),var(--tk-surface-muted)); color:var(--tk-ink); text-align:start; }
 .place-card-category { color:var(--tk-wine); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }

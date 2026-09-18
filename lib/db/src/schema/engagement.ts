@@ -25,6 +25,26 @@ export const editSaves = pgTable("edit_saves", {
   index("edit_saves_user_id_idx").on(table.userId),
 ]);
 
+export const savedLists = pgTable("saved_lists", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("saved_lists_user_name_unique").on(table.userId, table.name),
+  index("saved_lists_user_id_idx").on(table.userId),
+]);
+
+export const savedListItems = pgTable("saved_list_items", {
+  listId: uuid("list_id").notNull().references(() => savedLists.id, { onDelete: "cascade" }),
+  editId: text("edit_id").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  primaryKey({ columns: [table.listId, table.editId] }),
+  index("saved_list_items_edit_id_idx").on(table.editId),
+]);
+
 export const editComments = pgTable("edit_comments", {
   id: uuid("id").primaryKey().defaultRandom(),
   editId: text("edit_id").notNull(),

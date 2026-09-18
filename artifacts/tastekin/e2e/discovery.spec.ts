@@ -81,6 +81,7 @@ const privateHotelFeed = {
 
 test.beforeEach(async ({ page }) => {
   const savedEditIds = new Set<string>();
+  const savedLists: Array<{ id: string; name: string; editIds: string[]; createdAt: string; updatedAt: string }> = [];
   await page.addInitScript(() => {
     for (const key of Object.keys(localStorage)) {
       if (key.startsWith('tastekin:')) localStorage.removeItem(key);
@@ -100,6 +101,25 @@ test.beforeEach(async ({ page }) => {
   });
   await page.route('**/api/me/saved-edits', async (route) => {
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify([...savedEditIds]) });
+  });
+  await page.route('**/api/me/saved-lists', async (route) => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON() as { name: string };
+      const now = new Date().toISOString();
+      const list = { id: `list-${savedLists.length + 1}`, name: body.name, editIds: [], createdAt: now, updatedAt: now };
+      savedLists.push(list);
+      await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify(list) });
+      return;
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify(savedLists) });
+  });
+  await page.route('**/api/me/saved-lists/*/edits/*', async (route) => {
+    const segments = new URL(route.request().url()).pathname.split('/');
+    const list = savedLists.find((item) => item.id === segments[4]);
+    const editId = segments[6];
+    const body = route.request().postDataJSON() as { active: boolean };
+    if (list) list.editIds = body.active ? Array.from(new Set([...list.editIds, editId])) : list.editIds.filter((id) => id !== editId);
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ listId: list?.id, editId, active: body.active }) });
   });
   await page.route('**/api/edits/**/save', async (route) => {
     const editId = new URL(route.request().url()).pathname.split('/')[3];
@@ -516,55 +536,52 @@ test('keeps each public Edit mapped to its own media after travel filtering', as
   await expect(page.getByTestId('profile-edit-stable-place-edit')).toHaveCount(0);
 });
 
-test('persists saves, collections, and the owner profile entry point', async ({ page }) => {
+test('persists saves and supports named Saved lists', async ({ page }) => {
   await page.route('**/api/public-feed', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
       body: JSON.stringify({
-        items: [{
-          creatorUsername: 'fheed',
-          creatorName: 'Fheed Alaiban',
-          creatorVerified: true,
-          creatorAvatar: '/tastekin-media/fheed-profile.webp',
-          following: false,
-          edit: quietTailoringFeed,
-        }],
+        items: [quietTailoringFeed, privateHotelFeed].map((edit) => ({
+          creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true,
+          creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false, edit,
+        })),
       }),
     });
   });
   await page.reload();
-  await page.getByTestId('edit-title-quiet-tailoring').click();
-  await page.getByRole('button', { name: 'Save this edit' }).click();
-  await expect(page.getByRole('main').getByRole('button', { name: 'Saved' })).toBeVisible();
   await page.getByTestId('nav-saved').click();
-  await expect(page.getByTestId('edit-card-quiet-tailoring')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'All Saved' })).toHaveClass(/active/);
+  await page.getByRole('button', { name: 'Create list' }).click();
+  await page.getByLabel('List name').fill('London Trip');
+  await page.getByRole('button', { name: 'Create', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'London Trip' })).toHaveClass(/active/);
+
+  await page.getByTestId('nav-home').click();
   await page.getByTestId('save-quiet-tailoring').click();
-  await expect(page.getByText('Nothing saved yet. Explore creators and keep what speaks to you.')).toBeVisible();
+  const listPicker = page.getByLabel('Add to lists');
+  await expect(listPicker).toBeVisible();
+  await listPicker.getByText('London Trip').click();
+  await listPicker.getByRole('button', { name: 'Done' }).evaluate((button: HTMLButtonElement) => button.click());
+  await expect(page.getByLabel('Add to lists')).toBeHidden();
+  await page.getByTestId('save-private-hotel').click();
+  await expect(listPicker).toBeVisible();
+  await listPicker.getByRole('button', { name: 'Done' }).evaluate((button: HTMLButtonElement) => button.click());
 
-  await page.getByTestId('nav-you').click();
-  await page.getByRole('button', { name: 'View profile' }).click();
-  await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'All');
-  await page.getByRole('button', { name: 'Collections' }).click();
-  await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
-  await expect(page.locator('.approved-collection')).toHaveCount(2);
-  await page.getByRole('button', { name: /Quiet Luxury/ }).click();
-  await expect(page.getByRole('heading', { name: 'Quiet Luxury' })).toBeVisible();
-
-  await page.getByTestId('nav-you').click();
-  await page.getByRole('button', { name: 'View profile' }).click();
-   await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
-   await expect(page.getByRole('button', { name: 'Open inbox' })).toBeVisible();
-   await expect(page.getByRole('button', { name: 'View as visitor' })).toHaveCount(0);
-   await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
-   await page.getByRole('button', { name: 'More options' }).click();
-   await page.getByTestId('profile-view-public').click();
-   await expect(page.getByRole('button', { name: 'Follow' })).toBeDisabled();
-   await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeDisabled();
-   await page.getByRole('button', { name: 'Exit visitor preview' }).click();
-  await page.getByRole('button', { name: 'Edit profile' }).click();
-  await expect(page.getByRole('heading', { name: 'Edit profile' })).toBeVisible();
-  await expect(page.getByLabel('Change profile photo')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save profile' })).toBeVisible();
+  await page.getByTestId('nav-saved').click();
+  await expect(page.getByTestId('saved-grid-quiet-tailoring')).toBeVisible();
+  await expect(page.getByTestId('saved-grid-private-hotel')).toHaveCount(0);
+  await page.getByRole('button', { name: 'All Saved' }).click();
+  await expect(page.locator('.saved-grid-card')).toHaveCount(2);
+  await expect(page.locator('.saved-grid')).toHaveCSS('grid-template-columns', /.+ .+/);
+  await expect(page.getByTestId('saved-grid-quiet-tailoring').locator('small')).toHaveText('Style');
+  await expect(page.getByTestId('saved-grid-private-hotel').locator('small')).toHaveText('Trips');
+  await page.setViewportSize({ width: 390, height: 844 });
+  if (process.env.CAPTURE_SAVED_SCREENSHOT) await page.screenshot({ path: '../../screenshots/tastekin-saved-lists-390x844.png' });
+  await page.getByTestId('saved-grid-quiet-tailoring').getByRole('button', { name: /Open/ }).click();
+  await expect(page.getByText('A soft-structured look for a long city day.')).toBeVisible();
+  await page.getByTestId('nav-saved').click();
+  await page.getByTestId('saved-grid-quiet-tailoring').getByRole('button', { name: 'Remove from saved' }).click();
+  await expect(page.locator('.saved-grid-card')).toHaveCount(1);
 });
 
 test('keeps owner controls compact without a standalone preview button and persists featured collection choices', async ({ page }) => {

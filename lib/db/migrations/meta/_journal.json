@@ -148,6 +148,13 @@
       "when": 1789200000000,
       "tag": "0020_video_upload_attachment",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789760000000,
+      "tag": "0021_saved_lists",
+      "breakpoints": true
     }
   ]
 }
