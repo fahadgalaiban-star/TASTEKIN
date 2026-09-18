@@ -1324,6 +1324,10 @@ export const getCreatorProfileResponseAvatarMax = 1024;
 
 export const getCreatorProfileResponseAvatarObjectPathMax = 1024;
 
+export const getCreatorProfileResponseCoverImageMax = 1024;
+
+export const getCreatorProfileResponseCoverImageObjectPathMax = 1024;
+
 export const getCreatorProfileResponseAgeMin = 13;
 export const getCreatorProfileResponseAgeMax = 120;
 
@@ -1340,6 +1344,8 @@ export const GetCreatorProfileResponse = zod.object({
   "interests": zod.array(zod.string().min(1).max(getCreatorProfileResponseInterestsItemMax)).max(getCreatorProfileResponseInterestsMax),
   "avatar": zod.string().max(getCreatorProfileResponseAvatarMax),
   "avatarObjectPath": zod.string().max(getCreatorProfileResponseAvatarObjectPathMax).nullable(),
+  "coverImage": zod.string().max(getCreatorProfileResponseCoverImageMax),
+  "coverImageObjectPath": zod.string().max(getCreatorProfileResponseCoverImageObjectPathMax).nullable(),
   "age": zod.number().min(getCreatorProfileResponseAgeMin).max(getCreatorProfileResponseAgeMax).nullable(),
   "dateOfBirth": zod.string().regex(getCreatorProfileResponseDateOfBirthRegExp).nullable(),
   "showAge": zod.boolean(),
@@ -1373,6 +1379,10 @@ export const saveCreatorProfileBodyAvatarObjectPathMax = 1024;
 
 
 export const saveCreatorProfileBodyAvatarObjectPathRegExp = new RegExp('^/objects/uploads/[0-9a-fA-F-]{36}$');
+export const saveCreatorProfileBodyCoverImageObjectPathMax = 1024;
+
+
+export const saveCreatorProfileBodyCoverImageObjectPathRegExp = new RegExp('^/objects/uploads/[0-9a-fA-F-]{36}$');
 
 
 export const SaveCreatorProfileBody = zod.object({
@@ -1384,7 +1394,8 @@ export const SaveCreatorProfileBody = zod.object({
   "interests": zod.array(zod.string().min(1).max(saveCreatorProfileBodyInterestsItemMax)).max(saveCreatorProfileBodyInterestsMax),
   "dateOfBirth": zod.string().regex(saveCreatorProfileBodyDateOfBirthRegExp).nullable(),
   "showAge": zod.boolean(),
-  "avatarObjectPath": zod.string().max(saveCreatorProfileBodyAvatarObjectPathMax).regex(saveCreatorProfileBodyAvatarObjectPathRegExp).nullable()
+  "avatarObjectPath": zod.string().max(saveCreatorProfileBodyAvatarObjectPathMax).regex(saveCreatorProfileBodyAvatarObjectPathRegExp).nullable(),
+  "coverImageObjectPath": zod.string().max(saveCreatorProfileBodyCoverImageObjectPathMax).regex(saveCreatorProfileBodyCoverImageObjectPathRegExp).nullable()
 })
 
 export const saveCreatorProfileResponseDisplayNameMax = 80;
@@ -1408,6 +1419,10 @@ export const saveCreatorProfileResponseAvatarMax = 1024;
 
 export const saveCreatorProfileResponseAvatarObjectPathMax = 1024;
 
+export const saveCreatorProfileResponseCoverImageMax = 1024;
+
+export const saveCreatorProfileResponseCoverImageObjectPathMax = 1024;
+
 export const saveCreatorProfileResponseAgeMin = 13;
 export const saveCreatorProfileResponseAgeMax = 120;
 
@@ -1424,6 +1439,8 @@ export const SaveCreatorProfileResponse = zod.object({
   "interests": zod.array(zod.string().min(1).max(saveCreatorProfileResponseInterestsItemMax)).max(saveCreatorProfileResponseInterestsMax),
   "avatar": zod.string().max(saveCreatorProfileResponseAvatarMax),
   "avatarObjectPath": zod.string().max(saveCreatorProfileResponseAvatarObjectPathMax).nullable(),
+  "coverImage": zod.string().max(saveCreatorProfileResponseCoverImageMax),
+  "coverImageObjectPath": zod.string().max(saveCreatorProfileResponseCoverImageObjectPathMax).nullable(),
   "age": zod.number().min(saveCreatorProfileResponseAgeMin).max(saveCreatorProfileResponseAgeMax).nullable(),
   "dateOfBirth": zod.string().regex(saveCreatorProfileResponseDateOfBirthRegExp).nullable(),
   "showAge": zod.boolean(),

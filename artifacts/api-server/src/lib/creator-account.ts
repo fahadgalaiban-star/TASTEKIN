@@ -63,6 +63,7 @@ function initialProfile(user: AuthenticatedUser, username: string): CreatorProfi
     dateOfBirth: null,
     showAge: false,
     avatar: user.profileImageUrl || "",
+    coverImage: "",
   };
 }
 

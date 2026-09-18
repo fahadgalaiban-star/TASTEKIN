@@ -161,6 +161,7 @@ function normalizeProfile(value: unknown): CreatorProfileRecord {
     dateOfBirth: typeof source.dateOfBirth === "string" ? source.dateOfBirth : null,
     showAge: Boolean(source.showAge),
     avatar: typeof source.avatar === "string" ? source.avatar : fallback.avatar,
+    coverImage: typeof source.coverImage === "string" ? source.coverImage : "",
   };
 }
 
@@ -175,6 +176,7 @@ function ageFor(dateOfBirth: string | null) {
 function serializeProfile(value: unknown, includePrivate: boolean, revision: number, verified = false) {
   const profile = normalizeProfile(value);
   const avatarObjectPath = privateObjectPath.test(profile.avatar) ? profile.avatar : null;
+  const coverImageObjectPath = privateObjectPath.test(profile.coverImage) ? profile.coverImage : null;
   return {
     displayName: profile.displayName,
     username: profile.username,
@@ -184,6 +186,8 @@ function serializeProfile(value: unknown, includePrivate: boolean, revision: num
     interests: profile.interests,
     avatar: avatarObjectPath ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
     avatarObjectPath: includePrivate ? avatarObjectPath : null,
+    coverImage: coverImageObjectPath ? `/api/public-profile-media/${encodeURIComponent(profile.username)}/cover` : profile.coverImage,
+    coverImageObjectPath: includePrivate ? coverImageObjectPath : null,
     age: profile.showAge ? ageFor(profile.dateOfBirth) : null,
     dateOfBirth: includePrivate ? profile.dateOfBirth : null,
     showAge: profile.showAge,
@@ -284,6 +288,12 @@ router.put("/creator-profile", async (req, res): Promise<void> => {
         if (!upload || upload.creatorId !== workspaceId || upload.ownerUserId !== req.user!.id || (upload.state !== "pending" && upload.state !== "committed")) return { kind: "media" as const };
         await tx.update(creatorMediaUploads).set({ state: "committed", updatedAt: new Date() }).where(eq(creatorMediaUploads.objectPath, avatar));
       }
+      const coverImage = profileInput.coverImageObjectPath ?? previous.coverImage;
+      if (privateObjectPath.test(coverImage)) {
+        const [upload] = await tx.select().from(creatorMediaUploads).where(eq(creatorMediaUploads.objectPath, coverImage));
+        if (!upload || upload.creatorId !== workspaceId || upload.ownerUserId !== req.user!.id || (upload.state !== "pending" && upload.state !== "committed")) return { kind: "media" as const };
+        await tx.update(creatorMediaUploads).set({ state: "committed", updatedAt: new Date() }).where(eq(creatorMediaUploads.objectPath, coverImage));
+      }
       const profile: CreatorProfileRecord = {
         displayName: profileInput.displayName.trim(),
         username: profileInput.username.trim().toLowerCase(),
@@ -294,6 +304,7 @@ router.put("/creator-profile", async (req, res): Promise<void> => {
         dateOfBirth: profileInput.dateOfBirth,
         showAge: profileInput.showAge,
         avatar,
+        coverImage,
       };
       const [usernameOwner] = await tx.select({ creatorId: creatorWorkspaces.creatorId }).from(creatorWorkspaces)
         .where(sql`lower(${creatorWorkspaces.profile}->>'username') = ${profile.username}`).limit(1);

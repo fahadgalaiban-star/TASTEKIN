@@ -42,4 +42,10 @@ export interface CreatorProfileInput {
      * @pattern ^/objects/uploads/[0-9a-fA-F-]{36}$
      */
   avatarObjectPath: string | null;
+  /**
+     * @maxLength 1024
+     * @nullable
+     * @pattern ^/objects/uploads/[0-9a-fA-F-]{36}$
+     */
+  coverImageObjectPath: string | null;
 }

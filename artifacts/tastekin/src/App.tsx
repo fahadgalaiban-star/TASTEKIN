@@ -55,7 +55,7 @@ type PendingCrop = { source: File; crop: File; preview: File; cropMetadata: Crop
 type OutfitItem = { type: string; brand: string; name: string; link: string };
 type CreatorProfile = {
   id?: string; displayName: string; username: string; bio: string; city: string; country: string; interests: string[];
-  avatar: string; avatarObjectPath: string | null; age: number | null; dateOfBirth: string | null; showAge: boolean; verified: boolean; revision: number;
+  avatar: string; avatarObjectPath: string | null; coverImage: string; coverImageObjectPath: string | null; age: number | null; dateOfBirth: string | null; showAge: boolean; verified: boolean; revision: number;
 };
 type PendingProfilePhoto = { file: File; url: string };
 
@@ -125,13 +125,13 @@ const TASTE_SEAL_IMAGE = tasteSealImage;
 const defaultCreatorProfile: CreatorProfile = {
   displayName: 'Fheed Alaiban', username: 'fheed', bio: 'A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.',
   city: 'Kuwait City', country: 'Kuwait', interests: ['Fashion', 'Travel', 'Places'], avatar: media('fheed-profile.webp'),
-  avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
+  avatarObjectPath: null, coverImage: media('coastal-notes.webp'), coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
 };
 // A genuinely empty placeholder — used before a signed-in user's own profile has loaded (or when
 // signed out), so nobody ever sees Fheed's showcased identity mistaken for their own account.
 const blankCreatorProfile: CreatorProfile = {
   displayName: '', username: '', bio: '', city: '', country: '', interests: [],
-  avatar: '', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
+  avatar: '', avatarObjectPath: null, coverImage: '', coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
 };
 const seedEdits: CreatorEdit[] = [
   { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: media('quiet-tailoring.webp'), location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Fheed seated outside a London café in a linen polo.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
@@ -397,6 +397,7 @@ function TastekinApp() {
   const [pendingProfilePhoto, setPendingProfilePhoto] = useState<PendingProfilePhoto | null>(null);
   const [profileSaveState, setProfileSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [profileError, setProfileError] = useState('');
+  const [coverUploadState, setCoverUploadState] = useState<'idle' | 'saving' | 'error'>('idle');
   const [selectedEditId, setSelectedEditId] = useState('quiet-tailoring');
   const [selectedCollectionId, setSelectedCollectionId] = useState('quiet-luxury');
   const [selectedCreatorUsername, setSelectedCreatorUsername] = useState('fheed');
@@ -848,7 +849,7 @@ function TastekinApp() {
         body: JSON.stringify({
           displayName: profileForm.displayName, username: profileForm.username, bio: profileForm.bio, city: profileForm.city,
           country: profileForm.country, interests: profileForm.interests, dateOfBirth: profileForm.dateOfBirth,
-          showAge: profileForm.showAge, avatarObjectPath,
+          showAge: profileForm.showAge, avatarObjectPath, coverImageObjectPath: profileForm.coverImageObjectPath,
         }),
       });
       if (!response.ok) {
@@ -856,7 +857,8 @@ function TastekinApp() {
         throw new Error(detail?.error || 'Could not save your profile.');
       }
       const saved = await response.json() as CreatorProfile;
-      const current = saved.avatar.startsWith('/api/public-profile-media') ? { ...saved, avatar: `${saved.avatar}?v=${Date.now()}` } : saved;
+      const cacheBust = (url: string) => url.startsWith('/api/public-profile-media') ? `${url}?v=${Date.now()}` : url;
+      const current = { ...saved, avatar: cacheBust(saved.avatar), coverImage: cacheBust(saved.coverImage) };
       pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]);
       setCreatorProfile(current); setProfileForm(current); workspaceRevisionRef.current = saved.revision; setWorkspaceRevision(saved.revision); discardPendingProfilePhoto();
       setSelectedCreatorUsername(saved.username);
@@ -867,6 +869,39 @@ function TastekinApp() {
       if (uploadedPath) { void cleanupCreatorMedia([uploadedPath]); setPendingMediaPaths([]); }
       pendingMediaIsDiscardable.current = false;
       setProfileSaveState('error'); setProfileError(error instanceof Error ? error.message : 'Could not save your profile.');
+    }
+  };
+  const saveCoverImage = async (file: File) => {
+    setCoverUploadState('saving');
+    const oldCover = creatorProfile.coverImageObjectPath;
+    let uploadedPath: string | null = null;
+    try {
+      const uploaded = await uploadCreatorImage(file);
+      uploadedPath = uploaded.objectPath;
+      setPendingMediaPaths([uploadedPath]); pendingMediaIsDiscardable.current = true;
+      const response = await fetch('/api/creator-profile', {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          displayName: creatorProfile.displayName, username: creatorProfile.username, bio: creatorProfile.bio, city: creatorProfile.city,
+          country: creatorProfile.country, interests: creatorProfile.interests, dateOfBirth: creatorProfile.dateOfBirth,
+          showAge: creatorProfile.showAge, avatarObjectPath: creatorProfile.avatarObjectPath, coverImageObjectPath: uploaded.objectPath,
+        }),
+      });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => null) as { error?: string } | null;
+        throw new Error(detail?.error || 'Could not save your cover photo.');
+      }
+      const saved = await response.json() as CreatorProfile;
+      const cacheBust = (url: string) => url.startsWith('/api/public-profile-media') ? `${url}?v=${Date.now()}` : url;
+      const current = { ...saved, avatar: cacheBust(saved.avatar), coverImage: cacheBust(saved.coverImage) };
+      pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]);
+      setCreatorProfile(current); setProfileForm(current); workspaceRevisionRef.current = saved.revision; setWorkspaceRevision(saved.revision);
+      if (oldCover && oldCover !== saved.coverImageObjectPath) void cleanupCreatorMedia([oldCover]);
+      setCoverUploadState('idle');
+    } catch {
+      if (uploadedPath) { void cleanupCreatorMedia([uploadedPath]); setPendingMediaPaths([]); }
+      pendingMediaIsDiscardable.current = false;
+      setCoverUploadState('error');
     }
   };
   // Lifted above the composer/creatorPreview screens (see VideoUploadController's
@@ -1067,7 +1102,7 @@ function TastekinApp() {
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('add')}>{t('Creator workspace', 'مساحة المبدع')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
@@ -4204,8 +4239,9 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
   </SimpleScreen>;
 }
 
-function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, circleBusy, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onToggleCircle, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch, onSignIn, onBlocked }: { ar: boolean; owner: boolean; ownerView: boolean; visitorPreview: boolean; following: boolean; inCircle: boolean; circleBusy: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onToggleCircle: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void; onSignIn: () => void; onBlocked: () => void }) {
+function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, circleBusy, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onToggleCircle, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch, onSignIn, onBlocked, onUploadCover, coverUploadBusy }: { ar: boolean; owner: boolean; ownerView: boolean; visitorPreview: boolean; following: boolean; inCircle: boolean; circleBusy: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onToggleCircle: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void; onSignIn: () => void; onBlocked: () => void; onUploadCover: (file: File) => void; coverUploadBusy: boolean }) {
   const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
   const myCircleEnabled = session.featureFlags.my_circle === true;
   const [sealOpen, setSealOpen] = useState(false);
   const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
@@ -4241,15 +4277,6 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     }
     return { trips, cities: cityNames.size };
   }, [publishedEdits]);
-  // No per-edit `createdAt` reaches the client, so "first in array order"
-  // (the same convention collectionCoverImage already uses below) is the
-  // only ordering available — never invented. Prefers a real Travel photo;
-  // falls back to any other published photo; falls back to a plain CSS
-  // gradient (no image at all) only when the creator has published no
-  // photos yet, rather than ever substituting a stock or demo image.
-  const coverEdit = useMemo(() => publishedEdits.find((edit) => edit.category === 'Travel' && edit.image) || publishedEdits.find((edit) => edit.image) || null, [publishedEdits]);
-  const coverLocation = coverEdit ? placeLocation(coverEdit, ar) : '';
-
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
   const { data: matchData } = useGetTasteMatch(profile.username, {
@@ -4270,8 +4297,11 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
 
   return <section className="creator-profile creator-profile-travel">
     <div className="profile-cover" data-testid="profile-cover">
-      {coverEdit?.image ? <img src={imageSrc(coverEdit.image)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
-      {coverLocation && <span className="profile-cover-caption">{coverLocation}</span>}
+      {profile.coverImage ? <img src={profile.coverImage} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
+      {ownerView && <label className="profile-cover-edit" aria-label={t('Change cover photo', 'تغيير صورة الغلاف')} data-testid="profile-cover-edit">
+        <Camera size={15} />
+        <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" disabled={coverUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadCover(file); event.target.value = ''; }} />
+      </label>}
     </div>
     <div className="approved-profile-head">
       <Avatar profile={profile} />

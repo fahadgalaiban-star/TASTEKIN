@@ -20,6 +20,7 @@ function referencedPaths(workspace: typeof creatorWorkspaces.$inferSelect) {
     ].filter((path): path is string => typeof path === "string"),
   );
   if (workspace.profile?.avatar) paths.add(workspace.profile.avatar);
+  if (workspace.profile?.coverImage) paths.add(workspace.profile.coverImage);
   return paths;
 }
 
@@ -90,6 +91,13 @@ async function publicProfileMedia(username: string, res: import("express").Respo
   res.redirect(302, await getPrivateMediaDownloadURL(avatar));
 }
 
+async function publicProfileCoverMedia(username: string, res: import("express").Response) {
+  const workspace = await creatorByUsername(username);
+  const coverImage = workspace?.profile.coverImage;
+  if (!coverImage?.startsWith("/objects/")) { res.status(404).json({ error: "Cover photo not found" }); return; }
+  res.redirect(302, await getPrivateMediaDownloadURL(coverImage));
+}
+
 async function publicEditMedia(username: string, editId: string, preview: boolean, res: import("express").Response) {
   const workspace = await creatorByUsername(username);
   const edit = (workspace?.edits as Array<Record<string, unknown>> | undefined)?.find((item) => item.id === editId && item.status === "published" && item.access === (preview ? "locked" : "public"));
@@ -103,6 +111,12 @@ router.get("/public-profile-media/:username", async (req, res) => {
 });
 router.get("/public-profile-media", async (_req, res) => {
   try { await publicProfileMedia("fheed", res); } catch { res.status(404).json({ error: "Profile photo not found" }); }
+});
+router.get("/public-profile-media/:username/cover", async (req, res) => {
+  try { await publicProfileCoverMedia(req.params.username, res); } catch { res.status(404).json({ error: "Cover photo not found" }); }
+});
+router.get("/public-profile-media/cover", async (_req, res) => {
+  try { await publicProfileCoverMedia("fheed", res); } catch { res.status(404).json({ error: "Cover photo not found" }); }
 });
 router.get("/public-media/:username/:editId/preview", async (req, res) => {
   try { await publicEditMedia(req.params.username, req.params.editId, true, res); } catch { res.status(404).json({ error: "Media preview not found" }); }

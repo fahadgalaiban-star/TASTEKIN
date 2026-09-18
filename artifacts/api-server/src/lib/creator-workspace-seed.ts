@@ -13,6 +13,7 @@ export const fheedWorkspaceSeed = {
     dateOfBirth: null,
     showAge: false,
     avatar: "/tastekin-media/fheed-profile.webp",
+    coverImage: "/tastekin-media/coastal-notes.webp",
   },
   edits: [
     { id: "quiet-tailoring", category: "Fashion", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة.", image: media("quiet-tailoring.webp"), location: "Mayfair, London", locationAr: "مايفير، لندن", altText: "Fheed seated outside a London café in a linen polo.", access: "public", status: "published", collectionIds: ["quiet-luxury"] },

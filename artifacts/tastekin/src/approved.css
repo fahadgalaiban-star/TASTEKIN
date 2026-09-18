@@ -124,14 +124,16 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .profile-cover { position:relative; margin:0 -16px 6px; width:calc(100% + 32px); aspect-ratio:16 / 9; overflow:hidden; border-radius:0 0 18px 18px; background:var(--tk-surface-muted); }
 .profile-cover img { width:100%; height:100%; display:block; object-fit:cover; object-position:center; }
 .profile-cover-fallback { width:100%; height:100%; background:linear-gradient(155deg,var(--tk-burgundy) 0%,var(--tk-surface-muted) 100%); }
-.profile-cover-caption { position:absolute; z-index:1; bottom:10px; inset-inline-end:14px; padding:5px 10px; border-radius:999px; background:var(--tk-media-overlay); color:var(--tk-text-inverse); font-size:10px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; }
+.profile-cover-edit { position:absolute; z-index:2; bottom:10px; inset-inline-end:10px; width:34px; height:34px; display:grid; place-items:center; border-radius:50%; background:rgba(23,20,22,.6); color:var(--tk-text-inverse); cursor:pointer; }
+.profile-cover-edit input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
 .approved-profile-head { display:flex; align-items:flex-start; gap:14px; padding-top:12px; }
 .creator-profile-travel .profile-cover + .approved-profile-head { padding-top:0; }
 /* The avatar overlaps the cover's bottom edge on its own negative margin —
    the name/handle column next to it (.profile-head-copy) is unaffected and
    stays in normal flow below the cover, so only the avatar visually rides
-   up onto the photo. */
-.creator-profile-travel .approved-profile-head > .approved-avatar { margin-top:-38px; border:3px solid var(--tk-page); background:var(--tk-page); box-shadow:0 3px 10px rgba(38,25,23,.2); }
+   up onto the photo. Kept slight (a fraction of the avatar's own height)
+   so the full circle stays visible against the cover below it. */
+.creator-profile-travel .approved-profile-head > .approved-avatar { position:relative; z-index:1; margin-top:-16px; border:3px solid var(--tk-page); background:var(--tk-page); box-shadow:0 3px 10px rgba(38,25,23,.2); }
 .creator-profile-travel .profile-bio { margin-top:6px; }
 .creator-profile-travel .approved-match { margin:8px 0 0; }
 .creator-profile-travel .profile-taste-meta { margin:5px 0 0; }
