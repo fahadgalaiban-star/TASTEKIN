@@ -179,18 +179,23 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
    directly under the Taste Match pill — never a full-width row of their
    own. RTL mirrors automatically because logical padding and the inherited
    flex direction keep icon and label together in either direction. */
-.approved-actions.profile-owner-actions, .approved-actions.profile-visitor-actions { display:flex; align-items:flex-start; justify-content:flex-end; gap:4px; }
+.approved-actions.profile-owner-actions, .approved-actions.profile-visitor-actions { display:flex; align-items:flex-start; justify-content:flex-end; }
+.approved-actions.profile-owner-actions { gap:4px; }
+.approved-actions.profile-visitor-actions { width:260px; max-width:calc(100vw - 32px); gap:6px; margin-top:64px; overflow:visible; }
 .approved-actions.profile-owner-actions > .approved-button { flex:0 0 auto; min-width:0; height:48px; border-radius:999px; padding-inline:11px; font-size:10.5px; white-space:nowrap; }
 .approved-actions.profile-owner-actions > .profile-edit-button { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .approved-actions.profile-owner-actions > .profile-insights-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; border-color:var(--tk-wine); background:transparent; color:var(--tk-wine); }
 .profile-insights-button svg { flex:0 0 18px; }
-.approved-actions.profile-visitor-actions > .profile-follow-button, .approved-actions.profile-visitor-actions > .profile-message-button { flex:0 0 auto; min-width:0; height:38px; padding-inline:8px; font-size:10.5px; }
+.approved-actions.profile-visitor-actions > * { flex-shrink:0; }
+.approved-actions.profile-visitor-actions > .profile-follow-button, .approved-actions.profile-visitor-actions > .profile-message-button { flex-shrink:0; height:48px; min-height:48px; padding-inline:0; font-size:10.5px; }
+.approved-actions.profile-visitor-actions > .profile-follow-button { flex-basis:76px; width:76px; min-width:76px; }
+.approved-actions.profile-visitor-actions > .profile-message-button { flex-basis:92px; width:92px; min-width:92px; }
 .approved-actions.profile-owner-actions > .report-trigger, .approved-actions.profile-visitor-actions > .report-trigger { flex:0 0 auto; align-self:center; width:26px; height:26px; }
 .profile-follow-button, .profile-message-button { white-space:nowrap; }
 .profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:4px; color:var(--tk-wine); }
 .profile-circle-control { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px; }
 .profile-circle-icon-button { display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
-.profile-circle-icon-button { width:48px; height:48px; }
+.profile-circle-icon-button { flex:0 0 48px; width:48px; min-width:48px; height:48px; min-height:48px; }
 .profile-circle-icon-button:hover { background:var(--tk-surface-muted); }
 .profile-circle-icon-button.active { background:var(--tk-wine); border-color:var(--tk-wine); color:var(--tk-text-inverse); }
 .profile-circle-icon-button svg { width:18px; height:18px; flex:0 0 18px; }

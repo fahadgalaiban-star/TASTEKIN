@@ -7,6 +7,46 @@ async function openConsumerProfile(page: Page) {
   await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
 }
 
+async function expectVisitorActionsAt390(page: Page) {
+  const layout = await page.locator('.profile-visitor-actions').evaluate((row) => {
+    const box = (element: Element | null) => {
+      if (!element) throw new Error('Missing visitor Profile control');
+      const rect = element.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, width: rect.width, height: rect.height };
+    };
+    const controls = [
+      box(row.querySelector('[data-testid="profile-follow-action"]')),
+      box(row.querySelector('[data-testid="profile-message-action"]')),
+      box(row.querySelector('[data-testid="profile-circle-action"]')),
+      box(row.querySelector('.report-trigger')),
+    ].sort((a, b) => a.left - b.left);
+    const identity = box(document.querySelector('.profile-head-copy'));
+    return {
+      row: box(row),
+      follow: box(row.querySelector('[data-testid="profile-follow-action"]')),
+      message: box(row.querySelector('[data-testid="profile-message-action"]')),
+      circle: box(row.querySelector('[data-testid="profile-circle-action"]')),
+      identity,
+      gaps: controls.slice(1).map((control, index) => control.left - controls[index].right),
+      viewportWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    };
+  });
+
+  expect(layout.viewportWidth).toBe(390);
+  expect(layout.scrollWidth).toBe(390);
+  expect(layout.follow.width).toBeCloseTo(76, 1);
+  expect(layout.follow.height).toBeCloseTo(48, 1);
+  expect(layout.message.width).toBeCloseTo(92, 1);
+  expect(layout.message.height).toBeCloseTo(48, 1);
+  expect(layout.circle.width).toBeCloseTo(48, 1);
+  expect(layout.circle.height).toBeCloseTo(48, 1);
+  expect(layout.gaps.every((gap) => Math.abs(gap - 6) < 0.75)).toBe(true);
+  expect(layout.row.left).toBeGreaterThanOrEqual(16);
+  expect(layout.row.right).toBeLessThanOrEqual(374);
+  expect(layout.row.top).toBeGreaterThanOrEqual(layout.identity.bottom);
+}
+
 const quietTailoringFeed = {
   id: 'quiet-tailoring',
   category: 'Fashion',
@@ -396,6 +436,39 @@ test('shows all visitor actions when an admin views an unverified empty profile 
   await expect(page.getByRole('button', { name: 'مراسلة' })).toBeVisible();
   await expect(page.getByText('دائرتي')).toBeVisible();
   await expect(page.getByRole('button', { name: 'مزيد من الخيارات' })).toBeVisible();
+});
+
+test('keeps visitor Profile actions at their approved dimensions for short and long names at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  for (const displayName of ['Noura Studio', 'Noura Studio With A Considerably Longer Display Name']) {
+    await page.unroute('**/api/creators/noura.studio/profile');
+    await page.route('**/api/creators/noura.studio/profile', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          displayName,
+          username: 'noura.studio',
+          bio: '',
+          city: 'Kuwait City',
+          country: 'Kuwait',
+          interests: ['Restaurants', 'Places'],
+          avatar: '',
+          avatarObjectPath: null,
+          age: 31,
+          dateOfBirth: '1995-01-01',
+          showAge: true,
+          verified: false,
+          revision: 1,
+        }),
+      });
+    });
+    await page.goto('/');
+    await page.getByTestId('nav-explore').click();
+    await page.getByRole('button', { name: 'New' }).click();
+    await page.getByTestId('creator-noura.studio').click();
+    await expect(page.getByRole('heading', { name: displayName })).toBeVisible();
+    await expectVisitorActionsAt390(page);
+  }
 });
 
 test('keeps locked profile edits excluded from the grid for both the owner and a visitor preview', async ({ page }) => {
