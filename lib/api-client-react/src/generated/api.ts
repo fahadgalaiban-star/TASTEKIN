@@ -160,6 +160,12 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
   return withQueryKey(query, queryOptions.queryKey);
 }
 
+
+
+
+
+
+
 export const getGetFeedUrl = () => {
 
 
@@ -230,6 +236,13 @@ export function useGetFeed<TData = Awaited<ReturnType<typeof getFeed>>, TError =
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getListCreatorsUrl = (params?: ListCreatorsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -301,6 +314,13 @@ export function useListCreators<TData = Awaited<ReturnType<typeof listCreators>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
 export const getGetCreatorUrl = (username: string,) => {
 
 
@@ -1500,6 +1520,137 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
         TContext
       > => {
       return useMutation(getCreateSavedListMutationOptions(options));
+    }
+
+export const getRenameSavedListUrl = (listId: string,) => {
+
+
+
+
+  return `/api/me/saved-lists/${listId}`
+}
+
+export const renameSavedList = async (listId: string,
+    savedListInput: SavedListInput, options?: Parameters<typeof customFetch>[1]): Promise<SavedList> => {
+
+  return customFetch<SavedList>(getRenameSavedListUrl(listId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(savedListInput)
+  }
+);}
+
+
+
+
+
+export const getRenameSavedListMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renameSavedList>>, TError,{listId: string;data: BodyType<SavedListInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof renameSavedList>>, TError,{listId: string;data: BodyType<SavedListInput>}, TContext> => {
+
+const mutationKey = ['renameSavedList'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renameSavedList>>, {listId: string;data: BodyType<SavedListInput>}> = (props) => {
+          const {listId,data} = props ?? {};
+
+          return  renameSavedList(listId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RenameSavedListMutationResult = NonNullable<Awaited<ReturnType<typeof renameSavedList>>>
+    export type RenameSavedListMutationBody = BodyType<SavedListInput>
+    export type RenameSavedListMutationError = ErrorType<void>
+
+    export const useRenameSavedList = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renameSavedList>>, TError,{listId: string;data: BodyType<SavedListInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof renameSavedList>>,
+        TError,
+        {listId: string;data: BodyType<SavedListInput>},
+        TContext
+      > => {
+      return useMutation(getRenameSavedListMutationOptions(options));
+    }
+
+export const getDeleteSavedListUrl = (listId: string,) => {
+
+
+
+
+  return `/api/me/saved-lists/${listId}`
+}
+
+export const deleteSavedList = async (listId: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getDeleteSavedListUrl(listId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSavedListMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSavedList>>, TError,{listId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSavedList>>, TError,{listId: string}, TContext> => {
+
+const mutationKey = ['deleteSavedList'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSavedList>>, {listId: string}> = (props) => {
+          const {listId} = props ?? {};
+
+          return  deleteSavedList(listId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSavedListMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSavedList>>>
+
+    export type DeleteSavedListMutationError = ErrorType<void>
+
+    export const useDeleteSavedList = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSavedList>>, TError,{listId: string}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSavedList>>,
+        TError,
+        {listId: string},
+        TContext
+      > => {
+      return useMutation(getDeleteSavedListMutationOptions(options));
     }
 
 export const getUpdateSavedListItemUrl = (listId: string,
@@ -2754,3 +2905,10 @@ export function useGetCircleFeed<TData = Awaited<ReturnType<typeof getCircleFeed
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+

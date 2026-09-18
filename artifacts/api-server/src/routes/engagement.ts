@@ -33,6 +33,10 @@ import {
   ListSavedListsResponse,
   CreateSavedListBody,
   CreateSavedListResponse,
+  RenameSavedListBody,
+  RenameSavedListParams,
+  RenameSavedListResponse,
+  DeleteSavedListParams,
   UpdateSavedListItemBody,
   UpdateSavedListItemParams,
   UpdateSavedListItemResponse,
@@ -278,6 +282,41 @@ router.post("/me/saved-lists", async (req, res): Promise<void> => {
   res.status(201).json(CreateSavedListResponse.parse({
     id: list.id, name: list.name, editIds: [], createdAt: list.createdAt.toISOString(), updatedAt: list.updatedAt.toISOString(),
   }));
+});
+
+router.put("/me/saved-lists/:listId", async (req, res): Promise<void> => {
+  privateResponse(res);
+  const user = requireUser(req, res);
+  if (!user) return;
+  const params = RenameSavedListParams.safeParse(req.params);
+  const body = RenameSavedListBody.safeParse(req.body);
+  const name = body.success ? body.data.name.trim() : "";
+  if (!params.success || !body.success || !name) { res.status(400).json({ error: "A list name is required" }); return; }
+  const [list] = await db.select().from(savedLists).where(and(eq(savedLists.id, params.data.listId), eq(savedLists.userId, user.id))).limit(1);
+  if (!list) { res.status(404).json({ error: "Saved list not found" }); return; }
+  const [existing] = await db.select().from(savedLists).where(and(eq(savedLists.userId, user.id), eq(savedLists.name, name))).limit(1);
+  if (existing && existing.id !== list.id) { res.status(409).json({ error: "A list with this name already exists" }); return; }
+  const [updated] = await db.update(savedLists).set({ name, updatedAt: new Date() }).where(eq(savedLists.id, list.id)).returning();
+  const items = await db.select().from(savedListItems).where(eq(savedListItems.listId, list.id)).orderBy(savedListItems.createdAt);
+  res.json(RenameSavedListResponse.parse({
+    id: updated.id,
+    name: updated.name,
+    editIds: items.map((item) => item.editId),
+    createdAt: updated.createdAt.toISOString(),
+    updatedAt: updated.updatedAt.toISOString(),
+  }));
+});
+
+router.delete("/me/saved-lists/:listId", async (req, res): Promise<void> => {
+  privateResponse(res);
+  const user = requireUser(req, res);
+  if (!user) return;
+  const params = DeleteSavedListParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: "Invalid Saved list" }); return; }
+  const [list] = await db.select().from(savedLists).where(and(eq(savedLists.id, params.data.listId), eq(savedLists.userId, user.id))).limit(1);
+  if (!list) { res.status(404).json({ error: "Saved list not found" }); return; }
+  await db.delete(savedLists).where(eq(savedLists.id, list.id));
+  res.status(204).send();
 });
 
 router.put("/me/saved-lists/:listId/edits/:editId", async (req, res): Promise<void> => {

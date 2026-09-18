@@ -359,6 +359,36 @@ paths:
         "400": { description: Invalid list name }
         "401": { description: Authentication required }
         "409": { description: List name already exists }
+  /me/saved-lists/{listId}:
+    put:
+      operationId: renameSavedList
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/SavedListId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavedListInput" }
+      responses:
+        "200":
+          description: Renamed Saved list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedList" }
+        "400": { description: Invalid list name }
+        "401": { description: Authentication required }
+        "404": { description: Saved list not found }
+        "409": { description: List name already exists }
+    delete:
+      operationId: deleteSavedList
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/SavedListId"
+      responses:
+        "204": { description: Deleted Saved list }
+        "401": { description: Authentication required }
+        "404": { description: Saved list not found }
   /me/saved-lists/{listId}/edits/{editId}:
     put:
       operationId: updateSavedListItem

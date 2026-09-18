@@ -540,6 +540,42 @@ export const CreateSavedListResponse = zod.object({
 })
 
 
+export const renameSavedListPathListIdMax = 100;
+
+
+
+export const RenameSavedListParams = zod.object({
+  "listId": zod.coerce.string().min(1).max(renameSavedListPathListIdMax)
+})
+
+export const renameSavedListBodyNameMax = 60;
+
+
+
+export const RenameSavedListBody = zod.object({
+  "name": zod.string().min(1).max(renameSavedListBodyNameMax)
+})
+
+export const RenameSavedListResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "editIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const deleteSavedListPathListIdMax = 100;
+
+
+
+export const DeleteSavedListParams = zod.object({
+  "listId": zod.coerce.string().min(1).max(deleteSavedListPathListIdMax)
+})
+
+export const DeleteSavedListResponse = zod.void()
+
+
 export const updateSavedListItemPathListIdMax = 100;
 
 export const updateSavedListItemPathEditIdMax = 120;
