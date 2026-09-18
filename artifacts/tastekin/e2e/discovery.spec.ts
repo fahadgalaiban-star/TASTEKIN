@@ -121,6 +121,22 @@ test.beforeEach(async ({ page }) => {
     if (list) list.editIds = body.active ? Array.from(new Set([...list.editIds, editId])) : list.editIds.filter((id) => id !== editId);
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ listId: list?.id, editId, active: body.active }) });
   });
+  await page.route('**/api/me/saved-lists/*', async (route) => {
+    const listId = new URL(route.request().url()).pathname.split('/')[4];
+    const index = savedLists.findIndex((item) => item.id === listId);
+    if (route.request().method() === 'PUT' && index >= 0) {
+      const body = route.request().postDataJSON() as { name: string };
+      savedLists[index] = { ...savedLists[index], name: body.name, updatedAt: new Date().toISOString() };
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify(savedLists[index]) });
+      return;
+    }
+    if (route.request().method() === 'DELETE' && index >= 0) {
+      savedLists.splice(index, 1);
+      await route.fulfill({ status: 204 });
+      return;
+    }
+    await route.fulfill({ status: 404 });
+  });
   await page.route('**/api/edits/**/save', async (route) => {
     const editId = new URL(route.request().url()).pathname.split('/')[3];
     const body = route.request().postDataJSON() as { active?: boolean };
@@ -537,6 +553,7 @@ test('keeps each public Edit mapped to its own media after travel filtering', as
 });
 
 test('persists saves and supports named Saved lists', async ({ page }) => {
+  test.setTimeout(25_000);
   await page.route('**/api/public-feed', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
@@ -549,8 +566,14 @@ test('persists saves and supports named Saved lists', async ({ page }) => {
     });
   });
   await page.reload();
+  const listPicker = page.getByLabel('Add to lists');
+  await page.getByTestId('save-quiet-tailoring').click();
+  await expect(page.getByRole('status')).toHaveText('Saved');
+  await expect(listPicker).toBeHidden();
   await page.getByTestId('nav-saved').click();
   await expect(page.getByRole('button', { name: 'All Saved' })).toHaveClass(/active/);
+  await expect(page.getByTestId('saved-grid-quiet-tailoring')).toBeVisible();
+  await page.getByTestId('saved-grid-quiet-tailoring').getByRole('button', { name: 'Remove from saved' }).click();
   await page.getByRole('button', { name: 'Create list' }).click();
   await page.getByLabel('List name').fill('London Trip');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
@@ -558,19 +581,44 @@ test('persists saves and supports named Saved lists', async ({ page }) => {
 
   await page.getByTestId('nav-home').click();
   await page.getByTestId('save-quiet-tailoring').click();
-  const listPicker = page.getByLabel('Add to lists');
   await expect(listPicker).toBeVisible();
   await listPicker.getByText('London Trip').click();
   await listPicker.getByRole('button', { name: 'Done' }).evaluate((button: HTMLButtonElement) => button.click());
   await expect(page.getByLabel('Add to lists')).toBeHidden();
+  await page.getByTestId('edit-title-quiet-tailoring').click();
+  const detailSave = page.locator('.edit-reactions').getByRole('button', { name: 'Saved', exact: true });
+  await expect(detailSave).toHaveAttribute('aria-pressed', 'true');
+  await expect(detailSave.locator('svg')).toHaveAttribute('fill', 'currentColor');
+  await page.reload();
+  await page.getByTestId('nav-home').click();
+  await page.getByTestId('edit-title-quiet-tailoring').click();
+  await expect(detailSave).toHaveAttribute('aria-pressed', 'true');
+  await detailSave.click();
+  await expect(page.locator('.edit-reactions').getByRole('button', { name: 'Save', exact: true })).toHaveAttribute('aria-pressed', 'false');
+  await page.getByTestId('nav-home').click();
+  await page.getByTestId('save-quiet-tailoring').click();
+  await expect(listPicker).toBeVisible();
+  await listPicker.getByRole('button', { name: 'Done' }).evaluate((button: HTMLButtonElement) => button.click());
   await page.getByTestId('save-private-hotel').click();
   await expect(listPicker).toBeVisible();
   await listPicker.getByRole('button', { name: 'Done' }).evaluate((button: HTMLButtonElement) => button.click());
 
   await page.getByTestId('nav-saved').click();
+  await page.getByRole('button', { name: 'London Trip' }).click();
   await expect(page.getByTestId('saved-grid-quiet-tailoring')).toBeVisible();
   await expect(page.getByTestId('saved-grid-private-hotel')).toHaveCount(0);
-  await page.getByRole('button', { name: 'All Saved' }).click();
+  await page.getByRole('button', { name: 'List options' }).click();
+  await page.getByRole('button', { name: 'Rename list' }).click();
+  await page.getByLabel('List name').fill('London Favourites');
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'London Favourites' })).toBeVisible();
+  await page.getByRole('button', { name: 'List options' }).click();
+  await page.getByRole('button', { name: 'Delete list' }).click();
+  await expect(page.getByText('Its posts will remain in All Saved.')).toBeVisible();
+  await page.getByRole('button', { name: 'Delete list' }).click();
+  await expect(page.getByRole('button', { name: 'All Saved' })).toHaveClass(/active/);
+  await expect(page.getByTestId('saved-grid-quiet-tailoring')).toBeVisible();
+  await expect(page.getByTestId('saved-grid-private-hotel')).toBeVisible();
   await expect(page.locator('.saved-grid-card')).toHaveCount(2);
   await expect(page.locator('.saved-grid')).toHaveCSS('grid-template-columns', /.+ .+/);
   await expect(page.getByTestId('saved-grid-quiet-tailoring').locator('small')).toHaveText('Style');
