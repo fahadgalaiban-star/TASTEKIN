@@ -231,6 +231,20 @@ test('renders the default creator feed and the owner profile travel layout witho
   await expect(page.locator('.approved-logo')).toBeVisible();
 });
 
+test('hides a Featured collection whose only cover is a locked Edit, instead of showing it blurred or dark', async ({ page }) => {
+  // "The Coastal Edit" (from the shared beforeEach mock) has no coverImage
+  // of its own — its only cover comes from the locked private-hotel Edit,
+  // whose image is already a pre-blurred subscriber preview. There is no
+  // real, unblurred photo to show for it here, so the Featured collections
+  // strip must omit the card entirely rather than render it blurred or dark.
+  await openConsumerProfile(page);
+  const featuredCards = page.locator('[data-testid^="featured-collection-"]');
+  await expect(featuredCards).toHaveCount(1);
+  await expect(page.getByTestId('featured-collection-quiet-luxury')).toBeVisible();
+  await expect(page.getByTestId('featured-collection-coastal-edit')).toHaveCount(0);
+  await expect(page.getByText('The Coastal Edit')).toHaveCount(0);
+});
+
 test('keeps Home and Explore state while the profile stays uncluttered at mobile width', async ({ page }) => {
   const homeTabs = page.locator('.approved-feed-tabs');
   const homeTabsBox = await homeTabs.boundingBox();
@@ -315,10 +329,14 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
           truncated: caption.scrollWidth > caption.clientWidth,
         };
       }),
-      locked: card.textContent?.includes('Subscribers only') ?? false,
+      hasPaywallLabel: card.textContent?.includes('Subscribers only') ?? false,
     };
   }));
-  expect(mediaLayout.some((item) => item.locked)).toBe(true);
+  // The grid never shows lock badges, blur, or "Subscribers only" labels.
+  // The owner's own locked Edit (see the global creator-workspace mock's
+  // private-hotel Edit) is excluded from this grid entirely rather than
+  // rendered with any paywall styling.
+  expect(mediaLayout.every((item) => !item.hasPaywallLabel)).toBe(true);
   for (const item of mediaLayout) {
     expect(item.cardRatio).toBeCloseTo(1.25, 1);
     expect(item.objectFit).toBe('cover');
@@ -356,18 +374,23 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
 
-test('keeps locked profile edits protected for visitor and owner preview', async ({ page }) => {
+test('keeps locked profile edits excluded from the grid for both the owner and a visitor preview', async ({ page }) => {
   const lockedEdit = () => page.locator('.approved-grid-card').filter({ hasText: 'The stay, the packing list, and where I ate.' });
 
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
   await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
+  // The Profile Edits grid shows only public, published Edits — for the
+  // owner's own (non-preview) view too. A locked Edit is excluded entirely
+  // rather than shown with a lock badge, blur, or dark placeholder tile.
+  await expect(lockedEdit()).toHaveCount(0);
+  await expect(page.getByTestId('profile-edits-grid')).not.toContainText('Subscribers only');
   await page.getByRole('button', { name: 'More options' }).click();
   await page.getByTestId('profile-view-public').click();
   await expect(page.getByRole('button', { name: 'Follow' })).toBeDisabled();
-  await lockedEdit().click();
-  await expect(page.locator('.approved-detail-art')).toHaveClass(/locked/);
-  await expect(page.getByText('This edit is for subscribers')).toBeVisible();
+  // Same holds for a visitor (including the owner previewing as one).
+  await expect(lockedEdit()).toHaveCount(0);
+  await expect(page.getByTestId('profile-edits-grid')).not.toContainText('Subscribers only');
 });
 
 test('persists saves, collections, and the owner profile entry point', async ({ page }) => {
@@ -435,7 +458,12 @@ test('keeps owner controls compact without a standalone preview button and persi
         ],
         collections: [
           { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
-          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+          // An explicit coverImage keeps this collection's Featured-strip card
+          // visible on its own uploaded cover, independent of its 'locked'
+          // access (which otherwise hides a collection whose only cover would
+          // come from a locked Edit's blurred preview) — this test exercises
+          // feature/unfeature toggling, not that unrelated cover-visibility rule.
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverImage: '/tastekin-media/private-hotel-preview.webp', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
         ],
       }),
     });
