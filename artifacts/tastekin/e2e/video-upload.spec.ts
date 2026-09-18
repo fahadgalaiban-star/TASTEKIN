@@ -386,28 +386,29 @@ async function creatorPage(page: Page, api: VideoUploadApi, options: { ar?: bool
 
 async function openComposer(page: Page, options: { ar?: boolean } = {}) {
   await page.getByRole('button', { name: options.ar ? 'تعديل جديد' : 'New Edit' }).click();
-  await expect(page.getByRole('heading', { name: options.ar ? 'أنشئ تعديلاً' : 'Create an Edit' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: options.ar ? 'إنشاء منشور' : 'Create an Edit' })).toBeVisible();
+  // The simplified composer requires a category before Publish can proceed.
+  await page.getByRole('radio', { name: options.ar ? 'ستايل' : 'Style', exact: true }).click();
 }
 
 function videoFile(name: string, sizeBytes: number, mimeType = 'video/mp4') {
   return { name, mimeType, buffer: Buffer.alloc(sizeBytes) };
 }
 
-test('when video_upload is disabled, no Photo/Video toggle appears and the photo uploader behaves exactly as before', async ({ page }) => {
+test('when video_upload is disabled, the unified media picker still accepts photos', async ({ page }) => {
   const api = new VideoUploadApi();
   api.videoUploadFlag = false;
   await creatorPage(page, api);
   await openComposer(page);
-  await expect(page.getByRole('tab', { name: 'Video' })).toHaveCount(0);
-  await expect(page.getByLabel('Add photo')).toBeVisible();
+  await expect(page.getByRole('tab')).toHaveCount(0);
+  await expect(page.getByLabel('Add media')).toBeVisible();
 });
 
 test('an unsupported file type is rejected before any request-upload call', async ({ page }) => {
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.avi', 1024, 'video/x-msvideo'));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.avi', 1024, 'video/x-msvideo'));
   await expect(page.getByText('Choose an MP4 or MOV video file.')).toBeVisible();
   expect(api.requestUploadCalls).toHaveLength(0);
 });
@@ -416,10 +417,9 @@ test('a file over the 500MB limit is rejected before any request-upload call', a
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
   const oversizePath = sparseFile(500 * 1024 * 1024 + 1024);
   try {
-    await page.getByLabel('Add video').setInputFiles(oversizePath);
+    await page.getByLabel('Add media').setInputFiles(oversizePath);
     await expect(page.getByText('The maximum video size is 500 MB.')).toBeVisible();
     expect(api.requestUploadCalls).toHaveLength(0);
   } finally {
@@ -432,8 +432,7 @@ test('a video longer than 10 minutes is rejected before any request-upload call'
   await creatorPage(page, api);
   await openComposer(page);
   await page.evaluate(() => (window as unknown as { __setNextVideoDuration: (value: number) => void }).__setNextVideoDuration(700));
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('long-clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('long-clip.mp4', 1024));
   await expect(page.getByText('The maximum video length is 10 minutes.')).toBeVisible();
   expect(api.requestUploadCalls).toHaveLength(0);
 });
@@ -444,8 +443,7 @@ test('a 202 "still creating" response is retried with the exact same Idempotency
   api.scriptCreatingRetries(2);
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 40000 }).toBeGreaterThanOrEqual(3);
   const keysUsed = new Set(api.requestUploadCalls.map((call) => call.idempotencyKey));
   expect(keysUsed.size).toBe(1);
@@ -462,12 +460,11 @@ test('upload progress is rendered mid-upload, then the video reaches ready and u
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
 
   // 12MB forces exactly two 8MB/4MB TUS chunks — gate the second so the UI
   // has time to settle on the exact percentage after the first chunk lands.
   const fileSize = 12 * 1024 * 1024;
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', fileSize));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', fileSize));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   const bunnyVideoId = api.uploads.get(uploadId)?.bunnyVideoId;
@@ -495,8 +492,7 @@ test('iOS-style pagehide does not cancel a video after TUS completes while Bunny
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('iphone-clip.mov', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('iphone-clip.mov', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   await expect(page.getByText('Processing…')).toBeVisible({ timeout: 8000 });
@@ -515,8 +511,7 @@ test('replacing a selected video cancels the previous upload and publishes with 
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('first.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('first.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const firstId = 'video-upload-1';
   await expect(page.getByText(/Uploading…|Processing…/)).toBeVisible({ timeout: 8000 });
@@ -538,14 +533,13 @@ test('removing a selected video cancels it and clears the field, leaving Publish
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
 
   await page.getByRole('button', { name: 'Remove video' }).click();
   await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
-  await expect(page.getByLabel('Add video')).toBeVisible();
+  await expect(page.getByLabel('Add media')).toBeVisible();
 
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('alert')).toBeVisible();
@@ -555,8 +549,7 @@ test('a failed video keeps Publish blocked with a clear reason', async ({ page }
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   api.markFailed(uploadId);
@@ -569,13 +562,12 @@ test('the existing photo crop-and-publish flow is completely unchanged with vide
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await expect(page.getByRole('tab', { name: 'Photo', exact: true })).toBeVisible();
-  await page.locator('input[type="file"]').first().setInputFiles(path.resolve(import.meta.dirname, '../public/tastekin-media/quiet-tailoring.webp'));
+  await page.getByLabel('Add media').setInputFiles(path.resolve(import.meta.dirname, '../public/tastekin-media/quiet-tailoring.webp'));
   await expect(page.locator('[aria-label="Crop image"]')).toBeVisible();
   await page.getByRole('button', { name: 'Post Square' }).click();
   await page.getByRole('button', { name: 'Done' }).click();
   await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
-  await page.getByLabel('Caption (optional)', { exact: true }).fill('Unchanged photo flow');
+  await page.locator('textarea.unified-caption-input').fill('Unchanged photo flow');
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
 
@@ -584,15 +576,14 @@ test('the existing photo crop-and-publish flow is completely unchanged with vide
   expect(saved?.video).toBeUndefined();
 });
 
-// --- Phase 3B fixes: markCommitted timing, Preview lifecycle, Retry ---------
+// --- Phase 3B fixes: markCommitted timing, unified composer, Retry -----------
 
 test('a rejected publish leaves the composer open and the video uncommitted — closing the editor afterward still cancels it', async ({ page }) => {
   test.setTimeout(60000);
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   api.markReady(uploadId);
@@ -606,26 +597,21 @@ test('a rejected publish leaves the composer open and the video uncommitted — 
   expect(api.cancelledIds).not.toContain(uploadId);
   expect(api.workspace.edits.find((edit) => edit.video)).toBeUndefined();
 
-  await page.getByRole('button', { name: 'Close editor' }).click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
 });
 
-test('opening Preview while a video is mid-upload and returning to the composer preserves the upload — never abandons or re-uploads it', async ({ page }) => {
+test('Preview is absent while a video is mid-upload and the composer retains its upload state', async ({ page }) => {
   test.setTimeout(60000);
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   await expect(page.getByText(/Uploading…|Processing…/)).toBeVisible({ timeout: 8000 });
 
-  await page.getByRole('button', { name: 'Preview', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'This is how it will appear.' })).toBeVisible();
-  // Returning to the composer must not have unmounted the upload's own
-  // cleanup handler or abandoned the in-flight upload.
-  await page.getByRole('button', { name: 'Keep editing' }).click();
+  await expect(page.getByRole('button', { name: 'Preview', exact: true })).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
   await expect(page.getByText(/Uploading…|Processing…/)).toBeVisible();
   expect(api.cancelledIds).not.toContain(uploadId);
@@ -644,7 +630,6 @@ test('an interrupted upload is retried from the confirmed offset, reusing the sa
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
 
   // 12MB forces two chunks (8MB then 4MB). The fake never adds network
   // latency, so a "fail the very next PATCH" flag set only after the first
@@ -657,7 +642,7 @@ test('an interrupted upload is retried from the confirmed offset, reusing the sa
   api.failNextPatch(bunnyVideoId, 2);
 
   const fileSize = 12 * 1024 * 1024;
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', fileSize));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', fileSize));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   expect(api.uploads.get(uploadId)?.bunnyVideoId).toBe(bunnyVideoId);
@@ -694,12 +679,11 @@ test('a dropped TUS connection logs the real underlying error to the console ins
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
 
   const consoleErrors: string[] = [];
   page.on('console', (message) => { if (message.type() === 'error') consoleErrors.push(message.text()); });
 
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const bunnyVideoId = api.uploads.get('video-upload-1')!.bunnyVideoId;
   api.failNextPatch(bunnyVideoId);
@@ -713,8 +697,7 @@ test('a Retry that meets a 202 "still creating" response keeps polling with the 
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   const bunnyVideoId = api.uploads.get(uploadId)!.bunnyVideoId;
@@ -738,8 +721,7 @@ test('a PATCH answering 401 (expired authorization) is surfaced distinctly from 
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   const bunnyVideoId = api.uploads.get(uploadId)!.bunnyVideoId;
@@ -758,8 +740,7 @@ test('cancellation still works on a failed upload — Remove video clears it eve
   const api = new VideoUploadApi();
   await creatorPage(page, api);
   await openComposer(page);
-  await page.getByRole('tab', { name: 'Video' }).click();
-  await page.getByLabel('Add video').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('Add media').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   api.markFailed(uploadId);
@@ -767,19 +748,18 @@ test('cancellation still works on a failed upload — Remove video clears it eve
 
   await page.getByRole('button', { name: 'Remove video' }).click();
   await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
-  await expect(page.getByLabel('Add video')).toBeVisible();
+  await expect(page.getByLabel('Add media')).toBeVisible();
 });
 
 // --- 390×844 Arabic/RTL composer coverage -----------------------------------
 
-test('the video composer works end-to-end in Arabic/RTL at 390×844: tabs, upload, readiness, and publish', async ({ page }) => {
+test('the video composer works end-to-end in Arabic/RTL at 390×844: upload, readiness, and publish', async ({ page }) => {
   test.setTimeout(60000);
   const api = new VideoUploadApi();
   await creatorPage(page, api, { ar: true });
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
   await openComposer(page, { ar: true });
-  await page.getByRole('tab', { name: 'فيديو' }).click();
-  await page.getByLabel('أضف فيديو').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('أضف وسائط').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   api.markReady(uploadId);
@@ -795,8 +775,7 @@ test('a failed video in Arabic/RTL shows the localized error and Retry action, a
   const api = new VideoUploadApi();
   await creatorPage(page, api, { ar: true });
   await openComposer(page, { ar: true });
-  await page.getByRole('tab', { name: 'فيديو' }).click();
-  await page.getByLabel('أضف فيديو').setInputFiles(videoFile('clip.mp4', 1024));
+  await page.getByLabel('أضف وسائط').setInputFiles(videoFile('clip.mp4', 1024));
   await expect.poll(() => api.requestUploadCalls.length, { timeout: 4000 }).toBe(1);
   const uploadId = 'video-upload-1';
   api.markFailed(uploadId);
@@ -805,5 +784,5 @@ test('a failed video in Arabic/RTL shows the localized error and Retry action, a
 
   await page.getByRole('button', { name: 'إزالة الفيديو' }).click();
   await expect.poll(() => api.cancelledIds, { timeout: 4000 }).toContain(uploadId);
-  await expect(page.getByLabel('أضف فيديو')).toBeVisible();
+  await expect(page.getByLabel('أضف وسائط')).toBeVisible();
 });

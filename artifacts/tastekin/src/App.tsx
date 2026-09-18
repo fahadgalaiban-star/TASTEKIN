@@ -85,7 +85,7 @@ type CreatorEdit = {
 // without another data-model change.
 type CollectionUpload = { id: string; type: 'photo'; image: string; imageObjectPath?: string | null };
 type CreatorCollection = { id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; coverImage?: string; coverImageObjectPath?: string | null; editIds: string[]; uploads?: CollectionUpload[]; itemOrder?: string[] };
-type EditForm = Omit<CreatorEdit, 'id' | 'status'>;
+type EditForm = Omit<CreatorEdit, 'id' | 'status' | 'category'> & { category: Exclude<Category, 'All'> | '' };
 type CollectionForm = Omit<CreatorCollection, 'id'>;
 type EditEngagement = { editId: string; likeCount: number; commentCount: number; liked: boolean; saved: boolean };
 type EditComment = { id: string; editId: string; body: string; authorName: string; createdAt: string; canDelete: boolean };
@@ -118,7 +118,7 @@ const travelTabs: { id: TravelTab; en: string; ar: string }[] = [
   { id: 'Style', en: 'Style', ar: 'ستايل' },
 ];
 const travelTabCategory: Partial<Record<TravelTab, Exclude<Category, 'All'>>> = {
-  Trips: 'Travel', Food: 'Restaurants', Places: 'Places', Style: 'Fashion',
+  Trips: 'Travel', Stays: 'Decor', Food: 'Restaurants', Places: 'Places', Tips: 'DailyRoutine', Style: 'Fashion',
 };
 const media = (name: string) => `/tastekin-media/${name}`;
 const TASTE_SEAL_IMAGE = tasteSealImage;
@@ -182,7 +182,7 @@ function track(name: string, metadata: Record<string, unknown> = {}) {
 const imageSrc = (image?: string) => image?.startsWith('/objects/') ? `/api/storage${image}` : image || '';
 const cropAspectRatio = (_aspect?: CropAspect, crop?: CropMetadata) => crop?.outputWidth && crop?.outputHeight ? `${crop.outputWidth} / ${crop.outputHeight}` : _aspect === 'square' ? '1 / 1' : _aspect === 'story' ? '9 / 16' : '4 / 5';
 const placeCategories = new Set<CreatorEdit['category']>(['Restaurants', 'Places', 'Travel']);
-const isPlaceCategory = (category: CreatorEdit['category']) => placeCategories.has(category);
+const isPlaceCategory = (category: CreatorEdit['category'] | '') => category !== '' && placeCategories.has(category);
 const placeLocation = (edit: CreatorEdit, ar: boolean) => edit.locationLabel || (ar ? edit.locationAr || edit.location : edit.location || edit.locationAr);
 const isSafeMapsUrl = (value?: string | null) => {
   if (!value?.trim()) return false;
@@ -196,16 +196,17 @@ const isSafeMapsUrl = (value?: string | null) => {
     );
   } catch { return false; }
 };
-const blankEdit = (): EditForm => ({ category: 'Fashion', title: '', titleAr: '', caption: '', captionAr: '', location: '', locationAr: '', altText: '', access: 'public', collectionIds: [], placeName: null, locationLabel: null, mapsUrl: null, tasteRating: null, creatorReview: null });
+const blankEdit = (): EditForm => ({ category: '', title: '', titleAr: '', caption: '', captionAr: '', location: '', locationAr: '', altText: '', access: 'public', collectionIds: [], placeName: null, locationLabel: null, mapsUrl: null, tasteRating: null, creatorReview: null });
 const publishValidationMessage = (edit: EditForm | CreatorEdit, ar: boolean) => {
+  if (!edit.category) return ar ? 'اختر فئة قبل النشر.' : 'Choose a category before publishing.';
   if (edit.mapsUrl?.trim() && !isSafeMapsUrl(edit.mapsUrl)) return ar ? 'استخدم رابطًا صالحًا من خرائط Google أو Apple.' : 'Use a valid Google Maps or Apple Maps link.';
   const hasMedia = Boolean(edit.image) || Boolean(edit.video);
   if (!hasMedia && edit.access === 'locked') return ar ? 'التوصيات بلا صورة أو فيديو يجب أن تكون عامة لأن التعديلات الخاصة تحتاج معاينة محمية.' : 'Place recommendations with no photo or video must be public because subscriber-only edits need protected preview media.';
   if (hasMedia) return '';
   if (!isPlaceCategory(edit.category)) return ar ? 'أضف صورة أو فيديو، أو اختر المطاعم أو الأماكن أو السفر لتوصية بلا صورة.' : 'Add a photo or video, or choose Restaurants, Places, or Travel for a no-media recommendation.';
-  if (!edit.placeName?.trim()) return ar ? 'أضف اسم المكان لنشر توصية بلا صورة.' : 'Add the place name to publish a no-media recommendation.';
+  if (!edit.placeName?.trim()) return ar ? 'أضف صورة أو فيديو لنشر هذا التعديل.' : 'Add a photo or video to publish this Edit.';
   if (!edit.locationLabel?.trim()) return ar ? 'أضف موقعًا مقروءًا لنشر توصية بلا صورة.' : 'Add a readable location to publish a no-media recommendation.';
-  if (!edit.tasteRating && !edit.creatorReview?.trim()) return ar ? 'أضف تقييم الذوق أو مراجعتك الشخصية للنشر.' : 'Add a Taste Rating or your personal review to publish.';
+  if (!edit.tasteRating && !edit.creatorReview?.trim()) return ar ? 'أضف صورة أو فيديو لنشر هذا التعديل.' : 'Add a photo or video to publish this Edit.';
   return '';
 };
 const blankCollection = (): CollectionForm => ({ title: '', titleAr: '', description: '', descriptionAr: '', access: 'public', coverEditId: '', coverImage: '', coverImageObjectPath: null, editIds: [] });
@@ -1108,7 +1109,7 @@ function TastekinApp() {
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
-    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onBack={abandonComposer} onDraft={() => commitEdit('draft')} onDraftComplete={finishSavedCreatorFlow} onPreview={() => { const preview = { id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit; setSelectedEditId(preview.id); go('creatorPreview'); }} onPublish={publishEdit} />}
+    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onPublish={publishEdit} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} videoUpload={videoUpload} onBack={() => go('composer')} onPublish={publishEdit} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SimpleScreen kicker={t('Your library', 'مكتبتك')} title={t('Saved', 'المحفوظات')}><p>{t('Return to ideas when the moment is right.', 'عد إلى الأفكار عندما يحين وقتها.')}</p><div className="approved-feed">{publicFeedEdits.filter((item) => saved.includes(item.id)).map((item) => <EditCard key={item.id} edit={item} ar={ar} saved onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} />)}{!saved.length && <Empty text={t('Nothing saved yet. Explore creators and keep what speaks to you.', 'لا توجد محفوظات بعد. اكتشف المبدعين واحفظ ما يناسب ذوقك.')} />}</div></SimpleScreen>}
@@ -4958,21 +4959,32 @@ function videoPublishBlockReason(video: CreatorEditVideo | undefined, videoUploa
   return ar ? 'انتظر انتهاء معالجة الفيديو قبل النشر.' : 'Wait for the video to finish processing before publishing.';
 }
 
-function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUpload, onChange, onCropPrepared, onBack, onDraft, onDraftComplete, onPreview, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; videoUpload: VideoUploadController; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onBack: () => void; onDraft: () => Promise<boolean>; onDraftComplete: () => void; onPreview: () => void; onPublish: () => Promise<boolean> }) {
+function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUpload, onChange, onCropPrepared, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; videoUpload: VideoUploadController; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onPublish: () => Promise<boolean> }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [imageError, setImageError] = useState('');
   const [publishError, setPublishError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [pendingImage, setPendingImage] = useState<PreparedImage | null>(null);
-  const [draftState, setDraftState] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [mediaTab, setMediaTab] = useState<'photo' | 'video'>(form.video ? 'video' : 'photo');
+  const [showCollectionPicker, setShowCollectionPicker] = useState(false);
+  const [locationInput, setLocationInput] = useState(ar ? form.locationAr || form.location : form.location || form.locationAr);
   const update = <K extends keyof EditForm>(key: K, value: EditForm[K]) => onChange({ ...form, [key]: value });
-  const placeCategory = isPlaceCategory(form.category);
-  const selectImage = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; if (!file) return;
-    setProcessing(true); setImageError('');
-    try { setPendingImage(await prepareImage(file)); } catch (error) { setImageError(error instanceof Error ? error.message : t('Could not prepare your image.', 'تعذر تجهيز صورتك.')); event.target.value = ''; } finally { setProcessing(false); }
+  const selectMedia = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.type.startsWith('video/') || file.name.toLowerCase().endsWith('.mp4') || file.name.toLowerCase().endsWith('.mov')) {
+      event.target.value = '';
+      if (!videoUploadEnabled) {
+        setImageError(t('Video uploads are not available.', 'رفع الفيديو غير متاح.'));
+        return;
+      }
+      if (form.image || form.crop) onChange({ ...form, image: undefined, crop: undefined });
+      void videoUpload.select(file);
+    } else {
+      setProcessing(true); setImageError('');
+      try { setPendingImage(await prepareImage(file)); } catch (error) { setImageError(error instanceof Error ? error.message : t('Could not prepare your image.', 'تعذر تجهيز صورتك.')); event.target.value = ''; } finally { setProcessing(false); }
+    }
   };
+
   const confirmCrop = async (crop: CropMetadata) => {
     if (!pendingImage) return;
     setProcessing(true); setImageError('');
@@ -4984,12 +4996,6 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
       onCropPrepared({ source: pendingImage.file, crop: renditions.crop, preview: renditions.preview, cropMetadata: crop, cropUrl, previewUrl });
       URL.revokeObjectURL(pendingImage.url); setPendingImage(null);
     } catch (error) { setImageError(error instanceof Error ? error.message : t('Could not apply your crop.', 'تعذر تطبيق الاقتصاص.')); } finally { setProcessing(false); }
-  };
-  const selectVideo = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]; event.target.value = '';
-    if (!file) return;
-    if (form.image || form.crop) onChange({ ...form, image: undefined, crop: undefined });
-    void videoUpload.select(file);
   };
   const removeVideo = () => { void videoUpload.cancel(); onChange({ ...form, video: undefined }); };
   const videoStatusLabel = (() => {
@@ -5005,67 +5011,121 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
     }
   })();
   const tryPublish = async () => {
+    if (locationInput.trim() !== form.location.trim()) {
+      setPublishError(t('Confirm the location before publishing.', 'أكد الموقع قبل النشر.'));
+      return;
+    }
     const error = publishValidationMessage(form, ar) || videoPublishBlockReason(form.video, videoUpload, ar);
     if (error) { setPublishError(error); return; }
     setPublishError('');
     const saved = await onPublish();
-    // Only a CONFIRMED save hands cleanup responsibility away from this
-    // video — a rejected/failed publish (a 409 conflict, a network error,
-    // the server's own video ownership/readiness/limit checks) must keep
-    // the pagehide/back-navigation safety net armed, exactly like saveDraft
-    // below already does for the draft path.
     if (saved) videoUpload.markCommitted();
   };
-  const handleBack = () => { if (videoUpload.state.video && !videoUpload.state.committed) void videoUpload.cancel(); onBack(); };
-  const outfitItems = form.outfitItems || [];
-  const updateOutfit = (index: number, key: keyof OutfitItem, value: string) => update('outfitItems', outfitItems.map((item, itemIndex) => itemIndex === index ? { ...item, [key]: value } : item));
-  const changeCategory = (value: Exclude<Category, 'All'>) => onChange(isPlaceCategory(value) ? { ...form, category: value } : { ...form, category: value, placeName: null, locationLabel: null, mapsUrl: null, tasteRating: null, creatorReview: null });
+  const changeCategory = (value: Exclude<Category, 'All'>) => onChange({ ...form, category: value });
   const updatePlaceLocation = (value: string) => onChange({ ...form, locationLabel: value || null, location: value, locationAr: value });
-  const saveDraft = async () => {
-    if (processing || busy || draftState !== 'idle') return;
-    setDraftState('saving');
-    const saved = await onDraft();
-    if (!saved) { setDraftState('idle'); return; }
-    videoUpload.markCommitted();
-    setDraftState('saved');
-    window.setTimeout(onDraftComplete, 650);
-  };
+
   if (pendingImage) return <CropEditor ar={ar} source={pendingImage} initialCrop={form.crop} error={imageError} busy={processing} onCancel={() => { URL.revokeObjectURL(pendingImage.url); setPendingImage(null); }} onConfirm={confirmCrop} />;
+  const acceptMedia = `image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif${videoUploadEnabled ? ',video/mp4,video/quicktime' : ''}`;
+  const hasMedia = form.image || videoUpload.state.phase !== 'idle';
+  const composerTabs: { id: string; en: string; ar: string; backend: Exclude<Category, 'All'> }[] = [
+    { id: 'Trips', en: 'Trips', ar: 'رحلات', backend: 'Travel' },
+    { id: 'Stays', en: 'Stays', ar: 'إقامات', backend: 'Decor' },
+    { id: 'Food', en: 'Food', ar: 'طعام', backend: 'Restaurants' },
+    { id: 'Places', en: 'Places', ar: 'أماكن', backend: 'Places' },
+    { id: 'Tips', en: 'Tips', ar: 'نصائح', backend: 'DailyRoutine' },
+    { id: 'Style', en: 'Style', ar: 'ستايل', backend: 'Fashion' },
+  ];
+
   return <section className="creator-composer">
     <span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span>
-    <div className="composer-title"><h1 className="approved-title">{t('Create an Edit', 'أنشئ تعديلاً')}</h1><button className="approved-icon" onClick={handleBack} aria-label={t('Close editor', 'إغلاق المحرر')} disabled={busy}><X size={20} /></button></div>
-    {videoUploadEnabled && <div className="media-tab-toggle" role="tablist" aria-label={t('Media type', 'نوع الوسائط')}>
-      <button type="button" role="tab" aria-selected={mediaTab === 'photo'} className={mediaTab === 'photo' ? 'selected' : ''} onClick={() => setMediaTab('photo')} disabled={busy}><ImagePlus size={15} /> {t('Photo', 'صورة')}</button>
-      <button type="button" role="tab" aria-selected={mediaTab === 'video'} className={mediaTab === 'video' ? 'selected' : ''} onClick={() => setMediaTab('video')} disabled={busy}><VideoIcon size={15} /> {t('Video', 'فيديو')}</button>
-    </div>}
-    {(!videoUploadEnabled || mediaTab === 'photo') && <>
-      {form.image ? <label className="image-uploader" style={{ aspectRatio: cropAspectRatio(form.crop?.aspect, form.crop) }}><img src={imageSrc(form.image)} alt={form.altText || ''} /><span><ImagePlus size={18} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Edit crop', 'تعديل الاقتصاص')}</span><input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectImage} disabled={processing || busy} /></label> : <label className="no-photo-uploader"><ImagePlus size={22} /><span><strong>{processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Add a photo', 'أضف صورة')}</strong><small>{placeCategory ? t('Optional for this place recommendation', 'اختيارية لتوصية المكان هذه') : t('Required to publish this Edit', 'مطلوبة لنشر هذا التعديل')}</small></span><input aria-label={t('Add photo', 'أضف صورة')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectImage} disabled={processing || busy} /></label>}
-      {imageError && <p className="workspace-notice" role="alert">{imageError}</p>}
-    </>}
-    {videoUploadEnabled && mediaTab === 'video' && <>
-      {videoUpload.state.phase === 'idle' ? <label className="no-photo-uploader video-uploader-picker"><VideoIcon size={22} /><span><strong>{t('Add a video', 'أضف فيديو')}</strong><small>{t('MP4 or MOV, up to 10 minutes and 500MB. 9:16 (1080×1920) recommended — other ratios are accepted.', 'MP4 أو MOV، حتى 10 دقائق و500 ميغابايت. يُفضّل 9:16 (1080×1920) — النسب الأخرى مقبولة أيضاً.')}</small></span><input aria-label={t('Add video', 'أضف فيديو')} type="file" accept="video/mp4,video/quicktime" onChange={selectVideo} disabled={busy} /></label> : <div className="image-uploader video-uploader-status" style={{ aspectRatio: '9 / 16' }}>
+    <div className="composer-title"><h1 className="approved-title">{t('Create an Edit', 'إنشاء منشور')}</h1></div>
+    <div className="composer-unified-media">
+      {!hasMedia && <label className="unified-media-picker">
+        <ImagePlus size={32} />
+        <span>{processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Add photo or video', 'أضف صورة أو فيديو')}</span>
+        <input aria-label={t('Add media', 'أضف وسائط')} type="file" accept={acceptMedia} onChange={selectMedia} disabled={processing || busy} />
+      </label>}
+      {form.image && <label className="image-uploader" style={{ aspectRatio: cropAspectRatio(form.crop?.aspect, form.crop) }}>
+        <img src={imageSrc(form.image)} alt={form.altText || ''} />
+        <span><ImagePlus size={18} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Edit crop', 'تعديل الاقتصاص')}</span>
+        <input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept={acceptMedia} onChange={selectMedia} disabled={processing || busy} />
+      </label>}
+      {videoUploadEnabled && videoUpload.state.phase !== 'idle' && <div className="image-uploader video-uploader-status" style={{ aspectRatio: '9 / 16' }}>
         {videoUpload.state.posterUrl ? <img src={imageSrc(videoUpload.state.posterUrl)} alt="" /> : <div className="video-uploader-placeholder"><VideoIcon size={28} /></div>}
         <span className={`video-status-badge video-status-${videoUpload.state.phase}`}>{videoUpload.state.phase === 'uploading' && <span className="video-progress-bar"><span style={{ width: `${videoUpload.state.progressPercent}%` }} /></span>}{videoStatusLabel}</span>
       </div>}
-      {videoUpload.state.phase !== 'idle' && <div className="video-uploader-actions">
+      {videoUploadEnabled && videoUpload.state.phase !== 'idle' && <div className="video-uploader-actions">
         {videoUpload.state.phase === 'failed' && videoUpload.state.video && <button type="button" className="approved-button" onClick={() => { void videoUpload.retry(); }} disabled={busy}>{t('Retry upload', 'إعادة المحاولة')}</button>}
-        <label className="approved-button video-replace-label">{t('Replace video', 'استبدال الفيديو')}<input aria-label={t('Replace video', 'استبدال الفيديو')} type="file" accept="video/mp4,video/quicktime" onChange={selectVideo} disabled={busy || videoUpload.state.phase === 'cancelling'} /></label>
+        <label className="approved-button video-replace-label">{t('Replace video', 'استبدال الفيديو')}<input aria-label={t('Replace video', 'استبدال الفيديو')} type="file" accept={acceptMedia} onChange={selectMedia} disabled={busy || videoUpload.state.phase === 'cancelling'} /></label>
         <button type="button" className="approved-button" onClick={removeVideo} disabled={busy || videoUpload.state.phase === 'cancelling'}>{t('Remove video', 'إزالة الفيديو')}</button>
       </div>}
-    </>}
-    <Field label={t('Caption (optional)', 'الوصف (اختياري)')} value={form.caption} onChange={(value) => onChange({ ...form, caption: value, captionAr: value })} multiline placeholder={t('Share a thought, in any language…', 'شارك فكرة بأي لغة…')} />
-    <span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')} disabled={busy}><Eye size={16} />{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')} disabled={busy}><LockKeyhole size={16} />{t('Subscribers Only', 'للمشتركين فقط')}</button></div>
-    <details className="composer-details" open={placeCategory}><summary>{t('Add details', 'أضف تفاصيل')}</summary><div className="details-body">
-      <div className={`form-two ${placeCategory ? 'place-category-row' : ''}`}><SelectField label={t('Category', 'الفئة')} value={form.category} onChange={(value) => changeCategory(value as Exclude<Category, 'All'>)} options={categories.filter((item) => item.id !== 'All').map((item) => ({ value: item.id, label: ar ? item.ar : item.en }))} />{!placeCategory && <Field label={t('Location', 'الموقع')} value={ar ? form.locationAr : form.location} onChange={(value) => update(ar ? 'locationAr' : 'location', value)} placeholder="Kuwait City" />}</div>
-      {placeCategory && <div className="place-authoring" data-testid="place-edit-fields"><h2>{t('Place recommendation', 'توصية مكان')}</h2><p>{t('A photo is optional. A no-photo recommendation needs a place name, readable location, and a rating or review.', 'الصورة اختيارية. التوصية بلا صورة تحتاج اسم المكان والموقع وتقييماً أو مراجعة.')}</p><Field label={t('Place name', 'اسم المكان')} value={form.placeName || ''} onChange={(value) => update('placeName', value || null)} placeholder={t('e.g. The Lighthouse', 'مثال: ذا لايتهاوس')} /><Field label={t('Readable location', 'الموقع المقروء')} value={form.locationLabel || ''} onChange={updatePlaceLocation} placeholder={t('Kuwait City, Kuwait', 'مدينة الكويت، الكويت')} /><Field label={t('Google Maps or Apple Maps link (optional)', 'رابط خرائط Google أو Apple (اختياري)')} value={form.mapsUrl || ''} onChange={(value) => update('mapsUrl', value || null)} placeholder="https://maps.apple.com/…" /><span className="form-label">{t('Taste Rating (optional)', 'تقييم الذوق (اختياري)')}</span><div className="taste-rating-input" aria-label={t('Taste Rating', 'تقييم الذوق')}>{[1, 2, 3, 4, 5].map((rating) => <button type="button" key={rating} className={rating <= (form.tasteRating || 0) ? 'selected' : ''} onClick={() => update('tasteRating', form.tasteRating === rating ? null : rating)} aria-label={ar ? `${rating} من 5` : `${rating} out of 5`} aria-pressed={form.tasteRating === rating}><Link2 size={18} /></button>)}</div><Field label={t('Your review (optional)', 'مراجعتك الشخصية (اختيارية)')} value={form.creatorReview || ''} onChange={(value) => update('creatorReview', value || null)} multiline placeholder={t('What made it worth returning to?', 'ما الذي جعله يستحق العودة؟')} /></div>}
-      <span className="form-label">{t('Collection', 'المجموعة')}</span><div className="collection-checks">{collections.map((collection) => <button key={collection.id} className={form.collectionIds.includes(collection.id) ? 'selected' : ''} onClick={() => update('collectionIds', form.collectionIds.includes(collection.id) ? form.collectionIds.filter((id) => id !== collection.id) : [...form.collectionIds, collection.id])} disabled={busy}>{form.collectionIds.includes(collection.id) && <Check size={14} />}{ar ? collection.titleAr : collection.title}</button>)}</div>
-      <details className="nested-details"><summary>{t('Add outfit or product details', 'أضف تفاصيل الإطلالة أو المنتج')}</summary><div className="details-body"><label className="outfit-switch"><input type="checkbox" checked={Boolean(form.showOutfitDetails)} onChange={(event) => update('showOutfitDetails', event.target.checked)} /> {t('Show outfit details under this Edit', 'اعرض تفاصيل الإطلالة أسفل هذا التعديل')}</label>{outfitItems.map((item, index) => <div className="outfit-row" key={index}><input value={item.type} onChange={(event) => updateOutfit(index, 'type', event.target.value)} placeholder={t('Item type', 'نوع القطعة')} /><input value={item.brand} onChange={(event) => updateOutfit(index, 'brand', event.target.value)} placeholder={t('Brand or store', 'العلامة أو المتجر')} /><input value={item.name} onChange={(event) => updateOutfit(index, 'name', event.target.value)} placeholder={t('Product name', 'اسم المنتج')} /><input value={item.link} onChange={(event) => updateOutfit(index, 'link', event.target.value)} placeholder={t('Product link', 'رابط المنتج')} /></div>)}<button className="approved-button" type="button" onClick={() => update('outfitItems', [...outfitItems, { type: '', brand: '', name: '', link: '' }])}>{t('Add another item', 'أضف قطعة أخرى')}</button></div></details>
-    </div></details>
-    <details className="composer-details"><summary>{t('Accessibility & advanced', 'إمكانية الوصول والمتقدم')}</summary><div className="details-body"><Field label={t('Alt text', 'النص البديل')} value={form.altText} onChange={(value) => update('altText', value)} placeholder={t('Describe the image for everyone.', 'صف الصورة للجميع.')} /></div></details>
+      {imageError && <p className="workspace-notice" role="alert">{imageError}</p>}
+    </div>
+    <div className="composer-unified-form">
+      <span className="form-label">{t('Caption (optional)', 'الوصف (اختياري)')}</span>
+      <textarea className="unified-caption-input" value={form.caption} onChange={(event) => onChange({ ...form, caption: event.target.value, captionAr: event.target.value })} placeholder={t('Share a thought, in any language…', 'شارك فكرة بأي لغة…')} rows={3} />
+      <span className="form-label">{t('Category', 'الفئة')}</span>
+      <div className="composer-category-chips" role="radiogroup" aria-label={t('Category', 'الفئة')}>
+        {composerTabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="radio"
+            aria-checked={form.category === tab.backend}
+            className={form.category === tab.backend ? 'selected' : ''}
+            onClick={() => changeCategory(tab.backend)}
+            disabled={busy}
+          >
+            {ar ? tab.ar : tab.en}
+          </button>
+        ))}
+      </div>
+      <span className="form-label">{t('Location (optional)', 'الموقع (اختياري)')}</span>
+      <div className="unified-picker-box">
+        <MapPin size={20} />
+        <input
+          aria-label={t('Location', 'الموقع')}
+          type="text"
+          value={locationInput}
+          onChange={(event) => setLocationInput(event.target.value)}
+          placeholder={t('Place, city, or country', 'مكان أو مدينة أو دولة')}
+          disabled={busy}
+        />
+        {locationInput.trim() !== form.location.trim()
+          ? <button type="button" className="unified-confirm-btn" onClick={() => updatePlaceLocation(locationInput.trim())} disabled={!locationInput.trim() || busy}>{t('Confirm', 'تأكيد')}</button>
+          : locationInput && <button type="button" className="unified-clear-btn" aria-label={t('Clear location', 'مسح الموقع')} onClick={() => { setLocationInput(''); updatePlaceLocation(''); }} disabled={busy}><X size={16} /></button>}
+      </div>
+      <span className="form-label">{t('Collection (optional)', 'المجموعة (اختيارية)')}</span>
+      <button type="button" className="unified-picker-box clickable" aria-expanded={showCollectionPicker} onClick={() => setShowCollectionPicker(!showCollectionPicker)} disabled={busy}>
+        {form.collectionIds.length > 0 ? <Check size={20} /> : <PlusCircle size={20} />}
+        <span className="picker-text">
+          {form.collectionIds.length > 0
+            ? collections.filter((collection) => form.collectionIds.includes(collection.id)).map((collection) => ar ? collection.titleAr : collection.title).join(', ')
+            :
+            t('Add to a collection', 'أضف إلى مجموعة')
+          }
+        </span>
+        <ChevronRight size={20} />
+      </button>
+      {showCollectionPicker && <div className="collection-checks" style={{ marginTop: '8px' }}>
+        {collections.map((collection) => (
+          <button key={collection.id} type="button" className={form.collectionIds.includes(collection.id) ? 'selected' : ''} onClick={() => { update('collectionIds', form.collectionIds.includes(collection.id) ? form.collectionIds.filter((id) => id !== collection.id) : [...form.collectionIds, collection.id]); setShowCollectionPicker(false); }} disabled={busy}>
+            {form.collectionIds.includes(collection.id) && <Check size={14} />}
+            {ar ? collection.titleAr : collection.title}
+          </button>
+        ))}
+        {collections.length === 0 && <p className="composer-empty-collections">{t('No collections yet.', 'لا توجد مجموعات بعد.')}</p>}
+      </div>}
+    </div>
     {publishError && <p className="workspace-notice" role="alert">{publishError}</p>}
-    <div className="composer-actions"><button className={`approved-button ${draftState !== 'idle' ? 'primary' : ''}`} onClick={() => { void saveDraft(); }} disabled={processing || busy || draftState !== 'idle'}>{draftState === 'saving' ? t('Saving…', 'جارٍ الحفظ…') : draftState === 'saved' ? t('Draft saved ✓', 'تم حفظ المسودة ✓') : t('Save draft', 'حفظ كمسودة')}</button><button className="approved-button" onClick={onPreview} disabled={processing || busy || draftState !== 'idle'}>{t('Preview', 'معاينة')}</button><button className="approved-button primary" onClick={() => { void tryPublish(); }} disabled={processing || busy || draftState !== 'idle'}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Publish', 'نشر')}</button></div>
+    <div className="composer-publish-footer">
+      <button className="approved-button primary" onClick={() => { void tryPublish(); }} disabled={processing || busy}>
+        {busy ? t('Publishing...', 'جارٍ النشر...') : t('Publish', 'نشر')}
+      </button>
+    </div>
   </section>;
 }
+
 function Field({ label, value, onChange, placeholder, multiline = false, type = 'text' }: { label: string; value: string; onChange: (value: string) => void; placeholder: string; multiline?: boolean; type?: string }) { return <label className="form-field"><span>{label}</span>{multiline ? <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={3} /> : <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />}</label>; }
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: { value: string; label: string }[] }) { return <label className="form-field"><span>{label}</span><select value={value} onChange={(event) => onChange(event.target.value)}>{options.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label>; }
 function CreatorPreview({ ar, busy, edit, videoUpload, onBack, onPublish }: { ar: boolean; busy: boolean; edit: CreatorEdit; videoUpload: VideoUploadController; onBack: () => void; onPublish: () => Promise<boolean> }) {

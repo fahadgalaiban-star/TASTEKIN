@@ -27,7 +27,7 @@ type Workspace = {
   revision: number;
   updatedAt: string;
   edits: Edit[];
-  collections: unknown[];
+  collections: Array<{ id: string; title: string; titleAr: string; description: string; descriptionAr: string; access: Access; coverEditId: string; editIds: string[] }>;
 };
 type CreatorProfile = {
   displayName: string;
@@ -76,7 +76,16 @@ class PrivateCropApi {
     revision: 1,
     updatedAt: new Date().toISOString(),
     edits: [existingEdit],
-    collections: [],
+    collections: [{
+      id: 'field-notes',
+      title: 'Field Notes',
+      titleAr: 'ملاحظات ميدانية',
+      description: 'A small collection for field notes.',
+      descriptionAr: 'مجموعة صغيرة للملاحظات الميدانية.',
+      access: 'public',
+      coverEditId: 'existing-public-edit',
+      editIds: ['existing-public-edit'],
+    }],
   };
 
   readonly objectPaths: string[] = [];
@@ -222,7 +231,7 @@ class PrivateCropApi {
         this.workspace = {
           ...this.workspace,
           edits: payload.edits as Edit[],
-          collections: payload.collections as unknown[],
+          collections: payload.collections as Workspace['collections'],
           revision: this.workspace.revision + 1,
           updatedAt: new Date().toISOString(),
         };
@@ -324,15 +333,15 @@ class PrivateCropApi {
   }
 }
 
-async function creatorPage(browser: Browser, api: PrivateCropApi) {
-  const context = await browser.newContext();
+async function creatorPage(browser: Browser, api: PrivateCropApi, options: { ar?: boolean; viewport?: { width: number; height: number } } = {}) {
+  const context = await browser.newContext({ viewport: options.viewport });
   await context.addCookies([{ name: 'sid', value: ownerSession, url: 'http://127.0.0.1:23385' }]);
   const page = await context.newPage();
   await api.attach(page);
-  await page.goto('/');
+  await page.goto(options.ar ? '/?lang=ar' : '/');
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: options.ar ? 'مساء الخير، Fheed Alaiban.' : 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   return { context, page };
 }
 
@@ -354,14 +363,16 @@ async function prepareCrop(page: Page, format: CropFormat = cropFormats[0]) {
 }
 
 async function fillRequiredFields(page: Page, title: string) {
-  await page.getByLabel('Caption (optional)', { exact: true }).fill(title);
+  await page.locator('textarea.unified-caption-input').fill(title);
 }
 
-async function publish(page: Page, title: string, access: Access) {
+async function selectCategory(page: Page, category: 'Trips' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style' = 'Style') {
+  await page.getByRole('radio', { name: category, exact: true }).click();
+}
+
+async function publish(page: Page, title: string, category: 'Trips' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style' = 'Style') {
   await fillRequiredFields(page, title);
-  if (access === 'locked') {
-    await page.getByRole('button', { name: 'Subscribers Only' }).click();
-  }
+  await selectCategory(page, category);
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
 }
@@ -373,7 +384,7 @@ test('an authenticated creator persists each exact canonical crop format after p
   for (const format of cropFormats) {
     const title = `${format.aspect} crop survives refresh`;
     await prepareCrop(page, format);
-    await publish(page, title, 'public');
+    await publish(page, title, 'Style');
     expect(api.workspace.edits.find((edit) => edit.title === title)).toMatchObject({
       access: 'public',
       status: 'published',
@@ -398,18 +409,16 @@ test('an authenticated creator persists each exact canonical crop format after p
 
 test('anonymous visitors receive only a locked crop preview and cannot retrieve its source or crop', async ({ browser }) => {
   const api = new PrivateCropApi();
-  const owner = await creatorPage(browser, api);
-
-  await prepareCrop(owner.page);
-  await publish(owner.page, 'Locked crop stays private', 'locked');
-  const locked = api.workspace.edits.find((edit) => edit.title === 'Locked crop stays private');
-  expect(locked).toBeDefined();
-  expect(api.objectPaths.every((path) => api.uploadedPaths.has(path))).toBe(true);
-
-  await owner.page.reload();
-  await owner.page.getByTestId('nav-you').click();
-  await owner.page.getByTestId('open-creator-workspace').click();
-  await expect(owner.page.getByText('Locked crop stays private')).toBeVisible();
+  const locked: Edit = {
+    ...existingEdit,
+    id: 'seeded-locked-edit',
+    title: 'Locked crop stays private',
+    access: 'locked',
+    image: '/objects/uploads/seeded-crop',
+    sourceImage: '/objects/uploads/seeded-source',
+    previewImage: '/objects/uploads/seeded-preview',
+  };
+  api.workspace.edits.push(locked);
 
   const visitorContext = await browser.newContext();
   const visitor = await visitorContext.newPage();
@@ -429,7 +438,6 @@ test('anonymous visitors receive only a locked crop preview and cannot retrieve 
   expect(crop).toBe(404);
 
   await visitorContext.close();
-  await owner.context.close();
 });
 
 test('cancelling after a crop leaves no remote private renditions to clean up', async ({ browser }) => {
@@ -437,7 +445,7 @@ test('cancelling after a crop leaves no remote private renditions to clean up', 
   const { context, page } = await creatorPage(browser, api);
 
   await prepareCrop(page);
-  await page.getByLabel('Close editor').click();
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   expect(api.objectPaths).toEqual([]);
   expect(api.cleanupRequests).toEqual([]);
@@ -541,134 +549,114 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   await saving.context.close();
 });
 
-test('a no-photo restaurant recommendation validates, persists, and displays without media', async ({ browser }) => {
-  const api = new PrivateCropApi();
-  api.workspace.edits.push({
-    ...existingEdit,
-    id: 'draft-book-category',
-    category: 'Books',
-    title: 'Draft reading list',
-    caption: 'A draft that must not create a public profile category.',
-    status: 'draft',
-  });
-  const { context, page } = await creatorPage(browser, api);
-
-  await page.getByRole('button', { name: 'New Edit' }).click();
-  await page.getByText('Add details', { exact: true }).click();
-  await page.getByLabel('Category').selectOption('Restaurants');
-  await expect(page.getByTestId('place-edit-fields')).toBeVisible();
-  await expect(page.getByLabel('Location', { exact: true })).toHaveCount(0);
-  await page.getByLabel('Place name').fill('Alba Table');
-  await page.getByLabel('Readable location').fill('Kuwait City, Kuwait');
-  await page.getByLabel('Your review (optional)').fill('A quiet lunch I would return to for the bread and the light.');
-  await page.getByRole('button', { name: '4 out of 5' }).click();
-  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://maps.apple.com/?q=Alba+Table');
-  await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
-
-  const saved = api.workspace.edits.find((edit) => edit.placeName === 'Alba Table');
-  expect(saved).toMatchObject({ category: 'Restaurants', locationLabel: 'Kuwait City, Kuwait', tasteRating: 4 });
-  expect(saved).not.toHaveProperty('image');
-
-  await page.getByTestId('nav-home').click();
-  const homeCard = page.getByTestId(`edit-card-${saved!.id}`);
-  await expect(homeCard).toBeVisible();
-  await expect(homeCard.locator('img')).toHaveCount(0);
-  await expect(homeCard.getByTestId(`taste-rating-${saved!.id}`)).toBeVisible();
-  await expect(homeCard.getByText('TASTEKIN Taste Rating · 4/5')).toBeVisible();
-  await expect(homeCard.getByRole('link', { name: 'Open in Maps' })).toHaveAttribute('href', 'https://maps.apple.com/?q=Alba+Table');
-
-  await homeCard.locator('.place-card-main').click();
-  await expect(page.getByRole('heading', { name: 'Alba Table' })).toHaveCount(1);
-  await expect(page.getByText('A quiet lunch I would return to for the bread and the light.')).toBeVisible();
-  await expect(page.locator('.approved-detail-art')).toHaveCount(0);
-  await expect(page.locator('.place-detail-panel')).toBeVisible();
-
-  await page.getByTestId('nav-explore').click();
-  await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
-  await page.getByTestId('fheed-profile-mini').click();
-  // fheed-profile-mini opens this same signed-in creator's own OWNER view,
-  // which now shares the travel-first layout (cover, stats, travel tabs)
-  // with the visitor view — only Follow/Message/My Circle stay hidden.
-  await expect(page.getByTestId('profile-cover')).toBeVisible();
-  await expect(page.getByTestId('profile-travel-tab-All')).toBeVisible();
-  await expect(page.getByTestId('profile-travel-tab-Food')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
-  const profilePlaceCard = page.locator('.place-grid-card');
-  await expect(profilePlaceCard).toContainText('Alba Table');
-  await expect(profilePlaceCard).toContainText('Kuwait City, Kuwait');
-  await expect(profilePlaceCard).toContainText('A quiet lunch I would return to for the bread and the light.');
-  await expect(profilePlaceCard.locator('img')).toHaveCount(0);
-  const profileGrid = page.getByTestId('profile-edits-grid');
-  const cardDimensions = await profileGrid.locator('.approved-grid-card').evaluateAll((cards) => cards.slice(0, 2).map((card) => {
-    const { width, height } = card.getBoundingClientRect();
-    return { width, height };
-  }));
-  expect(cardDimensions).toHaveLength(2);
-  for (const card of cardDimensions) {
-    expect(card.height / card.width).toBeCloseTo(1.25, 1);
-  }
-  expect(cardDimensions[0].height).toBeCloseTo(cardDimensions[1].height, 1);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
-
-  await page.reload();
-  await page.getByTestId('nav-you').click();
-  await page.getByRole('button', { name: 'View profile' }).click();
-  // "View profile" alone still opens the OWNER view (Edit profile/Insights
-  // are visible above), which now also shows the travel tab row.
-  await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
-  await expect(page.getByTestId('profile-travel-tab-Food')).toBeVisible();
-  await page.getByTestId('nav-home').click();
-  await expect(page.getByTestId(`edit-card-${saved!.id}`)).toBeVisible();
-  await context.close();
-});
-
-test('a no-photo place edit blocks missing requirements and invalid map links', async ({ browser }) => {
+test('publishing requires a category chip', async ({ browser }) => {
   const api = new PrivateCropApi();
   const { context, page } = await creatorPage(browser, api);
 
   await page.getByRole('button', { name: 'New Edit' }).click();
-  await page.getByText('Add details', { exact: true }).click();
-  await page.getByLabel('Category').selectOption('Places');
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Add the place name');
-
-  await page.getByLabel('Place name').fill('A small gallery');
-  await page.getByLabel('Readable location').fill('Sharq, Kuwait');
-  await page.getByLabel('Your review (optional)').fill('A considered stop on a bright afternoon.');
-  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://example.com/not-maps');
-  await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('valid Google Maps or Apple Maps link');
-  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://maps.apple.com/?q=A+small+gallery');
-  await page.getByRole('button', { name: 'Subscribers Only', exact: true }).click();
-  await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('must be public');
+  await expect(page.getByRole('alert')).toContainText('Choose a category');
   expect(api.objectPaths).toEqual([]);
   await context.close();
 });
 
-test('a photo-based place edit retains the crop upload flow and renders its map details', async ({ browser }) => {
+test('the unified media picker accepts a crop and optional caption', async ({ browser }) => {
   const api = new PrivateCropApi();
   const { context, page } = await creatorPage(browser, api);
 
   await prepareCrop(page);
-  await page.getByText('Add details', { exact: true }).click();
-  await page.getByLabel('Category').selectOption('Travel');
-  await page.getByLabel('Place name').fill('Harbor House');
-  await page.getByLabel('Readable location').fill('The Aegean Coast');
-  await page.getByRole('button', { name: '5 out of 5' }).click();
-  await page.getByLabel('Google Maps or Apple Maps link (optional)').fill('https://www.google.com/maps/search/?api=1&query=Harbor+House');
-  await publish(page, 'A photo-backed place recommendation', 'public');
-
-  const saved = api.workspace.edits.find((edit) => edit.placeName === 'Harbor House');
+  await selectCategory(page, 'Trips');
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  const saved = api.workspace.edits.find((edit) => edit.crop?.aspect === 'portrait' && edit.id !== existingEdit.id);
+  expect(saved).toMatchObject({ category: 'Travel', caption: '', access: 'public', status: 'published' });
   expect(saved?.image).toMatch(/^\/objects\/uploads\//);
   expect(saved?.crop).toMatchObject({ aspect: 'portrait', outputWidth: 1080, outputHeight: 1350 });
   expect(api.objectPaths).toHaveLength(3);
+  await context.close();
+});
 
-  await page.getByTestId('nav-home').click();
-  const card = page.getByTestId(`edit-card-${saved!.id}`);
-  await expect(card.locator('img')).toHaveCount(1);
-  await expect(card.getByText('Harbor House')).toBeVisible();
-  await expect(card.getByRole('link', { name: 'Open in Maps' })).toHaveAttribute('href', 'https://www.google.com/maps/search/?api=1&query=Harbor+House');
+test('location changes require explicit confirmation before publishing', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+  await prepareCrop(page);
+  await page.getByLabel('Location', { exact: true }).fill('Kuwait City, Kuwait');
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('Confirm the location');
+  await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await publish(page, 'Confirmed location edit', 'Places');
+  expect(api.workspace.edits.find((edit) => edit.caption === 'Confirmed location edit')).toMatchObject({ location: 'Kuwait City, Kuwait', access: 'public' });
+  await context.close();
+});
+
+test('a published edit can optionally be associated with a collection', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+  await prepareCrop(page);
+  await selectCategory(page, 'Style');
+  await fillRequiredFields(page, 'Collection edit');
+  await page.getByRole('button', { name: /Add to a collection/ }).click();
+  await page.getByRole('button', { name: 'Field Notes', exact: true }).click();
+  await expect(page.locator('.collection-checks')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Field Notes/ }).locator('.lucide-check')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  expect(api.workspace.edits.find((edit) => edit.caption === 'Collection edit')?.collectionIds).toContain('field-notes');
+  await context.close();
+});
+
+test('the create flow stays within a 390px viewport', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'New Edit' }).click();
+  await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await context.close();
+});
+
+test('captures the three approved Create Edit review states at exactly 390×844', async ({ browser }) => {
+  const viewport = { width: 390, height: 844 };
+  const api = new PrivateCropApi();
+  const english = await creatorPage(browser, api, { viewport });
+  await english.page.getByRole('button', { name: 'New Edit' }).click();
+  await expect(english.page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+  await english.page.screenshot({ path: 'test-results/create-edit-empty-390x844.png' });
+
+  await english.page.getByLabel('Add media').setInputFiles(imagePath);
+  await english.page.getByRole('button', { name: 'Post Portrait' }).click();
+  await english.page.getByRole('button', { name: 'Done' }).click();
+  await selectCategory(english.page, 'Food');
+  await english.page.getByLabel('Location', { exact: true }).fill('Paris, France');
+  await english.page.getByRole('button', { name: 'Confirm', exact: true }).click();
+  await english.page.getByRole('button', { name: /Add to a collection/ }).click();
+  await english.page.getByRole('button', { name: 'Field Notes', exact: true }).click();
+  await english.page.getByRole('button', { name: 'Publish', exact: true }).scrollIntoViewIfNeeded();
+  await english.page.screenshot({ path: 'test-results/create-edit-configured-390x844.png' });
+  await english.context.close();
+
+  const arabicApi = new PrivateCropApi();
+  const arabic = await creatorPage(browser, arabicApi, { ar: true, viewport });
+  await arabic.page.getByRole('button', { name: 'تعديل جديد' }).click();
+  await expect(arabic.page.getByRole('heading', { name: 'إنشاء منشور' })).toBeVisible();
+  await expect(arabic.page.locator('html')).toHaveAttribute('dir', 'rtl');
+  await arabic.page.screenshot({ path: 'test-results/create-edit-arabic-rtl-390x844.png' });
+  await arabic.context.close();
+});
+
+test('profile category filtering shows published edits end to end', async ({ browser }) => {
+  const api = new PrivateCropApi();
+  const { context, page } = await creatorPage(browser, api);
+  await prepareCrop(page);
+  await publish(page, 'Fresh food edit', 'Food');
+  const foodEdit = api.workspace.edits.find((edit) => edit.caption === 'Fresh food edit');
+  expect(foodEdit).toMatchObject({ category: 'Restaurants', access: 'public', status: 'published' });
+
+  await page.getByTestId('nav-explore').click();
+  await page.getByTestId('fheed-profile-mini').click();
+  await expect(page.getByTestId('profile-travel-tab-Food')).toBeVisible();
+  await page.getByTestId('profile-travel-tab-Food').click();
+  await expect(page.getByText('Fresh food edit')).toBeVisible();
+  await expect(page.getByText('Existing public edit')).toHaveCount(0);
   await context.close();
 });
