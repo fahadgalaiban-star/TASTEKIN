@@ -986,7 +986,7 @@ components:
             pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'
     CreatorProfileSettings:
       type: object
-      required: [displayName, username, bio, city, country, interests, avatar, age, dateOfBirth, showAge, verified, avatarObjectPath, revision]
+      required: [displayName, username, bio, city, country, interests, avatar, age, dateOfBirth, showAge, verified, avatarObjectPath, coverImage, coverImageObjectPath, revision]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 80 }
         username: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-z0-9_]+$' }
@@ -1004,6 +1004,11 @@ components:
         # a 500.
         avatar: { type: string, maxLength: 1024 }
         avatarObjectPath: { type: ["string", "null"], maxLength: 1024 }
+        # Same empty-string-until-uploaded contract as avatar above: a
+        # profile with no cover yet is coverImage: "" (frontend shows the
+        # neutral gradient fallback), not a null/missing field.
+        coverImage: { type: string, maxLength: 1024 }
+        coverImageObjectPath: { type: ["string", "null"], maxLength: 1024 }
         age: { type: ["number", "null"], format: int32, minimum: 13, maximum: 120 }
         dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
         showAge: { type: boolean }
@@ -1011,7 +1016,7 @@ components:
         revision: { type: number, format: int32, minimum: 1 }
     CreatorProfileInput:
       type: object
-      required: [displayName, username, bio, city, country, interests, dateOfBirth, showAge, avatarObjectPath]
+      required: [displayName, username, bio, city, country, interests, dateOfBirth, showAge, avatarObjectPath, coverImageObjectPath]
       properties:
         displayName: { type: string, minLength: 1, maxLength: 80 }
         username: { type: string, minLength: 3, maxLength: 30, pattern: '^[a-z0-9_]+$' }
@@ -1025,6 +1030,10 @@ components:
         dateOfBirth: { type: ["string", "null"], pattern: '^\d{4}-\d{2}-\d{2}$' }
         showAge: { type: boolean }
         avatarObjectPath:
+          type: ["string", "null"]
+          maxLength: 1024
+          pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'
+        coverImageObjectPath:
           type: ["string", "null"]
           maxLength: 1024
           pattern: '^/objects/uploads/[0-9a-fA-F-]{36}$'

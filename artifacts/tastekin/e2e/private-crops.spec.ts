@@ -38,6 +38,8 @@ type CreatorProfile = {
   interests: string[];
   avatar: string;
   avatarObjectPath: string | null;
+  coverImage: string;
+  coverImageObjectPath: string | null;
   age: number | null;
   dateOfBirth: string | null;
   showAge: boolean;
@@ -90,6 +92,8 @@ class PrivateCropApi {
     interests: ['Fashion', 'Travel', 'Places'],
     avatar: '/tastekin-media/fheed-profile.webp',
     avatarObjectPath: null,
+    coverImage: '',
+    coverImageObjectPath: null,
     age: null,
     dateOfBirth: null,
     showAge: false,
@@ -229,7 +233,7 @@ class PrivateCropApi {
 
     if (url.pathname === '/api/creator-profile') {
       if (request.method() === 'GET') {
-        await route.fulfill({ json: owner ? { ...this.profile, revision: this.workspace.revision } : { ...this.profile, dateOfBirth: null, avatarObjectPath: null, revision: this.workspace.revision } });
+        await route.fulfill({ json: owner ? { ...this.profile, revision: this.workspace.revision } : { ...this.profile, dateOfBirth: null, avatarObjectPath: null, coverImageObjectPath: null, revision: this.workspace.revision } });
         return;
       }
       if (request.method() === 'PUT') {
@@ -237,14 +241,17 @@ class PrivateCropApi {
           await route.fulfill({ status: 403, json: { error: 'Only the verified Fheed creator can update this profile' } });
           return;
         }
-        const payload = this.requestBody(route) as Omit<CreatorProfile, 'avatar' | 'age' | 'verified'>;
+        const payload = this.requestBody(route) as Omit<CreatorProfile, 'avatar' | 'coverImage' | 'age' | 'verified'>;
         const avatarObjectPath = payload.avatarObjectPath ?? this.profile.avatarObjectPath;
+        const coverImageObjectPath = payload.coverImageObjectPath ?? this.profile.coverImageObjectPath;
         this.workspace = { ...this.workspace, revision: this.workspace.revision + 1, updatedAt: new Date().toISOString() };
         this.profile = {
           ...this.profile,
           ...payload,
           avatarObjectPath,
           avatar: avatarObjectPath ? '/api/public-profile-media/fheed' : this.profile.avatar,
+          coverImageObjectPath,
+          coverImage: coverImageObjectPath ? '/api/public-profile-media/fheed/cover' : this.profile.coverImage,
           age: payload.showAge && payload.dateOfBirth ? 30 : null,
           revision: this.workspace.revision,
         };
@@ -291,6 +298,11 @@ class PrivateCropApi {
 
     if (url.pathname === '/api/public-profile-media/fheed') {
       await this.image(route, this.profile.avatarObjectPath && !this.cleanedPaths.has(this.profile.avatarObjectPath) ? 200 : 404);
+      return;
+    }
+
+    if (url.pathname === '/api/public-profile-media/fheed/cover') {
+      await this.image(route, this.profile.coverImageObjectPath && !this.cleanedPaths.has(this.profile.coverImageObjectPath) ? 200 : 404);
       return;
     }
 

@@ -167,12 +167,12 @@ async function main() {
       const unique = `caseproof-${suffix}`;
       await db.insert(creatorWorkspaces).values({
         creatorId: `verify-onboarding-${suffix}-1`, ownerUserId: null, edits: [], collections: [],
-        profile: { displayName: "X", username: unique, bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatar: "" },
+        profile: { displayName: "X", username: unique, bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatar: "", coverImage: "" },
       });
       await assert.rejects(
         db.insert(creatorWorkspaces).values({
           creatorId: `verify-onboarding-${suffix}-2`, ownerUserId: null, edits: [], collections: [],
-          profile: { displayName: "Y", username: unique.toUpperCase(), bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatar: "" },
+          profile: { displayName: "Y", username: unique.toUpperCase(), bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatar: "", coverImage: "" },
         }),
         (error: unknown) => {
           const message = String((error as { message?: unknown })?.message ?? error);

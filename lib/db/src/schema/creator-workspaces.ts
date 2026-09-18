@@ -11,6 +11,7 @@ export type CreatorProfileRecord = {
   dateOfBirth: string | null;
   showAge: boolean;
   avatar: string;
+  coverImage: string;
 };
 
 export const creatorWorkspaces = pgTable("creator_workspaces", {

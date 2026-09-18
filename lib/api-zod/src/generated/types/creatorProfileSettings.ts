@@ -37,6 +37,13 @@ export interface CreatorProfileSettings {
      * @nullable
      */
   avatarObjectPath: string | null;
+  /** @maxLength 1024 */
+  coverImage: string;
+  /**
+     * @maxLength 1024
+     * @nullable
+     */
+  coverImageObjectPath: string | null;
   /**
      * @minimum 13
      * @maximum 120
