@@ -212,10 +212,27 @@ const blankCollection = (): CollectionForm => ({ title: '', titleAr: '', descrip
 function collectionCoverImage(collection: CreatorCollection, edits: CreatorEdit[]) {
   if (collection.coverImage) return collection.coverImage;
   const chosen = collection.coverEditId ? edits.find((edit) => edit.id === collection.coverEditId) : undefined;
-  const first = chosen || edits.find((edit) => edit.id === collection.editIds[0]) || edits[0];
+  const first = chosen || edits.find((edit) => edit.id === collection.editIds[0]);
   if (first) return first.image || media('quiet-tailoring.webp');
   const firstUpload = collection.uploads?.[0];
   return firstUpload?.image || media('quiet-tailoring.webp');
+}
+
+/**
+ * A collection whose only available cover comes from a locked Edit has no
+ * real (unblurred) photo to show here — that Edit's own `image` is already
+ * the blurred/dark subscriber preview, never the source photo. Rather than
+ * render that as this collection's cover (which would read as a paywall
+ * treatment), the compact Featured collections strip skips it entirely. An
+ * explicit `collection.coverImage` (an uploaded cover) is always a normal,
+ * visible photo and is never hidden by this check.
+ */
+function collectionHasVisibleCover(collection: CreatorCollection, edits: CreatorEdit[]) {
+  if (collection.coverImage) return true;
+  const chosen = collection.coverEditId ? edits.find((edit) => edit.id === collection.coverEditId) : undefined;
+  const first = chosen || edits.find((edit) => edit.id === collection.editIds[0]);
+  if (first) return Boolean(first.image) && first.access !== 'locked';
+  return Boolean(collection.uploads?.[0]?.image);
 }
 
 function Price({ ar, withVerb = true }: { ar: boolean; withVerb?: boolean }) { return ar ? <>{withVerb && 'اشترك · '}<bdi dir="ltr">19.99</bdi> دولار شهريًا</> : <>{withVerb && 'Subscribe · '}$19.99 / month</>; }
@@ -346,7 +363,6 @@ function TastekinApp() {
   const [authError] = useState<string | null>(() => new URLSearchParams(location.search).get('authError'));
   const [screen, setScreen] = useState<Screen>(() => passwordResetToken || authError ? 'auth' : 'home');
   const editReturnScreenRef = useRef<Screen>('home');
-  const [exploreCategory, setExploreCategory] = useState<Category>('All');
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
   useEffect(() => {
     if (!myCircleEnabled && homeFeedTab === 'my-circle') setHomeFeedTab('for-you');
@@ -679,10 +695,7 @@ function TastekinApp() {
     },
     [publicCreatorCollections, publicFeaturedCollectionIds],
   );
-  const exploreEdits = useMemo(() => {
-    const source = publicFeedEdits.length ? publicFeedEdits : published;
-    return exploreCategory === 'All' ? source : source.filter((item) => item.category === exploreCategory);
-  }, [exploreCategory, publicFeedEdits, published]);
+  const exploreEdits = useMemo(() => publicFeedEdits.length ? publicFeedEdits : published, [publicFeedEdits, published]);
   const { data: circleMembers = [], isLoading: circleMembersLoading, error: circleMembersError, refetch: refetchCircleMembers } = useListCircleMembers({
     query: {
       enabled: myCircleEnabled && session.status === 'authenticated' && homeFeedTab === 'my-circle',
@@ -1091,7 +1104,7 @@ function TastekinApp() {
         {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}
       </div>
     </>}
-    {screen === 'explore' && <ExploreScreen ar={ar} category={exploreCategory} setCategory={setExploreCategory} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
+    {screen === 'explore' && <ExploreScreen ar={ar} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
@@ -1102,12 +1115,12 @@ function TastekinApp() {
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.featureFlags.my_things === true && <button data-testid="open-my-things" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('myThings')}>{t('My Things', 'أغراضي')}</button>}{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('add')}>{t('Creator workspace', 'مساحة المبدع')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={viewedCreatorProfile.verified ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
-     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
+     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><ProfileSectionTabs ar={ar} active="collections" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} canView={isCollectionOwnerView || !publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
-    {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
+    {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><ProfileSectionTabs ar={ar} active="about" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
     {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
@@ -1149,7 +1162,7 @@ function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorPro
   useEffect(() => setImageFailed(false), [image]);
   return <div className="approved-avatar">{image && !imageFailed ? <img src={image} alt={profile.displayName} onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{initials}</span>}</div>;
 }
-function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, onOpenProfile, onOpenEdit, onSignIn }: { ar: boolean; category: Category; setCategory: (c: Category) => void; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void; onSignIn: () => void }) {
+function ExploreScreen({ ar, saved, toggleSaved, edits, onOpenProfile, onOpenEdit, onSignIn }: { ar: boolean; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void; onSignIn: () => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
   const [query, setQuery] = useState('');
   const [debouncedQuery, setDebouncedQuery] = useState('');
@@ -1157,14 +1170,13 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
     const timeout = window.setTimeout(() => {
       const trimmed = query.trim();
       setDebouncedQuery(trimmed);
-      // Never the raw search text — only whether a search was performed and
-      // which category filter (if any) was active alongside it.
-      if (trimmed) track('explore_search_performed', { hasQuery: true, category: category === 'All' ? null : category });
+      // Never the raw search text — only whether a search was performed.
+      if (trimmed) track('explore_search_performed', { hasQuery: true, category: null });
     }, 300);
     return () => window.clearTimeout(timeout);
-  }, [query, category]);
+  }, [query]);
   const session = useTasteSession();
-  const exploreParams = { sort, category: category === 'All' ? undefined : category, q: debouncedQuery || undefined };
+  const exploreParams = { sort, q: debouncedQuery || undefined };
   const { data, isLoading } = useExplore(exploreParams, {
     query: { queryKey: getExploreQueryKey(exploreParams), enabled: session.status !== 'loading', refetchOnMount: 'always', refetchOnWindowFocus: true, staleTime: 0 },
     request: { credentials: 'include', cache: 'no-store' },
@@ -1200,8 +1212,6 @@ function ExploreScreen({ ar, category, setCategory, saved, toggleSaved, edits, o
         <button className={sort === 'best' ? 'selected' : ''} onClick={() => setSort('best')}>{t('Best Match', 'أفضل تطابق')}</button>
         <button className={sort === 'new' ? 'selected' : ''} onClick={() => setSort('new')}>{t('New', 'الأحدث')}</button>
       </div>
-
-      <CategoryChips ar={ar} active={category} onSelect={setCategory} />
 
       {isLoading && <div className="approved-empty">{t('Loading...', 'جارٍ التحميل...')}</div>}
       
@@ -4239,20 +4249,37 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
   </SimpleScreen>;
 }
 
+/**
+ * The Edits / Collections / About tab row that sits on every profile
+ * section — it must stay visible and usable no matter which of the three
+ * is currently open, so it's shared verbatim by Profile itself and by the
+ * dedicated Collections/About screens it links to.
+ */
+function ProfileSectionTabs({ ar, active, onEdits, onCollections, onAbout }: { ar: boolean; active: 'edits' | 'collections' | 'about'; onEdits?: () => void; onCollections: () => void; onAbout: () => void }) {
+  return <div className="approved-tabs">
+    <button type="button" className={active === 'edits' ? 'active' : ''} onClick={onEdits}>{ar ? 'التعديلات' : 'Edits'}</button>
+    <button type="button" className={active === 'collections' ? 'active' : ''} onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button>
+    <button type="button" className={active === 'about' ? 'active' : ''} onClick={onAbout}>{ar ? 'حول' : 'About'}</button>
+  </div>;
+}
 function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, circleBusy, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onToggleCircle, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onAbout, onMatch, onSignIn, onBlocked, onUploadCover, coverUploadBusy }: { ar: boolean; owner: boolean; ownerView: boolean; visitorPreview: boolean; following: boolean; inCircle: boolean; circleBusy: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onToggleCircle: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onAbout: () => void; onMatch: () => void; onSignIn: () => void; onBlocked: () => void; onUploadCover: (file: File) => void; coverUploadBusy: boolean }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const myCircleEnabled = session.featureFlags.my_circle === true;
   const [sealOpen, setSealOpen] = useState(false);
-  const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
+  // This Profile presentation — the Edits grid and the Featured collections
+  // strip alike — never shows anything but public, published Edits, for
+  // owner and visitor alike. Locked/subscriber Edits stay excluded entirely
+  // rather than rendered with a paywall label or a dark/blurred placeholder.
+  const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published' && edit.access === 'public'), [edits]);
+  const visibleFeaturedCollections = useMemo(() => featuredCollections.filter((collection) => collectionHasVisibleCover(collection, publishedEdits)), [featuredCollections, publishedEdits]);
   useEffect(() => {
     if (ownerView || !profile.username) return;
     void fetch(`/api/creators/${encodeURIComponent(profile.username)}/views`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId: null }) });
   }, [ownerView, profile.username]);
 
   // Travel-first visitor redesign — derived entirely from this creator's own
-  // published Edits, never fabricated or hardcoded. See travelStats below
-  // for the honest limits of what the current data model can compute.
+  // published Edits, never fabricated or hardcoded.
   const [activeTravelTab, setActiveTravelTab] = useState<TravelTab>('All');
   useEffect(() => setActiveTravelTab('All'), [profile.username]);
   const travelEdits = useMemo(() => {
@@ -4260,23 +4287,6 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     const mapped = travelTabCategory[activeTravelTab];
     return mapped ? publishedEdits.filter((edit) => edit.category === mapped) : [];
   }, [publishedEdits, activeTravelTab]);
-  // Trips is exact (published Travel-category Edits). Cities counts each
-  // distinct free-text `location` a creator has written on a published
-  // Edit — real content, never a placeholder. Countries has no dedicated
-  // field anywhere in the schema (only a single freeform location string
-  // per Edit, inconsistently formatted as "City, Country" or just a place
-  // name, e.g. "Mayfair, London") — guessing it from that string risks a
-  // confidently wrong number, so it is intentionally left unset (rendered
-  // as "—") until a real per-Edit country field exists.
-  const travelStats = useMemo(() => {
-    const trips = publishedEdits.filter((edit) => edit.category === 'Travel').length;
-    const cityNames = new Set<string>();
-    for (const edit of publishedEdits) {
-      const location = (edit.location || edit.locationAr || '').trim();
-      if (location) cityNames.add(location);
-    }
-    return { trips, cities: cityNames.size };
-  }, [publishedEdits]);
   const profileLocation = [profile.city, profile.country].filter(Boolean).join(', ');
   const tasteSummary = profile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ');
   const { data: matchData } = useGetTasteMatch(profile.username, {
@@ -4303,100 +4313,109 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
         <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" disabled={coverUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadCover(file); event.target.value = ''; }} />
       </label>}
     </div>
-    <div className="approved-profile-head">
-      <Avatar profile={profile} />
-      <div className="profile-head-copy">
-        <div className="approved-name">
-          <h1>{profile.displayName}</h1>
-          {profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
+    <div className="profile-head-row">
+      <div className="profile-head-left">
+        <Avatar profile={profile} />
+        <div className="profile-head-copy">
+          <div className="approved-name">
+            <h1>{profile.displayName}</h1>
+            {profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
+          </div>
+          <span className="profile-handle"><bdi dir="ltr">@{profile.username}</bdi></span>
+          {profileLocation && <span className="profile-location"><MapPin size={13} aria-hidden="true" /><span className="profile-location-text">{profileLocation}</span></span>}
         </div>
-        <span className="profile-handle"><bdi dir="ltr">@{profile.username}</bdi></span>
-        {profileLocation && <span className="profile-location"><MapPin size={13} />{profileLocation}</span>}
+      </div>
+      <div className="profile-head-right">
+        {!ownerView ? (
+          <Drawer.Root>
+            <Drawer.Trigger asChild>
+               <button className="approved-match">
+                  {score != null
+                    ? (ar ? `تطابق ذوق ${score}٪` : `${score}% Taste Match`)
+                    : matchData?.match?.state === 'incomplete'
+                      ? (ar ? 'أكمل ملف ذوقك' : 'Build your taste profile')
+                      : (ar ? 'سجّل الدخول لاكتشاف تطابق ذوقك' : 'Sign in to discover your Taste Match')}
+              </button>
+            </Drawer.Trigger>
+            <Drawer.Portal>
+              <Drawer.Overlay className="approved-drawer-overlay" />
+              <Drawer.Content className="approved-drawer-content">
+                <div className="approved-drawer-handle" />
+                <h2 className="approved-title" style={{ margin: '0 0 16px', fontSize: 22 }}>{ar ? 'لماذا يتطابق ذوقكما' : 'Why you match'}</h2>
+
+                {score != null && (
+                  <div style={{ marginBottom: 20, textAlign: 'center' }}>
+                    <strong style={{ fontSize: 42, color: 'var(--tk-wine)' }}>{score}%</strong>
+                  </div>
+                )}
+
+                {matchData?.match?.explanation && (
+                  <p style={{ color: 'var(--tk-stone)', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
+                    {ar ? matchData.match.explanationAr : matchData.match.explanation}
+                  </p>
+                )}
+
+                {matchData?.match?.sharedTastes && matchData.match.sharedTastes.length > 0 && (
+                  <div style={{ marginBottom: 24 }}>
+                    <h3 style={{ fontSize: 14, marginBottom: 12, color: 'var(--tk-ink)' }}>{ar ? 'اهتمامات مشتركة' : 'Shared tastes'}</h3>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {matchData.match.sharedTastes.map(taste => (
+                        <div key={taste.id} className="approved-panel match" style={{ margin: 0 }}>
+                          <strong>{ar ? taste.labelAr : taste.label}</strong>
+                          <b><Check size={18} /></b>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                 <button className="approved-button wide" onClick={() => matchData?.match?.state === 'signed_out' ? onSignIn() : onMatch()}>
+                   {matchData?.match?.state === 'signed_out'
+                     ? (ar ? 'تسجيل الدخول' : 'Sign in')
+                     : (ar ? 'ضبط ذوقك' : 'Tune my taste')}
+                </button>
+              </Drawer.Content>
+            </Drawer.Portal>
+          </Drawer.Root>
+         ) : (
+           <button className="approved-match" data-testid="profile-tune-taste" onClick={onMatch}>
+             {ar ? 'ضبط ذوقك' : 'Tune your taste'}
+           </button>
+         )}
+        <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>
+          {ownerView ? <>
+            <button className="approved-button primary profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
+            <button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={18} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
+            <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} />
+          </> : <>
+            <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
+            {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
+            {myCircleEnabled && !owner && <div className="profile-circle-control"><button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button><span className="profile-circle-label">{ar ? 'دائرتي' : 'My Circle'}</span></div>}
+            {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
+          </>}
+        </div>
       </div>
     </div>
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
     {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
-
-  {!ownerView ? (
-    <Drawer.Root>
-      <Drawer.Trigger asChild>
-         <button className="approved-match">
-            {score != null
-              ? (ar ? `تطابق ذوق ${score}٪` : `${score}% Taste Match`)
-              : matchData?.match?.state === 'incomplete'
-                ? (ar ? 'أكمل ملف ذوقك' : 'Build your taste profile')
-                : (ar ? 'سجّل الدخول لاكتشاف تطابق ذوقك' : 'Sign in to discover your Taste Match')}
-        </button>
-      </Drawer.Trigger>
-      <Drawer.Portal>
-        <Drawer.Overlay className="approved-drawer-overlay" />
-        <Drawer.Content className="approved-drawer-content">
-          <div className="approved-drawer-handle" />
-          <h2 className="approved-title" style={{ margin: '0 0 16px', fontSize: 22 }}>{ar ? 'لماذا يتطابق ذوقكما' : 'Why you match'}</h2>
-          
-          {score != null && (
-            <div style={{ marginBottom: 20, textAlign: 'center' }}>
-              <strong style={{ fontSize: 42, color: 'var(--tk-wine)' }}>{score}%</strong>
-            </div>
-          )}
-
-          {matchData?.match?.explanation && (
-            <p style={{ color: 'var(--tk-stone)', fontSize: 13, lineHeight: 1.5, marginBottom: 20 }}>
-              {ar ? matchData.match.explanationAr : matchData.match.explanation}
-            </p>
-          )}
-
-          {matchData?.match?.sharedTastes && matchData.match.sharedTastes.length > 0 && (
-            <div style={{ marginBottom: 24 }}>
-              <h3 style={{ fontSize: 14, marginBottom: 12, color: 'var(--tk-ink)' }}>{ar ? 'اهتمامات مشتركة' : 'Shared tastes'}</h3>
-              <div style={{ display: 'grid', gap: 8 }}>
-                {matchData.match.sharedTastes.map(taste => (
-                  <div key={taste.id} className="approved-panel match" style={{ margin: 0 }}>
-                    <strong>{ar ? taste.labelAr : taste.label}</strong>
-                    <b><Check size={18} /></b>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-           <button className="approved-button wide" onClick={() => matchData?.match?.state === 'signed_out' ? onSignIn() : onMatch()}>
-             {matchData?.match?.state === 'signed_out'
-               ? (ar ? 'تسجيل الدخول' : 'Sign in')
-               : (ar ? 'ضبط ذوقك' : 'Tune my taste')}
-          </button>
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
-   ) : (
-     <button className="approved-match" data-testid="profile-tune-taste" onClick={onMatch}>
-       {ar ? 'ضبط ذوقك' : 'Tune your taste'}
-     </button>
-   )}
-
-    {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
-    {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
-    <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>{ownerView ? <><button className="approved-button primary" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button><button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 size={18} />{ar ? 'الإحصاءات' : 'Insights'}</button><ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} /></> : <><button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>{onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}{myCircleEnabled && !owner && profile.verified && <div className="profile-circle-control"><button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button><span className="profile-circle-label">{ar ? 'دائرتي' : 'My Circle'}</span></div>}{!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}</>}</div>
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
-    <div className="profile-travel-stats" data-testid="profile-travel-stats">
-      <div className="profile-travel-stat"><strong>—</strong><span>{ar ? 'الدول' : 'Countries'}</span></div>
-      <div className="profile-travel-stat"><strong>{travelStats.cities}</strong><span>{ar ? 'المدن' : 'Cities'}</span></div>
-      <div className="profile-travel-stat"><strong>{travelStats.trips}</strong><span>{ar ? 'رحلات' : 'Trips'}</span></div>
-    </div>
-    {featuredCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
+    {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
+    {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
+    {visibleFeaturedCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
       <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
       <div className="profile-featured-strip">
-        {featuredCollections.map((collection) => {
+        {visibleFeaturedCollections.map((collection) => {
           const cover = collectionCoverImage(collection, publishedEdits);
           return <button key={collection.id} className="profile-featured-card" data-testid={`featured-collection-${collection.id}`} onClick={() => onOpenCollection(collection)}>
-            <span className="profile-featured-cover"><img src={imageSrc(cover)} alt="" />{collection.access === 'locked' ? <span className="profile-featured-visibility"><LockKeyhole size={11} /></span> : <span className="profile-featured-visibility"><Globe size={11} /></span>}</span>
-            <strong>{ar ? collection.titleAr : collection.title}</strong>
-            <small>{ar ? `${collection.editIds.length + (collection.uploads?.length || 0)} عنصر` : `${collection.editIds.length + (collection.uploads?.length || 0)} items`}</small>
+            <span className="profile-featured-cover">
+              <img src={imageSrc(cover)} alt="" />
+              <span className="profile-featured-title">{ar ? collection.titleAr : collection.title}</span>
+            </span>
           </button>;
         })}
       </div>
     </section>}
-    <div className="approved-tabs"><button className="active">{ar ? 'التعديلات' : 'Edits'}</button><button onClick={onCollections}>{ar ? 'المجموعات' : 'Collections'}</button><button onClick={onAbout}>{ar ? 'حول' : 'About'}</button></div>
+    <ProfileSectionTabs ar={ar} active="edits" onCollections={onCollections} onAbout={onAbout} />
     <div className="profile-travel-tabs" role="tablist" aria-label={ar ? 'تصفية حسب النوع' : 'Filter by type'}>
       {travelTabs.map((tab) => <button key={tab.id} type="button" role="tab" data-testid={`profile-travel-tab-${tab.id}`} className={activeTravelTab === tab.id ? 'active' : ''} aria-selected={activeTravelTab === tab.id} onClick={() => setActiveTravelTab(tab.id)}>{ar ? tab.ar : tab.en}</button>)}
     </div>
@@ -4404,11 +4423,10 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       {travelEdits.map((edit) => {
         const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
-        return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} onClick={() => onEdit(edit)}>
+        return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} data-testid={`profile-edit-${edit.id}`} onClick={() => onEdit(edit)}>
           {edit.image ? <>
             <span className="profile-grid-media">
               <img src={imageSrc(edit.image)} alt={edit.altText} />
-              {edit.access === 'locked' && <span className="profile-grid-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}
             </span>
             {caption && <span className="profile-grid-caption">{caption}</span>}
           </> : edit.video ? <>
