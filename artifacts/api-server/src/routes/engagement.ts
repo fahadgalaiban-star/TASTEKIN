@@ -7,6 +7,8 @@ import {
   editComments,
   editLikes,
   editSaves,
+  savedListItems,
+  savedLists,
   usersTable,
 } from "@workspace/db";
 import {
@@ -28,6 +30,12 @@ import {
   ListEditCommentsParams,
   ListEditCommentsResponse,
   ListSavedEditsResponse,
+  ListSavedListsResponse,
+  CreateSavedListBody,
+  CreateSavedListResponse,
+  UpdateSavedListItemBody,
+  UpdateSavedListItemParams,
+  UpdateSavedListItemResponse,
   RecordCreatorViewBody,
   RecordCreatorViewParams,
   RecordCreatorViewResponse,
@@ -238,6 +246,59 @@ router.get("/me/saved-edits", async (req, res): Promise<void> => {
   if (!user) return;
   const rows = await db.select({ editId: editSaves.editId }).from(editSaves).where(eq(editSaves.userId, user.id)).orderBy(desc(editSaves.createdAt));
   res.json(ListSavedEditsResponse.parse(rows.map((row) => row.editId)));
+});
+
+router.get("/me/saved-lists", async (req, res): Promise<void> => {
+  privateResponse(res);
+  const user = requireUser(req, res);
+  if (!user) return;
+  const lists = await db.select().from(savedLists).where(eq(savedLists.userId, user.id)).orderBy(savedLists.createdAt);
+  const items = lists.length
+    ? await db.select().from(savedListItems).where(inArray(savedListItems.listId, lists.map((list) => list.id))).orderBy(savedListItems.createdAt)
+    : [];
+  res.json(ListSavedListsResponse.parse(lists.map((list) => ({
+    id: list.id,
+    name: list.name,
+    editIds: items.filter((item) => item.listId === list.id).map((item) => item.editId),
+    createdAt: list.createdAt.toISOString(),
+    updatedAt: list.updatedAt.toISOString(),
+  }))));
+});
+
+router.post("/me/saved-lists", async (req, res): Promise<void> => {
+  privateResponse(res);
+  const user = requireUser(req, res);
+  if (!user) return;
+  const body = CreateSavedListBody.safeParse(req.body);
+  const name = body.success ? body.data.name.trim() : "";
+  if (!body.success || !name) { res.status(400).json({ error: "A list name is required" }); return; }
+  const [existing] = await db.select().from(savedLists).where(and(eq(savedLists.userId, user.id), eq(savedLists.name, name))).limit(1);
+  if (existing) { res.status(409).json({ error: "A list with this name already exists" }); return; }
+  const [list] = await db.insert(savedLists).values({ userId: user.id, name }).returning();
+  res.status(201).json(CreateSavedListResponse.parse({
+    id: list.id, name: list.name, editIds: [], createdAt: list.createdAt.toISOString(), updatedAt: list.updatedAt.toISOString(),
+  }));
+});
+
+router.put("/me/saved-lists/:listId/edits/:editId", async (req, res): Promise<void> => {
+  privateResponse(res);
+  const user = requireUser(req, res);
+  if (!user) return;
+  const params = UpdateSavedListItemParams.safeParse(req.params);
+  const body = UpdateSavedListItemBody.safeParse(req.body);
+  if (!params.success || !body.success) { res.status(400).json({ error: "Invalid Saved list update" }); return; }
+  const [list] = await db.select().from(savedLists).where(and(eq(savedLists.id, params.data.listId), eq(savedLists.userId, user.id))).limit(1);
+  if (!list) { res.status(404).json({ error: "Saved list not found" }); return; }
+  const context = await getEditContext(params.data.editId, user.id);
+  if (!context || !context.canRead) { res.status(404).json({ error: "Edit not found" }); return; }
+  if (body.data.active) {
+    await db.insert(editSaves).values({ editId: params.data.editId, userId: user.id }).onConflictDoNothing();
+    await db.insert(savedListItems).values({ listId: list.id, editId: params.data.editId }).onConflictDoNothing();
+  } else {
+    await db.delete(savedListItems).where(and(eq(savedListItems.listId, list.id), eq(savedListItems.editId, params.data.editId)));
+  }
+  await db.update(savedLists).set({ updatedAt: new Date() }).where(eq(savedLists.id, list.id));
+  res.json(UpdateSavedListItemResponse.parse({ listId: list.id, editId: params.data.editId, active: body.data.active }));
 });
 
 router.post("/creators/:username/views", async (req, res): Promise<void> => {

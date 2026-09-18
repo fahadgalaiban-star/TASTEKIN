@@ -51,6 +51,10 @@ import type {
   RecordedView,
   Relationship,
   RelationshipInput,
+  SavedList,
+  SavedListInput,
+  SavedListItemInput,
+  SavedListItemResult,
   TasteCatalog,
   TasteMatchResponse,
   TastePreferences,
@@ -156,12 +160,6 @@ export function useHealthCheck<TData = Awaited<ReturnType<typeof healthCheck>>, 
   return withQueryKey(query, queryOptions.queryKey);
 }
 
-
-
-
-
-
-
 export const getGetFeedUrl = () => {
 
 
@@ -232,13 +230,6 @@ export function useGetFeed<TData = Awaited<ReturnType<typeof getFeed>>, TError =
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getListCreatorsUrl = (params?: ListCreatorsParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -310,13 +301,6 @@ export function useListCreators<TData = Awaited<ReturnType<typeof listCreators>>
 
   return withQueryKey(query, queryOptions.queryKey);
 }
-
-
-
-
-
-
-
 export const getGetCreatorUrl = (username: string,) => {
 
 
@@ -1381,6 +1365,210 @@ export function useListSavedEdits<TData = Awaited<ReturnType<typeof listSavedEdi
 
 
 
+
+export const getListSavedListsUrl = () => {
+
+
+
+
+  return `/api/me/saved-lists`
+}
+
+export const listSavedLists = async ( options?: Parameters<typeof customFetch>[1]): Promise<SavedList[]> => {
+
+  return customFetch<SavedList[]>(getListSavedListsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListSavedListsQueryKey = () => {
+    return [
+    `/api/me/saved-lists`
+    ] as const;
+    }
+
+
+export const getListSavedListsQueryOptions = <TData = Awaited<ReturnType<typeof listSavedLists>>, TError = ErrorType<void>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedLists>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListSavedListsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listSavedLists>>> = ({ signal }) => listSavedLists({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listSavedLists>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListSavedListsQueryResult = NonNullable<Awaited<ReturnType<typeof listSavedLists>>>
+export type ListSavedListsQueryError = ErrorType<void>
+
+
+
+export function useListSavedLists<TData = Awaited<ReturnType<typeof listSavedLists>>, TError = ErrorType<void>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listSavedLists>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListSavedListsQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateSavedListUrl = () => {
+
+
+
+
+  return `/api/me/saved-lists`
+}
+
+export const createSavedList = async (savedListInput: SavedListInput, options?: Parameters<typeof customFetch>[1]): Promise<SavedList> => {
+
+  return customFetch<SavedList>(getCreateSavedListUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(savedListInput)
+  }
+);}
+
+
+
+
+
+export const getCreateSavedListMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSavedList>>, TError,{data: BodyType<SavedListInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSavedList>>, TError,{data: BodyType<SavedListInput>}, TContext> => {
+
+const mutationKey = ['createSavedList'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSavedList>>, {data: BodyType<SavedListInput>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createSavedList(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSavedListMutationResult = NonNullable<Awaited<ReturnType<typeof createSavedList>>>
+    export type CreateSavedListMutationBody = BodyType<SavedListInput>
+    export type CreateSavedListMutationError = ErrorType<void>
+
+    export const useCreateSavedList = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSavedList>>, TError,{data: BodyType<SavedListInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createSavedList>>,
+        TError,
+        {data: BodyType<SavedListInput>},
+        TContext
+      > => {
+      return useMutation(getCreateSavedListMutationOptions(options));
+    }
+
+export const getUpdateSavedListItemUrl = (listId: string,
+    editId: string,) => {
+
+
+
+
+  return `/api/me/saved-lists/${listId}/edits/${editId}`
+}
+
+export const updateSavedListItem = async (listId: string,
+    editId: string,
+    savedListItemInput: SavedListItemInput, options?: Parameters<typeof customFetch>[1]): Promise<SavedListItemResult> => {
+
+  return customFetch<SavedListItemResult>(getUpdateSavedListItemUrl(listId,editId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(savedListItemInput)
+  }
+);}
+
+
+
+
+
+export const getUpdateSavedListItemMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSavedListItem>>, TError,{listId: string;editId: string;data: BodyType<SavedListItemInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateSavedListItem>>, TError,{listId: string;editId: string;data: BodyType<SavedListItemInput>}, TContext> => {
+
+const mutationKey = ['updateSavedListItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateSavedListItem>>, {listId: string;editId: string;data: BodyType<SavedListItemInput>}> = (props) => {
+          const {listId,editId,data} = props ?? {};
+
+          return  updateSavedListItem(listId,editId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateSavedListItemMutationResult = NonNullable<Awaited<ReturnType<typeof updateSavedListItem>>>
+    export type UpdateSavedListItemMutationBody = BodyType<SavedListItemInput>
+    export type UpdateSavedListItemMutationError = ErrorType<void>
+
+    export const useUpdateSavedListItem = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateSavedListItem>>, TError,{listId: string;editId: string;data: BodyType<SavedListItemInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateSavedListItem>>,
+        TError,
+        {listId: string;editId: string;data: BodyType<SavedListItemInput>},
+        TContext
+      > => {
+      return useMutation(getUpdateSavedListItemMutationOptions(options));
+    }
 
 export const getRecordCreatorViewUrl = (username: string,) => {
 

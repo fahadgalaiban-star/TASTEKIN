@@ -513,6 +513,55 @@ export const ListSavedEditsResponseItem = zod.string()
 export const ListSavedEditsResponse = zod.array(ListSavedEditsResponseItem)
 
 
+export const ListSavedListsResponseItem = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "editIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+export const ListSavedListsResponse = zod.array(ListSavedListsResponseItem)
+
+
+export const createSavedListBodyNameMax = 60;
+
+
+
+export const CreateSavedListBody = zod.object({
+  "name": zod.string().min(1).max(createSavedListBodyNameMax)
+})
+
+export const CreateSavedListResponse = zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "editIds": zod.array(zod.string()),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
+
+
+export const updateSavedListItemPathListIdMax = 100;
+
+export const updateSavedListItemPathEditIdMax = 120;
+
+
+
+export const UpdateSavedListItemParams = zod.object({
+  "listId": zod.coerce.string().min(1).max(updateSavedListItemPathListIdMax),
+  "editId": zod.coerce.string().min(1).max(updateSavedListItemPathEditIdMax)
+})
+
+export const UpdateSavedListItemBody = zod.object({
+  "active": zod.boolean()
+})
+
+export const UpdateSavedListItemResponse = zod.object({
+  "listId": zod.string(),
+  "editId": zod.string(),
+  "active": zod.boolean()
+})
+
+
 export const RecordCreatorViewParams = zod.object({
   "username": zod.coerce.string()
 })

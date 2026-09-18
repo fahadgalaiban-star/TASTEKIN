@@ -19,6 +19,32 @@ export interface EditEngagement {
   saved: boolean;
 }
 
+export interface SavedListInput {
+  /**
+     * @minLength 1
+     * @maxLength 60
+     */
+  name: string;
+}
+
+export interface SavedListItemInput {
+  active: boolean;
+}
+
+export interface SavedList {
+  id: string;
+  name: string;
+  editIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SavedListItemResult {
+  listId: string;
+  editId: string;
+  active: boolean;
+}
+
 export interface EditCommentInput {
   /**
      * @minLength 1

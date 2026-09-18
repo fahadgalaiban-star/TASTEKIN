@@ -329,6 +329,56 @@ paths:
                 type: array
                 items: { type: string }
         "401": { description: Authentication required }
+  /me/saved-lists:
+    get:
+      operationId: listSavedLists
+      tags: [relationships]
+      responses:
+        "200":
+          description: User-created Saved lists
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SavedList" }
+        "401": { description: Authentication required }
+    post:
+      operationId: createSavedList
+      tags: [relationships]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavedListInput" }
+      responses:
+        "201":
+          description: Created Saved list
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedList" }
+        "400": { description: Invalid list name }
+        "401": { description: Authentication required }
+        "409": { description: List name already exists }
+  /me/saved-lists/{listId}/edits/{editId}:
+    put:
+      operationId: updateSavedListItem
+      tags: [relationships]
+      parameters:
+        - $ref: "#/components/parameters/SavedListId"
+        - $ref: "#/components/parameters/EditId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SavedListItemInput" }
+      responses:
+        "200":
+          description: Updated Saved list membership
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SavedListItemResult" }
+        "401": { description: Authentication required }
+        "404": { description: Saved list or Edit not found }
   /creators/{username}/views:
     post:
       operationId: recordCreatorView
@@ -614,6 +664,11 @@ components:
       name: targetId
       required: true
       schema: { type: string, minLength: 1, maxLength: 160 }
+    SavedListId:
+      in: path
+      name: listId
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 100 }
   schemas:
     EditEngagementInput:
       type: object
@@ -629,6 +684,34 @@ components:
         commentCount: { type: number, minimum: 0 }
         liked: { type: boolean }
         saved: { type: boolean }
+    SavedListInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 60 }
+    SavedListItemInput:
+      type: object
+      required: [active]
+      properties:
+        active: { type: boolean }
+    SavedList:
+      type: object
+      required: [id, name, editIds, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        editIds:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SavedListItemResult:
+      type: object
+      required: [listId, editId, active]
+      properties:
+        listId: { type: string }
+        editId: { type: string }
+        active: { type: boolean }
     EditCommentInput:
       type: object
       required: [body]
