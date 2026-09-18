@@ -809,3 +809,117 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
   .kin-piece-preview-img { max-height:198px; }
   .kin-occasion-pills button { font-size:10px; }
 }
+/* Simplified Create Edit flow. All colors and surfaces stay on TASTEKIN tokens. */
+.composer-unified-media { margin:12px 0 22px; }
+.unified-media-picker {
+  position:relative;
+  width:100%;
+  aspect-ratio:4 / 3;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap:12px;
+  border:1px dashed var(--tk-border);
+  border-radius:16px;
+  background:var(--tk-surface);
+  color:var(--tk-wine);
+  font-size:14px;
+  font-weight:700;
+  cursor:pointer;
+}
+.unified-media-picker:hover { background:var(--tk-surface-muted); }
+.unified-media-picker input {
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  opacity:0;
+  cursor:pointer;
+}
+.unified-caption-input {
+  width:100%;
+  min-height:74px;
+  margin:6px 0 16px;
+  padding:14px 16px;
+  border:1px solid var(--tk-border);
+  border-radius:12px;
+  outline:none;
+  resize:none;
+  background:var(--tk-surface);
+  color:var(--tk-ink);
+  font:inherit;
+  font-size:13px;
+}
+.unified-caption-input::placeholder { color:var(--tk-stone); }
+.unified-caption-input:focus-visible { border-color:var(--tk-focus); }
+.composer-category-chips { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:5px; margin:6px 0 16px; }
+.composer-category-chips button {
+  min-width:0;
+  min-height:38px;
+  padding:0 4px;
+  border:1px solid var(--tk-border);
+  border-radius:999px;
+  background:var(--tk-surface);
+  color:var(--tk-ink);
+  font-size:10.5px;
+  font-weight:700;
+  white-space:nowrap;
+}
+.composer-category-chips button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.composer-category-chips button:disabled { opacity:.6; }
+.unified-picker-box {
+  width:100%;
+  min-height:52px;
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:6px 0 16px;
+  padding:0 14px;
+  border:1px solid var(--tk-border);
+  border-radius:12px;
+  background:var(--tk-surface);
+  color:var(--tk-ink);
+  font-size:13px;
+  font-weight:600;
+  text-align:start;
+}
+.unified-picker-box.clickable { cursor:pointer; }
+.unified-picker-box.clickable:hover { background:var(--tk-surface-muted); }
+.unified-picker-box input {
+  min-width:0;
+  flex:1;
+  border:0;
+  outline:none;
+  background:transparent;
+  color:inherit;
+  font:inherit;
+}
+.unified-picker-box input::placeholder { color:var(--tk-stone); }
+.picker-text {
+  min-width:0;
+  flex:1;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+}
+.unified-clear-btn {
+  width:24px;
+  height:24px;
+  display:grid;
+  place-items:center;
+  padding:0;
+  border:0;
+  border-radius:50%;
+  background:transparent;
+  color:var(--tk-stone);
+}
+.unified-clear-btn:hover { background:var(--tk-surface-muted); color:var(--tk-ink); }
+.unified-confirm-btn { min-height:32px; padding:0 10px; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); font-size:10px; font-weight:800; }
+.unified-confirm-btn:disabled { border-color:var(--tk-border); color:var(--tk-disabled-text); }
+.composer-empty-collections { margin:0; color:var(--tk-stone); font-size:11px; }
+.composer-publish-footer {
+  margin-top:28px;
+  padding-bottom:24px;
+}
+.composer-publish-footer .approved-button { width:100%; min-height:52px; }
