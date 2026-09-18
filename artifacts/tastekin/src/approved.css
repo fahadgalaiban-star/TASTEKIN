@@ -177,24 +177,20 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .composer-actions .approved-button.primary:disabled { opacity:1; background:var(--tk-wine); color:var(--tk-text-inverse); cursor:wait; }
 /* Both profile action rows sit inside the compact right-hand column,
    directly under the Taste Match pill — never a full-width row of their
-   own. A tight gap and content-sized (not growing) buttons keep the whole
-   row inside the column's width without wrapping, at any width from
-   390–430px. RTL mirrors automatically since flex direction follows
-   `dir`, and `align-items:flex-end` on the column follows it too. */
+   own. RTL mirrors automatically because logical padding and the inherited
+   flex direction keep icon and label together in either direction. */
 .approved-actions.profile-owner-actions, .approved-actions.profile-visitor-actions { display:flex; align-items:flex-start; justify-content:flex-end; gap:4px; }
-.approved-actions.profile-owner-actions > .approved-button.primary { flex:0 0 auto; min-width:0; height:38px; padding-inline:9px; font-size:10.5px; }
+.approved-actions.profile-owner-actions > .approved-button { flex:0 0 auto; min-width:0; height:48px; border-radius:999px; padding-inline:11px; font-size:10.5px; white-space:nowrap; }
+.approved-actions.profile-owner-actions > .profile-edit-button { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.approved-actions.profile-owner-actions > .profile-insights-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; border-color:var(--tk-wine); background:transparent; color:var(--tk-wine); }
+.profile-insights-button svg { flex:0 0 18px; }
 .approved-actions.profile-visitor-actions > .profile-follow-button, .approved-actions.profile-visitor-actions > .profile-message-button { flex:0 0 auto; min-width:0; height:38px; padding-inline:8px; font-size:10.5px; }
 .approved-actions.profile-owner-actions > .report-trigger, .approved-actions.profile-visitor-actions > .report-trigger { flex:0 0 auto; align-self:center; width:26px; height:26px; }
 .profile-follow-button, .profile-message-button { white-space:nowrap; }
 .profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:4px; color:var(--tk-wine); }
-.profile-circle-control, .profile-insights-control { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px; }
-.profile-circle-icon-button, .profile-insights-icon-button { display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
-/* My Circle stays exactly 48×48 per spec; Insights (owner-only) is a touch
-   smaller since it carries no toggle state, keeping the owner's row compact. */
+.profile-circle-control { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px; }
+.profile-circle-icon-button { display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
 .profile-circle-icon-button { width:48px; height:48px; }
-.profile-insights-icon-button { width:40px; height:40px; }
-.profile-insights-icon-button:hover { background:var(--tk-surface-muted); }
-.profile-insights-label { font-size:9px; font-weight:700; color:var(--tk-stone); text-align:center; white-space:nowrap; }
 .profile-circle-icon-button:hover { background:var(--tk-surface-muted); }
 .profile-circle-icon-button.active { background:var(--tk-wine); border-color:var(--tk-wine); color:var(--tk-text-inverse); }
 .profile-circle-icon-button svg { width:18px; height:18px; flex:0 0 18px; }

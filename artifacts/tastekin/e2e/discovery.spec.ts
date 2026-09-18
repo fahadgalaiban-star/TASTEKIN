@@ -1,19 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const categoryIds = [
-  'All',
-  'Fashion',
-  'Travel',
-  'Places',
-  'Restaurants',
-  'DailyRoutine',
-  'PersonalCare',
-  'HealthFitness',
-  'Decor',
-  'Books',
-  'Vlogs',
-] as const;
-
 async function openConsumerProfile(page: Page) {
   await page.getByTestId('nav-explore').click();
   await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
@@ -139,7 +125,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/');
 });
 
-test('keeps the five mobile destinations, Home feed tabs, Explore filters, and RTL available', async ({ page }) => {
+test('keeps the five mobile destinations, Explore search and sort, and RTL available', async ({ page }) => {
   const navigation = page.getByTestId('primary-navigation');
 
   await expect(navigation.getByRole('button')).toHaveCount(5);
@@ -160,8 +146,10 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
 
   await page.getByTestId('nav-explore').click();
   await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
+  await expect(page.getByLabel('Search')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Best Match' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New' })).toBeVisible();
+  await expect(page.locator('[data-testid^="category-"]')).toHaveCount(0);
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-creator-workspace').click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
@@ -171,15 +159,8 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
   await page.getByTestId('nav-explore').click();
 
-  for (const categoryId of categoryIds) {
-    const chip = page.getByTestId(`category-${categoryId}`);
-    await chip.click();
-    await expect(chip).toHaveClass(/active/);
-    await expect(page.locator('article[data-testid^="edit-card-"]').first()).toBeVisible();
-  }
-
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('language-ar').click();
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
   await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
   await expect(navigation).toBeVisible();
   await expect(navigation).toContainText('الرئيسية');
@@ -188,7 +169,7 @@ test('keeps the five mobile destinations, Home feed tabs, Explore filters, and R
   await expect(navigation).toContainText('المحفوظات');
   await expect(navigation).toContainText('أنت');
 
-  await page.getByTestId('language-en').click();
+  await page.getByTestId('settings-language-en').click();
   await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'ltr');
 });
 
@@ -350,7 +331,12 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   await page.getByRole('button', { name: 'New' }).click();
   await page.getByTestId('creator-noura.studio').click();
   await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Message' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Follow' })).toHaveClass(/primary/);
+  await expect(page.getByRole('button', { name: 'Message' })).toBeVisible();
+  await expect(page.getByTestId('profile-circle-action')).toBeVisible();
+  await expect(page.getByText('My Circle')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'More options' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit profile' })).toHaveCount(0);
   await expect(page.locator('.approved-logo')).toHaveCount(0);
   await expect(page.getByText(/^Age \d+$/)).toHaveCount(0);
   await expect(profileGrid).toHaveAttribute('data-active-category', 'All');
@@ -374,6 +360,44 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
 
+test('shows all visitor actions when an admin views an unverified empty profile in English and RTL', async ({ page }) => {
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      headers: { 'Cache-Control': 'private, no-store, max-age=0' },
+      body: JSON.stringify({
+        user: { id: 'admin-user', email: 'admin@tastekin.test' },
+        role: 'admin',
+        creator: null,
+        isAdmin: true,
+        featureFlags: { my_circle: true },
+      }),
+    });
+  });
+  await page.reload();
+  await page.getByTestId('nav-explore').click();
+  await page.getByRole('button', { name: 'New' }).click();
+  await page.getByTestId('creator-noura.studio').click();
+
+  await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
+  await expect(page.getByText('No published Edits yet.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Follow' })).toHaveClass(/primary/);
+  await expect(page.getByRole('button', { name: 'Message' })).toBeVisible();
+  await expect(page.getByTestId('profile-circle-action')).toBeVisible();
+  await expect(page.getByText('My Circle')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'More options' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit profile' })).toHaveCount(0);
+
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page.getByRole('button', { name: 'متابعة' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'مراسلة' })).toBeVisible();
+  await expect(page.getByText('دائرتي')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'مزيد من الخيارات' })).toBeVisible();
+});
+
 test('keeps locked profile edits excluded from the grid for both the owner and a visitor preview', async ({ page }) => {
   const lockedEdit = () => page.locator('.approved-grid-card').filter({ hasText: 'The stay, the packing list, and where I ate.' });
 
@@ -391,6 +415,32 @@ test('keeps locked profile edits excluded from the grid for both the owner and a
   // Same holds for a visitor (including the owner previewing as one).
   await expect(lockedEdit()).toHaveCount(0);
   await expect(page.getByTestId('profile-edits-grid')).not.toContainText('Subscribers only');
+});
+
+test('keeps each public Edit mapped to its own media after travel filtering', async ({ page }) => {
+  const publicEdits = [
+    { ...quietTailoringFeed, id: 'stable-fashion-edit', image: '/tastekin-media/stable-fashion.webp' },
+    { ...quietTailoringFeed, id: 'stable-travel-edit', category: 'Travel', image: '/tastekin-media/stable-travel.webp' },
+    { ...quietTailoringFeed, id: 'stable-place-edit', category: 'Places', image: '/tastekin-media/stable-place.webp' },
+  ];
+  await page.route('**/api/creator-workspace', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({ creatorId: 'fheed', revision: 1, edits: publicEdits, collections: [] }),
+    });
+  });
+  await page.reload();
+  await page.getByTestId('nav-you').click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+
+  for (const edit of publicEdits) {
+    await expect(page.getByTestId(`profile-edit-${edit.id}`).locator('img')).toHaveAttribute('src', edit.image);
+  }
+
+  await page.getByTestId('profile-travel-tab-Trips').click();
+  await expect(page.getByTestId('profile-edit-stable-travel-edit').locator('img')).toHaveAttribute('src', '/tastekin-media/stable-travel.webp');
+  await expect(page.getByTestId('profile-edit-stable-fashion-edit')).toHaveCount(0);
+  await expect(page.getByTestId('profile-edit-stable-place-edit')).toHaveCount(0);
 });
 
 test('persists saves, collections, and the owner profile entry point', async ({ page }) => {
@@ -484,6 +534,8 @@ test('keeps owner controls compact without a standalone preview button and persi
   await expect(page.getByTestId('profile-view-public')).toContainText('View public profile');
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Insights' })).toBeVisible();
+  const ownerControlHeights = await page.locator('.profile-edit-button, .profile-insights-button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
+  expect(ownerControlHeights).toEqual([48, 48]);
 
   const featuredCards = page.locator('[data-testid^="featured-collection-"]');
   await expect(featuredCards).toHaveCount(2);
