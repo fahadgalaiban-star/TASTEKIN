@@ -49,13 +49,17 @@ test('the bottom nav opens a real KIN page when the flag is on', async ({ page }
   await mockMe(page, { kinSearch: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
-  await expect(page.getByText('Start with one piece. Make it feel like you.')).toBeVisible();
-  await expect(page.getByTestId('kin-styling-summary')).toBeVisible();
-  await expect(page.getByTestId('kin-take-photo')).toContainText('Take a photo');
-  await expect(page.getByTestId('kin-query')).toHaveAttribute('placeholder', 'Or describe what you want to style…');
+  await expect(page.getByRole('heading', { name: 'Style a Piece' })).toBeVisible();
+  await expect(page.getByText('Start with something you own or something you found.')).toBeVisible();
+  // No piece selected yet — the empty preview is the "Add a Piece" trigger,
+  // not the populated kin-styling-summary state.
+  await expect(page.getByTestId('kin-add-piece')).toBeVisible();
+  await page.getByTestId('kin-add-piece').click();
+  await expect(page.getByTestId('kin-take-photo')).toContainText('Take a Photo');
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('kin-query')).toHaveAttribute('placeholder', 'Black trousers to match my cream shirt');
   await expect(page.getByTestId('kin-occasion-everyday')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByTestId('kin-submit')).toHaveText('Create my looks');
+  await expect(page.getByTestId('kin-submit')).toHaveText('Create My Look');
   await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toHaveCSS('color', 'rgb(255, 255, 255)');
   await expect(page.getByTestId('kin-mode-travel')).toBeVisible();
@@ -84,7 +88,14 @@ test('the guard sends KIN back to You when the session becomes unauthenticated m
   await expect(page.getByTestId('you-sign-in')).toBeVisible();
 });
 
-test('Looks mode: More preferences shows location/budget/size, occasion is outside, not destination/dates', async ({ page }) => {
+test('Looks mode: Add budget reveals budget/currency fields, occasion is outside, not destination/dates', async ({ page }) => {
+  // The old "More preferences" <details> (Location, Budget+Currency, Size)
+  // was replaced by a standalone "Add budget" toggle that reveals only
+  // budget+currency; Location and Size were removed from the UI entirely
+  // (their state/body-serialization in submit() is unchanged, but with no
+  // control to set them they simply stay empty and are omitted — that half
+  // of the original assertion is no longer exercisable from the UI, so it
+  // is dropped rather than faked).
   await mockMe(page, { kinSearch: true });
   let sentBody: Record<string, unknown> | undefined;
   await page.route('**/api/kin/search', async (route) => {
@@ -98,22 +109,24 @@ test('Looks mode: More preferences shows location/budget/size, occasion is outsi
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await expect(page.getByTestId('kin-occasion')).toBeVisible();
-  await expect(page.getByTestId('kin-location')).toBeHidden();
+  await expect(page.getByTestId('kin-preferences')).toHaveCount(0);
+  await expect(page.getByTestId('kin-location')).toHaveCount(0);
+  await expect(page.getByTestId('kin-size')).toHaveCount(0);
   await page.getByTestId('kin-occasion-dinner').click();
-  await page.getByTestId('kin-more-preferences').click();
-  await expect(page.getByTestId('kin-location')).toBeVisible();
+  await page.getByTestId('kin-add-budget').click();
+  await expect(page.getByTestId('kin-preferences')).toBeVisible();
   await expect(page.getByTestId('kin-budget')).toBeVisible();
-  await expect(page.getByTestId('kin-size')).toBeVisible();
+  await expect(page.getByTestId('kin-currency')).toBeVisible();
   await expect(page.getByTestId('kin-destination')).toHaveCount(0);
   await expect(page.getByTestId('kin-start-date')).toHaveCount(0);
   await page.getByTestId('kin-query').fill('style a dinner piece');
-  await page.getByTestId('kin-location').fill('Kuwait');
   await page.getByTestId('kin-budget').fill('180');
   await page.getByTestId('kin-currency').fill('kwd');
-  await page.getByTestId('kin-size').fill('M');
   await page.getByTestId('kin-submit').click();
   await expect.poll(() => sentBody?.occasion).toBe('Dinner');
-  expect(sentBody).toMatchObject({ location: 'Kuwait', budget: 180, currency: 'KWD', size: 'M' });
+  expect(sentBody).toMatchObject({ budget: 180, currency: 'KWD' });
+  expect(sentBody?.location).toBeUndefined();
+  expect(sentBody?.size).toBeUndefined();
 });
 
 test('the approved Style input fits 390×844 without horizontal overflow and its CTA clears the bottom navigation', async ({ page }) => {
@@ -121,10 +134,12 @@ test('the approved Style input fits 390×844 without horizontal overflow and its
   await mockMe(page, { kinSearch: true, myThings: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Style a Piece' })).toBeVisible();
+  await page.getByTestId('kin-add-piece').click();
   await expect(page.getByTestId('kin-open-my-things')).toBeVisible();
   await page.getByTestId('kin-photo-input').focus();
   await expect(page.getByTestId('kin-photo-input')).toBeFocused();
+  await page.keyboard.press('Escape');
   await expectMobileControlAboveNavigation(page, 'kin-submit');
 });
 
@@ -140,7 +155,7 @@ test('Back on Travel step 1 closes the guided flow and returns to active Looks',
   await expect(page.getByTestId('kin-travel-step')).toHaveCount(0);
   await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toHaveClass(/selected/);
-  await expect(page.getByRole('heading', { name: 'Style it your way.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Style a Piece' })).toBeVisible();
 });
 
 test('Travel is a dedicated two-step flow that submits exact dates and interests with no clothing payload', async ({ page }) => {
@@ -738,29 +753,41 @@ test('the result lightbox traps focus, closes accessibly, restores the exact tri
   await expect(secondCard).toBeFocused();
 });
 
-test('the approved My Things entry opens the private item picker when the feature is enabled', async ({ page }) => {
+test('the approved My Things entry opens My Things, where a piece can be picked to style, when the feature is enabled', async ({ page }) => {
+  // The old flow opened a dedicated multi-select item picker directly from
+  // KIN. That picker is gone; "Choose from My Closet" now just navigates to
+  // the regular My Things screen, where picking a piece happens through its
+  // own per-card "Style This Piece" affordance (covered end-to-end in
+  // my-things.spec.ts). This test verifies the entry point still reaches
+  // My Things with the item visible and reachable.
   await mockMe(page, { kinSearch: true, myThings: true });
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ items: [{ id: 'item-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', createdAt: new Date().toISOString() }] }),
+        body: JSON.stringify({ items: [{ id: 'item-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() }] }),
       });
     }
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-add-piece').click();
   await expect(page.getByTestId('kin-open-my-things')).toBeVisible();
   await page.getByTestId('kin-open-my-things').click();
-  await expect(page.getByTestId('my-things-style-with-kin')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'My Closet' })).toBeVisible();
+  await expect(page.getByTestId('my-things-item')).toHaveCount(1);
+  await page.getByTestId('my-things-open').click();
+  await expect(page.getByTestId('my-things-style-piece')).toBeVisible();
 });
 
 test('the My Things entry is absent when my_things is disabled', async ({ page }) => {
   await mockMe(page, { kinSearch: true, myThings: false });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByTestId('kin-open-my-things')).toHaveCount(0);
   await expect(page.getByTestId('kin-mode-my-things')).toHaveCount(0);
+  await page.getByTestId('kin-add-piece').click();
+  await expect(page.getByTestId('kin-take-photo')).toBeVisible();
+  await expect(page.getByTestId('kin-open-my-things')).toHaveCount(0);
 });
 
 test('Arabic UI strings render for KIN', async ({ page }) => {
@@ -781,11 +808,11 @@ test('Arabic UI strings render for KIN', async ({ page }) => {
   });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
-  await expect(page.getByRole('heading', { name: 'نسّقها بطريقتك.' })).toBeVisible();
-  await expect(page.getByText('ابدأ بقطعة واحدة، واجعلها تعبّر عنك.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'نسّق قطعة' })).toBeVisible();
+  await expect(page.getByText('ابدأ بشيء تملكه أو شيء وجدته.')).toBeVisible();
   await expect(page.getByTestId('kin-mode-looks')).toHaveText('نسّق لي');
   await expect(page.getByTestId('kin-mode-travel')).toHaveText('السفر');
-  await expect(page.getByTestId('kin-submit')).toHaveText('أنشئ إطلالاتي');
+  await expect(page.getByTestId('kin-submit')).toHaveText('أنشئ إطلالتي');
   await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
   await expectMobileControlAboveNavigation(page, 'kin-submit');
   await page.getByTestId('kin-query').fill('نسّق قميصاً كتانياً');
@@ -836,6 +863,7 @@ test('an uploaded photo becomes the styling reference, clearly labeled — even 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('a dinner outfit');
+  await page.getByTestId('kin-add-piece').click();
   await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
   await expect(page.getByTestId('kin-photo-clear')).toBeVisible();
   await page.getByTestId('kin-submit').click();
@@ -857,7 +885,7 @@ test('a selected My Things item becomes the styling reference, served via the au
     if (route.request().method() === 'GET') {
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', createdAt: new Date().toISOString() }] }),
+        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() }] }),
       });
     }
   });
@@ -872,9 +900,9 @@ test('a selected My Things item becomes the styling reference, served via the au
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
-  await page.getByTestId('my-things-style-with-kin').click();
-  await page.getByTestId('my-things-style-item').getByRole('button').click();
-  await page.getByTestId('my-things-style-continue').click();
+  await page.getByTestId('my-things-open').click();
+  await page.getByTestId('my-things-style-piece').click();
+  await expect(page.getByTestId('kin-styling-summary')).toBeVisible();
   await page.getByTestId('kin-submit').click();
   await expect.poll(() => sentBody?.query).toBe('Style my selected piece');
   expect(sentBody?.myThingsItemIds).toEqual(['item-42']);
@@ -886,8 +914,11 @@ test('a selected My Things item becomes the styling reference, served via the au
   const pieceCard = page.getByTestId('kin-piece-card');
   await expect(pieceCard).toBeVisible();
   await expect(pieceCard).toContainText('Your piece');
+  // "Change" on a completed result's piece card still hands off to My
+  // Things via the same changeStylingItems()/go('myThings') plumbing as
+  // before — there is no longer a dedicated "continue" step to land on.
   await pieceCard.getByRole('button', { name: 'Change', exact: true }).click();
-  await expect(page.getByTestId('my-things-style-continue')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'My Closet' })).toBeVisible();
 });
 
 test('choosing a photo replaces a preselected My Things piece everywhere before submission', async ({ page }) => {
@@ -896,7 +927,7 @@ test('choosing a photo replaces a preselected My Things piece everywhere before 
     if (route.request().method() === 'GET') {
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', createdAt: new Date().toISOString() }] }),
+        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() }] }),
       });
     }
   });
@@ -913,11 +944,13 @@ test('choosing a photo replaces a preselected My Things piece everywhere before 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
-  await page.getByTestId('my-things-style-with-kin').click();
-  await page.getByTestId('my-things-style-item').getByRole('button').click();
-  await page.getByTestId('my-things-style-continue').click();
+  await page.getByTestId('my-things-open').click();
+  await page.getByTestId('my-things-style-piece').click();
   await expect(page.getByTestId('kin-styling-summary').locator('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
 
+  // The corner refresh icon now opens the shared "Add a Piece" sheet
+  // instead of navigating away directly.
+  await page.getByTestId('kin-piece-change').click();
   await page.getByTestId('kin-photo-input').setInputFiles({ name: 'replacement.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('replacement-photo') });
   await expect(page.getByTestId('kin-styling-summary').getByRole('img', { name: 'Selected styling piece' })).toHaveAttribute('src', /^blob:/);
   await expect(page.getByTestId('kin-styling-summary').locator('img[src="/api/closet-items/item-42/image"]')).toHaveCount(0);
@@ -925,40 +958,6 @@ test('choosing a photo replaces a preselected My Things piece everywhere before 
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', /^blob:/);
   expect(photoCalls).toBe(1);
   expect(searchCalls).toBe(0);
-});
-
-test('multiple preselected My Things items render one compact count with an authorized thumbnail and no private key', async ({ page }) => {
-  await mockMe(page, { kinSearch: true, myThings: true });
-  await page.route('**/api/closet-items', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [
-          { id: 'shirt-1', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', imagePath: '/objects/private/member/shirt.jpg', createdAt: new Date().toISOString() },
-          { id: 'shoes-2', itemType: 'sneakers', primaryColor: 'white', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', imagePath: '/objects/private/member/shoes.jpg', createdAt: new Date().toISOString() },
-        ] }),
-      });
-    }
-  });
-  await page.route('**/api/kin/search', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
-  });
-  await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
-  await page.getByTestId('my-things-style-with-kin').click();
-  const styleItems = page.getByTestId('my-things-style-item');
-  await styleItems.nth(0).getByRole('button').click();
-  await styleItems.nth(1).getByRole('button').click();
-  await page.getByTestId('my-things-style-continue').click();
-  await page.getByTestId('kin-query').fill('style both pieces');
-  await page.getByTestId('kin-submit').click();
-
-  const pieceCard = page.getByTestId('kin-piece-card');
-  await expect(pieceCard).toContainText('Styled with 2 items');
-  await expect(pieceCard.locator('img')).toHaveAttribute('src', '/api/closet-items/shirt-1/image');
-  await expect(pieceCard.locator('img')).not.toHaveAttribute('src', /\/objects\/private\//);
-  await expect(page.locator('body')).not.toContainText('/objects/private/member/');
 });
 
 test('Style results fit 390×844 and the final result remains reachable above navigation', async ({ page }) => {
@@ -1052,6 +1051,7 @@ test('an uploaded photo still becomes the styling reference when the answer has 
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('a dinner outfit');
+  await page.getByTestId('kin-add-piece').click();
   await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-answer')).toBeVisible();
@@ -1067,7 +1067,7 @@ test('a selected My Things item still becomes the styling reference when the ans
     if (route.request().method() === 'GET') {
       await route.fulfill({
         contentType: 'application/json',
-        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', createdAt: new Date().toISOString() }] }),
+        body: JSON.stringify({ items: [{ id: 'item-42', itemType: 'shirt', primaryColor: 'blue', style: null, occasion: null, season: null, brand: null, confirmationStatus: 'confirmed', ownershipStatus: 'owned', createdAt: new Date().toISOString() }] }),
       });
     }
   });
@@ -1075,9 +1075,8 @@ test('a selected My Things item still becomes the styling reference when the ans
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
-  await page.getByTestId('my-things-style-with-kin').click();
-  await page.getByTestId('my-things-style-item').getByRole('button').click();
-  await page.getByTestId('my-things-style-continue').click();
+  await page.getByTestId('my-things-open').click();
+  await page.getByTestId('my-things-style-piece').click();
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-answer')).toBeVisible();
   await expect(page.getByTestId('kin-looks-options')).toHaveCount(0);
@@ -1184,6 +1183,7 @@ test('the explicit UI locale is also sent on a photo request, as a query-string 
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
   await page.getByTestId('kin-query').fill('style this shirt');
+  await page.getByTestId('kin-add-piece').click();
   await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-looks-options')).toBeVisible();
@@ -1206,6 +1206,7 @@ test('an Arabic blank-description photo request sends the localized fallback que
   });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-add-piece').click();
   await page.getByTestId('kin-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('blank-description-photo') });
   await page.getByTestId('kin-submit').click();
   await expect(page.getByTestId('kin-look-reference').getByRole('img')).toHaveAttribute('src', /^blob:/);

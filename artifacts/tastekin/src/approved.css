@@ -741,11 +741,20 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 
 .kin-wardrobe-card { position:relative; cursor:pointer; }
 .kin-wardrobe-card.selected .profile-grid-media { outline:2px solid var(--tk-wine); outline-offset:-2px; }
-.kin-wardrobe-check { position:absolute; top:8px; inset-inline-end:8px; z-index:1; width:24px; height:24px; display:grid; place-items:center; border-radius:50%; background:var(--tk-wine); color:var(--tk-text-inverse); }
-
-.my-things-style-entry { margin-bottom:16px; }
-.my-things-style-status { margin:14px 0 0; color:var(--tk-stone); font-size:12px; font-weight:700; text-align:start; }
-.my-things-style-actions { position:sticky; bottom:72px; z-index:4; margin:16px -4px 0; padding:12px; border:1px solid var(--tk-border); border-radius:16px; background:color-mix(in srgb, var(--tk-card) 94%, transparent); box-shadow:0 10px 30px rgba(38,25,23,.12); backdrop-filter:blur(12px); }
+/* Compact ownership toggle — a single small link (never both states at
+   once), replacing the old two-button segmented "My Wardrobe / Thinking of
+   Buying" control. Thinking of Buying stays fully reachable through it;
+   it's simply no longer a permanent, prominent fixture of My Closet. */
+.my-things-ownership-toggle { margin:2px 0 14px; }
+.my-things-toggle-link { padding:0; border:0; background:transparent; color:var(--tk-wine); font-size:12px; font-weight:700; }
+.my-things-toggle-link:hover { text-decoration:underline; }
+/* Lighter, single-row compact selector — distinct from the bolder
+   .admin-filter-row treatment used on admin screens. */
+/* One compact native <select> instead of a chip row — a native control
+   mirrors correctly under dir="rtl" and never clips on its own, unlike a
+   custom-drawn dropdown would need extra work to guarantee. */
+.my-things-category-row { margin:0 0 14px; }
+.my-things-category-select { display:block; width:100%; max-width:200px; min-height:38px; padding:0 13px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font:inherit; font-size:12px; font-weight:700; }
 .approved-grid-card.selected { outline:2px solid var(--tk-wine); outline-offset:-2px; }
 .kin-styling-summary-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
 .kin-styling-summary-head .approved-button { min-height:44px; padding:0 12px; font-size:11px; }
@@ -793,11 +802,16 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-piece-preview-item img { display:block; width:112px; height:152px; border-radius:12px; object-fit:cover; }
 .kin-piece-preview-item span { overflow:hidden; color:var(--tk-stone); font-size:10px; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
 
-.kin-piece-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:14px; }
-.kin-piece-actions button,.kin-piece-actions label { position:relative; display:flex; min-height:50px; align-items:center; justify-content:center; gap:9px; margin:0; padding:10px; border:1px solid var(--tk-border); border-radius:13px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:600; cursor:pointer; }
-.kin-piece-actions label:focus-within { outline:2px solid var(--tk-wine); outline-offset:2px; }
+/* "Add a Piece" is a single primary card — tappable itself (as a <button>)
+   only while empty; once a piece is set, the small corner refresh icon
+   reopens the same Take-a-Photo/Choose-from-My-Closet sheet instead. The
+   empty state alone gets a shorter min-height (~25% less than the shared
+   .kin-piece-preview default) — the photo/item preview states keep the
+   base height so their images stay centered and undistorted. */
+.kin-piece-preview-trigger { width:100%; margin:0; min-height:183px; border:1px solid var(--tk-border); font:inherit; color:inherit; text-align:inherit; cursor:pointer; appearance:none; }
 .kin-file-input { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; }
 
+.kin-text-input-label { margin:0 0 6px; }
 .kin-text-input { display:flex; width:100%; min-height:52px; align-items:center; gap:10px; margin-bottom:16px; padding:0 14px; border:1px solid var(--tk-border); border-radius:13px; background:var(--tk-card); color:var(--tk-ink); }
 .kin-text-input input { min-width:0; flex:1; border:0; outline:0; background:transparent; color:var(--tk-ink); font:inherit; font-size:13px; }
 .kin-text-input input::placeholder { color:var(--tk-stone); opacity:1; }
@@ -805,15 +819,15 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-occasion-pills { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:7px; margin-bottom:13px; }
 .kin-occasion-pills button { min-width:0; min-height:42px; padding:7px 4px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:600; }
 .kin-occasion-pills button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
-.kin-preferences { margin:0 0 12px; }
-.kin-preferences summary { list-style:none; }
-.kin-preferences summary::-webkit-details-marker { display:none; }
-.kin-more-prefs { display:flex; width:100%; min-height:48px; align-items:center; justify-content:space-between; padding:10px 14px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); color:var(--tk-ink); cursor:pointer; font-size:12px; font-weight:600; }
-.kin-more-prefs span { display:flex; align-items:center; gap:9px; }
-.kin-more-prefs > svg { transition:transform .18s ease; }
-.kin-preferences[open] .kin-more-prefs > svg { transform:rotate(90deg); }
-.approved-app[dir="rtl"] .kin-preferences[open] .kin-more-prefs > svg { transform:rotate(-90deg); }
-.kin-preferences-body { margin-top:8px; padding:14px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); }
+/* Preferences, simplified: budget is the only thing surfaced by default,
+   as one small pill rather than a form section. Location/country/size keep
+   their state and submit()-time API params untouched (see App.tsx) — they
+   simply have no visible control here until a saved/default value exists
+   to prefill them with. */
+.kin-add-budget { display:inline-flex; align-items:center; gap:5px; margin:0 0 14px; padding:8px 13px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-wine); font-size:12px; font-weight:700; }
+.kin-budget-row { display:flex; align-items:flex-end; gap:8px; margin:0 0 14px; }
+.kin-budget-row .form-field { flex:1; min-width:0; margin:0; }
+.kin-budget-row .approved-icon { flex:0 0 auto; width:36px; height:36px; margin-bottom:1px; }
 .kin-submit-btn { display:flex; width:100%; min-height:52px; align-items:center; justify-content:center; gap:9px; margin:0; padding:12px 16px; border:0; border-radius:12px; background:var(--tk-wine); color:var(--tk-text-inverse); font-size:14px; font-weight:800; }
 .kin-submit-btn:disabled { opacity:.65; cursor:not-allowed; }
 
@@ -836,6 +850,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 @media (max-width:390px) {
   .kin-style-heading .kin-headline { font-size:29px; }
   .kin-piece-preview { min-height:226px; }
+  .kin-piece-preview-trigger { min-height:170px; }
   .kin-piece-preview-img { max-height:198px; }
   .kin-occasion-pills button { font-size:10px; }
 }
