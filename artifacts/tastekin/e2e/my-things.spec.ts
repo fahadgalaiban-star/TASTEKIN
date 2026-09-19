@@ -805,14 +805,15 @@ test('the wardrobe view is shown by default and shows only owned items; the cons
   await expect(page.getByRole('heading', { name: 'My Closet' })).toBeVisible();
   await expect(page.getByTestId('my-things-tab-considering')).toBeVisible();
   await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveCount(0);
-  // "Thinking of Buying" replaces the old "Considering" label; the
+  // "Want to Buy" replaces the old "Thinking of Buying" label; the
   // persisted value/testid stay exactly "considering".
-  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('Thinking of Buying');
+  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('Want to Buy');
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Shirt · Blue');
 
   await page.getByTestId('my-things-tab-considering').click();
-  await expect(page.getByRole('heading', { name: 'Thinking of Buying' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Want to Buy' })).toBeVisible();
+  await expect(page.getByText("Pieces you're considering.")).toBeVisible();
   await expect(page.getByTestId('my-things-tab-wardrobe')).toBeVisible();
   await expect(page.getByTestId('my-things-tab-considering')).toHaveCount(0);
   await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveText('← My Closet');
@@ -961,10 +962,11 @@ test('Arabic labels: tabs, ownership choice, and the item sheet render in Arabic
   // is now the view-specific "My Closet" ("خزانتي").
   await expect(page.locator('.approved-kicker')).toHaveText('أغراضي');
   await expect(page.getByRole('heading', { name: 'خزانتي' })).toBeVisible();
-  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('أفكر أشتريها');
+  await expect(page.getByTestId('my-things-tab-considering')).toHaveText('قائمة الشراء');
 
   await page.getByTestId('my-things-tab-considering').click();
-  await expect(page.getByRole('heading', { name: 'أفكر أشتريها' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'قائمة الشراء' })).toBeVisible();
+  await expect(page.getByText('قطع تفكر في شرائها.')).toBeVisible();
   await expect(page.getByTestId('my-things-tab-wardrobe')).toHaveText('→ خزانتي');
   await page.getByTestId('my-things-open').click();
   await expect(page.getByTestId('my-things-move')).toHaveText('انقل إلى خزانتي');
@@ -1006,9 +1008,9 @@ test('390x844 mobile layout: My Things renders with no document-level horizontal
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
   await page.getByTestId('my-things-search-input').fill('');
 
-  await page.getByTestId('my-things-category-tops').click();
+  await page.getByTestId('my-things-category-select').selectOption('tops');
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
-  await page.getByTestId('my-things-category-all').click();
+  await page.getByTestId('my-things-category-select').selectOption('all');
 
   await page.getByTestId('my-things-tab-considering').click();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
@@ -1087,19 +1089,19 @@ test('each category filter maps only to its intended existing item types', async
   await gotoMyThingsWithItems(page, ALL_CATEGORY_ITEMS);
   await expect(page.getByTestId('my-things-item')).toHaveCount(8);
 
-  await page.getByTestId('my-things-category-tops').click();
+  await page.getByTestId('my-things-category-select').selectOption('tops');
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('T-Shirt · White');
 
-  await page.getByTestId('my-things-category-bottoms').click();
+  await page.getByTestId('my-things-category-select').selectOption('bottoms');
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Jeans · Blue');
 
-  await page.getByTestId('my-things-category-shoes').click();
+  await page.getByTestId('my-things-category-select').selectOption('shoes');
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Boots · Brown');
 
-  await page.getByTestId('my-things-category-outerwear').click();
+  await page.getByTestId('my-things-category-select').selectOption('outerwear');
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
   await expect(page.getByTestId('my-things-item').locator('.profile-grid-caption')).toHaveText('Coat · Black');
 });
@@ -1111,17 +1113,17 @@ test('Dress, Bag, Accessory, and Other remain available under All and through se
   // search terms used further down.
   const EXTRA_TOPS_ITEM = { ...SAMPLE_ITEM, id: 'item-sweater', itemType: 'sweater', primaryColor: 'green' };
   await gotoMyThingsWithItems(page, [...ALL_CATEGORY_ITEMS, EXTRA_TOPS_ITEM]);
-  await expect(page.getByTestId('my-things-category-all')).toHaveClass(/selected/);
+  await expect(page.getByTestId('my-things-category-select')).toHaveValue('all');
   await expect(page.getByTestId('my-things-item')).toHaveCount(9);
 
   // None of the four bucketed categories ever match dress/bag/accessory/other.
   for (const category of ['tops', 'bottoms', 'shoes', 'outerwear']) {
-    await page.getByTestId(`my-things-category-${category}`).click();
+    await page.getByTestId('my-things-category-select').selectOption(category);
     const captions = await page.getByTestId('my-things-item').locator('.profile-grid-caption').allTextContents();
     expect(captions.some((caption) => /Dress|Bag|Accessory|Other/.test(caption))).toBe(false);
   }
 
-  await page.getByTestId('my-things-category-all').click();
+  await page.getByTestId('my-things-category-select').selectOption('all');
   await expect(page.getByTestId('my-things-item')).toHaveCount(9);
 
   await page.getByTestId('my-things-search-input').fill('dress');
@@ -1153,12 +1155,15 @@ test('category filter labels render correctly in Arabic', async ({ page }) => {
   await page.getByTestId('nav-you').click();
   await page.getByTestId('open-my-things').click();
 
-  // "All" is now labeled "All Items" ("كل القطع"); testid is unchanged.
-  await expect(page.getByTestId('my-things-category-all')).toHaveText('كل القطع');
-  await expect(page.getByTestId('my-things-category-tops')).toHaveText('قطع علوية');
-  await expect(page.getByTestId('my-things-category-bottoms')).toHaveText('قطع سفلية');
-  await expect(page.getByTestId('my-things-category-shoes')).toHaveText('أحذية');
-  await expect(page.getByTestId('my-things-category-outerwear')).toHaveText('ملابس خارجية');
+  // The category chip row is now one compact <select>; "All" is labeled
+  // "All Items" ("كل القطع"). Its options render in Arabic.
+  const select = page.getByTestId('my-things-category-select');
+  await expect(select).toHaveValue('all');
+  await expect(select.locator('option[value="all"]')).toHaveText('كل القطع');
+  await expect(select.locator('option[value="tops"]')).toHaveText('قطع علوية');
+  await expect(select.locator('option[value="bottoms"]')).toHaveText('قطع سفلية');
+  await expect(select.locator('option[value="shoes"]')).toHaveText('أحذية');
+  await expect(select.locator('option[value="outerwear"]')).toHaveText('ملابس خارجية');
   await expect(page.getByTestId('my-things-search-input')).toHaveAttribute('placeholder', 'ابحث في قطعك');
 });
 

@@ -3907,15 +3907,15 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { 
     <span className="approved-kicker">{t('My Things', 'أغراضي')}</span>
     <div className="workspace-head">
       <div>
-        <h1 className="approved-title">{tab === 'wardrobe' ? t('My Closet', 'خزانتي') : t('Thinking of Buying', 'أفكر أشتريها')}</h1>
-        <p>{tab === 'wardrobe' ? t('Everything you own, ready for KIN.', 'كل ما تملكه، جاهز لـ KIN.') : t('Save a piece here while you decide.', 'احفظ قطعة هنا أثناء اتخاذ القرار.')}</p>
+        <h1 className="approved-title">{tab === 'wardrobe' ? t('My Closet', 'خزانتي') : t('Want to Buy', 'قائمة الشراء')}</h1>
+        <p>{tab === 'wardrobe' ? t('Everything you own, ready for KIN.', 'كل ما تملكه، جاهز لـ KIN.') : t("Pieces you're considering.", 'قطع تفكر في شرائها.')}</p>
       </div>
       <button type="button" className="approved-icon primary" data-testid="my-things-add" aria-label={t('Add item', 'إضافة قطعة')} onClick={onAdd}><Plus size={20} /></button>
     </div>
 
     <div className="my-things-ownership-toggle" data-testid="my-things-tabs">
       {tab === 'wardrobe'
-        ? <button type="button" className="my-things-toggle-link" data-testid="my-things-tab-considering" onClick={() => { setTab('considering'); setCategory('all'); setSearch(''); }}>{t('Thinking of Buying', 'أفكر أشتريها')}</button>
+        ? <button type="button" className="my-things-toggle-link" data-testid="my-things-tab-considering" onClick={() => { setTab('considering'); setCategory('all'); setSearch(''); }}>{t('Want to Buy', 'قائمة الشراء')}</button>
         : <button type="button" className="my-things-toggle-link" data-testid="my-things-tab-wardrobe" onClick={() => { setTab('wardrobe'); setCategory('all'); setSearch(''); }}>{t('← My Closet', '→ خزانتي')}</button>}
     </div>
 
@@ -3925,7 +3925,9 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { 
     </label>}
 
     <div className="my-things-category-row" data-testid="my-things-categories">
-      {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} className={category === filter.value ? 'selected' : ''} data-testid={`my-things-category-${filter.value}`} onClick={() => setCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
+      <select className="my-things-category-select" data-testid="my-things-category-select" aria-label={t('Filter by category', 'تصفية حسب الفئة')} value={category} onChange={(event) => setCategory(event.target.value as ClosetCategoryFilter)}>
+        {CLOSET_CATEGORY_FILTERS.map((filter) => <option key={filter.value} value={filter.value}>{t(filter.en, filter.ar)}</option>)}
+      </select>
     </div>
 
     {deleteNotice && <p className="settings-note">{deleteNotice}</p>}

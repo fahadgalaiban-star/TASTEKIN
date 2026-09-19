@@ -750,9 +750,11 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .my-things-toggle-link:hover { text-decoration:underline; }
 /* Lighter, single-row compact selector — distinct from the bolder
    .admin-filter-row treatment used on admin screens. */
-.my-things-category-row { display:flex; gap:6px; margin:0 0 14px; overflow-x:auto; -webkit-overflow-scrolling:touch; }
-.my-things-category-row button { flex:0 0 auto; min-height:34px; padding:0 13px; border:1px solid var(--tk-border); border-radius:999px; background:transparent; color:var(--tk-stone); font-size:11px; font-weight:700; white-space:nowrap; }
-.my-things-category-row button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+/* One compact native <select> instead of a chip row — a native control
+   mirrors correctly under dir="rtl" and never clips on its own, unlike a
+   custom-drawn dropdown would need extra work to guarantee. */
+.my-things-category-row { margin:0 0 14px; }
+.my-things-category-select { display:block; width:100%; max-width:200px; min-height:38px; padding:0 13px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font:inherit; font-size:12px; font-weight:700; }
 .approved-grid-card.selected { outline:2px solid var(--tk-wine); outline-offset:-2px; }
 .kin-styling-summary-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
 .kin-styling-summary-head .approved-button { min-height:44px; padding:0 12px; font-size:11px; }
@@ -802,8 +804,11 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 
 /* "Add a Piece" is a single primary card — tappable itself (as a <button>)
    only while empty; once a piece is set, the small corner refresh icon
-   reopens the same Take-a-Photo/Choose-from-My-Closet sheet instead. */
-.kin-piece-preview-trigger { width:100%; margin:0; border:1px solid var(--tk-border); font:inherit; color:inherit; text-align:inherit; cursor:pointer; appearance:none; }
+   reopens the same Take-a-Photo/Choose-from-My-Closet sheet instead. The
+   empty state alone gets a shorter min-height (~25% less than the shared
+   .kin-piece-preview default) — the photo/item preview states keep the
+   base height so their images stay centered and undistorted. */
+.kin-piece-preview-trigger { width:100%; margin:0; min-height:183px; border:1px solid var(--tk-border); font:inherit; color:inherit; text-align:inherit; cursor:pointer; appearance:none; }
 .kin-file-input { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); clip-path:inset(50%); white-space:nowrap; }
 
 .kin-text-input-label { margin:0 0 6px; }
@@ -845,6 +850,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 @media (max-width:390px) {
   .kin-style-heading .kin-headline { font-size:29px; }
   .kin-piece-preview { min-height:226px; }
+  .kin-piece-preview-trigger { min-height:170px; }
   .kin-piece-preview-img { max-height:198px; }
   .kin-occasion-pills button { font-size:10px; }
 }
