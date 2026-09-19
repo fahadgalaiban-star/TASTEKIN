@@ -1197,10 +1197,10 @@ function TastekinApp() {
     {screen === 'adminAnalytics' && <AdminAnalyticsScreen ar={ar} />}
     {screen === 'blockedAccounts' && <BlockedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
     {screen === 'mutedAccounts' && <MutedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
-    {screen === 'myThings' && <MyThingsScreen ar={ar} initialSelectedStyleIds={kinStylingItemIds} onStyleSelectionChange={(ids) => setKinStylingItemIds(new Set(ids))} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
+    {screen === 'myThings' && <MyThingsScreen ar={ar} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
     {screen === 'myThingsAdd' && <AddClosetItemScreen ar={ar} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'myThingsEdit' && editingClosetItem && <EditClosetItemScreen ar={ar} item={editingClosetItem} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
-    {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} initialSelectedStyleIds={kinStylingItemIds} onStyleSelectionChange={(ids) => setKinStylingItemIds(new Set(ids))} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
+    {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
      {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
    </main>
@@ -2999,6 +2999,8 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const [selectedItemId, setSelectedItemId] = useState('');
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState<string | null>(null);
+  const [addPieceSheetOpen, setAddPieceSheetOpen] = useState(false);
+  const [budgetOpen, setBudgetOpen] = useState(false);
   const [photoError, setPhotoError] = useState('');
   const [location, setLocation] = useState('');
   const [budget, setBudget] = useState('');
@@ -3578,13 +3580,13 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     {mode === 'looks' && (
       <>
         <div className="kin-style-heading">
-          <h1 className="kin-headline">{t('Style it your way.', 'نسّقها بطريقتك.')}</h1>
-          <p className="kin-subline">{t('Start with one piece. Make it feel like you.', 'ابدأ بقطعة واحدة، واجعلها تعبّر عنك.')}</p>
+          <h1 className="kin-headline">{t('Style a Piece', 'نسّق قطعة')}</h1>
+          <p className="kin-subline">{t('Start with something you own or something you found.', 'ابدأ بشيء تملكه أو شيء وجدته.')}</p>
         </div>
 
-        <div className="kin-piece-preview" data-testid="kin-styling-summary">
-          <span className="kin-piece-label">{t('Your piece', 'قطعتك')}</span>
-          {(stylingItemIds.size > 0 || selectedItemId) ? (
+        {(stylingItemIds.size > 0 || selectedItemId) ? (
+          <div className="kin-piece-preview" data-testid="kin-styling-summary">
+            <span className="kin-piece-label">{t('Add a Piece', 'أضف قطعة')}</span>
             <div className="kin-piece-preview-items">
               {[...stylingItemIds, ...(selectedItemId ? [selectedItemId] : [])].map((id) => {
                 const item = myThingsItems.find(i => i.id === id);
@@ -3593,30 +3595,43 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   {item && <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>}
                 </div>;
               })}
-              <button type="button" className="kin-piece-refresh" data-testid="kin-piece-change" aria-label={t('Change your piece', 'غيّر قطعتك')} onClick={changeStylingItems}><RefreshCw size={16} /></button>
+              <button type="button" className="kin-piece-refresh" data-testid="kin-piece-change" aria-label={t('Change your piece', 'غيّر قطعتك')} onClick={() => setAddPieceSheetOpen(true)}><RefreshCw size={16} /></button>
             </div>
-          ) : photoPreviewUrl ? (
-             <>
-               <img src={photoPreviewUrl} className="kin-piece-preview-img" alt={t('Selected styling piece', 'قطعة التنسيق المختارة')} />
-               <button type="button" className="kin-piece-refresh" data-testid="kin-photo-clear" aria-label={t('Remove photo', 'إزالة الصورة')} onClick={clearPhoto}><RefreshCw size={16} /></button>
-             </>
-          ) : (
-             <span className="kin-piece-preview-empty"><ImagePlus size={42} aria-hidden="true" /><span>{t('Add one piece to begin', 'أضف قطعة واحدة للبدء')}</span></span>
-          )}
-        </div>
-
-        <div className="kin-piece-actions">
-           <label data-testid="kin-take-photo">
-              <Camera size={18} /> {t('Take a photo', 'التقط صورة')}
-              <input className="kin-file-input" aria-label={t('Add a clothing photo', 'أضف صورة قطعة ملابس')} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="kin-photo-input" onChange={selectPhoto} />
-           </label>
-           {myThingsEnabled && <button type="button" data-testid="kin-open-my-things" onClick={changeStylingItems}><Archive size={18} /> {t('My Things', 'أغراضي')}</button>}
-        </div>
+          </div>
+        ) : photoPreviewUrl ? (
+          <div className="kin-piece-preview" data-testid="kin-styling-summary">
+            <span className="kin-piece-label">{t('Add a Piece', 'أضف قطعة')}</span>
+            <img src={photoPreviewUrl} className="kin-piece-preview-img" alt={t('Selected styling piece', 'قطعة التنسيق المختارة')} />
+            <button type="button" className="kin-piece-refresh" data-testid="kin-photo-clear" aria-label={t('Remove photo', 'إزالة الصورة')} onClick={clearPhoto}><RefreshCw size={16} /></button>
+          </div>
+        ) : (
+          <button type="button" className="kin-piece-preview kin-piece-preview-trigger" data-testid="kin-add-piece" onClick={() => setAddPieceSheetOpen(true)}>
+            <span className="kin-piece-label">{t('Add a Piece', 'أضف قطعة')}</span>
+            <span className="kin-piece-preview-empty"><ImagePlus size={42} aria-hidden="true" /><span>{t('Add one piece to begin', 'أضف قطعة واحدة للبدء')}</span></span>
+          </button>
+        )}
         {photoError && <p className="workspace-notice" role="alert" data-testid="kin-photo-error">{photoError}</p>}
 
+        <Drawer.Root open={addPieceSheetOpen} onOpenChange={setAddPieceSheetOpen}>
+          <Drawer.Portal>
+            <Drawer.Overlay className="approved-drawer-overlay" />
+            <Drawer.Content className="approved-drawer-content report-drawer" aria-label={t('Add a piece', 'أضف قطعة')}>
+              <div className="approved-drawer-handle" />
+              <div className="report-menu">
+                <label className="report-menu-item" data-testid="kin-take-photo">
+                  <Camera size={16} /> {t('Take a Photo', 'التقط صورة')}
+                  <input className="kin-file-input" aria-label={t('Add a clothing photo', 'أضف صورة قطعة ملابس')} type="file" accept="image/jpeg,image/png,image/webp" capture="environment" data-testid="kin-photo-input" onChange={(event) => { selectPhoto(event); setAddPieceSheetOpen(false); }} />
+                </label>
+                {myThingsEnabled && <button type="button" className="report-menu-item" data-testid="kin-open-my-things" onClick={() => { setAddPieceSheetOpen(false); changeStylingItems(); }}><Archive size={16} /> {t('Choose from My Closet', 'اختر من خزانتي')}</button>}
+              </div>
+            </Drawer.Content>
+          </Drawer.Portal>
+        </Drawer.Root>
+
+        <p className="settings-note kin-text-input-label">{t("Or describe what you're looking for…", 'أو صف ما تبحث عنه…')}</p>
         <div className="kin-text-input">
            <Pencil size={18} color="var(--tk-stone)" />
-           <input type="text" data-testid="kin-query" aria-label={t('Describe what you want to style', 'صف ما تريد تنسيقه')} placeholder={t('Or describe what you want to style…', 'أو صف ما تريد تنسيقه…')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
+           <input type="text" data-testid="kin-query" aria-label={t("Or describe what you're looking for", 'أو صف ما تبحث عنه')} placeholder={t('Black trousers to match my cream shirt', 'بنطال أسود يناسب قميصي الكريمي')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
         </div>
 
         <span className="kin-occasion-label">{t("What's the occasion?", 'ما المناسبة؟')}</span>
@@ -3626,19 +3641,18 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
            ))}
         </div>
 
-        <details className="kin-preferences" data-testid="kin-preferences"><summary className="kin-more-prefs" data-testid="kin-more-preferences"><span><Settings2 size={16} /> {t('More preferences', 'تفضيلات إضافية')}</span><ChevronRight size={16} /></summary>
-           <div className="kin-preferences-body">
-             <label className="form-field"><span>{t('Location / country', 'الموقع / الدولة')}</span><input data-testid="kin-location" type="text" value={location} onChange={(event) => setLocation(event.target.value.slice(0, 200))} /></label>
-             <div className="form-two">
-               <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
-               <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
-             </div>
-             <label className="form-field"><span>{t('Size', 'المقاس')}</span><input data-testid="kin-size" type="text" value={size} onChange={(event) => setSize(event.target.value.slice(0, 50))} /></label>
-           </div>
-        </details>
+        {!budgetOpen ? (
+          <button type="button" className="kin-add-budget" data-testid="kin-add-budget" onClick={() => setBudgetOpen(true)}><Plus size={14} /> {t('Add budget', 'أضف ميزانية')}</button>
+        ) : (
+          <div className="kin-budget-row" data-testid="kin-preferences">
+            <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
+            <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
+            <button type="button" className="approved-icon" data-testid="kin-remove-budget" aria-label={t('Remove budget', 'إزالة الميزانية')} onClick={() => { setBudgetOpen(false); setBudget(''); }}><X size={14} /></button>
+          </div>
+        )}
 
         <button className="kin-submit-btn" data-testid="kin-submit" onClick={() => void submit()} disabled={state === 'loading'}>
-           <Sparkles size={18} /> {state === 'loading' ? t('Creating…', 'جارٍ الإنشاء…') : t('Create my looks', 'أنشئ إطلالاتي')}
+           <Sparkles size={18} /> {state === 'loading' ? t('Creating…', 'جارٍ الإنشاء…') : t('Create My Look', 'أنشئ إطلالتي')}
         </button>
       </>
     )}
@@ -3717,40 +3731,48 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
 type ClosetItemMenuStep = 'menu' | 'confirm-delete';
 
 /**
- * Per-card overflow menu — modeled directly on ReportMenu's Drawer pattern
- * so it needs zero new CSS. Delete keeps its confirmation step (now inside
- * the drawer instead of inline on the card); the parent still owns the
- * actual DELETE request, its error handling, and its media-cleanup notice.
+ * Per-item bottom sheet, opened by tapping the closet card itself (no more
+ * standalone three-dot trigger). Modeled directly on ReportMenu's Drawer
+ * pattern so it needs zero new CSS. "Style This Piece" reuses the exact
+ * single-item "Style with KIN" hand-off (onStyle); it's hidden for a
+ * considering ("Thinking of Buying") item because the backend's multi-item
+ * KIN lookup only resolves owned items — offering it here would just 400.
+ * Delete keeps its confirmation step; the parent still owns the actual
+ * DELETE request, its error handling, and its media-cleanup notice.
  */
-function ClosetItemMenu({ ar, deleting, canMove, onEdit, onMove, onDelete }: { ar: boolean; deleting: boolean; canMove: boolean; onEdit: () => void; onMove: () => void; onDelete: () => void }) {
+function ClosetItemSheet({ ar, open, onOpenChange, deleting, canMove, canStyle, onStyle, onEdit, onMove, onDelete }: { ar: boolean; open: boolean; onOpenChange: (open: boolean) => void; deleting: boolean; canMove: boolean; canStyle: boolean; onStyle: () => void; onEdit: () => void; onMove: () => void; onDelete: () => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
-  const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ClosetItemMenuStep>('menu');
-  const close = () => { setOpen(false); setStep('menu'); };
+  const close = () => { onOpenChange(false); setStep('menu'); };
+  // This sheet is one shared instance reused across every card, closed
+  // programmatically (not through Drawer's own onOpenChange) whenever the
+  // open item disappears from the list — e.g. right after a delete
+  // succeeds. Reset the confirm-delete step on every close, however it
+  // happens, so reopening the sheet for a different item never starts on
+  // a stale "delete this?" screen.
+  useEffect(() => { if (!open) setStep('menu'); }, [open]);
 
-  return <>
-    <button type="button" className="approved-icon report-trigger" data-testid="my-things-menu-trigger" aria-label={t('More options', 'مزيد من الخيارات')} onClick={() => setOpen(true)}><MoreVertical size={18} /></button>
-    <Drawer.Root open={open} onOpenChange={(next) => { setOpen(next); if (!next) setStep('menu'); }}>
-      <Drawer.Portal>
-        <Drawer.Overlay className="approved-drawer-overlay" />
-        <Drawer.Content className="approved-drawer-content report-drawer" aria-label={t('Item options', 'خيارات الغرض')}>
-          <div className="approved-drawer-handle" />
-          {step === 'menu' && <div className="report-menu">
-            {canMove && <button type="button" className="report-menu-item" data-testid="my-things-move" onClick={() => { close(); onMove(); }}><Check size={16} /> {t('Move to My Wardrobe', 'انقل إلى خزانتي')}</button>}
-            <button type="button" className="report-menu-item" data-testid="my-things-edit" onClick={() => { close(); onEdit(); }}><Pencil size={16} /> {t('Edit', 'تعديل')}</button>
-            <button type="button" className="report-menu-item report-menu-item-danger" data-testid="my-things-delete" onClick={() => setStep('confirm-delete')}><Trash2 size={16} /> {t('Delete', 'حذف')}</button>
-          </div>}
-          {step === 'confirm-delete' && <div className="report-menu">
-            <p className="settings-note">{t('Delete this item? This can’t be undone.', 'هل تريد حذف هذا الغرض؟ لا يمكن التراجع عن هذا الإجراء.')}</p>
-            <div className="admin-confirm-actions">
-              <button className="approved-button" onClick={() => setStep('menu')} disabled={deleting}>{t('Cancel', 'إلغاء')}</button>
-              <button className="approved-button primary" data-testid="my-things-confirm-delete" onClick={onDelete} disabled={deleting}>{deleting ? t('Removing…', 'جارٍ الإزالة…') : t('Delete', 'حذف')}</button>
-            </div>
-          </div>}
-        </Drawer.Content>
-      </Drawer.Portal>
-    </Drawer.Root>
-  </>;
+  return <Drawer.Root open={open} onOpenChange={(next) => { onOpenChange(next); if (!next) setStep('menu'); }}>
+    <Drawer.Portal>
+      <Drawer.Overlay className="approved-drawer-overlay" />
+      <Drawer.Content className="approved-drawer-content report-drawer" aria-label={t('Item options', 'خيارات الغرض')}>
+        <div className="approved-drawer-handle" />
+        {step === 'menu' && <div className="report-menu">
+          {canMove && <button type="button" className="report-menu-item" data-testid="my-things-move" onClick={() => { close(); onMove(); }}><Check size={16} /> {t('Move to My Wardrobe', 'انقل إلى خزانتي')}</button>}
+          {canStyle && <button type="button" className="report-menu-item" data-testid="my-things-style-piece" onClick={() => { close(); onStyle(); }}><Sparkles size={16} /> {t('Style This Piece', 'نسّق هذه القطعة')}</button>}
+          <button type="button" className="report-menu-item" data-testid="my-things-edit" onClick={() => { close(); onEdit(); }}><Pencil size={16} /> {t('Edit', 'تعديل')}</button>
+          <button type="button" className="report-menu-item report-menu-item-danger" data-testid="my-things-delete" onClick={() => setStep('confirm-delete')}><Trash2 size={16} /> {t('Delete', 'حذف')}</button>
+        </div>}
+        {step === 'confirm-delete' && <div className="report-menu">
+          <p className="settings-note">{t('Delete this item? This can’t be undone.', 'هل تريد حذف هذا الغرض؟ لا يمكن التراجع عن هذا الإجراء.')}</p>
+          <div className="admin-confirm-actions">
+            <button className="approved-button" onClick={() => setStep('menu')} disabled={deleting}>{t('Cancel', 'إلغاء')}</button>
+            <button className="approved-button primary" data-testid="my-things-confirm-delete" onClick={onDelete} disabled={deleting}>{deleting ? t('Removing…', 'جارٍ الإزالة…') : t('Delete', 'حذف')}</button>
+          </div>
+        </div>}
+      </Drawer.Content>
+    </Drawer.Portal>
+  </Drawer.Root>;
 }
 
 // Client-side-only grouping for the My Things category filter chips. Every
@@ -3766,7 +3788,7 @@ const CLOSET_CATEGORY_ITEM_TYPES: Record<Exclude<ClosetCategoryFilter, 'all'>, s
   outerwear: ['jacket', 'coat', 'blazer', 'suit'],
 };
 const CLOSET_CATEGORY_FILTERS: { value: ClosetCategoryFilter; en: string; ar: string }[] = [
-  { value: 'all', en: 'All', ar: 'الكل' },
+  { value: 'all', en: 'All Items', ar: 'كل القطع' },
   { value: 'tops', en: 'Tops', ar: 'قطع علوية' },
   { value: 'bottoms', en: 'Bottoms', ar: 'قطع سفلية' },
   { value: 'shoes', en: 'Shoes', ar: 'أحذية' },
@@ -3779,13 +3801,23 @@ function closetCategoryOf(itemType: string): ClosetCategoryFilter | null {
   return null;
 }
 
+// Below this many items in the active view, the search field is more
+// clutter than help — it only appears once it earns its place.
+const MY_THINGS_SEARCH_VISIBLE_THRESHOLD = 8;
+
 /**
  * My Things (KIN) — the signed-in user's private closet. Images are never
  * loaded via a stored object key; the browser is only ever given the
  * authorized, id-keyed GET /api/closet-items/:id/image route, which itself
  * redirects to a 60s-TTL signed URL server-side.
+ *
+ * The main view ("My Closet") shows only owned items — Thinking of Buying
+ * items stay fully intact (still addable, editable, movable, deletable;
+ * nothing here touches that data or its API) but are reached through the
+ * small toggle link below the header rather than a permanent segmented
+ * control, matching the "simple, organized wardrobe" framing of this screen.
  */
-function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onStyleSelectionChange, initialSelectedStyleIds }: { ar: boolean; onAdd: () => void; onEdit: (item: ClosetItem) => void; onUnavailable: () => void; onStyleWithKin?: (ids: string[]) => void; onStyleSelectionChange?: (ids: string[]) => void; initialSelectedStyleIds?: Set<string> }) {
+function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { ar: boolean; onAdd: () => void; onEdit: (item: ClosetItem) => void; onUnavailable: () => void; onStyleWithKin?: (ids: string[]) => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [items, setItems] = useState<ClosetItem[]>([]);
@@ -3796,14 +3828,10 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
   const [deleteNotice, setDeleteNotice] = useState('');
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState<ClosetCategoryFilter>('all');
-
-  const [stylingMode, setStylingMode] = useState(Boolean(initialSelectedStyleIds && initialSelectedStyleIds.size > 0));
-  const [selectedForStyling, setSelectedForStyling] = useState<Set<string>>(() => new Set(initialSelectedStyleIds));
-  const [wardrobeLimitMessage, setWardrobeLimitMessage] = useState('');
-
-  const activeTab = stylingMode ? 'wardrobe' : tab;
+  const [openItemId, setOpenItemId] = useState<string | null>(null);
 
   const allowed = session.status === 'authenticated' && session.featureFlags.my_things === true;
+  const kinSearchEnabled = session.featureFlags.kin_search === true;
   useEffect(() => {
     if (session.status !== 'loading' && !allowed) onUnavailable();
   }, [session.status, allowed, onUnavailable]);
@@ -3814,12 +3842,6 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
       const response = await fetch('/api/closet-items', { credentials: 'include', cache: 'no-store' });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json() as { items: ClosetItem[] };
-      const ownedIds = new Set(payload.items.filter((item) => item.ownershipStatus === 'owned').map((item) => item.id));
-      setSelectedForStyling((current) => {
-        const reconciled = new Set([...current].filter((id) => ownedIds.has(id)));
-        if (reconciled.size !== current.size) onStyleSelectionChange?.([...reconciled]);
-        return reconciled;
-      });
       setItems(payload.items); setState('ready');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err)); setState('error');
@@ -3834,13 +3856,6 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       const payload = await response.json().catch(() => null) as { physicalDeletion?: string } | null;
       setItems((current) => current.filter((item) => item.id !== id));
-      setSelectedForStyling((current) => {
-        if (!current.has(id)) return current;
-        const next = new Set(current);
-        next.delete(id);
-        onStyleSelectionChange?.([...next]);
-        return next;
-      });
       setDeleteNotice(payload?.physicalDeletion === 'pending'
         ? t('Removed. Final cleanup is finishing in the background.', 'تمت الإزالة. التنظيف النهائي يجري في الخلفية.')
         : t('Removed.', 'تمت الإزالة.'));
@@ -3879,53 +3894,37 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
 
   const wardrobeItems = items.filter((item) => item.ownershipStatus !== 'considering');
   const consideringItems = items.filter((item) => item.ownershipStatus === 'considering');
-  const tabItems = activeTab === 'wardrobe' ? wardrobeItems : consideringItems;
+  const tabItems = tab === 'wardrobe' ? wardrobeItems : consideringItems;
   const categoryItems = category === 'all' ? tabItems : tabItems.filter((item) => closetCategoryOf(item.itemType) === category);
   const query = search.trim().toLowerCase();
   const visibleItems = query
     ? categoryItems.filter((item) => `${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} ${closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}`.toLowerCase().includes(query))
     : categoryItems;
   const hasAnyItemsInTab = tabItems.length > 0;
-
-  const toggleStyleItem = (id: string) => {
-    setWardrobeLimitMessage('');
-    const next = new Set(selectedForStyling);
-    if (next.has(id)) {
-      next.delete(id);
-    } else if (next.size >= 6) {
-      setWardrobeLimitMessage(t('You can select up to 6 items at once.', 'يمكنك اختيار حتى 6 قطع في المرة الواحدة.'));
-      return;
-    } else {
-      next.add(id);
-    }
-    setSelectedForStyling(next);
-  };
+  const openItem = openItemId ? items.find((item) => item.id === openItemId) ?? null : null;
 
   return <section>
-    <span className="approved-kicker">{stylingMode ? t('Style with KIN', 'نسّق مع KIN') : t('My Things', 'أغراضي')}</span>
+    <span className="approved-kicker">{t('My Things', 'أغراضي')}</span>
     <div className="workspace-head">
       <div>
-        <h1 className="approved-title">{stylingMode ? t('Choose items', 'اختر القطع') : t('My Things', 'أغراضي')}</h1>
-        <p>{stylingMode ? t('Select up to 6 items to build a look around.', 'اختر ما يصل إلى 6 قطع لبناء إطلالة حولها.') : t('Your wardrobe, ready for KIN.', 'خزانتك جاهزة لـ KIN.')}</p>
+        <h1 className="approved-title">{tab === 'wardrobe' ? t('My Closet', 'خزانتي') : t('Thinking of Buying', 'أفكر أشتريها')}</h1>
+        <p>{tab === 'wardrobe' ? t('Everything you own, ready for KIN.', 'كل ما تملكه، جاهز لـ KIN.') : t('Save a piece here while you decide.', 'احفظ قطعة هنا أثناء اتخاذ القرار.')}</p>
       </div>
-      {!stylingMode && <button type="button" className="approved-icon primary" data-testid="my-things-add" aria-label={t('Add item', 'إضافة قطعة')} onClick={onAdd}><Plus size={20} /></button>}
+      <button type="button" className="approved-icon primary" data-testid="my-things-add" aria-label={t('Add item', 'إضافة قطعة')} onClick={onAdd}><Plus size={20} /></button>
     </div>
 
-    {!stylingMode && session.featureFlags.kin_search === true && <button type="button" className="approved-button wide my-things-style-entry" data-testid="my-things-style-with-kin" onClick={() => { setStylingMode(true); setCategory('all'); setSearch(''); }}>
-      {t('Style with KIN', 'نسّق مع KIN')}
-    </button>}
+    <div className="my-things-ownership-toggle" data-testid="my-things-tabs">
+      {tab === 'wardrobe'
+        ? <button type="button" className="my-things-toggle-link" data-testid="my-things-tab-considering" onClick={() => { setTab('considering'); setCategory('all'); setSearch(''); }}>{t('Thinking of Buying', 'أفكر أشتريها')}</button>
+        : <button type="button" className="my-things-toggle-link" data-testid="my-things-tab-wardrobe" onClick={() => { setTab('wardrobe'); setCategory('all'); setSearch(''); }}>{t('← My Closet', '→ خزانتي')}</button>}
+    </div>
 
-    {!stylingMode && <div className="approved-segment" data-testid="my-things-tabs">
-      <button className={activeTab === 'wardrobe' ? 'selected' : ''} data-testid="my-things-tab-wardrobe" onClick={() => setTab('wardrobe')}>{t('My Wardrobe', 'خزانتي')}</button>
-      <button className={activeTab === 'considering' ? 'selected' : ''} data-testid="my-things-tab-considering" onClick={() => setTab('considering')}>{t('Thinking of Buying', 'أفكر أشتريها')}</button>
-    </div>}
-
-    <label className="approved-search" data-testid="my-things-search">
+    {tabItems.length > MY_THINGS_SEARCH_VISIBLE_THRESHOLD && <label className="approved-search" data-testid="my-things-search">
       <Search size={14} />
       <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في قطعك')} aria-label={t('Search your items', 'ابحث في قطعك')} data-testid="my-things-search-input" />
-    </label>
+    </label>}
 
-    <div className="admin-filter-row" data-testid="my-things-categories">
+    <div className="my-things-category-row" data-testid="my-things-categories">
       {CLOSET_CATEGORY_FILTERS.map((filter) => <button key={filter.value} className={category === filter.value ? 'selected' : ''} data-testid={`my-things-category-${filter.value}`} onClick={() => setCategory(filter.value)}>{t(filter.en, filter.ar)}</button>)}
     </div>
 
@@ -3933,41 +3932,30 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin, onSt
     {state === 'loading' && <Empty text={t('Loading…', 'جارٍ التحميل…')} />}
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{t('Try again', 'حاول مجددًا')}</button></div>}
     {state === 'ready' && !visibleItems.length && <Empty text={!hasAnyItemsInTab
-      ? (activeTab === 'wardrobe'
+      ? (tab === 'wardrobe'
         ? t('Nothing added yet. Photograph a piece from your closet to start building My Things.', 'لم تتم إضافة شيء بعد. صوّر قطعة من خزانتك لبدء بناء أغراضك.')
         : t('Nothing you’re thinking of buying yet. Save a piece here while you decide.', 'لا يوجد شيء تفكر في شرائه بعد. احفظ قطعة هنا أثناء اتخاذ القرار.'))
       : t('No items match your search or filter.', 'لا توجد عناصر تطابق البحث أو الفلتر.')} />}
     {state === 'ready' && visibleItems.length > 0 && <div className="approved-grid profile-edits-grid" data-testid="my-things-grid">
-      {visibleItems.map((item) => <div key={item.id} className={`approved-grid-card ${stylingMode && selectedForStyling.has(item.id) ? 'selected' : ''}`} data-testid={stylingMode ? "my-things-style-item" : "my-things-item"}>
-        <button type="button" aria-pressed={stylingMode ? selectedForStyling.has(item.id) : undefined} data-testid="my-things-open" aria-label={stylingMode ? t(`Select ${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}`, `اختر ${closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}`) : t('Edit item', 'تعديل الغرض')} onClick={() => stylingMode ? toggleStyleItem(item.id) : onEdit(item)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
+      {visibleItems.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
+        <button type="button" data-testid="my-things-open" aria-label={t('Item options', 'خيارات الغرض')} onClick={() => setOpenItemId(item.id)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
           <div className="profile-grid-media">
             <img src={`/api/closet-items/${item.id}/image`} alt="" />
             {item.confirmationStatus === 'pending_review' && <span className="profile-grid-access">{t('Pending', 'قيد المراجعة')}</span>}
-            {stylingMode && selectedForStyling.has(item.id) && <span className="kin-wardrobe-check" style={{ position: 'absolute', top: 8, insetInlineEnd: 8, width: 22, height: 22, display: 'grid', placeItems: 'center', borderRadius: '50%', background: 'var(--tk-wine)', color: 'var(--tk-text-inverse)' }}><Check size={14} /></span>}
           </div>
           <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
         </button>
-        {!stylingMode && <div style={{ padding: '0 10px 10px', display: 'flex', justifyContent: 'flex-end' }}>
-          <ClosetItemMenu ar={ar} deleting={deletingId === item.id} canMove={item.ownershipStatus === 'considering'}
-            onEdit={() => onEdit(item)}
-            onMove={() => void moveToWardrobe(item.id)}
-            onDelete={() => void confirmedDelete(item.id)} />
-        </div>}
       </div>)}
     </div>}
 
-    {stylingMode && <>
-      <p className="my-things-style-status" role="status" aria-live="polite">{t(`${selectedForStyling.size} of 6 selected`, `تم اختيار ${selectedForStyling.size} من 6`)}</p>
-      {wardrobeLimitMessage && <p className="settings-note" role="status" aria-live="polite">{wardrobeLimitMessage}</p>}
-      <div className="kin-card-actions my-things-style-actions">
-        <button type="button" className="approved-button" data-testid="my-things-style-cancel" onClick={() => setStylingMode(false)}>
-          {t('Cancel', 'إلغاء')}
-        </button>
-        <button type="button" className="approved-button primary" data-testid="my-things-style-continue" disabled={selectedForStyling.size === 0} onClick={() => onStyleWithKin?.([...selectedForStyling])}>
-          {t(`Continue with ${selectedForStyling.size}`, `متابعة بـ ${selectedForStyling.size}`)}
-        </button>
-      </div>
-    </>}
+    <ClosetItemSheet ar={ar} open={openItem !== null} onOpenChange={(next) => { if (!next) setOpenItemId(null); }}
+      deleting={openItem ? deletingId === openItem.id : false}
+      canMove={openItem?.ownershipStatus === 'considering'}
+      canStyle={Boolean(openItem && kinSearchEnabled && openItem.ownershipStatus !== 'considering')}
+      onStyle={() => { if (openItem) onStyleWithKin?.([openItem.id]); }}
+      onEdit={() => { if (openItem) onEdit(openItem); }}
+      onMove={() => { if (openItem) void moveToWardrobe(openItem.id); }}
+      onDelete={() => { if (openItem) void confirmedDelete(openItem.id); }} />
   </section>;
 }
 
