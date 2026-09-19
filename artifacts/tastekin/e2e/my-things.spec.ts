@@ -925,7 +925,7 @@ test('Add item: ownership choice defaults to "I own this" and a new item persist
   expect((createBody as Record<string, unknown> | null)?.ownershipStatus).toBe('owned');
 });
 
-test('Add item: choosing "Thinking of buying it" persists the new item as considering', async ({ page }) => {
+test('Add item: choosing "Want to Buy" persists the new item as considering', async ({ page }) => {
   let createBody: Record<string, unknown> | null = null;
   await gotoAddScreen(page);
   await page.route('**/api/closet-items/media', async (route) => { await route.fulfill({ status: 201, contentType: 'application/json', body: JSON.stringify({ uploadId: 'up-1' }) }); });
@@ -939,7 +939,7 @@ test('Add item: choosing "Thinking of buying it" persists the new item as consid
   });
 
   await fillRequiredFields(page);
-  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('Thinking of buying it');
+  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('Want to Buy');
   await page.getByTestId('my-things-ownership-considering').click();
   await expect(page.getByTestId('my-things-ownership-considering')).toHaveClass(/selected/);
   await expect(page.getByTestId('my-things-ownership-owned')).not.toHaveClass(/selected/);
@@ -985,7 +985,7 @@ test('Arabic labels: Add item ownership choice', async ({ page }) => {
   await page.getByTestId('my-things-add').click();
 
   await expect(page.getByTestId('my-things-ownership-owned')).toHaveText('أملك هذه القطعة');
-  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('أفكر أشتريها');
+  await expect(page.getByTestId('my-things-ownership-considering')).toHaveText('أريد شراءها');
 });
 
 test('390x844 mobile layout: My Things renders with no document-level horizontal overflow, in both tabs', async ({ page }) => {

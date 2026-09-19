@@ -4252,7 +4252,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     : uploadId ? t('Retry save', 'إعادة المحاولة')
     : t('Add to My Things', 'أضف إلى أغراضي');
 
-  const ownershipLabel = ownershipStatus === 'owned' ? t('I own this', 'أملك هذه القطعة') : t('Thinking of buying it', 'أفكر أشتريها');
+  const ownershipLabel = ownershipStatus === 'owned' ? t('I own this', 'أملك هذه القطعة') : t('Want to Buy', 'أريد شراءها');
 
   return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Add to My Things', 'أضف إلى أغراضي')}>
     {file && previewUrl ? (compactMode ? <div className="image-uploader" style={{ aspectRatio: 1, cursor: 'default' }}>
@@ -4279,7 +4279,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
     {!compactMode && <div className="form-field"><span>{t('Ownership', 'الملكية')}</span>
       <div className="approved-segment" data-testid="my-things-ownership" style={{ marginTop: 8 }}>
         <button type="button" className={ownershipStatus === 'owned' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-owned" onClick={() => setOwnershipStatus('owned')}>{t('I own this', 'أملك هذه القطعة')}</button>
-        <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => setOwnershipStatus('considering')}>{t('Thinking of buying it', 'أفكر أشتريها')}</button>
+        <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => setOwnershipStatus('considering')}>{t('Want to Buy', 'أريد شراءها')}</button>
       </div>
     </div>}
 
@@ -4291,7 +4291,7 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
       {ownershipEditorOpen ? <div className="closet-summary-row" data-testid="my-things-summary-ownership">
         <div className="approved-segment" style={{ flex: 1, margin: 0 }}>
           <button type="button" className={ownershipStatus === 'owned' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-owned" onClick={() => { setOwnershipStatus('owned'); setOwnershipEditorOpen(false); }}>{t('I own this', 'أملك هذه القطعة')}</button>
-          <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => { setOwnershipStatus('considering'); setOwnershipEditorOpen(false); }}>{t('Thinking of buying it', 'أفكر أشتريها')}</button>
+          <button type="button" className={ownershipStatus === 'considering' ? 'selected' : ''} disabled={fieldsLocked} data-testid="my-things-ownership-considering" onClick={() => { setOwnershipStatus('considering'); setOwnershipEditorOpen(false); }}>{t('Want to Buy', 'أريد شراءها')}</button>
         </div>
       </div> : <ClosetSummaryRow label={t('Ownership', 'الملكية')} value={ownershipLabel} placeholder={ownershipLabel}
         onEdit={() => setOwnershipEditorOpen(true)} editLabel={t('Edit ownership', 'تعديل الملكية')} disabled={fieldsLocked} testId="my-things-summary-ownership" editTestId="my-things-summary-ownership-edit" />}
