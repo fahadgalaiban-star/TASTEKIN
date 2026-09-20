@@ -536,22 +536,15 @@ test('Arabic Travel labels, Maps names, Back navigation, and both 390×844 steps
   await expect(page.locator('.kin-headline')).toHaveText('دبي، مصمم من أجلك.');
   await expect(page.locator('[data-testid="kin-hero-tag"]')).toHaveText('دبي');
 
-  // Map tab is RTL-safe: numbered pins only, no permanent overlapping
-  // labels, and tapping one opens a compact popover with a working
-  // Google Maps link — all in Arabic.
-  await page.getByTestId('kin-plan-map-toggle').getByRole('button', { name: 'الخريطة' }).click();
-  await expect(page.getByTestId('kin-travel-map')).toBeVisible();
-  await expect(page.getByTestId('kin-map-pin')).toHaveCount(2);
-  await expect(page.getByTestId('kin-map-missing-notice')).toHaveCount(0);
-  await page.getByTestId('kin-map-pin').first().click();
-  await expect(page.getByTestId('kin-map-popover')).toBeVisible();
-  await expect(page.getByTestId('kin-map-popover').getByRole('link', { name: 'افتح في خرائط Google' })).toBeVisible();
-  const mapLayout = await page.evaluate(() => {
-    const popover = document.querySelector('[data-testid="kin-map-popover"]');
-    const navigation = document.querySelector('[data-testid="primary-navigation"]');
-    return { elementBottom: popover?.getBoundingClientRect().bottom, navigationTop: navigation?.getBoundingClientRect().top };
-  });
-  expect(mapLayout.elementBottom).toBeLessThanOrEqual(mapLayout.navigationTop ?? 0);
+  // Route tab is RTL-safe: an ordered stop list plus one combined
+  // Google Maps action, all in Arabic — no coordinate-plot canvas.
+  await page.getByTestId('kin-plan-route-toggle').getByRole('button', { name: 'المسار' }).click();
+  await expect(page.getByTestId('kin-travel-route')).toBeVisible();
+  await expect(page.getByTestId('kin-route-item')).toHaveCount(2);
+  await expect(page.getByTestId('kin-route-item').first().getByRole('link', { name: 'افتح متحف المستقبل في خرائط Google' })).toHaveText('الاتجاهات');
+  const openDay = page.getByTestId('kin-route-open-day');
+  await expect(openDay).toHaveText('فتح يوم الرحلة في خرائط Google');
+  await expect(openDay).toHaveAttribute('href', /^https:\/\/www\.google\.com\/maps\/dir\/\?api=1&origin=25\.217%2C55\.281&destination=25\.23%2C55\.304&travelmode=driving$/);
 });
 
 async function mockTwoDayPlan(page: Page, destination = 'paris') {
@@ -671,44 +664,35 @@ test('the trip date range renders as a friendly localized range and is hidden en
   await expect(page.getByTestId('kin-travel-dates')).toHaveCount(0);
 });
 
-test('the Map tab shows only the active day\'s markers in itinerary order, updates immediately on day switch, and never renders the old overlapping-graph view', async ({ page }) => {
+test('the Route tab lists only the active day\'s stops in itinerary order, updates immediately on day switch, and never renders the old coordinate-plot canvas', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await mockTwoDayPlan(page);
   await submitTravelPlan(page);
-  await page.getByTestId('kin-plan-map-toggle').getByRole('button', { name: 'Map' }).click();
+  await page.getByTestId('kin-plan-route-toggle').getByRole('button', { name: 'Route' }).click();
 
-  // Day 1: two places, one missing coordinates — one pin plus a concise notice, never a broken map.
-  await expect(page.getByTestId('kin-travel-map')).toBeVisible();
-  await expect(page.getByTestId('kin-map-pin')).toHaveCount(1);
-  await expect(page.getByTestId('kin-map-pin')).toHaveText('1');
-  await expect(page.getByTestId('kin-map-missing-notice')).toHaveText("1 place from this day couldn't be shown on the map.");
-  // No permanent on-map name labels or connecting route lines (the old broken graph).
-  await expect(page.locator('.kin-map text, .kin-map svg')).toHaveCount(0);
+  // Day 1: two stops, in order, each with its own category/name/Directions — including the one missing coordinates.
+  await expect(page.getByTestId('kin-travel-route')).toBeVisible();
+  await expect(page.getByTestId('kin-route-item')).toHaveCount(2);
+  const day1First = page.getByTestId('kin-route-item').first();
+  await expect(day1First.locator('.kin-route-index')).toHaveText('1');
+  await expect(day1First.locator('.kin-route-category')).toHaveText('Breakfast');
+  await expect(day1First.locator('.kin-route-name')).toHaveText('Le Marais Bakery');
+  await expect(day1First.getByRole('link', { name: 'Open Le Marais Bakery in Google Maps' })).toHaveAttribute('href', 'https://maps.google.com/?cid=1');
+  // No coordinate-plot canvas, pins, or connecting lines anywhere on this tab.
+  await expect(page.locator('.kin-map, .kin-map-pin, [data-testid="kin-map-pin"]')).toHaveCount(0);
+  // The single combined action opens a real maps.google.com URL, with the coordinate-having stop as origin and the name-only stop resolved by search.
+  await expect(page.getByTestId('kin-route-open-day')).toHaveAttribute('href',
+    `https://www.google.com/maps/dir/?api=1&origin=48.857%2C2.36&destination=${encodeURIComponent('Mystery Spot With No Coordinates')}&travelmode=driving`);
 
-  // Switching days updates the map immediately: only day 2's single place, no missing notice, no leftover day-1 pins.
+  // Switching days updates the Route list and its Google Maps URL immediately — no leftover day-1 content.
   await page.getByTestId('kin-day-tabs').getByRole('button', { name: 'Day 2' }).click();
-  await expect(page.getByTestId('kin-map-pin')).toHaveCount(1);
-  await expect(page.getByTestId('kin-map-missing-notice')).toHaveCount(0);
-
-  // Selecting a marker opens a compact popover with the venue and a working Google Maps link, never permanently-on labels.
-  await page.getByTestId('kin-map-pin').click();
-  await expect(page.getByTestId('kin-map-popover')).toContainText('Louvre Museum');
-  await expect(page.getByTestId('kin-map-popover').getByRole('link', { name: 'Open in Google Maps' })).toHaveAttribute('href', 'https://maps.google.com/?cid=3');
-
-  // The popover is never left partially hidden behind the fixed bottom navigation.
-  const layout = await page.evaluate(() => {
-    const popover = document.querySelector('[data-testid="kin-map-popover"]');
-    const navigation = document.querySelector('[data-testid="primary-navigation"]');
-    return { elementBottom: popover?.getBoundingClientRect().bottom, navigationTop: navigation?.getBoundingClientRect().top };
-  });
-  expect(layout.elementBottom).toBeLessThanOrEqual(layout.navigationTop ?? 0);
-
-  // Switching back to day 1 drops the day-2 selection — no stale popover carries over.
-  await page.getByTestId('kin-day-tabs').getByRole('button', { name: 'Day 1' }).click();
-  await expect(page.getByTestId('kin-map-popover')).toHaveCount(0);
+  await expect(page.getByTestId('kin-route-item')).toHaveCount(1);
+  await expect(page.getByTestId('kin-route-item').first().locator('.kin-route-name')).toHaveText('Louvre Museum');
+  // A single-stop day opens a plain place search, not a meaningless one-point "directions".
+  await expect(page.getByTestId('kin-route-open-day')).toHaveAttribute('href', 'https://www.google.com/maps/search/?api=1&query=48.86%2C2.337');
 });
 
-test('a day with no usable coordinates at all shows an honest fallback, never a broken or empty map', async ({ page }) => {
+test('a day with no usable location data at all still lists its stop by name, with a name-search Google Maps action', async ({ page }) => {
   await mockMe(page, { kinSearch: true });
   await page.route('**/api/kin/travel/plan', async (route) => {
     await route.fulfill({
@@ -717,12 +701,13 @@ test('a day with no usable coordinates at all shows an honest fallback, never a 
     });
   });
   await submitTravelPlan(page);
-  await page.getByTestId('kin-plan-map-toggle').getByRole('button', { name: 'Map' }).click();
-  await expect(page.getByTestId('kin-map-empty')).toBeVisible();
-  await expect(page.getByTestId('kin-map-pin')).toHaveCount(0);
+  await page.getByTestId('kin-plan-route-toggle').getByRole('button', { name: 'Route' }).click();
+  await expect(page.getByTestId('kin-route-item')).toHaveCount(1);
+  await expect(page.getByTestId('kin-route-item').first().locator('.kin-route-name')).toHaveText('Unlocated Place');
+  await expect(page.getByTestId('kin-route-open-day')).toHaveAttribute('href', 'https://www.google.com/maps/search/?api=1&query=Unlocated%20Place');
 });
 
-test('Save to trip, Swap, and the Map render correctly at a 320px viewport with no horizontal overflow or control overlap', async ({ page }) => {
+test('Save to trip, Swap, and the Route tab render correctly at a 320px viewport with no horizontal overflow or control overlap', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 700 });
   await mockMe(page, { kinSearch: true });
   await mockTwoDayPlan(page);
@@ -745,9 +730,75 @@ test('Save to trip, Swap, and the Map render correctly at a 320px viewport with 
   await place.getByTestId('kin-add-to-trip').click();
   await expect(place.getByTestId('kin-add-to-trip')).toHaveText('Saved');
 
-  await page.getByTestId('kin-plan-map-toggle').getByRole('button', { name: 'Map' }).click();
+  await page.getByTestId('kin-plan-route-toggle').getByRole('button', { name: 'Route' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
-  await expect(page.getByTestId('kin-travel-map')).toBeVisible();
+  await expect(page.getByTestId('kin-travel-route')).toBeVisible();
+  await expect(page.getByTestId('kin-route-open-day')).toBeVisible();
+});
+
+// A fully Latin name and a mixed Arabic/Latin name must render in full,
+// on both the Plan and Route tabs, inside an otherwise fully Arabic/RTL
+// page — not reordered or clipped by inheriting the page's RTL direction.
+// Role-based/toHaveText checks alone would pass even if the text were
+// visually scrambled or clipped, since they read DOM text content
+// regardless of layout — these also compare scrollWidth to clientWidth,
+// which catches genuine visual overflow.
+test('a Latin venue name and a mixed Arabic/Latin venue name render in full, not reordered or clipped, inside the Arabic Travel UI at 390px', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    await route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({
+        status: 'ok',
+        plan: {
+          destination: 'paris', narrative: '', citations: [],
+          days: [{
+            dayIndex: 0, date: null, routes: [],
+            places: [
+              { placeId: 'lat-1', name: 'Le Marais Bakery', formattedAddress: '12 Rue des Rosiers, Paris', lat: 48.857, lng: 2.360, rating: null, websiteUrl: null, mapsUrl: 'https://maps.google.com/?cid=lat-1', photoUrl: null, photoAttribution: null, slot: 'BREAKFAST', activityInterest: null, openingHours: null },
+              { placeId: 'mix-1', name: 'Le Marais العليبان', formattedAddress: null, lat: 48.858, lng: 2.361, rating: null, websiteUrl: null, mapsUrl: 'https://maps.google.com/?cid=mix-1', photoUrl: null, photoAttribution: null, slot: null, activityInterest: 'museums', openingHours: null },
+            ],
+          }],
+        },
+      }),
+    });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('paris');
+  await page.getByTestId('kin-travel-next').click();
+  await page.getByTestId('kin-interest-cafes').click();
+  await page.getByTestId('kin-travel-submit').click();
+
+  const assertNoOverflow = async (locator: ReturnType<Page['locator']>) => {
+    const box = await locator.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+    expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth + 1);
+  };
+
+  // Destination isolation: "Paris" stays Latin-cased and legible inside the Arabic sentence and hero tag.
+  await expect(page.locator('.kin-headline')).toHaveText('Paris، مصمم من أجلك.');
+  await expect(page.getByTestId('kin-hero-tag')).toHaveText('Paris');
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+
+  // Plan tab: both venue names render in full, not clipped from the wrong end.
+  const items = page.getByTestId('kin-travel-place');
+  await expect(items.nth(0).locator('.kin-timeline-name')).toHaveText('Le Marais Bakery');
+  await expect(items.nth(1).locator('.kin-timeline-name')).toHaveText('Le Marais العليبان');
+  await assertNoOverflow(items.nth(0).locator('.kin-timeline-name'));
+  await assertNoOverflow(items.nth(1).locator('.kin-timeline-name'));
+
+  // Route tab: same two names in full, plus the area/address, none overflowing.
+  await page.getByTestId('kin-plan-route-toggle').getByRole('button', { name: 'المسار' }).click();
+  const routeItems = page.getByTestId('kin-route-item');
+  await expect(routeItems.nth(0).locator('.kin-route-name')).toHaveText('Le Marais Bakery');
+  await expect(routeItems.nth(0).locator('.kin-route-address')).toHaveText('12 Rue des Rosiers, Paris');
+  await expect(routeItems.nth(1).locator('.kin-route-name')).toHaveText('Le Marais العليبان');
+  await assertNoOverflow(routeItems.nth(0).locator('.kin-route-name'));
+  await assertNoOverflow(routeItems.nth(0).locator('.kin-route-address'));
+  await assertNoOverflow(routeItems.nth(1).locator('.kin-route-name'));
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 });
 
 test('submitting a blank query shows an inline error and never calls the endpoint', async ({ page }) => {
