@@ -4472,7 +4472,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
         <Avatar profile={profile} />
         <div className="profile-head-copy">
           <div className="approved-name">
-            <h1>{profile.displayName}</h1>
+            <h1 dir="auto"><bdi>{profile.displayName}</bdi></h1>
             {profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
           </div>
           <span className="profile-handle"><bdi dir="ltr">@{profile.username}</bdi></span>

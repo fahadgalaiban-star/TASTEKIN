@@ -529,6 +529,76 @@ test('the profile filter row scrolls horizontally at 390px without clipping any 
   await expect(page.getByTestId('profile-travel-tab-All')).toHaveClass(/active/);
 });
 
+// A Latin/mixed display name must render in full on the Arabic page, not
+// just be present in the accessible name — Playwright's role-based
+// `getByRole('heading', ...)` matches the DOM text content regardless of
+// visual CSS truncation, so it alone can't catch a name that's actually
+// being clipped on screen. These checks compare scrollWidth to
+// clientWidth, which does.
+const NAME_CASES: { key: string; name: string }[] = [
+  { key: 'a fully Latin name', name: 'Fheed Alaiban' },
+  { key: 'a fully Arabic name', name: 'فهد العليبان' },
+  { key: 'a mixed Arabic/Latin name', name: 'Fheed العليبان' },
+];
+
+for (const { key, name } of NAME_CASES) {
+  test(`AR owner and visitor profiles render ${key} in full at 390px, not clipped from the wrong end`, async ({ page }) => {
+    // /api/creator-profile and /api/me's creator.displayName are both
+    // fetched once, in a useEffect right after the session loads at app
+    // boot — before this test's own page.goto('/?lang=ar') below, so both
+    // overrides must be registered first.
+    await page.route('**/api/me', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'fheed-founder', email: 'founder@tastekin.test' }, role: 'creator',
+          creator: { id: 'fheed', handle: 'fheed', displayName: name, verified: true, ownsWorkspace: true },
+          featureFlags: { my_circle: true },
+        }),
+      });
+    });
+    await page.route('**/api/creator-profile', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          displayName: name, username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: [],
+          avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
+        }),
+      });
+    });
+    // openConsumerProfile() hardcodes the English Explore heading AND the
+    // literal name 'Fheed Alaiban', so it only works for the default fixture
+    // name in English. Navigate to the profile in English first (matching
+    // the app's real boot language), then switch to Arabic via the in-app
+    // language toggle — the same pattern the filter-row-scroll test above
+    // uses — so this works for all three NAME_CASES, not just the Latin one.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('nav-explore').click();
+    await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
+    await page.getByTestId('fheed-profile-mini').click();
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+    await page.getByTestId('open-settings-topbar').click();
+    await page.getByTestId('settings-language-ar').click();
+    await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
+    await page.getByRole('button', { name: 'رجوع' }).click();
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+
+    const assertNameFullyVisible = async () => {
+      const h1 = page.locator('.approved-name h1');
+      await expect(h1).toHaveText(name);
+      const box = await h1.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+      expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+    };
+
+    await assertNameFullyVisible();
+
+    await page.getByRole('button', { name: 'مزيد من الخيارات' }).click();
+    await page.getByTestId('profile-view-public').click();
+    await assertNameFullyVisible();
+  });
+}
+
 test('shows all visitor actions when an admin views an unverified empty profile in English and RTL', async ({ page }) => {
   await page.route('**/api/me', async (route) => {
     await route.fulfill({
