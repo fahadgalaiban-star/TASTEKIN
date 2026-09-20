@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, useListCircleMembers, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
@@ -2888,34 +2888,91 @@ function KinRingsMark({ size = 40 }: { size?: number }) {
 }
 
 /**
- * Decorative, non-interactive route schematic built entirely client-side
- * from the real lat/lng values Google Places already returned — never a
- * Maps JS embed and never a fetched map tile, so no browser-restricted key
- * is ever needed. Purely illustrative positioning (independent min/max
- * normalization per axis), not a geographically accurate projection.
+ * The active day's stops only — never connects every venue across every
+ * trip day (that produced a dense, unreadable graph of overlapping labels
+ * and lines). Positions are a simple client-side normalization of the
+ * real lat/lng values Google Places already returned — never a Maps JS
+ * embed or a fetched map tile, so no browser-restricted key is needed,
+ * and the account's only Google Maps key is scoped to Places API New +
+ * Routes API, not Maps JavaScript/Embed (see GOOGLE_MAPS_API_KEY in
+ * TASTEKIN_CLAUDE.md §7) — exposing it to the browser for a JS map would
+ * both leak a server key and likely fail outright (wrong API scope).
+ * No route line is drawn: Google Routes here only ever returns distance
+ * and duration, never a polyline, so a connecting line would not be a
+ * geographically real route — numbered markers alone are honest. A venue
+ * missing coordinates is simply omitted from the map (with a concise
+ * notice) rather than breaking the layout.
  */
-function KinRouteMap({ places }: { places: KinTravelPlace[] }) {
-  const points = places.filter((place): place is KinTravelPlace & { lat: number; lng: number } => place.lat !== null && place.lng !== null);
-  if (points.length < 2) return null;
-  const lats = points.map((p) => p.lat);
-  const lngs = points.map((p) => p.lng);
+function KinTravelDayMap({ places, ar, destination }: { places: KinTravelPlace[]; ar: boolean; destination: string }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  // The popover can appear near the bottom of a short day's map card, right
+  // where the fixed bottom nav sits. scrollIntoView's own "nearest" mode
+  // doesn't know a fixed-position nav is covering part of the viewport
+  // (scroll-margin has no effect on it in practice here), so this measures
+  // the actual overlap against the real nav element and scrolls exactly
+  // enough to clear it whenever a marker is newly selected.
+  useLayoutEffect(() => {
+    if (!selectedPlaceId) return;
+    const popover = popoverRef.current;
+    if (!popover) return;
+    const nav = document.querySelector<HTMLElement>('[data-testid="primary-navigation"]');
+    const limit = nav ? nav.getBoundingClientRect().top : window.innerHeight;
+    const overlap = popover.getBoundingClientRect().bottom - limit;
+    // behavior: 'instant' bypasses the app's global `html { scroll-behavior:
+    // smooth }` — this correction must land before the very next paint, not
+    // animate over the next few hundred ms leaving the popover behind the
+    // nav in the meantime.
+    if (overlap > 0) window.scrollBy({ top: overlap + 12, left: 0, behavior: 'instant' });
+  }, [selectedPlaceId]);
+  const numbered = places.map((place, index) => ({ place, number: index + 1 }));
+  const withCoords = numbered.filter((item): item is { place: KinTravelPlace & { lat: number; lng: number }; number: number } => item.place.lat !== null && item.place.lng !== null);
+  const missingCount = numbered.length - withCoords.length;
+
+  if (withCoords.length === 0) {
+    return <div className="kin-map-empty" data-testid="kin-map-empty">
+      <MapPin size={20} aria-hidden="true" />
+      <span>{t("KIN couldn't place this day's stops on a map yet.", 'تعذّر على كين وضع محطات هذا اليوم على الخريطة بعد.')}</span>
+    </div>;
+  }
+
+  const lats = withCoords.map((item) => item.place.lat);
+  const lngs = withCoords.map((item) => item.place.lng);
   const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
-  const width = 300; const height = 120; const pad = 20;
-  const coords = points.map((place) => ({
-    place,
-    x: pad + (maxLng > minLng ? (place.lng - minLng) / (maxLng - minLng) : 0.5) * (width - pad * 2),
-    y: pad + (1 - (maxLat > minLat ? (place.lat - minLat) / (maxLat - minLat) : 0.5)) * (height - pad * 2),
+  const pad = 12;
+  const positioned = withCoords.map((item) => ({
+    ...item,
+    left: pad + (maxLng > minLng ? (item.place.lng - minLng) / (maxLng - minLng) : 0.5) * (100 - pad * 2),
+    top: pad + (1 - (maxLat > minLat ? (item.place.lat - minLat) / (maxLat - minLat) : 0.5)) * (100 - pad * 2),
   }));
-  const pathData = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x} ${c.y}`).join(' ');
-  return <svg className="kin-map" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Route overview">
-    <path className="route" d={pathData} />
-    {coords.map((c, index) => <g key={c.place.placeId}>
-      <circle className="pin" cx={c.x} cy={c.y} r="8" />
-      <text className="pin-index" x={c.x} y={c.y + 3} textAnchor="middle">{index + 1}</text>
-      <text className="pin-label" x={c.x} y={c.y - 12 < 8 ? c.y + 20 : c.y - 12} textAnchor="middle">{c.place.name.length > 16 ? `${c.place.name.slice(0, 15)}…` : c.place.name}</text>
-    </g>)}
-  </svg>;
+  const selected = positioned.find((item) => item.place.placeId === selectedPlaceId) ?? null;
+
+  return <div className="kin-map-wrap">
+    <div className="kin-map" data-testid="kin-travel-map" role="group" aria-label={t(`Map of today's stops in ${destination}`, `خريطة محطات اليوم في ${destination}`)}>
+      {positioned.map((item) => <button type="button" key={item.place.placeId} data-testid="kin-map-pin"
+        className={`kin-map-pin${selectedPlaceId === item.place.placeId ? ' selected' : ''}`}
+        style={{ left: `${item.left}%`, top: `${item.top}%` }}
+        aria-pressed={selectedPlaceId === item.place.placeId}
+        aria-label={`${item.number}. ${item.place.name}`}
+        onClick={() => setSelectedPlaceId((current) => current === item.place.placeId ? null : item.place.placeId)}>
+        {item.number}
+      </button>)}
+    </div>
+    {missingCount > 0 && <p className="kin-map-notice" role="status" data-testid="kin-map-missing-notice">
+      {t(missingCount === 1 ? "1 place from this day couldn't be shown on the map." : `${missingCount} places from this day couldn't be shown on the map.`,
+        missingCount === 1 ? 'تعذّر عرض مكان واحد من هذا اليوم على الخريطة.' : `تعذّر عرض ${missingCount} أماكن من هذا اليوم على الخريطة.`)}
+    </p>}
+    {selected && <div ref={popoverRef} className="kin-map-popover" data-testid="kin-map-popover">
+      <button type="button" className="kin-map-popover-close" aria-label={t('Close', 'إغلاق')} onClick={() => setSelectedPlaceId(null)}><X size={14} /></button>
+      <span className="kin-map-popover-index" aria-hidden="true">{selected.number}</span>
+      <div className="kin-map-popover-body">
+        <strong>{selected.place.name}</strong>
+        {selected.place.mapsUrl && <a href={selected.place.mapsUrl} target="_blank" rel="noopener noreferrer">{t('Open in Google Maps', 'افتح في خرائط Google')}</a>}
+      </div>
+    </div>}
+  </div>;
 }
 
 // KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
@@ -2926,6 +2983,54 @@ type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeter
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
 type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unavailable'; reason: string; reasonCode?: string };
+
+/**
+ * Display-only cleanup of a member-typed destination ("paris" -> "Paris").
+ * Only touches a lowercase ASCII a-z letter that starts a word — every
+ * other character (accents, digits, Arabic, already-capitalized letters)
+ * passes through untouched, so a non-Latin destination is never corrupted.
+ * The raw value the member typed is still what's sent to the server for
+ * every search/query — this never replaces it, only how it's shown.
+ */
+function formatKinDestinationDisplay(value: string): string {
+  return value.replace(/(^|\s)([a-z])/g, (_match, boundary: string, letter: string) => `${boundary}${letter.toUpperCase()}`);
+}
+
+/** "YYYY-MM-DD" -> a Date at UTC midnight, matching the day-kicker's own date parsing just below. Invalid input returns an invalid Date rather than throwing. */
+function parseKinTravelDate(value: string): Date {
+  return new Date(`${value}T00:00:00Z`);
+}
+
+/**
+ * A friendly, localized range ("22–29 Sep 2026") in place of two raw ISO
+ * strings joined by a dash. Same month: "22–29 Sep 2026". Different month,
+ * same year: "29 Sep – 3 Oct 2026". Different year: full date on both
+ * sides. Uses the app's existing ar/en-US locale split (see the day-kicker
+ * just below) so Arabic gets Arabic month names via the same convention
+ * already used on this screen, not a separate one.
+ */
+function formatKinTravelDateRange(startDate: string, endDate: string, ar: boolean): string | null {
+  const locale = ar ? 'ar' : 'en-US';
+  const start = parseKinTravelDate(startDate);
+  const end = parseKinTravelDate(endDate);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+  const dayFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', timeZone: 'UTC' });
+  const monthFmt = new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' });
+  const fullFmt = new Intl.DateTimeFormat(locale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+  if (start.getTime() === end.getTime()) return fullFmt.format(start);
+  const sameYear = start.getUTCFullYear() === end.getUTCFullYear();
+  const sameMonth = sameYear && start.getUTCMonth() === end.getUTCMonth();
+  if (sameMonth) return `${dayFmt.format(start)}–${dayFmt.format(end)} ${monthFmt.format(end)} ${end.getUTCFullYear()}`;
+  if (sameYear) return `${dayFmt.format(start)} ${monthFmt.format(start)} – ${dayFmt.format(end)} ${monthFmt.format(end)} ${end.getUTCFullYear()}`;
+  return `${fullFmt.format(start)} – ${fullFmt.format(end)}`;
+}
+
+/** A single friendly date ("22 Sep 2026") for the rare case only one of start/end is present. */
+function formatKinTravelSingleDate(value: string, ar: boolean): string | null {
+  const date = parseKinTravelDate(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat(ar ? 'ar' : 'en-US', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(date);
+}
 
 /**
  * The KIN entry experience: a natural-language request, optional context
@@ -3034,6 +3139,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const [view, setView] = useState<'form' | 'looks-result' | 'travel-overview'>('form');
   const [planView, setPlanView] = useState<'plan' | 'map'>('plan');
   const [swappingPlaceKey, setSwappingPlaceKey] = useState<string | null>(null);
+  const [travelActionNotice, setTravelActionNotice] = useState('');
 
   // Switching between the input form and a result screen (or between day
   // views) must land the member at the top of the new screen — otherwise
@@ -3142,7 +3248,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
-    setLookSaved(false); setEnlargedResult(null);
+    setLookSaved(false); setEnlargedResult(null); setTravelActionNotice('');
     // Captured now, before anything async — the request that goes out uses
     // exactly these values, and the result is later shown against exactly
     // this snapshot, regardless of anything the member does to the form's
@@ -3288,6 +3394,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
       setAddedTripItems((current) => new Set(current).add(key));
+      setTravelActionNotice(t('Saved to your trip.', 'تم الحفظ في رحلتك.'));
     } catch (err) {
       window.alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -3431,6 +3538,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
           ],
         }),
       }));
+      setTravelActionNotice(t('Place replaced.', 'تم استبدال المكان.'));
     } catch (err) {
       window.alert(err instanceof Error ? err.message : String(err));
     } finally {
@@ -3505,16 +3613,28 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   }
 
   if (view === 'travel-overview' && travelPlan) {
-    const heroPhoto = travelPlan.days.flatMap((d) => d.places).find((p) => p.photoUrl);
+    const displayDestination = formatKinDestinationDisplay(travelPlan.destination);
+    // The active day only — this used to flatten every day into one
+    // lookup, so the hero never changed when the member switched days.
+    const heroPhoto = activeDay?.places.find((p) => p.photoUrl);
+    const dateRange = startDate && endDate ? formatKinTravelDateRange(startDate, endDate, ar)
+      : startDate ? formatKinTravelSingleDate(startDate, ar)
+      : endDate ? formatKinTravelSingleDate(endDate, ar)
+      : null;
+    const showDayNumber = travelPlan.days.length > 1;
     return <section data-testid="kin-screen">
       <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={backToForm}><ArrowLeft size={18} /></button>
       <span className="kin-kicker">{t('KIN Travel', 'كين ترافل')}</span>
-      <h1 className="kin-headline">{t(`${travelPlan.destination}, shaped around you.`, `${travelPlan.destination}، مصمم من أجلك.`)}</h1>
-      {(startDate || endDate) && <p className="kin-subline" dir="ltr">{[startDate, endDate].filter(Boolean).join(' – ')}</p>}
+      <h1 className="kin-headline" dir="auto">{t(`${displayDestination}, shaped around you.`, `${displayDestination}، مصمم من أجلك.`)}</h1>
+      {dateRange && <p className="kin-subline" dir="auto" data-testid="kin-travel-dates">{dateRange}</p>}
 
       <div className="kin-hero" data-testid="kin-travel-hero">
-        {heroPhoto?.photoUrl ? <img src={heroPhoto.photoUrl} alt="" /> : <KinRingsMark size={56} />}
-        <span className="kin-hero-tag">{travelPlan.destination}</span>
+        {heroPhoto?.photoUrl
+          ? <img src={heroPhoto.photoUrl} alt={t(`Photo of ${heroPhoto.name}`, `صورة ${heroPhoto.name}`)} />
+          : <KinRingsMark size={56} />}
+        <span className="kin-hero-tag" data-testid="kin-hero-tag">
+          {showDayNumber ? t(`Day ${selectedDayIndex + 1} · ${displayDestination}`, `اليوم ${selectedDayIndex + 1} · ${displayDestination}`) : displayDestination}
+        </span>
       </div>
       {heroPhoto?.photoAttribution && <span className="kin-photo-credit">{t('Photo', 'صورة')}: {heroPhoto.photoAttribution}</span>}
 
@@ -3524,15 +3644,17 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       </div>
 
       {travelPlan.days.length > 1 && <div className="kin-day-tabs" data-testid="kin-day-tabs">
-        {travelPlan.days.map((day, index) => <button key={day.dayIndex} type="button" className={index === selectedDayIndex ? 'selected' : ''} onClick={() => setSelectedDayIndex(index)}>
+        {travelPlan.days.map((day, index) => <button key={day.dayIndex} type="button" className={index === selectedDayIndex ? 'selected' : ''} onClick={() => { setSelectedDayIndex(index); setTravelActionNotice(''); }}>
           {t(`Day ${index + 1}`, `اليوم ${index + 1}`)}
         </button>)}
       </div>}
 
       {planView === 'map' ? <div className="kin-day-card" style={{ marginBottom: 24 }}>
-        <KinRouteMap places={travelPlan.days.flatMap((d) => d.places)} />
+        {!activeDay || activeDay.places.length === 0
+          ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} />
+          : <KinTravelDayMap key={`map-${activeDay.dayIndex}`} places={activeDay.places} ar={ar} destination={displayDestination} />}
       </div> : activeDay && <div className="kin-day-card" data-testid="kin-day-preview" style={{ marginBottom: 24 }}>
-        <span className="kin-day-kicker">{(activeDay.date ? new Date(`${activeDay.date}T00:00:00Z`).toLocaleDateString(ar ? 'ar' : 'en-US', { weekday: 'long', timeZone: 'UTC' }) : `${t('Day', 'اليوم')} ${activeDay.dayIndex + 1}`)} · {travelPlan.destination}</span>
+        <span className="kin-day-kicker">{(activeDay.date ? new Date(`${activeDay.date}T00:00:00Z`).toLocaleDateString(ar ? 'ar' : 'en-US', { weekday: 'long', timeZone: 'UTC' }) : `${t('Day', 'اليوم')} ${activeDay.dayIndex + 1}`)} · {displayDestination}</span>
         {activeDay.places.length === 0 ? <Empty text={t('No places found for this day.', 'لا توجد أماكن لهذا اليوم.')} /> : <div className="kin-timeline" style={{ marginTop: 16 }}>
           {activeDay.places.map((place, index) => {
             const key = `${activeDay.dayIndex}:${place.placeId}`;
@@ -3549,9 +3671,9 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   <span className="kin-timeline-name" style={{ WebkitLineClamp: 2, display: '-webkit-box', overflow: 'hidden', WebkitBoxOrient: 'vertical' }}>{place.name}</span>
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: {place.photoAttribution}</span>}
                   <div className="kin-timeline-actions">
-                    {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={t(`Open ${place.name} in Google Maps`, `افتح ${place.name} في خرائط Google`)}>{t('Maps', 'خرائط')}</a>}
+                    {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={t(`Open ${place.name} in Google Maps`, `افتح ${place.name} في خرائط Google`)}>{t('Directions', 'الاتجاهات')}</a>}
                     <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
-                      {addedTripItems.has(key) ? t('Added to trip', 'أُضيف للرحلة') : addingTripItemKey === key ? t('Adding…', 'جارٍ الإضافة…') : t('Add to trip', 'أضف للرحلة')}
+                      {addedTripItems.has(key) ? t('Saved', 'تم الحفظ') : addingTripItemKey === key ? t('Saving…', 'جارٍ الحفظ…') : t('Save to trip', 'احفظ للرحلة')}
                     </button>
                   </div>
                 </div>
@@ -3562,6 +3684,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
             </div>;
           })}
         </div>}
+        {travelActionNotice && <p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
       </div>}
     </section>;
   }
