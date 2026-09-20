@@ -721,6 +721,17 @@ test('the profile filter row scrolls horizontally at 390px without clipping any 
   await expect(page.getByTestId('profile-travel-tab-All')).toHaveClass(/active/);
 });
 
+test('scrolling a horizontal filter row never touches browser history or the current screen', async ({ page }) => {
+  await openConsumerProfile(page);
+  const before = await page.evaluate(() => ({ length: history.length, state: history.state }));
+  await page.locator('.profile-travel-tabs').evaluate((element) => { element.scrollLeft = 120; });
+  await page.waitForTimeout(50);
+  const after = await page.evaluate(() => ({ length: history.length, state: history.state }));
+  expect(after.length).toBe(before.length);
+  expect(after.state).toEqual(before.state);
+  await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
+});
+
 // A Latin/mixed display name must render in full on the Arabic page, not
 // just be present in the accessible name — Playwright's role-based
 // `getByRole('heading', ...)` matches the DOM text content regardless of
@@ -1070,4 +1081,91 @@ test('keeps a subscriber-only edit on its locked preview until media access is a
   await expect(page.getByRole('button', { name: /Subscribe/ })).toBeDisabled();
   await expect(page.getByText('No payment or access is being simulated.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save this edit' })).toHaveCount(0);
+});
+
+test('caps a portrait Home photo taller than 4:5 at 4:5, and leaves square and landscape photos alone', async ({ page }) => {
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false,
+            edit: { ...quietTailoringFeed, id: 'tall-story-shot', crop: { aspect: 'story', zoom: 1, x: 0, y: 0, rotation: 0, sourceWidth: 1080, sourceHeight: 1920, outputWidth: 1080, outputHeight: 1920 } },
+          },
+          {
+            creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false,
+            edit: { ...quietTailoringFeed, id: 'square-shot', crop: { aspect: 'square', zoom: 1, x: 0, y: 0, rotation: 0, sourceWidth: 1080, sourceHeight: 1080, outputWidth: 1080, outputHeight: 1080 } },
+          },
+        ],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const tallCard = page.getByTestId('edit-card-tall-story-shot').locator('.approved-art');
+  const squareCard = page.getByTestId('edit-card-square-shot').locator('.approved-art');
+  await expect(tallCard).toBeVisible();
+  // Measure the actual rendered box rather than parsing the aspect-ratio
+  // CSS value, which browsers normalize inconsistently ("4 / 5" vs "0.8").
+  const [tallBox, squareBox] = await Promise.all([
+    tallCard.evaluate((el) => { const r = el.getBoundingClientRect(); return r.width / r.height; }),
+    squareCard.evaluate((el) => { const r = el.getBoundingClientRect(); return r.width / r.height; }),
+  ]);
+  expect(tallBox).toBeCloseTo(4 / 5, 1);
+  expect(squareBox).toBeCloseTo(1, 1);
+});
+
+test('Explore is a root tab and never shows a back arrow', async ({ page }) => {
+  await page.getByTestId('nav-explore').click();
+  await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back' })).toHaveCount(0);
+});
+
+test('renames the New sort control to New Creators, in English and Arabic', async ({ page }) => {
+  await page.getByTestId('nav-explore').click();
+  await expect(page.getByRole('button', { name: 'New Creators' })).toBeVisible();
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page.getByRole('button', { name: 'مبدعون جدد' })).toBeVisible();
+});
+
+test('shows compact creator cards with real thumbnails when available, and a text-only card with no placeholder otherwise, labeling the match value as Taste Match', async ({ page }) => {
+  await page.route('**/api/explore**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        sort: 'best',
+        creators: [
+          { id: 'fheed-alaiban', username: 'fheed', displayName: 'Fheed Alaiban', avatar: '/tastekin-media/fheed-profile.webp', categories: ['Fashion', 'Travel'], matchScore: 82, matchReasons: ['Shared: Travel', 'Shared: Places'] },
+          { id: 'noura-studio', username: 'noura.studio', displayName: 'Noura Studio', avatar: '', categories: ['Restaurants'], matchScore: 14, matchReasons: [] },
+        ],
+        edits: [],
+      }),
+    });
+  });
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false, edit: quietTailoringFeed }],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-explore').click();
+
+  const fheedCard = page.getByTestId('fheed-profile-mini');
+  await expect(fheedCard).toContainText('82% Taste Match');
+  await expect(fheedCard.locator('.explore-creator-thumbs img')).toHaveCount(1);
+  // The old "Shared: Travel" / "Shared: Places" reasons block is gone —
+  // replaced by the real-thumbnail strip (or nothing, see the text-only
+  // card below), never shown alongside it.
+  await expect(fheedCard.getByText('Shared:', { exact: false })).toHaveCount(0);
+
+  const nouraCard = page.getByTestId('creator-noura.studio');
+  await expect(nouraCard).toContainText('14% Taste Match');
+  await expect(nouraCard.locator('.explore-creator-thumbs')).toHaveCount(0);
+  await expect(nouraCard.locator('img')).toHaveCount(0);
 });

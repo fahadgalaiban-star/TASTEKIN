@@ -1184,8 +1184,8 @@ test('a selected My Things item becomes the styling reference, served via the au
     await route.fulfill({ status: 201, contentType: 'application/json', body: '{}' });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-my-things').click();
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-style-piece').click();
   await expect(page.getByTestId('kin-styling-summary')).toBeVisible();
@@ -1228,8 +1228,8 @@ test('choosing a photo replaces a preselected My Things piece everywhere before 
     await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkBody() });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-my-things').click();
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-style-piece').click();
   await expect(page.getByTestId('kin-styling-summary').locator('img')).toHaveAttribute('src', '/api/closet-items/item-42/image');
@@ -1359,8 +1359,8 @@ test('a selected My Things item still becomes the styling reference when the ans
   });
   await page.route('**/api/kin/search', async (route) => { await route.fulfill({ status: 200, contentType: 'application/json', body: looksOkPlainAnswerBody() }); });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-my-things').click();
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-style-piece').click();
   await page.getByTestId('kin-submit').click();

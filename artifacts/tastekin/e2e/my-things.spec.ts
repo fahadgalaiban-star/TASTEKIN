@@ -2,7 +2,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 
 type MeOptions = { authenticated?: boolean; myThings?: boolean; kinSearch?: boolean; closetAnalysis?: boolean; language?: 'en' | 'ar' };
 
-function meBody({ authenticated = true, myThings = true, kinSearch = false, closetAnalysis = false, language = 'en' }: MeOptions = {}) {
+function meBody({ authenticated = true, myThings = true, kinSearch = true, closetAnalysis = false, language = 'en' }: MeOptions = {}) {
   return JSON.stringify({
     user: authenticated ? { id: 'my-things-e2e-user', email: 'my-things-e2e@tastekin.test' } : null,
     role: 'consumer',
@@ -26,6 +26,14 @@ async function mockMe(page: Page, options: MeOptions = {}) {
   });
 }
 
+// My Things has no shortcut on the You screen any more — the only way in is
+// via the KIN tab's "My Things" mode, which needs kin_search on (meBody
+// defaults it on) as well as my_things.
+async function openMyThings(page: Page) {
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-my-things').click();
+}
+
 const SAMPLE_ITEM = {
   id: 'item-1',
   itemType: 'shirt',
@@ -39,22 +47,35 @@ const SAMPLE_ITEM = {
   createdAt: new Date().toISOString(),
 };
 
-test('You screen only offers My Things when the my_things flag is on', async ({ page }) => {
-  await mockMe(page, { myThings: false });
+test('the You screen has no My Things shortcut, whether or not the flag is on', async ({ page }) => {
+  await mockMe(page, { myThings: true });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-you').click();
+  await expect(page.getByTestId('open-my-things')).toHaveCount(0);
+  await expect(page.getByText('My Things', { exact: true })).toHaveCount(0);
+
+  await mockMe(page, { myThings: false });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   await page.getByTestId('nav-you').click();
   await expect(page.getByTestId('open-my-things')).toHaveCount(0);
 });
 
-test('You screen offers My Things when the flag is on, and it opens the screen', async ({ page }) => {
+test('KIN only offers a My Things mode when the my_things flag is on', async ({ page }) => {
+  await mockMe(page, { myThings: false });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await expect(page.getByTestId('kin-mode-my-things')).toHaveCount(0);
+});
+
+test('KIN offers a My Things mode when the flag is on, and it opens the screen', async ({ page }) => {
   await mockMe(page, { myThings: true });
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await expect(page.getByTestId('open-my-things')).toBeVisible();
-  await page.getByTestId('open-my-things').click();
+  await page.getByTestId('nav-kin').click();
+  await expect(page.getByTestId('kin-mode-my-things')).toBeVisible();
+  await page.getByTestId('kin-mode-my-things').click();
   await expect(page.getByText('Nothing added yet.', { exact: false })).toBeVisible();
 });
 
@@ -67,8 +88,7 @@ test('the guard sends My Things back to You when the flag turns off mid-session'
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.getByTestId('my-things-add')).toBeVisible();
 
   flagOn = false;
@@ -86,8 +106,7 @@ test('the guard sends My Things back to You when the session becomes unauthentic
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.getByTestId('my-things-add')).toBeVisible();
 
   authenticated = false;
@@ -108,8 +127,7 @@ test('populated grid renders items via the authorized image route and never expo
     }
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 
   await expect(page.getByTestId('my-things-grid')).toBeVisible();
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
@@ -129,8 +147,7 @@ test('populated grid renders an item whose style is null without error (PR-3: st
     }
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
 });
 
@@ -149,8 +166,7 @@ test('delete: a 200 completed response is treated as removed', async ({ page }) 
     if (route.request().method() === 'DELETE') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'removed', physicalDeletion: 'completed' }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
 
   await page.getByTestId('my-things-open').click();
@@ -169,8 +185,7 @@ test('delete: a 202 pending response is treated as removed, with the background-
     if (route.request().method() === 'DELETE') await route.fulfill({ status: 202, contentType: 'application/json', body: JSON.stringify({ status: 'removed', physicalDeletion: 'pending' }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
 
   await page.getByTestId('my-things-open').click();
@@ -186,8 +201,7 @@ async function gotoAddScreen(page: Page) {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-add').click();
 }
 
@@ -197,8 +211,7 @@ test('the circular Add button opens Add to My Things', async ({ page }) => {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-add').click();
   await expect(page.getByRole('heading', { name: 'Add to My Things' })).toBeVisible();
 });
@@ -397,8 +410,7 @@ async function gotoEditScreen(page: Page, item: typeof FULL_ITEM = FULL_ITEM) {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [item] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-edit').click();
 }
@@ -409,8 +421,7 @@ test('Edit Item: tapping the card opens the item sheet, and Edit opens Edit Item
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FULL_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-open').click();
   // Tapping the card no longer navigates straight to Edit — it opens the
   // item sheet, which offers Edit alongside Delete (and Move, when
@@ -517,8 +528,7 @@ test('Edit Item: the guard sends Edit Item back to You when the flag turns off m
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FULL_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-edit').click();
   await expect(page.getByTestId('my-things-edit-save')).toBeVisible();
@@ -538,8 +548,7 @@ test('Edit Item: the guard sends Edit Item back to You when the session becomes 
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [FULL_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-edit').click();
   await expect(page.getByTestId('my-things-edit-save')).toBeVisible();
@@ -559,8 +568,7 @@ test('Edit Item: existing delete confirmation still works alongside the item she
     if (route.request().method() === 'DELETE') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'removed', physicalDeletion: 'completed' }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 
   await page.getByTestId('my-things-open').click();
   await page.getByTestId('my-things-delete').click();
@@ -576,8 +584,7 @@ async function gotoAddScreenWithAnalysis(page: Page) {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-add').click();
 }
 
@@ -796,8 +803,7 @@ test('the wardrobe view is shown by default and shows only owned items; the cons
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM, CONSIDERING_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 
   // Default view: My Closet (wardrobe). The old always-visible segmented
   // control is now a single toggle link that shows only the *other* tab —
@@ -832,8 +838,7 @@ test('each tab has its own empty state', async ({ page }) => {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.getByText('Nothing added yet.', { exact: false })).toHaveCount(0);
 
   await page.getByTestId('my-things-tab-considering').click();
@@ -847,8 +852,7 @@ test('a considering item exposes Move to My Wardrobe in its sheet; an owned item
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-open').click();
   await expect(page.getByTestId('my-things-move')).toHaveCount(0);
   await expect(page.getByTestId('my-things-edit')).toBeVisible();
@@ -867,8 +871,7 @@ test('Moving a Considering item to My Wardrobe persists via PUT, moves it immedi
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ...CONSIDERING_ITEM, ownershipStatus: 'owned' }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-tab-considering').click();
   await expect(page.getByTestId('my-things-item')).toHaveCount(1);
 
@@ -893,8 +896,7 @@ test('Delete remains fully functional through the item sheet for a Considering i
     if (route.request().method() === 'DELETE') await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'removed', physicalDeletion: 'completed' }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-tab-considering').click();
 
   await page.getByTestId('my-things-open').click();
@@ -955,8 +957,7 @@ test('Arabic labels: tabs, ownership choice, and the item sheet render in Arabic
   });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
   await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 
   // The kicker stays "My Things" ("أغراضي") on every view; the page title
   // is now the view-specific "My Closet" ("خزانتي").
@@ -980,8 +981,7 @@ test('Arabic labels: Add item ownership choice', async ({ page }) => {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [] }) });
   });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await page.getByTestId('my-things-add').click();
 
   await expect(page.getByTestId('my-things-ownership-owned')).toHaveText('أملك هذه القطعة');
@@ -999,8 +999,7 @@ test('390x844 mobile layout: My Things renders with no document-level horizontal
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 
   await expect(page.getByTestId('my-things-search-input')).toBeVisible();
@@ -1056,8 +1055,7 @@ async function gotoMyThingsWithItems(page: Page, items: unknown[]) {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 }
 
 test('search filters the currently active ownership tab using existing item data', async ({ page }) => {
@@ -1152,8 +1150,7 @@ test('category filter labels render correctly in Arabic', async ({ page }) => {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: manyItems }) });
   });
   await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 
   // The category chip row is now one compact <select>; "All" is labeled
   // "All Items" ("كل القطع"). Its options render in Arabic.
@@ -1210,8 +1207,7 @@ test('Style This Piece: tapping a card opens the sheet, and Style This Piece nav
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
+  await openMyThings(page);
 
   // Owned item: Style This Piece is offered, and navigates straight into
   // KIN's Style tab with exactly that one item pre-selected.
@@ -1233,16 +1229,17 @@ test('Style This Piece: tapping a card opens the sheet, and Style This Piece nav
   await expect(page.getByTestId('my-things-edit')).toBeVisible();
 });
 
-test('Style This Piece is absent entirely when the kin_search flag is off', async ({ page }) => {
+test('My Things (and so Style This Piece) is entirely unreachable when the kin_search flag is off, even with my_things on', async ({ page }) => {
+  // My Things now only opens from inside KIN, so kin_search off removes the
+  // one remaining door to it — Style This Piece never gets a chance to
+  // render at all, which is a stronger guarantee than the flag it used to
+  // gate directly.
   await mockMe(page, { myThings: true, kinSearch: false });
   await page.route('**/api/closet-items', async (route) => {
     if (route.request().method() === 'GET') await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [OWNED_ITEM] }) });
   });
   await page.goto('/', { waitUntil: 'domcontentloaded' });
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-my-things').click();
-  await page.getByTestId('my-things-open').click();
-  await expect(page.getByTestId('my-things-style-piece')).toHaveCount(0);
-  await expect(page.getByTestId('my-things-edit')).toBeVisible();
-  await expect(page.getByTestId('my-things-delete')).toBeVisible();
+  await page.getByTestId('nav-kin').click();
+  await expect(page.getByTestId('kin-mode-my-things')).toHaveCount(0);
+  await expect(page.getByTestId('my-things-grid')).toHaveCount(0);
 });
