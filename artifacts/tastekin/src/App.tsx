@@ -6,7 +6,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -1207,7 +1207,7 @@ function TastekinApp() {
     <CreateSavedListDrawer ar={ar} open={savedListCreatorOpen} onClose={() => setSavedListCreatorOpen(false)} onCreate={createSavedList} />
     <SavedListPicker ar={ar} editId={savedListPickerEditId} lists={savedLists} onClose={() => setSavedListPickerEditId(null)} onToggle={updateSavedListItem} />
     {savedConfirmationVisible && <div className="saved-confirmation" role="status" aria-live="polite">{t('Saved', 'تم الحفظ')}</div>}
-    {screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={21} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
+    {screen !== 'composer' && screen !== 'creatorPreview' && screen !== 'onboarding' && <nav className="approved-bottom" aria-label={t('Primary navigation', 'التنقل الرئيسي')} data-testid="primary-navigation">{nav.map(({ id, icon: Icon, en, ar: labelAr }) => <button key={id} data-testid={`nav-${id}`} className={screen === id ? 'active' : ''} onClick={() => go(id)}><Icon size={27} /><span>{ar ? labelAr : en}</span></button>)}</nav>}
    </div></TasteSessionContext.Provider>;
 }
 
@@ -1643,7 +1643,7 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
   );
 }
 
-function SimpleScreen({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className="approved-title">{title}</h1>}{children}</section>; }
+function SimpleScreen({ kicker, title, titleClassName, children }: { kicker: string; title: string; titleClassName?: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className={titleClassName ? `approved-title ${titleClassName}` : 'approved-title'}>{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption || edit.placeName || edit.title || '' : edit.caption || edit.captionAr || edit.placeName || edit.title || '').split(/\r?\n/, 1)[0].trim(); }
 function TasteRating({ rating, ar, id }: { rating?: number | null; ar: boolean; id?: string }) {
@@ -2187,7 +2187,7 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
     {owner && <div className="settings-section">
       <h3>{t('Creator info', 'معلومات المبدع')}</h3>
       <div className="settings-row"><span>{t('Verification', 'التوثيق')}</span><strong>{creatorProfile.verified ? t('Verified', 'موثّق') : t('Not verified', 'غير موثّق')}</strong></div>
-      {!creatorProfile.verified && <button className="approved-button wide" onClick={onApplyVerification}>{t('Apply for the Taste Seal', 'قدّم للحصول على ختم الذوق')}</button>}
+      {!creatorProfile.verified && <button className="approved-button wide" onClick={onApplyVerification}>{t('Apply for verification', 'التقديم للتوثيق')}</button>}
       <p className="settings-note">{t('Content locking is set per Edit in the composer (Public or Subscribers only) when you create or edit it.', 'يتم تحديد قفل المحتوى لكل تعديل من داخل محرر النشر (عام أو للمشتركين فقط) عند إنشائه أو تعديله.')}</p>
     </div>}
     <div className="settings-section">
@@ -4593,7 +4593,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
         <div className="profile-head-copy">
           <div className="approved-name">
             <h1 dir="auto"><bdi>{profile.displayName}</bdi></h1>
-            {profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
+            {profile.verified && <button className="taste-seal" type="button" aria-label={ar ? 'موثّق' : 'Verified by TASTEKIN'} aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
           </div>
           <span className="profile-handle"><bdi dir="ltr">@{profile.username}</bdi></span>
           {profileLocation && <span className="profile-location"><MapPin size={13} aria-hidden="true" /><span className="profile-location-text">{profileLocation}</span></span>}
@@ -4670,9 +4670,21 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
     {ownerView && !profile.verified && (
-      verificationApplication?.status === 'pending'
-        ? <button className="approved-button wide" type="button" disabled aria-disabled="true" data-testid="profile-verification-pending"><ShieldCheck size={17} /> {ar ? 'الطلب قيد المراجعة' : 'Application under review'}</button>
-        : <button className="approved-button wide" type="button" data-testid="profile-apply-verification" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>
+      <div className="verification-card" data-testid="profile-verification-card">
+        <span className="verification-card-icon" aria-hidden="true">
+          {verificationApplication?.status === 'pending' ? <Clock size={18} /> : <ShieldCheck size={18} />}
+        </span>
+        <div className="verification-card-body">
+          <span className="verification-card-eyebrow">{t('VERIFICATION', 'التوثيق')}</span>
+          <strong className="verification-card-title">
+            {verificationApplication?.status === 'pending' ? t('Application under review', 'طلب التوثيق قيد المراجعة') : t('Get verified', 'وثّق حسابك')}
+          </strong>
+          {verificationApplication?.status !== 'pending' && <span className="verification-card-helper">{t('Show that your identity and work are authentic.', 'أثبت أن هويتك ومحتواك أصليان')}</span>}
+        </div>
+        {verificationApplication?.status === 'pending'
+          ? <span className="verification-card-chip" data-testid="profile-verification-pending">{t('Pending', 'قيد المراجعة')}</span>
+          : <button className="verification-card-apply" type="button" data-testid="profile-apply-verification" onClick={onApplyVerification}>{t('Apply', 'قدّم')}</button>}
+      </div>
     )}
     {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
     {visibleFeaturedCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
@@ -4872,7 +4884,12 @@ type VerificationApplication = {
 function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenComposer }: { ar: boolean; onDone: () => void; hasPublishedEdit: boolean; onOpenComposer: () => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [statement, setStatement] = useState('');
-  const [links, setLinks] = useState('');
+  // One text input per supporting link, never a single free-text textarea —
+  // always at least one (empty) row so there's something to type into, and
+  // capped at 5 to match the server's own evidenceLinks limit (routes/
+  // verification.ts) rather than letting someone fill in a 6th that would
+  // then silently vanish.
+  const [links, setLinks] = useState<string[]>(['']);
   const [application, setApplication] = useState<VerificationApplication | null>(null);
   const [state, setState] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -4884,15 +4901,18 @@ function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenCom
         if (!active) return;
         setApplication(current);
         setStatement(current?.statement || '');
-        setLinks((current?.evidenceLinks || []).join('\n'));
+        setLinks(current?.evidenceLinks?.length ? current.evidenceLinks : ['']);
         setState('idle');
       }).catch(() => { if (active) { setState('error'); setError(t('Could not load your application.', 'تعذر تحميل طلبك.')); } });
     return () => { active = false; };
   }, [ar]);
+  const updateLink = (index: number, value: string) => setLinks((current) => current.map((link, i) => i === index ? value : link));
+  const addLink = () => setLinks((current) => current.length >= 5 ? current : [...current, '']);
+  const removeLink = (index: number) => setLinks((current) => current.length > 1 ? current.filter((_, i) => i !== index) : current);
   const submit = async () => {
     setState('saving'); setError('');
     try {
-      const evidenceLinks = links.split(/\s+/).map((item) => item.trim()).filter(Boolean);
+      const evidenceLinks = links.map((item) => item.trim()).filter(Boolean);
       const response = await fetch('/api/verification-application', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ statement, evidenceLinks }),
@@ -4906,6 +4926,7 @@ function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenCom
   };
   const reEligibleDate = application?.reEligibleAt ? new Date(application.reEligibleAt) : null;
   const stillCoolingDown = application?.status === 'needs_improvement' && Boolean(reEligibleDate) && reEligibleDate! > new Date();
+  const disabled = state === 'saving' || state === 'loading' || stillCoolingDown;
   const statusCopy = application?.status === 'pending'
     ? t('Your application is under review. You may update it while you wait.', 'طلبك قيد المراجعة. يمكنك تحديثه أثناء الانتظار.')
     : application?.status === 'rejected'
@@ -4913,25 +4934,39 @@ function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenCom
       : application?.status === 'needs_improvement'
         ? t('TASTEKIN asked for some improvements before this application can move forward.', 'طلبت تيستكن بعض التحسينات قبل المتابعة في هذا الطلب.')
         : application?.status === 'approved'
-          ? t('Your Taste Seal has been approved.', 'تمت الموافقة على ختم الذوق الخاص بك.')
+          ? t('You are verified.', 'أنت موثّق.')
           : '';
   if (!hasPublishedEdit) {
-    return <SimpleScreen kicker={t('TASTEKIN verification', 'توثيق تيستكن')} title={t('Apply for the Taste Seal', 'قدّم للحصول على ختم الذوق')}>
+    return <SimpleScreen kicker={t('TASTEKIN verification', 'توثيق تيستكن')} title={t('Apply for verification', 'التقديم للتوثيق')} titleClassName="verification-form-title">
       {statusCopy && <div className="approved-panel"><strong>{statusCopy}</strong>{application?.reviewNote && <p>{application.reviewNote}</p>}</div>}
       <div className="workspace-notice" role="alert">{t('You need at least one published Edit before applying for verification.', 'تحتاج إلى تعديل واحد منشور على الأقل قبل التقديم للتوثيق.')}</div>
       <button className="approved-button primary wide" type="button" onClick={onOpenComposer}>{t('Create an Edit', 'أنشئ تعديلاً')}</button>
-      <button className="approved-button wide" type="button" onClick={onDone}>{t('Back to profile', 'العودة إلى الملف')}</button>
+      <button className="verification-back-link" type="button" data-testid="verification-back-link" onClick={onDone}>{t('Back to profile', 'العودة إلى الملف')}</button>
     </SimpleScreen>;
   }
-  return <SimpleScreen kicker={t('TASTEKIN verification', 'توثيق تيستكن')} title={t('Apply for the Taste Seal', 'قدّم للحصول على ختم الذوق')}>
-    <p>{t('TASTEKIN reviews identity, originality, and the quality of a creator’s public profile. Verification is never automatic or purchased.', 'تراجع تيستكن الهوية والأصالة وجودة الملف العام للمبدع. التوثيق لا يُشترى ولا يتم تلقائياً.')}</p>
+  return <SimpleScreen kicker={t('TASTEKIN verification', 'توثيق تيستكن')} title={t('Apply for verification', 'التقديم للتوثيق')} titleClassName="verification-form-title">
+    <p>{t('TASTEKIN reviews your identity, your work, and the authenticity of your public profile. Verification is never automatic or purchased.', 'تراجع تيستكن هويتك وعملك ومدى أصالة ملفك العام. التوثيق لا يُشترى ولا يتم تلقائياً.')}</p>
     {statusCopy && <div className="approved-panel"><strong>{statusCopy}</strong>{application?.reviewNote && <p>{application.reviewNote}</p>}{stillCoolingDown && <p>{t('You can reapply after', 'يمكنك إعادة التقديم بعد')} {reEligibleDate!.toLocaleDateString()}.</p>}</div>}
-    <label className="form-field"><span>{t('Why should this profile be verified?', 'لماذا يستحق هذا الملف التوثيق؟')}</span><textarea value={statement} maxLength={1500} onChange={(event) => setStatement(event.target.value)} placeholder={t('Describe your identity, original taste, and the content you create (minimum 40 characters).', 'اشرح هويتك وذوقك الأصلي والمحتوى الذي تقدمه (40 حرفاً على الأقل).')} disabled={state === 'saving' || state === 'loading' || stillCoolingDown} /></label>
-    <label className="form-field"><span>{t('Evidence links (optional, one per line)', 'روابط إثبات اختيارية (رابط في كل سطر)')}</span><textarea value={links} onChange={(event) => setLinks(event.target.value)} placeholder="https://…" disabled={state === 'saving' || state === 'loading' || stillCoolingDown} /></label>
+    <label className="form-field">
+      <span>{t('Tell us about your work', 'أخبرنا عن عملك')}</span>
+      <small className="form-field-hint">{t('What do you create, and what makes your work distinct?', 'ما الذي تنشئه، وما الذي يميز عملك؟')}</small>
+      <textarea data-testid="verification-statement" value={statement} maxLength={1500} onChange={(event) => setStatement(event.target.value)} placeholder={t('Minimum 40 characters.', 'الحد الأدنى ٤٠ حرفاً.')} disabled={disabled} />
+    </label>
+    <div className="form-field">
+      <span>{t('Supporting links (optional)', 'روابط داعمة (اختياري)')}</span>
+      <small className="form-field-hint">{t('Instagram, portfolio, website, or press.', 'إنستغرام، ملف أعمال، موقع إلكتروني، أو تغطية إعلامية.')}</small>
+      {links.map((link, index) => (
+        <div className="verification-link-row" key={index}>
+          <input type="url" inputMode="url" data-testid="verification-link-input" value={link} onChange={(event) => updateLink(index, event.target.value)} placeholder="https://…" disabled={disabled} />
+          {links.length > 1 && <button type="button" className="verification-link-remove" aria-label={t('Remove link', 'إزالة الرابط')} onClick={() => removeLink(index)} disabled={disabled}><X size={14} /></button>}
+        </div>
+      ))}
+      {links.length < 5 && <button type="button" className="verification-link-add" data-testid="verification-add-link" onClick={addLink} disabled={disabled}>{t('Add another link', 'أضف رابطاً آخر')}</button>}
+    </div>
     {error && <p className="workspace-notice" role="alert">{error}</p>}
-    {state === 'saved' && <p className="profile-save-success" role="status">{t('Application submitted securely.', 'تم إرسال الطلب بأمان.')}</p>}
-    <button className="approved-button primary wide" type="button" onClick={() => void submit()} disabled={state === 'saving' || state === 'loading' || stillCoolingDown || statement.trim().length < 40}>{stillCoolingDown ? t('You can reapply after', 'يمكنك إعادة التقديم بعد') + ' ' + reEligibleDate!.toLocaleDateString() : state === 'saving' ? t('Submitting…', 'جارٍ الإرسال…') : application ? t('Update application', 'تحديث الطلب') : t('Submit for review', 'إرسال للمراجعة')}</button>
-    <button className="approved-button wide" type="button" onClick={onDone}>{t('Back to profile', 'العودة إلى الملف')}</button>
+    {state === 'saved' && <p className="profile-save-success" role="status">{t("Application submitted. Your profile will show Pending until we finish reviewing it.", 'تم إرسال الطلب. سيظهر ملفك الشخصي بحالة قيد المراجعة حتى ننتهي من المراجعة.')}</p>}
+    <button className="approved-button primary wide" type="button" data-testid="verification-submit" onClick={() => void submit()} disabled={disabled || statement.trim().length < 40}>{stillCoolingDown ? t('You can reapply after', 'يمكنك إعادة التقديم بعد') + ' ' + reEligibleDate!.toLocaleDateString() : state === 'saving' ? t('Submitting…', 'جارٍ الإرسال…') : application ? t('Update application', 'تحديث الطلب') : t('Submit for review', 'إرسال للمراجعة')}</button>
+    <button className="verification-back-link" type="button" data-testid="verification-back-link" onClick={onDone}>{t('Back to profile', 'العودة إلى الملف')}</button>
   </SimpleScreen>;
 }
 

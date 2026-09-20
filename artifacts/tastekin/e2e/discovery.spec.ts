@@ -340,7 +340,7 @@ test('"View all" is hidden with zero or one visible Featured collection, shown o
   await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
 });
 
-test('shows "Apply for the Taste Seal" before applying, then a disabled "Application under review" once a pending application exists', async ({ page }) => {
+test('shows the compact "Get verified" card before applying, then a Pending chip once a pending application exists', async ({ page }) => {
   // /api/creator-profile is fetched once, in a useEffect right after the
   // session loads at app boot — well before this test ever navigates to the
   // Profile screen. The override must be registered before that first
@@ -361,15 +361,207 @@ test('shows "Apply for the Taste Seal" before applying, then a disabled "Applica
   });
   await page.goto('/');
   await openConsumerProfile(page);
-  await expect(page.getByTestId('profile-apply-verification')).toContainText('Apply for the Taste Seal');
+  const card = page.getByTestId('profile-verification-card');
+  await expect(card).toBeVisible();
+  await expect(card.locator('.verification-card-eyebrow')).toHaveText('VERIFICATION');
+  await expect(card.locator('.verification-card-title')).toHaveText('Get verified');
+  await expect(card.locator('.verification-card-helper')).toHaveText('Show that your identity and work are authentic.');
+  await expect(page.getByTestId('profile-apply-verification')).toHaveText('Apply');
   await expect(page.getByTestId('profile-verification-pending')).toHaveCount(0);
 
   applicationStatus = 'pending';
   await page.reload();
   await openConsumerProfile(page);
-  await expect(page.getByTestId('profile-verification-pending')).toContainText('Application under review');
-  await expect(page.getByTestId('profile-verification-pending')).toBeDisabled();
+  await expect(card.locator('.verification-card-title')).toHaveText('Application under review');
+  await expect(page.getByTestId('profile-verification-pending')).toHaveText('Pending');
   await expect(page.getByTestId('profile-apply-verification')).toHaveCount(0);
+});
+
+test('removes the verification card once approved and shows the verified badge instead', async ({ page }) => {
+  await page.route('**/api/creator-profile', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        displayName: 'Fheed Alaiban', username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: [],
+        avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
+      }),
+    });
+  });
+  await page.goto('/');
+  await openConsumerProfile(page);
+  await expect(page.getByTestId('profile-verification-card')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Verified by TASTEKIN' })).toBeVisible();
+});
+
+test('never shows owner-only verification controls to a visitor viewing another unverified creator', async ({ page }) => {
+  await page.route('**/api/explore**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: false,
+        sort: 'new',
+        creators: [
+          { id: 'noura-studio', username: 'noura.studio', displayName: 'Noura Studio', avatar: '', categories: ['Restaurants'], matchScore: null, matchReasons: [] },
+        ],
+        edits: [],
+      }),
+    });
+  });
+  await page.getByTestId('nav-explore').click();
+  await page.getByRole('button', { name: 'New' }).click();
+  await page.getByTestId('creator-noura.studio').click();
+  await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
+  await expect(page.getByTestId('profile-verification-card')).toHaveCount(0);
+  await expect(page.getByTestId('profile-apply-verification')).toHaveCount(0);
+});
+
+test('verification form enforces the 40-character minimum, supports up to five links, and returns the profile to Pending after submission', async ({ page }) => {
+  await page.route('**/api/creator-profile', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        displayName: 'Fheed Alaiban', username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: [],
+        avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
+      }),
+    });
+  });
+  let submitted: { statement: string; evidenceLinks: string[] } | null = null;
+  await page.route('**/api/verification-application', async (route) => {
+    if (route.request().method() === 'POST') {
+      submitted = route.request().postDataJSON() as { statement: string; evidenceLinks: string[] };
+      await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ application: { statement: submitted.statement, evidenceLinks: submitted.evidenceLinks, status: 'pending' } }) });
+      return;
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ application: submitted ? { statement: submitted.statement, evidenceLinks: submitted.evidenceLinks, status: 'pending' } : null }) });
+  });
+  await page.goto('/');
+  await openConsumerProfile(page);
+  await page.getByTestId('profile-apply-verification').click();
+  await expect(page.getByRole('heading', { name: 'Apply for verification' })).toBeVisible();
+
+  const statement = page.getByTestId('verification-statement');
+  const submit = page.getByTestId('verification-submit');
+  await statement.fill('too short');
+  await expect(submit).toBeDisabled();
+  await statement.fill('x'.repeat(40));
+  await expect(submit).toBeEnabled();
+
+  await expect(page.getByTestId('verification-link-input')).toHaveCount(1);
+  for (let i = 1; i < 5; i++) {
+    await page.getByTestId('verification-add-link').click();
+  }
+  await expect(page.getByTestId('verification-link-input')).toHaveCount(5);
+  await expect(page.getByTestId('verification-add-link')).toHaveCount(0);
+  await page.getByTestId('verification-link-input').first().fill('https://instagram.com/fheed');
+
+  await submit.click();
+  await expect(page.getByText('Application submitted. Your profile will show Pending until we finish reviewing it.')).toBeVisible();
+  expect(submitted).not.toBeNull();
+  expect(submitted!.statement.length).toBeGreaterThanOrEqual(40);
+  expect(submitted!.evidenceLinks).toContain('https://instagram.com/fheed');
+
+  await page.getByTestId('verification-back-link').click();
+  await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
+  await expect(page.getByTestId('profile-verification-pending')).toHaveText('Pending');
+});
+
+test('shows Arabic verification copy for the card and the form', async ({ page }) => {
+  await page.route('**/api/creator-profile', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        displayName: 'Fheed Alaiban', username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: [],
+        avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
+      }),
+    });
+  });
+  await page.route('**/api/verification-application', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ application: null }) });
+  });
+  await page.goto('/');
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await page.getByTestId('nav-explore').click();
+  await expect(page.getByRole('heading', { name: 'اكتشف ذوقك القادم.' })).toBeVisible();
+  await page.getByTestId('fheed-profile-mini').click();
+  await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
+  const card = page.getByTestId('profile-verification-card');
+  await expect(card.locator('.verification-card-eyebrow')).toHaveText('التوثيق');
+  await expect(card.locator('.verification-card-title')).toHaveText('وثّق حسابك');
+  await expect(card.locator('.verification-card-helper')).toHaveText('أثبت أن هويتك ومحتواك أصليان');
+  await expect(page.getByTestId('profile-apply-verification')).toHaveText('قدّم');
+
+  await page.getByTestId('profile-apply-verification').click();
+  await expect(page.getByTestId('verification-back-link')).toHaveText('العودة إلى الملف');
+});
+
+async function measureBottomNav(page: Page) {
+  return page.evaluate(() => {
+    const nav = document.querySelector<HTMLElement>('[data-testid="primary-navigation"]');
+    if (!nav) throw new Error('Missing bottom navigation');
+    const buttons = [...nav.querySelectorAll<HTMLElement>('button')];
+    return buttons.map((button) => {
+      const buttonBox = button.getBoundingClientRect();
+      const icon = button.querySelector('svg');
+      const label = button.querySelector('span');
+      const iconBox = icon?.getBoundingClientRect();
+      return {
+        active: button.classList.contains('active'),
+        color: getComputedStyle(button).color,
+        buttonWidth: buttonBox.width,
+        buttonHeight: buttonBox.height,
+        iconWidth: iconBox?.width ?? 0,
+        iconHeight: iconBox?.height ?? 0,
+        labelFontSize: label ? parseFloat(getComputedStyle(label).fontSize) : 0,
+      };
+    });
+  });
+}
+
+test('sizes bottom-nav icons, labels, and touch targets, with a burgundy active state, in English', async ({ page }) => {
+  const buttons = await measureBottomNav(page);
+  expect(buttons).toHaveLength(5);
+  for (const button of buttons) {
+    expect(button.buttonWidth).toBeGreaterThanOrEqual(44);
+    expect(button.buttonHeight).toBeGreaterThanOrEqual(44);
+    expect(button.labelFontSize).toBeCloseTo(13, 0);
+    if (!button.active) {
+      expect(button.iconWidth).toBeGreaterThanOrEqual(26);
+      expect(button.iconWidth).toBeLessThanOrEqual(29);
+    }
+  }
+  const active = buttons.find((button) => button.active);
+  expect(active).toBeTruthy();
+  expect(active!.color).toBe('rgb(74, 29, 36)');
+
+  const layout = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+    shellBottom: document.querySelector('.approved-shell')!.getBoundingClientRect().bottom,
+    navTop: document.querySelector('[data-testid="primary-navigation"]')!.getBoundingClientRect().top,
+  }));
+  expect(layout.scrollWidth).toBe(layout.clientWidth);
+  expect(layout.navTop).toBeLessThanOrEqual(layout.shellBottom);
+});
+
+test('sizes bottom-nav icons, labels, and touch targets, with a burgundy active state, in Arabic', async ({ page }) => {
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await page.getByTestId('nav-you').click();
+  const buttons = await measureBottomNav(page);
+  expect(buttons).toHaveLength(5);
+  for (const button of buttons) {
+    expect(button.buttonWidth).toBeGreaterThanOrEqual(44);
+    expect(button.buttonHeight).toBeGreaterThanOrEqual(44);
+    expect(button.labelFontSize).toBeCloseTo(13, 0);
+    if (!button.active) {
+      expect(button.iconWidth).toBeGreaterThanOrEqual(26);
+      expect(button.iconWidth).toBeLessThanOrEqual(29);
+    }
+  }
+  const active = buttons.find((button) => button.active);
+  expect(active).toBeTruthy();
+  expect(active!.color).toBe('rgb(74, 29, 36)');
 });
 
 test('keeps Home and Explore state while the profile stays uncluttered at mobile width', async ({ page }) => {
