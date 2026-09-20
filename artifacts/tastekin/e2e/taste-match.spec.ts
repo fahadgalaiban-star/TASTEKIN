@@ -50,12 +50,13 @@ test('offers Taste tuning from settings and the owner profile', async ({ page })
   await page.getByTestId('menu-tune-taste').click();
   await expect(page.getByRole('heading', { name: 'Tune your taste' })).toBeVisible();
 
+  // The creator profile itself intentionally has no "Tune your taste" pill —
+  // the Settings entry point above (already verified) is the only path to
+  // this screen now; the underlying taste-tuning functionality is untouched.
   await page.getByRole('button', { name: 'Open menu' }).click();
   await page.getByTestId('identity-owner').click();
   await page.getByRole('button', { name: 'View profile' }).click();
-  await expect(page.getByTestId('profile-tune-taste')).toBeVisible();
-  await page.getByTestId('profile-tune-taste').click();
-  await expect(page.getByRole('heading', { name: 'Tune your taste' })).toBeVisible();
+  await expect(page.getByTestId('profile-tune-taste')).toHaveCount(0);
 });
 
 test('keeps signed-out matching private and filters verified creator discovery', async ({ request }) => {

@@ -302,6 +302,76 @@ test('hides a Featured collection whose only cover is a locked Edit, instead of 
   await expect(page.getByText('The Coastal Edit')).toHaveCount(0);
 });
 
+test('"View all" is hidden with zero or one visible Featured collection, shown only with two or more, for owner and visitor alike', async ({ page }) => {
+  // Default beforeEach mock: exactly one visible Featured collection
+  // (quiet-luxury; coastal-edit is filtered out — see the test above).
+  await openConsumerProfile(page);
+  await expect(page.getByTestId('featured-collection-quiet-luxury')).toBeVisible();
+  await expect(page.getByTestId('profile-featured-viewall')).toHaveCount(0);
+
+  // Add a second real, visible public collection and reopen the profile —
+  // "View all" must now appear.
+  const secondPublicEdit = { ...quietTailoringFeed, id: 'weekend-market', title: 'Weekend market finds', titleAr: 'اكتشافات سوق نهاية الأسبوع', collectionIds: ['weekend-picks'] };
+  await page.route('**/api/creator-workspace', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        creatorId: 'fheed', revision: 1,
+        edits: [{ ...quietTailoringFeed, collectionIds: ['quiet-luxury'] }, privateHotelFeed, secondPublicEdit],
+        collections: [
+          { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: '', descriptionAr: '', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: '', descriptionAr: '', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+          { id: 'weekend-picks', title: 'Weekend Picks', titleAr: 'اختيارات نهاية الأسبوع', description: '', descriptionAr: '', access: 'public', coverEditId: 'weekend-market', editIds: ['weekend-market'] },
+        ],
+      }),
+    });
+  });
+  await page.route('**/api/creator-featured-collections', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ collectionIds: ['quiet-luxury', 'coastal-edit', 'weekend-picks'] }) });
+  });
+  // This SPA keeps screen state in memory, not the URL — a reload lands
+  // back on Home, so the profile must be re-opened after it.
+  await page.reload();
+  await openConsumerProfile(page);
+  await expect(page.getByTestId('featured-collection-quiet-luxury')).toBeVisible();
+  await expect(page.getByTestId('featured-collection-weekend-picks')).toBeVisible();
+  await expect(page.getByTestId('profile-featured-viewall')).toBeVisible();
+  await page.getByTestId('profile-featured-viewall').click();
+  await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
+});
+
+test('shows "Apply for the Taste Seal" before applying, then a disabled "Application under review" once a pending application exists', async ({ page }) => {
+  // /api/creator-profile is fetched once, in a useEffect right after the
+  // session loads at app boot — well before this test ever navigates to the
+  // Profile screen. The override must be registered before that first
+  // navigation (the beforeEach's own page.goto('/')), so re-navigate here
+  // rather than relying on openConsumerProfile's earlier page load.
+  await page.route('**/api/creator-profile', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        displayName: 'Fheed Alaiban', username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: [],
+        avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
+      }),
+    });
+  });
+  let applicationStatus: 'none' | 'pending' = 'none';
+  await page.route('**/api/verification-application', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ application: applicationStatus === 'pending' ? { statement: 'x'.repeat(40), evidenceLinks: [], status: 'pending' } : null }) });
+  });
+  await page.goto('/');
+  await openConsumerProfile(page);
+  await expect(page.getByTestId('profile-apply-verification')).toContainText('Apply for the Taste Seal');
+  await expect(page.getByTestId('profile-verification-pending')).toHaveCount(0);
+
+  applicationStatus = 'pending';
+  await page.reload();
+  await openConsumerProfile(page);
+  await expect(page.getByTestId('profile-verification-pending')).toContainText('Application under review');
+  await expect(page.getByTestId('profile-verification-pending')).toBeDisabled();
+  await expect(page.getByTestId('profile-apply-verification')).toHaveCount(0);
+});
+
 test('keeps Home and Explore state while the profile stays uncluttered at mobile width', async ({ page }) => {
   const homeTabs = page.locator('.approved-feed-tabs');
   const homeTabsBox = await homeTabs.boundingBox();
@@ -377,15 +447,7 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
       imageWidth: imageBox.width,
       imageHeight: imageBox.height,
       objectFit: getComputedStyle(image).objectFit,
-      captions: Array.from(card.querySelectorAll<HTMLElement>('.profile-grid-caption')).map((caption) => {
-        const captionBox = caption.getBoundingClientRect();
-        const styles = getComputedStyle(caption);
-        return {
-          withinCard: captionBox.left >= cardBox.left && captionBox.right <= cardBox.right && captionBox.bottom <= cardBox.bottom,
-          oneLineEllipsis: styles.whiteSpace === 'nowrap' && styles.overflow === 'hidden' && styles.textOverflow === 'ellipsis',
-          truncated: caption.scrollWidth > caption.clientWidth,
-        };
-      }),
+      captionCount: card.querySelectorAll('.profile-grid-caption').length,
       hasPaywallLabel: card.textContent?.includes('Subscribers only') ?? false,
     };
   }));
@@ -394,14 +456,16 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   // private-hotel Edit) is excluded from this grid entirely rather than
   // rendered with any paywall styling.
   expect(mediaLayout.every((item) => !item.hasPaywallLabel)).toBe(true);
+  // Thumbnails are photo-first and clean — no title/caption text overlay on
+  // the grid card itself. The caption is still available once the post is
+  // opened (see Edit Detail); it's just never drawn over the thumbnail here.
+  expect(mediaLayout.every((item) => item.captionCount === 0)).toBe(true);
   for (const item of mediaLayout) {
     expect(item.cardRatio).toBeCloseTo(1.25, 1);
     expect(item.objectFit).toBe('cover');
     expect(item.imageWidth).toBeCloseTo(item.mediaWidth, 1);
     expect(item.imageHeight).toBeCloseTo(item.mediaHeight, 1);
-    expect(item.captions.every((caption) => caption.withinCard && caption.oneLineEllipsis)).toBe(true);
   }
-  expect(mediaLayout.some((item) => item.captions.some((caption) => caption.truncated))).toBe(true);
 
   await page.getByTestId('nav-explore').click();
   await page.getByRole('button', { name: 'New' }).click();
@@ -435,6 +499,105 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   await expect(page.getByText('Nothing in Trips yet.')).toBeVisible();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
+
+test('the profile filter row scrolls horizontally at 390px without clipping any category, in English and Arabic/RTL', async ({ page }) => {
+  await openConsumerProfile(page);
+  const row = page.locator('.profile-travel-tabs');
+  const enLayout = await row.evaluate((element) => ({
+    scrollable: element.scrollWidth > element.clientWidth,
+    tabCount: element.querySelectorAll('button').length,
+    everyTabHasWidth: Array.from(element.querySelectorAll('button')).every((button) => button.getBoundingClientRect().width > 0),
+  }));
+  expect(enLayout.scrollable).toBe(true);
+  expect(enLayout.tabCount).toBe(7);
+  expect(enLayout.everyTabHasWidth).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
+  const arLayout = await row.evaluate((element) => ({
+    scrollable: element.scrollWidth > element.clientWidth,
+    everyTabHasWidth: Array.from(element.querySelectorAll('button')).every((button) => button.getBoundingClientRect().width > 0),
+  }));
+  expect(arLayout.scrollable).toBe(true);
+  expect(arLayout.everyTabHasWidth).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+  // Selected-filter styling still applies correctly under RTL.
+  await expect(page.getByTestId('profile-travel-tab-All')).toHaveClass(/active/);
+});
+
+// A Latin/mixed display name must render in full on the Arabic page, not
+// just be present in the accessible name — Playwright's role-based
+// `getByRole('heading', ...)` matches the DOM text content regardless of
+// visual CSS truncation, so it alone can't catch a name that's actually
+// being clipped on screen. These checks compare scrollWidth to
+// clientWidth, which does.
+const NAME_CASES: { key: string; name: string }[] = [
+  { key: 'a fully Latin name', name: 'Fheed Alaiban' },
+  { key: 'a fully Arabic name', name: 'فهد العليبان' },
+  { key: 'a mixed Arabic/Latin name', name: 'Fheed العليبان' },
+];
+
+for (const { key, name } of NAME_CASES) {
+  test(`AR owner and visitor profiles render ${key} in full at 390px, not clipped from the wrong end`, async ({ page }) => {
+    // /api/creator-profile and /api/me's creator.displayName are both
+    // fetched once, in a useEffect right after the session loads at app
+    // boot — before this test's own page.goto('/?lang=ar') below, so both
+    // overrides must be registered first.
+    await page.route('**/api/me', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'fheed-founder', email: 'founder@tastekin.test' }, role: 'creator',
+          creator: { id: 'fheed', handle: 'fheed', displayName: name, verified: true, ownsWorkspace: true },
+          featureFlags: { my_circle: true },
+        }),
+      });
+    });
+    await page.route('**/api/creator-profile', async (route) => {
+      await route.fulfill({
+        contentType: 'application/json',
+        body: JSON.stringify({
+          displayName: name, username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: [],
+          avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
+        }),
+      });
+    });
+    // openConsumerProfile() hardcodes the English Explore heading AND the
+    // literal name 'Fheed Alaiban', so it only works for the default fixture
+    // name in English. Navigate to the profile in English first (matching
+    // the app's real boot language), then switch to Arabic via the in-app
+    // language toggle — the same pattern the filter-row-scroll test above
+    // uses — so this works for all three NAME_CASES, not just the Latin one.
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('nav-explore').click();
+    await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
+    await page.getByTestId('fheed-profile-mini').click();
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+    await page.getByTestId('open-settings-topbar').click();
+    await page.getByTestId('settings-language-ar').click();
+    await expect(page.locator('.approved-app')).toHaveAttribute('dir', 'rtl');
+    await page.getByRole('button', { name: 'رجوع' }).click();
+    await expect(page.getByRole('heading', { name })).toBeVisible();
+
+    const assertNameFullyVisible = async () => {
+      const h1 = page.locator('.approved-name h1');
+      await expect(h1).toHaveText(name);
+      const box = await h1.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }));
+      expect(box.scrollWidth).toBeLessThanOrEqual(box.clientWidth + 1);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
+    };
+
+    await assertNameFullyVisible();
+
+    await page.getByRole('button', { name: 'مزيد من الخيارات' }).click();
+    await page.getByTestId('profile-view-public').click();
+    await assertNameFullyVisible();
+  });
+}
 
 test('shows all visitor actions when an admin views an unverified empty profile in English and RTL', async ({ page }) => {
   await page.route('**/api/me', async (route) => {

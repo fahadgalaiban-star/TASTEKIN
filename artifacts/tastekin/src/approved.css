@@ -187,7 +187,18 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-name { display:flex; align-items:center; gap:6px; min-width:0; }
 /* Truncates rather than wraps: a long display name must never collide
    with the compact action column beside it — it shortens with an ellipsis
-   instead, at any name length. */
+   instead, at any name length.
+   The h1's dir="auto" (in JSX) resolves ITS OWN direction from its own
+   content (a Latin name -> ltr, an Arabic name -> rtl, a mixed name
+   follows its first strong character) instead of inheriting the page's
+   RTL — text-overflow's truncation side and the box's width math are both
+   governed by direction, so without dir="auto" a Latin/mixed name inside
+   the Arabic dir="rtl" page still resolves to direction:rtl (CSS
+   unicode-bidi does not change computed `direction`), which clips the
+   front of the name instead of the back and can overflow a few px early.
+   The bdi around the name in JSX isolates the run so surrounding RTL text
+   is never reordered by it, matching the same @handle already gets via
+   <bdi dir="ltr">. */
 .approved-name h1 { margin:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:20px; line-height:1.15; letter-spacing:-.03em; }
 .taste-seal { flex:0 0 auto; width:22px; height:22px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; }
 .taste-seal img { width:22px; height:22px; display:block; object-fit:contain; filter:drop-shadow(0 2px 2px rgba(46,14,20,.18)); }
@@ -263,14 +274,12 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .profile-grid-media img { width:100%; height:100%; display:block; object-fit:cover; object-position:center; }
 .profile-grid-access { position:absolute; top:8px; inset-inline-start:8px; display:inline-flex; align-items:center; gap:4px; max-width:calc(100% - 16px); padding:5px 7px; border-radius:999px; background:rgba(74,29,36,.94); color:var(--tk-text-inverse); font-size:9px; font-weight:800; white-space:nowrap; }
 .profile-grid-caption { display:block; flex:0 0 auto; width:100%; min-width:0; max-width:100%; overflow:hidden; padding:8px 10px 10px; color:var(--tk-ink); font-size:11px; font-weight:800; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
-/* `.profile-edits-grid` is shared with the My Things card (above), so the
-   Edits grid's own look — no white caption strip, an 8px-inset one-line
-   overlay directly on the media — is scoped under `.profile-travel-grid`
-   instead, which only ever appears on this Profile screen. */
+/* `.profile-edits-grid` is shared with the My Things card (above); the
+   Edits grid never overlays a title/caption on the thumbnail (photo-first —
+   that text is only shown once the post itself is opened), so this scope
+   only needs to make the media fill the card. */
 .profile-travel-grid .approved-grid-card { position:relative; border-radius:12px; display:block; }
 .profile-travel-grid .profile-grid-media { position:absolute; inset:0; width:100%; height:100%; }
-.profile-travel-grid .profile-grid-media::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,transparent 55%,rgba(23,20,22,.65) 100%); pointer-events:none; }
-.profile-travel-grid .profile-grid-caption { position:absolute; z-index:1; bottom:8px; inset-inline:8px; width:auto; max-width:calc(100% - 16px); padding:0; color:var(--tk-text-inverse); }
 .profile-travel-grid .video-duration-badge { font-size:11px; }
 .approved-collection strong { display:block; padding:10px 11px 12px; font-size:13px; }
 .place-grid-card { border:1px solid var(--tk-border); background:var(--tk-surface); box-shadow:0 8px 22px var(--tk-shadow-soft); }
@@ -609,7 +618,17 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .admin-filter-row button { flex:0 0 auto; min-height:38px; padding:0 14px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:700; white-space:nowrap; }
 .admin-filter-row button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .approved-app[dir="rtl"] { font-family:'IBM Plex Sans Arabic', sans-serif; }
-.approved-app[dir="rtl"] .approved-title, .approved-app[dir="rtl"] .home-feed-header h1, .approved-app[dir="rtl"] .approved-name h1 { letter-spacing:0; }
+.approved-app[dir="rtl"] .approved-title, .approved-app[dir="rtl"] .home-feed-header h1 { letter-spacing:0; }
+/* .approved-name h1 is excluded from the blanket RTL reset above and
+   handled separately (see its own rules) — its direction now depends on
+   the display name's own content (dir="auto"), not the page's, so its
+   letter-spacing must too: zero for an Arabic name, but the tighter
+   Latin spacing preserved for a Latin/mixed name even on the Arabic
+   page, matching what it already gets in English. Unqualified, the
+   blanket reset above widened every Latin/mixed name by several px on
+   the Arabic page for no reason tied to its own script, which was
+   enough on its own to push an ordinary short name into truncation. */
+.approved-app[dir="rtl"] .approved-name h1:dir(rtl) { letter-spacing:0; }
 .approved-app[dir="rtl"] .taste-seal-popover { margin-right:71px; margin-left:0; }
 @media (min-width:600px) { .approved-app { padding:16px; background:var(--tk-page); } .approved-shell { min-height:calc(100dvh - 32px); border-radius:28px; background:var(--tk-ivory); box-shadow:0 20px 70px rgba(40,26,26,.13); } }
 

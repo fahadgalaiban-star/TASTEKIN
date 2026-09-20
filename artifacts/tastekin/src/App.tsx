@@ -1646,10 +1646,6 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 function SimpleScreen({ kicker, title, children }: { kicker: string; title: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className="approved-title">{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption || edit.placeName || edit.title || '' : edit.caption || edit.captionAr || edit.placeName || edit.title || '').split(/\r?\n/, 1)[0].trim(); }
-function profileCaptionLine(edit: CreatorEdit, ar: boolean) {
-  const caption = ar ? edit.captionAr || edit.caption : edit.caption || edit.captionAr;
-  return caption ? caption.split(/\r?\n/, 1)[0].trim() : '';
-}
 function TasteRating({ rating, ar, id }: { rating?: number | null; ar: boolean; id?: string }) {
   if (!rating) return null;
   return <span className="taste-rating-wrap" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating" aria-hidden="true">{[1, 2, 3, 4, 5].map((value) => <Link2 key={value} size={15} className={value <= rating ? 'active' : ''} />)}</span><span className="taste-rating-label" aria-label={ar ? `تقييم TASTEKIN ${rating} من 5` : `TASTEKIN Taste Rating ${rating} out of 5`}>{ar ? `تقييم TASTEKIN · ${rating}/5` : `TASTEKIN Taste Rating · ${rating}/5`}</span></span>;
@@ -4420,6 +4416,22 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     void fetch(`/api/creators/${encodeURIComponent(profile.username)}/views`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ editId: null }) });
   }, [ownerView, profile.username]);
 
+  // Reuses the same verification-application record VerificationApplicationScreen
+  // already reads/writes — only the owner, and only while not yet verified,
+  // needs to know whether a submitted application is still pending so this
+  // banner can show "Application under review" instead of the initial "Apply"
+  // prompt. Once verified, profile.verified alone already hides this banner.
+  const [verificationApplication, setVerificationApplication] = useState<VerificationApplication | null>(null);
+  useEffect(() => {
+    if (!ownerView || profile.verified) { setVerificationApplication(null); return; }
+    let active = true;
+    void fetch('/api/verification-application', { credentials: 'include', cache: 'no-store' })
+      .then((response) => response.ok ? response.json() as Promise<{ application: VerificationApplication | null }> : { application: null })
+      .then(({ application }) => { if (active) setVerificationApplication(application); })
+      .catch(() => { if (active) setVerificationApplication(null); });
+    return () => { active = false; };
+  }, [ownerView, profile.verified]);
+
   // Travel-first visitor redesign — derived entirely from this creator's own
   // published Edits, never fabricated or hardcoded.
   const [activeTravelTab, setActiveTravelTab] = useState<TravelTab>('All');
@@ -4460,7 +4472,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
         <Avatar profile={profile} />
         <div className="profile-head-copy">
           <div className="approved-name">
-            <h1>{profile.displayName}</h1>
+            <h1 dir="auto"><bdi>{profile.displayName}</bdi></h1>
             {profile.verified && <button className="taste-seal" type="button" aria-label="Verified by TASTEKIN" aria-expanded={sealOpen} onClick={() => setSealOpen(!sealOpen)}><img src={TASTE_SEAL_IMAGE} alt="" /></button>}
           </div>
           <span className="profile-handle"><bdi dir="ltr">@{profile.username}</bdi></span>
@@ -4468,7 +4480,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
         </div>
       </div>
       <div className="profile-head-right">
-        {!ownerView ? (
+        {!ownerView && (
           <Drawer.Root>
             <Drawer.Trigger asChild>
                <button className="approved-match">
@@ -4519,10 +4531,6 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
               </Drawer.Content>
             </Drawer.Portal>
           </Drawer.Root>
-         ) : (
-           <button className="approved-match" data-testid="profile-tune-taste" onClick={onMatch}>
-             {ar ? 'ضبط ذوقك' : 'Tune your taste'}
-           </button>
          )}
         <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>
           {ownerView ? <>
@@ -4541,10 +4549,14 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
     {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
-    {ownerView && !profile.verified && <button className="approved-button wide" type="button" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>}
+    {ownerView && !profile.verified && (
+      verificationApplication?.status === 'pending'
+        ? <button className="approved-button wide" type="button" disabled aria-disabled="true" data-testid="profile-verification-pending"><ShieldCheck size={17} /> {ar ? 'الطلب قيد المراجعة' : 'Application under review'}</button>
+        : <button className="approved-button wide" type="button" data-testid="profile-apply-verification" onClick={onApplyVerification}><ShieldCheck size={17} /> {ar ? 'قدّم للحصول على ختم الذوق' : 'Apply for the Taste Seal'}</button>
+    )}
     {tasteSummary && <p className="profile-taste-meta">{tasteSummary}</p>}
     {visibleFeaturedCollections.length > 0 && <section className="profile-featured" aria-label={ar ? 'المجموعات المميزة' : 'Featured collections'}>
-      <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2><button type="button" className="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button></div>
+      <div className="profile-featured-head"><h2>{ar ? 'مجموعات مميزة' : 'Featured collections'}</h2>{visibleFeaturedCollections.length >= 2 && <button type="button" className="profile-featured-viewall" data-testid="profile-featured-viewall" onClick={onCollections}>{ar ? 'عرض الكل' : 'View all'}</button>}</div>
       <div className="profile-featured-strip">
         {visibleFeaturedCollections.map((collection) => {
           const cover = collectionCoverImage(collection, publishedEdits);
@@ -4563,17 +4575,14 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     </div>
     <div className="approved-grid profile-edits-grid profile-travel-grid" data-testid="profile-edits-grid" data-active-category={activeTravelTab}>
       {travelEdits.map((edit) => {
-        const caption = profileCaptionLine(edit, ar);
         const location = placeLocation(edit, ar);
         return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} data-testid={`profile-edit-${edit.id}`} onClick={() => onEdit(edit)}>
           {edit.image ? <>
             <span className="profile-grid-media">
               <img src={imageSrc(edit.image)} alt={edit.altText} />
             </span>
-            {caption && <span className="profile-grid-caption">{caption}</span>}
           </> : edit.video ? <>
             <PosterVideoCard video={edit.video} ar={ar} />
-            {caption && <span className="profile-grid-caption">{caption}</span>}
           </> : <span className="place-grid-preview">
             <span className="place-grid-eyebrow">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>
             <strong>{edit.placeName || publicCaptionLine(edit, ar)}</strong>
