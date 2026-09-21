@@ -803,6 +803,12 @@ function TastekinApp() {
     .find((item) => item.id === selectedEditId && (!item.creatorUsername || item.creatorUsername === selectedCreatorUsername))
     || published[0]
     || seedEdits[0];
+  // Whether the signed-in creator owns THIS specific Edit — an Edit carrying
+  // its own creatorUsername (Home/Circle/public feeds) is compared directly;
+  // one without it (the signed-in owner's own workspace Edits) falls back to
+  // whichever profile is currently being viewed, same as the EditDetail
+  // creatorUsername fallback below.
+  const selectedEditOwner = owner && (selectedEdit.creatorUsername ? selectedEdit.creatorUsername === session.creator?.handle : viewingOwnProfile);
   const selectedCollection = [...creatorCollections, ...publicCreatorCollections].find((item) => item.id === selectedCollectionId) || creatorCollections[0] || seedCollections[0];
   // Ownership of the selected Collection is determined by whether it actually
   // belongs to the signed-in creator's own workspace data — not by which
@@ -1062,6 +1068,8 @@ function TastekinApp() {
   };
   const archiveEdit = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, status: 'archived' } : item), creatorCollections);
   const unarchiveEdit = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, status: 'draft' } : item), creatorCollections);
+  const removeEditPhoto = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, image: '', sourceImage: '', previewImage: '' } : item), creatorCollections);
+  const deleteEditRecord = (id: string) => persistWorkspace(creatorEdits.filter((item) => item.id !== id), creatorCollections);
   const openCollectionManager = (item?: CreatorCollection) => { setEditingCollectionId(item?.id || null); setCollectionForm(item ? { title: item.title, titleAr: item.titleAr, description: item.description, descriptionAr: item.descriptionAr, access: item.access, coverEditId: item.coverEditId, coverImage: item.coverImage || '', coverImageObjectPath: item.coverImageObjectPath ?? null, editIds: item.editIds, uploads: item.uploads, itemOrder: item.itemOrder } : blankCollection()); go('collectionManager'); };
   const saveCollection = () => {
     const id = editingCollectionId || `collection-${Date.now()}`;
@@ -1234,7 +1242,7 @@ function TastekinApp() {
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><ProfileSectionTabs ar={ar} active="collections" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} canView={isCollectionOwnerView || !publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
     {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><ProfileSectionTabs ar={ar} active="about" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
-    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} />}
+    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -1895,6 +1903,67 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
   </>;
 }
 
+type EditOwnerStep = 'menu' | 'photo-choice' | 'remove-confirm' | 'removing' | 'remove-error' | 'delete-confirm' | 'deleting' | 'delete-error';
+/**
+ * The owner-only counterpart to ReportMenu on an Edit's overflow trigger —
+ * a visitor viewing this same Edit sees ReportMenu (Report only); the
+ * owner of this specific Edit sees this instead (Edit / Remove-Replace
+ * Photo / Delete Edit), never both. Kept separate from ReportMenu rather
+ * than merged into it, since none of this applies to ReportMenu's other
+ * two call sites (comments, profiles).
+ */
+function EditOwnerMenu({ ar, hasPhoto, onEdit, onRemovePhoto, onDeleteEdit }: { ar: boolean; hasPhoto: boolean; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
+  const [open, setOpen] = useState(false);
+  const [step, setStep] = useState<EditOwnerStep>('menu');
+  const reset = () => setStep('menu');
+  return <>
+    <button type="button" className="approved-icon report-trigger" onClick={() => { reset(); setOpen(true); }} aria-label={ar ? 'مزيد من الخيارات' : 'More options'}><MoreVertical size={18} /></button>
+    <Drawer.Root open={open} onOpenChange={(next) => { setOpen(next); if (!next) reset(); }}>
+      <Drawer.Portal>
+        <Drawer.Overlay className="approved-drawer-overlay" />
+        <Drawer.Content className="approved-drawer-content report-drawer" aria-label={ar ? 'خيارات التعديل' : 'Edit options'}>
+          <div className="approved-drawer-handle" />
+          {step === 'menu' && <div className="report-menu">
+            <button type="button" className="report-menu-item" onClick={() => { setOpen(false); onEdit(); }}><Pencil size={16} /> {ar ? 'تعديل' : 'Edit'}</button>
+            {hasPhoto && <button type="button" className="report-menu-item" onClick={() => setStep('photo-choice')}><ImagePlus size={16} /> {ar ? 'إزالة/استبدال الصورة' : 'Remove/Replace Photo'}</button>}
+            <button type="button" className="report-menu-item report-menu-item-danger" onClick={() => setStep('delete-confirm')}><Trash2 size={16} /> {ar ? 'حذف التعديل' : 'Delete Edit'}</button>
+          </div>}
+          {step === 'photo-choice' && <div className="report-menu">
+            <button type="button" className="report-menu-item" onClick={() => { setOpen(false); onEdit(); }}><RefreshCw size={16} /> {ar ? 'استبدال الصورة' : 'Replace photo'}</button>
+            <button type="button" className="report-menu-item report-menu-item-danger" onClick={() => setStep('remove-confirm')}><Trash2 size={16} /> {ar ? 'إزالة الصورة' : 'Remove photo'}</button>
+          </div>}
+          {step === 'remove-confirm' && <div className="report-status">
+            <h2 className="approved-title" style={{ margin: '0 0 12px', fontSize: 18 }}>{ar ? 'إزالة هذه الصورة؟' : 'Remove this photo?'}</h2>
+            <p>{ar ? 'ستبقى بقية تفاصيل هذا التعديل كما هي.' : 'The rest of this Edit’s details stay unchanged.'}</p>
+            <div className="admin-confirm-actions">
+              <button type="button" className="approved-button" onClick={() => setStep('menu')}>{ar ? 'إلغاء' : 'Cancel'}</button>
+              <button type="button" className="approved-button primary" onClick={() => { setStep('removing'); void onRemovePhoto().then((ok) => { if (ok) setOpen(false); else setStep('remove-error'); }); }}>{ar ? 'إزالة' : 'Remove'}</button>
+            </div>
+          </div>}
+          {step === 'removing' && <div className="report-status"><p>{ar ? 'جارٍ إزالة الصورة…' : 'Removing photo…'}</p></div>}
+          {step === 'remove-error' && <div className="report-status">
+            <p role="alert">{ar ? 'تعذرت إزالة الصورة.' : 'Could not remove this photo.'}</p>
+            <button type="button" className="approved-button wide" onClick={() => setStep('remove-confirm')}>{ar ? 'حاول مجدداً' : 'Try again'}</button>
+          </div>}
+          {step === 'delete-confirm' && <div className="report-status">
+            <h2 className="approved-title" style={{ margin: '0 0 12px', fontSize: 18 }}>{ar ? 'حذف هذا التعديل؟' : 'Delete this Edit?'}</h2>
+            <p>{ar ? 'سيُحذف هذا التعديل نهائياً ولن يظهر بعد الآن على ملفك الشخصي.' : 'This Edit will be permanently removed and will no longer appear on your profile.'}</p>
+            <div className="admin-confirm-actions">
+              <button type="button" className="approved-button" onClick={() => setStep('menu')}>{ar ? 'إلغاء' : 'Cancel'}</button>
+              <button type="button" className="approved-button primary" onClick={() => { setStep('deleting'); void onDeleteEdit().then((ok) => { if (ok) setOpen(false); else setStep('delete-error'); }); }}>{ar ? 'حذف' : 'Delete'}</button>
+            </div>
+          </div>}
+          {step === 'deleting' && <div className="report-status"><p>{ar ? 'جارٍ حذف التعديل…' : 'Deleting this Edit…'}</p></div>}
+          {step === 'delete-error' && <div className="report-status">
+            <p role="alert">{ar ? 'تعذر حذف هذا التعديل.' : 'Could not delete this Edit.'}</p>
+            <button type="button" className="approved-button wide" onClick={() => setStep('delete-confirm')}>{ar ? 'حاول مجدداً' : 'Try again'}</button>
+          </div>}
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
+  </>;
+}
+
 function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutoplay = false, capPortraitHeight = false }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void; onOpenProfile?: () => void; videoAutoplay?: boolean; capPortraitHeight?: boolean }) {
   const caption = publicCaptionLine(edit, ar);
   if (edit.video) {
@@ -1993,7 +2062,7 @@ function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean
     </Drawer.Content></Drawer.Portal>
   </Drawer.Root>;
 }
-function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSubscribe, onSignIn }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; onSave: () => void; onSubscribe: () => void; onSignIn: () => void }) {
+function EditDetail({ edit, creatorUsername, ar, subscribed, saved, owner, onSave, onSubscribe, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; owner: boolean; onSave: () => void; onSubscribe: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
   const locked = edit.access === 'locked';
   const caption = publicCaptionLine(edit, ar);
   const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption;
@@ -2007,12 +2076,12 @@ function EditDetail({ edit, creatorUsername, ar, subscribed, saved, onSave, onSu
     {locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>
       {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} />}
       {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
-      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} onSave={onSave} onSignIn={onSignIn} />
+      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} />
     </>}
   </SimpleScreen>;
 }
 
-function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, onSave, onSignIn }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; onSave: () => void; onSignIn: () => void }) {
+function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, owner, hasPhoto, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; owner: boolean; hasPhoto: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
   const session = useTasteSession();
   const [engagement, setEngagement] = useState<EditEngagement>({ editId, likeCount: 0, commentCount: 0, liked: false, saved });
   const [comments, setComments] = useState<EditComment[]>([]);
@@ -2102,7 +2171,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
       <span><MessageCircle size={18} /> {engagement.commentCount}</span>
       <button className={`save-pill ${saved ? 'active' : ''}`} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'حفظ' : 'Save')}</button>
       <button className="share-pill" onClick={() => void sharePost()} aria-label={ar ? 'مشاركة هذا التعديل' : 'Share this edit'}><Share2 size={18} /></button>
-      <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} />
+      {owner ? <EditOwnerMenu ar={ar} hasPhoto={hasPhoto} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} /> : <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} />}
     </div>
     <div className="comment-composer">
       <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
@@ -4757,6 +4826,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
             <span className="profile-featured-cover">
               <img src={imageSrc(cover)} alt="" />
               <span className="profile-featured-title">{ar ? collection.titleAr : collection.title}</span>
+              <span className="profile-featured-chevron" aria-hidden="true"><ChevronRight size={16} /></span>
             </span>
           </button>;
         })}
