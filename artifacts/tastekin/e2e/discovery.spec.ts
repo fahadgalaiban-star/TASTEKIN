@@ -36,16 +36,16 @@ async function expectVisitorActionsAt390(page: Page) {
 
   expect(layout.viewportWidth).toBe(390);
   expect(layout.scrollWidth).toBe(390);
-  // Follow and Message are equal, flexible-width siblings — same height as
-  // each other and as the two fixed-size circular controls.
-  expect(Math.abs(layout.follow.width - layout.message.width)).toBeLessThan(1);
-  expect(layout.follow.height).toBeCloseTo(48, 1);
-  expect(layout.message.height).toBeCloseTo(48, 1);
-  expect(layout.circle.width).toBeCloseTo(46, 1);
-  expect(layout.circle.height).toBeCloseTo(46, 1);
-  expect(layout.overflow.width).toBeCloseTo(46, 1);
-  expect(layout.overflow.height).toBeCloseTo(46, 1);
-  expect(layout.gaps.every((gap) => Math.abs(gap - 8) < 0.75)).toBe(true);
+  // Follow and Message size to their own text (not stretched to equal
+  // widths) — same height as each other and as the two fixed-size
+  // circular controls, matching the approved reference's proportions.
+  expect(layout.follow.height).toBeCloseTo(36, 1);
+  expect(layout.message.height).toBeCloseTo(36, 1);
+  expect(layout.circle.width).toBeCloseTo(36, 1);
+  expect(layout.circle.height).toBeCloseTo(36, 1);
+  expect(layout.overflow.width).toBeCloseTo(36, 1);
+  expect(layout.overflow.height).toBeCloseTo(36, 1);
+  expect(layout.gaps.every((gap) => Math.abs(gap - 16) < 0.75)).toBe(true);
   expect(layout.row.left).toBeGreaterThanOrEqual(16);
   expect(layout.row.right).toBeLessThanOrEqual(374);
   expect(layout.row.top).toBeGreaterThanOrEqual(layout.identity.bottom);
@@ -1047,7 +1047,7 @@ test('keeps owner controls compact without a standalone preview button and persi
   await page.keyboard.press('Escape');
   await expect(page.getByRole('button', { name: 'Insights' })).toBeVisible();
   const ownerControlHeights = await page.locator('.profile-edit-button, .profile-insights-button').evaluateAll((buttons) => buttons.map((button) => button.getBoundingClientRect().height));
-  expect(ownerControlHeights).toEqual([48, 48]);
+  expect(ownerControlHeights).toEqual([36, 36]);
 
   const featuredCards = page.locator('[data-testid^="featured-collection-"]');
   await expect(featuredCards).toHaveCount(2);

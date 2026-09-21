@@ -220,8 +220,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
    is never reordered by it, matching the same @handle already gets via
    <bdi dir="ltr">. */
 .approved-name h1 { margin:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:20px; line-height:1.15; letter-spacing:-.03em; }
-.taste-seal { flex:0 0 auto; width:22px; height:22px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; }
-.taste-seal img { width:22px; height:22px; display:block; object-fit:contain; filter:drop-shadow(0 2px 2px rgba(46,14,20,.18)); }
+.taste-seal { flex:0 0 auto; width:16px; height:16px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; }
+.taste-seal img { width:16px; height:16px; display:block; object-fit:contain; filter:drop-shadow(0 2px 2px rgba(46,14,20,.18)); }
 .taste-seal:focus-visible { outline:3px solid var(--tk-focus); outline-offset:2px; }
 .taste-seal-popover { position:relative; display:flex; align-items:center; gap:8px; margin:10px 0 0 71px; padding:10px 10px 10px 13px; border:1px solid #d7b9a5; border-radius:14px; background:#fffaf4; color:var(--tk-wine); box-shadow:0 8px 22px rgba(38,25,23,.1); font-size:11px; line-height:1.4; }
 .taste-seal-popover p { flex:1; margin:0; font-weight:700; }
@@ -250,43 +250,47 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
    logical padding and the inherited flex direction keep icon and label
    together in either direction. */
 .approved-actions.profile-owner-actions { display:flex; align-items:flex-start; justify-content:flex-end; gap:4px; }
-.approved-actions.profile-owner-actions > .approved-button { flex:0 0 auto; min-width:0; height:48px; border-radius:999px; padding-inline:11px; font-size:10.5px; white-space:nowrap; }
+.approved-actions.profile-owner-actions > .approved-button { flex:0 0 auto; min-width:0; height:36px; border-radius:999px; padding-inline:14px; font-size:11px; white-space:nowrap; }
 .approved-actions.profile-owner-actions > .profile-edit-button { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .approved-actions.profile-owner-actions > .profile-insights-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; border-color:var(--tk-wine); background:transparent; color:var(--tk-wine); }
-.profile-insights-button svg { flex:0 0 18px; }
+.profile-insights-button svg { flex:0 0 16px; width:16px; height:16px; }
 .approved-actions.profile-owner-actions > .report-trigger { flex:0 0 auto; align-self:center; width:26px; height:26px; }
 /* The visitor's action row is a full-width sibling of `.profile-head-row`
-   — never nested in the compact right-hand column — so Follow/Message can
-   take equal flexible width and the two circular controls stay fixed-size,
-   all four fitting one row without wrapping down to 390px. RTL mirrors the
-   order automatically since this is a plain flex row following `dir`. */
-.profile-visitor-action-row { display:flex; align-items:center; gap:8px; margin:14px 0 0; }
-.profile-visitor-action-row > .profile-follow-button, .profile-visitor-action-row > .profile-message-button { flex:1 1 0; min-width:0; height:48px; min-height:48px; padding-inline:0; border-radius:999px; font-size:13px; }
-.profile-follow-button, .profile-message-button { white-space:nowrap; }
+   — never nested in the compact right-hand column. Follow/Message size to
+   their own text (not stretched to equal flex shares) and the two circular
+   controls stay fixed-size, matching the approved reference's proportions;
+   all four still fit one row without wrapping down to 390px. RTL mirrors
+   the order automatically since this is a plain flex row following `dir`. */
+.profile-visitor-action-row { display:flex; align-items:center; gap:16px; margin:14px 0 0; }
+.profile-visitor-action-row > .profile-follow-button, .profile-visitor-action-row > .profile-message-button { flex:0 1 auto; min-width:0; height:36px; min-height:36px; padding-inline:24px; border-radius:999px; font-size:15px; }
+.profile-follow-button, .profile-message-button { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:4px; border:1.5px solid var(--tk-wine); background:var(--tk-page); color:var(--tk-wine); }
-.profile-visitor-action-row > .profile-circle-icon-button, .profile-visitor-action-row > .report-trigger { flex:0 0 46px; width:46px; min-width:46px; height:46px; min-height:46px; }
+.profile-visitor-action-row > .profile-circle-icon-button, .profile-visitor-action-row > .report-trigger { flex:0 0 36px; width:36px; min-width:36px; height:36px; min-height:36px; }
 .profile-circle-icon-button { display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
 .profile-circle-icon-button:hover { background:var(--tk-surface-muted); }
 .profile-circle-icon-button.active { background:var(--tk-wine); border-color:var(--tk-wine); color:var(--tk-text-inverse); }
-.profile-circle-icon-button svg { width:18px; height:18px; flex:0 0 18px; }
-.profile-visitor-action-row > .report-trigger { border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-page); color:var(--tk-text-secondary); }
+.profile-circle-icon-button svg { width:16px; height:16px; flex:0 0 16px; }
+.profile-visitor-action-row > .report-trigger { border:1px solid var(--tk-wine); border-radius:999px; background:var(--tk-page); color:var(--tk-wine); }
+.profile-visitor-action-row > .report-trigger svg { width:16px; height:16px; }
 .profile-featured { margin:14px 0 6px; }
 .profile-featured-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 9px; }
 .profile-featured-head h2 { margin:0; color:var(--tk-ink); font-size:12px; font-weight:800; letter-spacing:-.015em; }
 .profile-featured-viewall { border:0; background:transparent; padding:2px; color:var(--tk-wine); font-size:11px; font-weight:800; }
 .profile-featured-strip { display:flex; gap:8px; overflow-x:auto; padding:2px 2px 6px; scrollbar-width:none; }
 .profile-featured-strip::-webkit-scrollbar { display:none; }
-/* Each card keeps a fixed flex-basis rather than flex:1 — so a single
-   featured collection stays a normal-sized card in the scroll strip
-   instead of stretching to fill the row's full width. */
-.profile-featured-card { position:relative; flex:0 0 152px; min-width:0; padding:0; border:0; background:transparent; color:var(--tk-ink); text-align:start; }
+/* Wide horizontal cards, not portrait — each keeps a flex-basis of "half
+   the row" rather than flex:1, so a single featured collection reads as
+   one normal-sized card (not stretched to fill the whole row's width);
+   a third collection overflows into the same horizontal scroll strip. */
+.profile-featured-card { position:relative; flex:0 0 calc(50% - 4px); min-width:0; padding:0; border:0; background:transparent; color:var(--tk-ink); text-align:start; }
 /* Collection name lives as a one-line white overlay inside the bottom of
    the image — same treatment as the Edits grid tiles below — never a
    title or item count underneath the card. */
-.profile-featured-cover { position:relative; display:block; width:152px; height:190px; aspect-ratio:4 / 5; border-radius:14px; overflow:hidden; background:var(--tk-surface-muted); }
+.profile-featured-cover { position:relative; display:block; width:100%; aspect-ratio:1.96 / 1; border-radius:14px; overflow:hidden; background:var(--tk-surface-muted); }
 .profile-featured-cover img { width:100%; height:100%; display:block; object-fit:cover; }
 .profile-featured-cover::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,transparent 60%,rgba(23,20,22,.72) 100%); pointer-events:none; }
-.profile-featured-title { position:absolute; z-index:1; bottom:12px; inset-inline:12px; overflow:hidden; color:var(--tk-text-inverse); font-size:14px; font-weight:800; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+.profile-featured-title { position:absolute; z-index:1; bottom:15px; inset-inline-start:12px; inset-inline-end:46px; overflow:hidden; color:var(--tk-text-inverse); font-size:14px; font-weight:800; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+.profile-featured-chevron { position:absolute; z-index:1; bottom:10px; inset-inline-end:10px; display:grid; place-items:center; width:28px; height:28px; border-radius:50%; background:rgba(255,255,255,.92); color:var(--tk-wine); pointer-events:none; }
 .approved-tabs { display:grid; grid-template-columns:repeat(3,1fr); margin:4px 0 17px; border-bottom:1px solid var(--tk-border); }
 .creator-profile-travel .approved-tabs button { height:48px; display:flex; align-items:center; justify-content:center; padding:0 5px; }
 .creator-profile-travel .approved-tabs { margin:4px 0 8px; }
@@ -333,7 +337,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .place-grid-preview strong { overflow:hidden; padding:0; color:var(--tk-ink); font-size:13px; line-height:1.15; letter-spacing:-.02em; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .place-grid-preview .taste-rating-label { font-size:10px; font-weight:700; }
 .profile-edits-empty { grid-column:1 / -1; padding:24px 14px; border:1px dashed var(--tk-border); border-radius:16px; color:var(--tk-text-secondary); font-size:12px; line-height:1.5; text-align:center; }
-.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-inline:-4px; }
+.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-inline:-8px; }
 .approved-collection img { width:100%; height:145px; display:block; object-fit:cover; }
 .approved-collection span { display:block; padding:0 11px 12px; color:var(--tk-wine); font-size:11px; font-weight:700; }
 .approved-collection-hero { width:100%; height:218px; display:block; border-radius:20px; object-fit:cover; }
