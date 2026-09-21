@@ -220,8 +220,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
    is never reordered by it, matching the same @handle already gets via
    <bdi dir="ltr">. */
 .approved-name h1 { margin:0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:20px; line-height:1.15; letter-spacing:-.03em; }
-.taste-seal { flex:0 0 auto; width:16px; height:16px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; }
-.taste-seal img { width:16px; height:16px; display:block; object-fit:contain; filter:drop-shadow(0 2px 2px rgba(46,14,20,.18)); }
+.taste-seal { flex:0 0 auto; width:22px; height:22px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; }
+.taste-seal img { width:22px; height:22px; display:block; object-fit:contain; filter:drop-shadow(0 2px 2px rgba(46,14,20,.18)); }
 .taste-seal:focus-visible { outline:3px solid var(--tk-focus); outline-offset:2px; }
 .taste-seal-popover { position:relative; display:flex; align-items:center; gap:8px; margin:10px 0 0 71px; padding:10px 10px 10px 13px; border:1px solid #d7b9a5; border-radius:14px; background:#fffaf4; color:var(--tk-wine); box-shadow:0 8px 22px rgba(38,25,23,.1); font-size:11px; line-height:1.4; }
 .taste-seal-popover p { flex:1; margin:0; font-weight:700; }
@@ -244,23 +244,16 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .creator-profile .approved-match { margin:11px 0 0; }
 .approved-actions { display:grid; grid-template-columns:1fr 1.55fr; gap:9px; margin:12px 0 17px; }
 .composer-actions .approved-button.primary:disabled { opacity:1; background:var(--tk-wine); color:var(--tk-text-inverse); cursor:wait; }
-/* The owner's action row still sits inside the compact right-hand column,
-   directly under the name — it's a short two-button set (Edit profile /
-   Insights) that never needs to wrap. RTL mirrors automatically because
-   logical padding and the inherited flex direction keep icon and label
-   together in either direction. */
-.approved-actions.profile-owner-actions { display:flex; align-items:flex-start; justify-content:flex-end; gap:4px; }
-.approved-actions.profile-owner-actions > .approved-button { flex:0 0 auto; min-width:0; height:36px; border-radius:999px; padding-inline:14px; font-size:11px; white-space:nowrap; }
-.approved-actions.profile-owner-actions > .profile-edit-button { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
-.approved-actions.profile-owner-actions > .profile-insights-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; border-color:var(--tk-wine); background:transparent; color:var(--tk-wine); }
 .profile-insights-button svg { flex:0 0 16px; width:16px; height:16px; }
-.approved-actions.profile-owner-actions > .report-trigger { flex:0 0 auto; align-self:center; width:26px; height:26px; }
-/* The visitor's action row is a full-width sibling of `.profile-head-row`
-   — never nested in the compact right-hand column. Follow/Message size to
-   their own text (not stretched to equal flex shares) and the two circular
-   controls stay fixed-size, matching the approved reference's proportions;
-   all four still fit one row without wrapping down to 390px. RTL mirrors
-   the order automatically since this is a plain flex row following `dir`. */
+/* The action row is a full-width sibling of `.profile-head-row` — never
+   nested in the compact right-hand column — shared by owner and visitor
+   alike (Edit profile/Insights reuse the Follow/Message pill styling so
+   both roles get identical layout, sizing, and spacing). Follow/Message
+   size to their own text (not stretched to equal flex shares) and the
+   two circular controls stay fixed-size, matching the approved
+   reference's proportions; all controls still fit one row without
+   wrapping down to 390px. RTL mirrors the order automatically since this
+   is a plain flex row following `dir`. */
 .profile-visitor-action-row { display:flex; align-items:center; gap:16px; margin:14px 0 0; }
 .profile-visitor-action-row > .profile-follow-button, .profile-visitor-action-row > .profile-message-button { flex:0 1 auto; min-width:0; height:36px; min-height:36px; padding-inline:24px; border-radius:999px; font-size:15px; }
 .profile-follow-button, .profile-message-button { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -314,7 +307,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
    Edits grid never overlays a title/caption on the thumbnail (photo-first —
    that text is only shown once the post itself is opened), so this scope
    only needs to make the media fill the card. */
-.profile-travel-grid .approved-grid-card { position:relative; border-radius:12px; display:block; }
+.profile-travel-grid .approved-grid-card { position:relative; border-radius:12px; display:block; aspect-ratio:3 / 4; }
 .profile-travel-grid .profile-grid-media { position:absolute; inset:0; width:100%; height:100%; }
 .profile-travel-grid .video-duration-badge { font-size:11px; }
 .approved-collection strong { display:block; padding:10px 11px 12px; font-size:13px; }
@@ -337,7 +330,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .place-grid-preview strong { overflow:hidden; padding:0; color:var(--tk-ink); font-size:13px; line-height:1.15; letter-spacing:-.02em; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
 .place-grid-preview .taste-rating-label { font-size:10px; font-weight:700; }
 .profile-edits-empty { grid-column:1 / -1; padding:24px 14px; border:1px dashed var(--tk-border); border-radius:16px; color:var(--tk-text-secondary); font-size:12px; line-height:1.5; text-align:center; }
-.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-inline:-8px; }
+.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-inline:-16px; }
 .approved-collection img { width:100%; height:145px; display:block; object-fit:cover; }
 .approved-collection span { display:block; padding:0 11px 12px; color:var(--tk-wine); font-size:11px; font-weight:700; }
 .approved-collection-hero { width:100%; height:218px; display:block; border-radius:20px; object-fit:cover; }

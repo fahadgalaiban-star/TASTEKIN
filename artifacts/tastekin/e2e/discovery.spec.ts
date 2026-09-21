@@ -657,7 +657,7 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   // opened (see Edit Detail); it's just never drawn over the thumbnail here.
   expect(mediaLayout.every((item) => item.captionCount === 0)).toBe(true);
   for (const item of mediaLayout) {
-    expect(item.cardRatio).toBeCloseTo(1.25, 1);
+    expect(item.cardRatio).toBeCloseTo(4 / 3, 1);
     expect(item.objectFit).toBe('cover');
     expect(item.imageWidth).toBeCloseTo(item.mediaWidth, 1);
     expect(item.imageHeight).toBeCloseTo(item.mediaHeight, 1);

@@ -4730,8 +4730,8 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
           {profileLocation && <span className="profile-location"><MapPin size={13} aria-hidden="true" /><span className="profile-location-text">{profileLocation}</span></span>}
         </div>
       </div>
-      <div className={`profile-head-right ${ownerView ? 'profile-head-right-owner' : 'profile-head-right-visitor'}`}>
-        {!ownerView && (
+      {!ownerView && (
+        <div className="profile-head-right profile-head-right-visitor">
           <Drawer.Root>
             <Drawer.Trigger asChild>
                <button className="approved-match">
@@ -4782,20 +4782,21 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
               </Drawer.Content>
             </Drawer.Portal>
           </Drawer.Root>
-         )}
-        {ownerView && <div className="approved-actions profile-owner-actions">
-          <button className="approved-button primary profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
-          <button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={18} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
-          <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} />
-        </div>}
-      </div>
+        </div>
+      )}
     </div>
-    {!ownerView && <div className="profile-visitor-action-row" data-testid="profile-visitor-actions">
-      <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
-      {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
-      {myCircleEnabled && !owner && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
-      {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
-    </div>}
+    <div className="profile-visitor-action-row" data-testid={ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}>
+      {ownerView ? <>
+        <button className="approved-button primary profile-follow-button profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
+        <button className="approved-button profile-message-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={16} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
+        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} />
+      </> : <>
+        <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
+        {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
+        {myCircleEnabled && !owner && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
+        {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
+      </>}
+    </div>
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
     {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
