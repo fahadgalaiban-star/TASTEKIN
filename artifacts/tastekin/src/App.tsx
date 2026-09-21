@@ -1706,9 +1706,11 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 function SimpleScreen({ kicker, title, titleClassName, children }: { kicker: string; title: string; titleClassName?: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className={titleClassName ? `approved-title ${titleClassName}` : 'approved-title'}>{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption || edit.placeName || edit.title || '' : edit.caption || edit.captionAr || edit.placeName || edit.title || '').split(/\r?\n/, 1)[0].trim(); }
-function TasteRating({ rating, ar, id }: { rating?: number | null; ar: boolean; id?: string }) {
+function TasteRating({ rating, ar, id, compact = false }: { rating?: number | null; ar: boolean; id?: string; compact?: boolean }) {
   if (!rating) return null;
-  return <span className="taste-rating-wrap" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating" aria-hidden="true">{[1, 2, 3, 4, 5].map((value) => <Link2 key={value} size={15} className={value <= rating ? 'active' : ''} />)}</span><span className="taste-rating-label" aria-label={ar ? `تقييم TASTEKIN ${rating} من 5` : `TASTEKIN Taste Rating ${rating} out of 5`}>{ar ? `تقييم TASTEKIN · ${rating}/5` : `TASTEKIN Taste Rating · ${rating}/5`}</span></span>;
+  const ratingLabel = ar ? `تقييم TASTEKIN ${rating} من 5` : `TASTEKIN Taste Rating ${rating} out of 5`;
+  if (compact) return <span className="taste-rating-wrap taste-rating-compact" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating-label" aria-label={ratingLabel}>{rating}/5</span></span>;
+  return <span className="taste-rating-wrap" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating" aria-hidden="true">{[1, 2, 3, 4, 5].map((value) => <Link2 key={value} size={15} className={value <= rating ? 'active' : ''} />)}</span><span className="taste-rating-label" aria-label={ratingLabel}>{ar ? `تقييم TASTEKIN · ${rating}/5` : `TASTEKIN Taste Rating · ${rating}/5`}</span></span>;
 }
 function PlaceDetails({ edit, ar, compact = false, showName = true }: { edit: CreatorEdit; ar: boolean; compact?: boolean; showName?: boolean }) {
   if (!isPlaceCategory(edit.category) || !(edit.placeName || edit.locationLabel || edit.creatorReview || edit.tasteRating || isSafeMapsUrl(edit.mapsUrl))) return null;
@@ -4659,7 +4661,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
           {profileLocation && <span className="profile-location"><MapPin size={13} aria-hidden="true" /><span className="profile-location-text">{profileLocation}</span></span>}
         </div>
       </div>
-      <div className="profile-head-right">
+      <div className={`profile-head-right ${ownerView ? 'profile-head-right-owner' : 'profile-head-right-visitor'}`}>
         {!ownerView && (
           <Drawer.Root>
             <Drawer.Trigger asChild>
@@ -4712,20 +4714,19 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
             </Drawer.Portal>
           </Drawer.Root>
          )}
-        <div className={`approved-actions ${ownerView ? 'profile-owner-actions' : 'profile-visitor-actions'}`}>
-          {ownerView ? <>
-            <button className="approved-button primary profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
-            <button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={18} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
-            <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} />
-          </> : <>
-            <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
-            {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
-            {myCircleEnabled && !owner && <div className="profile-circle-control"><button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button><span className="profile-circle-label">{ar ? 'دائرتي' : 'My Circle'}</span></div>}
-            {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
-          </>}
-        </div>
+        {ownerView && <div className="approved-actions profile-owner-actions">
+          <button className="approved-button primary profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
+          <button className="approved-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={18} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
+          <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} />
+        </div>}
       </div>
     </div>
+    {!ownerView && <div className="profile-visitor-action-row" data-testid="profile-visitor-actions">
+      <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
+      {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
+      {myCircleEnabled && !owner && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
+      {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
+    </div>}
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
     {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
@@ -4767,20 +4768,22 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     </div>
     <div className="approved-grid profile-edits-grid profile-travel-grid" data-testid="profile-edits-grid" data-active-category={activeTravelTab}>
       {travelEdits.map((edit) => {
-        const location = placeLocation(edit, ar);
-        return <button className={`approved-grid-card ${edit.image ? 'photo-grid-card' : edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} data-testid={`profile-edit-${edit.id}`} onClick={() => onEdit(edit)}>
+        const placeTile = isPlaceCategory(edit.category);
+        return <button className={`approved-grid-card ${edit.image || edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} data-testid={`profile-edit-${edit.id}`} onClick={() => onEdit(edit)}>
           {edit.image ? <>
-            <span className="profile-grid-media">
+            <span className={`profile-grid-media${placeTile ? ' place-grid-photo' : ''}`}>
               <img src={imageSrc(edit.image)} alt={edit.altText} />
+              {placeTile && <span className="place-grid-photo-overlay">
+                <strong>{edit.placeName || publicCaptionLine(edit, ar)}</strong>
+                <TasteRating rating={edit.tasteRating} ar={ar} compact />
+              </span>}
             </span>
           </> : edit.video ? <>
             <PosterVideoCard video={edit.video} ar={ar} />
           </> : <span className="place-grid-preview">
             <span className="place-grid-eyebrow">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>
             <strong>{edit.placeName || publicCaptionLine(edit, ar)}</strong>
-            {location && <span className="place-grid-location"><MapPin size={14} />{location}</span>}
-            <TasteRating rating={edit.tasteRating} ar={ar} />
-            {edit.creatorReview && <p>{edit.creatorReview.split(/\r?\n/, 1)[0]}</p>}
+            <TasteRating rating={edit.tasteRating} ar={ar} compact />
           </span>}
         </button>;
       })}

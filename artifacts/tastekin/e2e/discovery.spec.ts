@@ -8,7 +8,7 @@ async function openConsumerProfile(page: Page) {
 }
 
 async function expectVisitorActionsAt390(page: Page) {
-  const layout = await page.locator('.profile-visitor-actions').evaluate((row) => {
+  const layout = await page.locator('.profile-visitor-action-row').evaluate((row) => {
     const box = (element: Element | null) => {
       if (!element) throw new Error('Missing visitor Profile control');
       const rect = element.getBoundingClientRect();
@@ -26,6 +26,7 @@ async function expectVisitorActionsAt390(page: Page) {
       follow: box(row.querySelector('[data-testid="profile-follow-action"]')),
       message: box(row.querySelector('[data-testid="profile-message-action"]')),
       circle: box(row.querySelector('[data-testid="profile-circle-action"]')),
+      overflow: box(row.querySelector('.report-trigger')),
       identity,
       gaps: controls.slice(1).map((control, index) => control.left - controls[index].right),
       viewportWidth: document.documentElement.clientWidth,
@@ -35,13 +36,16 @@ async function expectVisitorActionsAt390(page: Page) {
 
   expect(layout.viewportWidth).toBe(390);
   expect(layout.scrollWidth).toBe(390);
-  expect(layout.follow.width).toBeCloseTo(76, 1);
+  // Follow and Message are equal, flexible-width siblings — same height as
+  // each other and as the two fixed-size circular controls.
+  expect(Math.abs(layout.follow.width - layout.message.width)).toBeLessThan(1);
   expect(layout.follow.height).toBeCloseTo(48, 1);
-  expect(layout.message.width).toBeCloseTo(92, 1);
   expect(layout.message.height).toBeCloseTo(48, 1);
-  expect(layout.circle.width).toBeCloseTo(48, 1);
-  expect(layout.circle.height).toBeCloseTo(48, 1);
-  expect(layout.gaps.every((gap) => Math.abs(gap - 6) < 0.75)).toBe(true);
+  expect(layout.circle.width).toBeCloseTo(46, 1);
+  expect(layout.circle.height).toBeCloseTo(46, 1);
+  expect(layout.overflow.width).toBeCloseTo(46, 1);
+  expect(layout.overflow.height).toBeCloseTo(46, 1);
+  expect(layout.gaps.every((gap) => Math.abs(gap - 8) < 0.75)).toBe(true);
   expect(layout.row.left).toBeGreaterThanOrEqual(16);
   expect(layout.row.right).toBeLessThanOrEqual(374);
   expect(layout.row.top).toBeGreaterThanOrEqual(layout.identity.bottom);
@@ -665,8 +669,10 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   await expect(page.getByRole('heading', { name: 'Noura Studio' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Follow' })).toHaveClass(/primary/);
   await expect(page.getByRole('button', { name: 'Message' })).toBeVisible();
+  // My Circle is a compact icon button with no visible text label — it
+  // still carries an accessible name for assistive tech.
   await expect(page.getByTestId('profile-circle-action')).toBeVisible();
-  await expect(page.getByText('My Circle')).toBeVisible();
+  await expect(page.getByTestId('profile-circle-action')).toHaveAccessibleName('Add to My Circle');
   await expect(page.getByRole('button', { name: 'More options' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit profile' })).toHaveCount(0);
   await expect(page.locator('.approved-logo')).toHaveCount(0);
@@ -825,8 +831,10 @@ test('shows all visitor actions when an admin views an unverified empty profile 
   await expect(page.getByText('No published Edits yet.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Follow' })).toHaveClass(/primary/);
   await expect(page.getByRole('button', { name: 'Message' })).toBeVisible();
+  // My Circle is a compact icon button with no visible text label — it
+  // still carries an accessible name for assistive tech.
   await expect(page.getByTestId('profile-circle-action')).toBeVisible();
-  await expect(page.getByText('My Circle')).toBeVisible();
+  await expect(page.getByTestId('profile-circle-action')).toHaveAccessibleName('Add to My Circle');
   await expect(page.getByRole('button', { name: 'More options' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit profile' })).toHaveCount(0);
 
