@@ -721,6 +721,17 @@ test('the profile filter row scrolls horizontally at 390px without clipping any 
   await expect(page.getByTestId('profile-travel-tab-All')).toHaveClass(/active/);
 });
 
+test('scrolling a horizontal filter row never touches browser history or the current screen', async ({ page }) => {
+  await openConsumerProfile(page);
+  const before = await page.evaluate(() => ({ length: history.length, state: history.state }));
+  await page.locator('.profile-travel-tabs').evaluate((element) => { element.scrollLeft = 120; });
+  await page.waitForTimeout(50);
+  const after = await page.evaluate(() => ({ length: history.length, state: history.state }));
+  expect(after.length).toBe(before.length);
+  expect(after.state).toEqual(before.state);
+  await expect(page.getByRole('heading', { name: 'Fheed Alaiban' })).toBeVisible();
+});
+
 // A Latin/mixed display name must render in full on the Arabic page, not
 // just be present in the accessible name — Playwright's role-based
 // `getByRole('heading', ...)` matches the DOM text content regardless of
@@ -1070,4 +1081,161 @@ test('keeps a subscriber-only edit on its locked preview until media access is a
   await expect(page.getByRole('button', { name: /Subscribe/ })).toBeDisabled();
   await expect(page.getByText('No payment or access is being simulated.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Save this edit' })).toHaveCount(0);
+});
+
+test('caps a portrait Home photo taller than 4:5 at 4:5, and leaves square and landscape photos alone', async ({ page }) => {
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          {
+            creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false,
+            edit: { ...quietTailoringFeed, id: 'tall-story-shot', crop: { aspect: 'story', zoom: 1, x: 0, y: 0, rotation: 0, sourceWidth: 1080, sourceHeight: 1920, outputWidth: 1080, outputHeight: 1920 } },
+          },
+          {
+            creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false,
+            edit: { ...quietTailoringFeed, id: 'square-shot', crop: { aspect: 'square', zoom: 1, x: 0, y: 0, rotation: 0, sourceWidth: 1080, sourceHeight: 1080, outputWidth: 1080, outputHeight: 1080 } },
+          },
+        ],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  const tallCard = page.getByTestId('edit-card-tall-story-shot').locator('.approved-art');
+  const squareCard = page.getByTestId('edit-card-square-shot').locator('.approved-art');
+  await expect(tallCard).toBeVisible();
+  // Measure the actual rendered box rather than parsing the aspect-ratio
+  // CSS value, which browsers normalize inconsistently ("4 / 5" vs "0.8").
+  const [tallBox, squareBox] = await Promise.all([
+    tallCard.evaluate((el) => { const r = el.getBoundingClientRect(); return r.width / r.height; }),
+    squareCard.evaluate((el) => { const r = el.getBoundingClientRect(); return r.width / r.height; }),
+  ]);
+  expect(tallBox).toBeCloseTo(4 / 5, 1);
+  expect(squareBox).toBeCloseTo(1, 1);
+});
+
+test('Explore is a root tab and never shows a back arrow', async ({ page }) => {
+  await page.getByTestId('nav-explore').click();
+  await expect(page.getByRole('heading', { name: 'Find your next taste.' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back' })).toHaveCount(0);
+});
+
+test('renames the New sort control to New Creators, in English and Arabic', async ({ page }) => {
+  await page.getByTestId('nav-explore').click();
+  await expect(page.getByRole('button', { name: 'New Creators' })).toBeVisible();
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page.getByRole('button', { name: 'مبدعون جدد' })).toBeVisible();
+});
+
+test('shows compact creator cards with real thumbnails when available, and a text-only card with no placeholder otherwise, labeling the match value as Taste Match', async ({ page }) => {
+  await page.route('**/api/explore**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        sort: 'best',
+        creators: [
+          { id: 'fheed-alaiban', username: 'fheed', displayName: 'Fheed Alaiban', avatar: '/tastekin-media/fheed-profile.webp', categories: ['Fashion', 'Travel'], matchScore: 82, matchReasons: ['Shared: Travel', 'Shared: Places'] },
+          { id: 'noura-studio', username: 'noura.studio', displayName: 'Noura Studio', avatar: '', categories: ['Restaurants'], matchScore: 14, matchReasons: [] },
+        ],
+        edits: [],
+      }),
+    });
+  });
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{ creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false, edit: quietTailoringFeed }],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-explore').click();
+
+  const fheedCard = page.getByTestId('fheed-profile-mini');
+  await expect(fheedCard).toContainText('82% Taste Match');
+  await expect(fheedCard.locator('.explore-creator-thumbs img')).toHaveCount(1);
+  // The old "Shared: Travel" / "Shared: Places" reasons block is gone —
+  // replaced by the real-thumbnail strip (or nothing, see the text-only
+  // card below), never shown alongside it.
+  await expect(fheedCard.getByText('Shared:', { exact: false })).toHaveCount(0);
+  // A single thumbnail must read as one clean, wide preview spanning the
+  // card's full inner width — never a small square with blank space beside
+  // it (the bug a fixed 3-column grid used to produce).
+  const fheedCardBox = await fheedCard.boundingBox();
+  const singleThumbBox = await fheedCard.locator('.explore-creator-thumbs img').boundingBox();
+  expect(singleThumbBox!.width).toBeGreaterThan((fheedCardBox!.width) * 0.85);
+  expect(singleThumbBox!.width / singleThumbBox!.height).toBeGreaterThan(1.5);
+
+  const nouraCard = page.getByTestId('creator-noura.studio');
+  await expect(nouraCard).toContainText('14% Taste Match');
+  await expect(nouraCard.locator('.explore-creator-thumbs')).toHaveCount(0);
+  await expect(nouraCard.locator('img')).toHaveCount(0);
+});
+
+test('adapts the thumbnail strip height to how many real thumbnails a creator actually has, in English and Arabic', async ({ page }) => {
+  const editFor = (id: string, creatorUsername: string) => ({
+    creatorUsername, creatorName: creatorUsername, creatorVerified: true, creatorAvatar: '', following: false,
+    edit: { ...quietTailoringFeed, id },
+  });
+  await page.route('**/api/explore**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        sort: 'best',
+        creators: [
+          { id: 'two-thumb', username: 'two-thumb', displayName: 'Two Thumb', avatar: '', categories: ['Travel'], matchScore: 45, matchReasons: [] },
+          { id: 'three-thumb', username: 'three-thumb', displayName: 'Three Thumb', avatar: '', categories: ['Places'], matchScore: 33, matchReasons: [] },
+        ],
+        edits: [],
+      }),
+    });
+  });
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          editFor('two-1', 'two-thumb'), editFor('two-2', 'two-thumb'),
+          editFor('three-1', 'three-thumb'), editFor('three-2', 'three-thumb'), editFor('three-3', 'three-thumb'),
+        ],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-explore').click();
+
+  const twoCard = page.getByTestId('creator-two-thumb');
+  const twoThumbs = twoCard.locator('.explore-creator-thumbs img');
+  await expect(twoThumbs).toHaveCount(2);
+  const [twoBox0, twoBox1, twoCardBox] = await Promise.all([twoThumbs.nth(0).boundingBox(), twoThumbs.nth(1).boundingBox(), twoCard.boundingBox()]);
+  // Two thumbnails split the row evenly and fill it, with no leftover gap
+  // from a fixed 3-column grid — the last thumbnail's edge sits right at
+  // the card's own inner padding, not a third of the way across a blank row.
+  expect(twoBox0!.width).toBeCloseTo(twoBox1!.width, 0);
+  const twoRightGap = (twoCardBox!.x + twoCardBox!.width) - (twoBox1!.x + twoBox1!.width);
+  expect(twoRightGap).toBeLessThan(20);
+
+  const threeCard = page.getByTestId('creator-three-thumb');
+  const threeThumbs = threeCard.locator('.explore-creator-thumbs img');
+  await expect(threeThumbs).toHaveCount(3);
+  const [threeBox0, threeBox1, threeBox2] = await Promise.all([threeThumbs.nth(0).boundingBox(), threeThumbs.nth(1).boundingBox(), threeThumbs.nth(2).boundingBox()]);
+  expect(threeBox0!.width).toBeCloseTo(threeBox1!.width, 0);
+  expect(threeBox1!.width).toBeCloseTo(threeBox2!.width, 0);
+  // Three thumbnails are visibly narrower per-image than two, since they now
+  // share the same row width three ways instead of two.
+  expect(threeBox0!.width).toBeLessThan(twoBox0!.width);
+
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page.getByTestId('creator-two-thumb').locator('.explore-creator-thumbs img')).toHaveCount(2);
+  await expect(page.getByTestId('creator-three-thumb').locator('.explore-creator-thumbs img')).toHaveCount(3);
+  const arTwoBoxes = await page.getByTestId('creator-two-thumb').locator('.explore-creator-thumbs img').evaluateAll((imgs) => imgs.map((img) => img.getBoundingClientRect().width));
+  expect(arTwoBoxes[0]).toBeCloseTo(arTwoBoxes[1], 0);
 });

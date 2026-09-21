@@ -131,7 +131,6 @@ button { font:inherit; cursor:pointer; }
 .approved-button.primary { background:var(--tk-wine); color:var(--tk-text-inverse); }
 .approved-button.wide { width:100%; margin-top:10px; }
 .approved-button.danger { border-color:var(--tk-danger); color:var(--tk-danger); }
-.approved-success-note { background:var(--tk-success-bg); color:var(--tk-success-text); }
 .approved-error-text { color:var(--tk-danger); }
 a.approved-button { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
 .approved-panel { margin:12px 0; padding:17px; border:1px solid var(--tk-border); border-radius:18px; background:var(--tk-surface); }
@@ -144,10 +143,26 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-search { display:flex; align-items:center; gap:8px; min-height:48px; margin:14px 0 12px; padding:0 15px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-card); color:var(--tk-stone); font-size:12px; }
 .approved-search input { flex:1; min-width:0; border:0; outline:none; background:transparent; color:var(--tk-ink); font:inherit; }
 .approved-search input::placeholder { color:var(--tk-stone); }
-.approved-profile-mini { display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden; cursor:pointer; }
-.approved-profile-mini > div:not(.approved-avatar) { display:grid; min-width:0; gap:3px; flex:1 1 auto; }
-.approved-profile-mini > .approved-avatar { width:72px; height:72px; min-width:72px; min-height:72px; flex:0 0 72px; overflow:hidden; }
-.approved-profile-mini span { color:var(--tk-stone); font-size:11px; }
+.explore-header { padding:4px 0 2px; }
+.explore-header .approved-kicker { margin:0 0 4px; }
+.explore-header h1 { margin:0; font-size:20px; line-height:1.2; letter-spacing:-.02em; }
+.explore-creator-card { display:block; width:100%; padding:11px 13px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); text-align:start; cursor:pointer; }
+.explore-creator-head { display:flex; align-items:center; gap:10px; }
+.explore-creator-head .approved-avatar { width:44px; height:44px; min-width:44px; flex:0 0 44px; border-width:2px; font-size:15px; }
+.explore-creator-copy { display:grid; min-width:0; gap:2px; flex:1 1 auto; }
+.explore-creator-name-row { display:flex; align-items:baseline; gap:6px; min-width:0; }
+.explore-creator-name-row strong { overflow:hidden; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
+.explore-creator-match { flex:0 0 auto; color:var(--tk-wine); font-size:10px; font-weight:800; white-space:nowrap; }
+.explore-creator-categories { color:var(--tk-stone); font-size:11px; }
+.explore-creator-chevron { flex:0 0 auto; width:16px; height:16px; color:var(--tk-stone); }
+/* flex, not a fixed 3-column grid — with fewer than 3 thumbnails a grid
+   leaves empty trailing cells (a blank gap next to a single thumbnail);
+   flex items only ever take up the space the real thumbnails need. */
+.explore-creator-thumbs { display:flex; gap:6px; margin-top:9px; }
+.explore-creator-thumbs img { flex:1 1 0; min-width:0; aspect-ratio:1 / 1; border-radius:9px; object-fit:cover; background:var(--tk-surface-muted); }
+/* A single thumbnail reads better as one wide, clean preview than as a
+   lone square with nothing beside it. */
+.explore-creator-thumbs.single img { aspect-ratio:2.4 / 1; }
 .approved-avatar { width:72px; height:72px; display:grid; flex:0 0 72px; place-items:center; border:3px solid var(--tk-wine); border-radius:50%; background:var(--tk-surface-muted); color:var(--tk-wine); font-size:20px; font-weight:800; }
 .approved-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; object-position:center; }
 .identity .approved-avatar { width:58px; height:58px; flex-basis:58px; font-size:16px; }
