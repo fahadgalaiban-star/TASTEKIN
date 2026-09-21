@@ -1368,7 +1368,7 @@ function ExploreScreen({ ar, saved, toggleSaved, edits, allEdits, onOpenProfile,
                   </div>
                   <ChevronRight className="explore-creator-chevron" aria-hidden="true" />
                 </div>
-                {thumbs.length > 0 && <div className="explore-creator-thumbs">{thumbs.map((src, index) => <img key={index} src={imageSrc(src)} alt="" />)}</div>}
+                {thumbs.length > 0 && <div className={`explore-creator-thumbs${thumbs.length === 1 ? ' single' : ''}`}>{thumbs.map((src, index) => <img key={index} src={imageSrc(src)} alt="" />)}</div>}
               </button>
             );
          })}

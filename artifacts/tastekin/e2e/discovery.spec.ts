@@ -1163,9 +1163,79 @@ test('shows compact creator cards with real thumbnails when available, and a tex
   // replaced by the real-thumbnail strip (or nothing, see the text-only
   // card below), never shown alongside it.
   await expect(fheedCard.getByText('Shared:', { exact: false })).toHaveCount(0);
+  // A single thumbnail must read as one clean, wide preview spanning the
+  // card's full inner width — never a small square with blank space beside
+  // it (the bug a fixed 3-column grid used to produce).
+  const fheedCardBox = await fheedCard.boundingBox();
+  const singleThumbBox = await fheedCard.locator('.explore-creator-thumbs img').boundingBox();
+  expect(singleThumbBox!.width).toBeGreaterThan((fheedCardBox!.width) * 0.85);
+  expect(singleThumbBox!.width / singleThumbBox!.height).toBeGreaterThan(1.5);
 
   const nouraCard = page.getByTestId('creator-noura.studio');
   await expect(nouraCard).toContainText('14% Taste Match');
   await expect(nouraCard.locator('.explore-creator-thumbs')).toHaveCount(0);
   await expect(nouraCard.locator('img')).toHaveCount(0);
+});
+
+test('adapts the thumbnail strip height to how many real thumbnails a creator actually has, in English and Arabic', async ({ page }) => {
+  const editFor = (id: string, creatorUsername: string) => ({
+    creatorUsername, creatorName: creatorUsername, creatorVerified: true, creatorAvatar: '', following: false,
+    edit: { ...quietTailoringFeed, id },
+  });
+  await page.route('**/api/explore**', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        authenticated: true,
+        sort: 'best',
+        creators: [
+          { id: 'two-thumb', username: 'two-thumb', displayName: 'Two Thumb', avatar: '', categories: ['Travel'], matchScore: 45, matchReasons: [] },
+          { id: 'three-thumb', username: 'three-thumb', displayName: 'Three Thumb', avatar: '', categories: ['Places'], matchScore: 33, matchReasons: [] },
+        ],
+        edits: [],
+      }),
+    });
+  });
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [
+          editFor('two-1', 'two-thumb'), editFor('two-2', 'two-thumb'),
+          editFor('three-1', 'three-thumb'), editFor('three-2', 'three-thumb'), editFor('three-3', 'three-thumb'),
+        ],
+      }),
+    });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-explore').click();
+
+  const twoCard = page.getByTestId('creator-two-thumb');
+  const twoThumbs = twoCard.locator('.explore-creator-thumbs img');
+  await expect(twoThumbs).toHaveCount(2);
+  const [twoBox0, twoBox1, twoCardBox] = await Promise.all([twoThumbs.nth(0).boundingBox(), twoThumbs.nth(1).boundingBox(), twoCard.boundingBox()]);
+  // Two thumbnails split the row evenly and fill it, with no leftover gap
+  // from a fixed 3-column grid — the last thumbnail's edge sits right at
+  // the card's own inner padding, not a third of the way across a blank row.
+  expect(twoBox0!.width).toBeCloseTo(twoBox1!.width, 0);
+  const twoRightGap = (twoCardBox!.x + twoCardBox!.width) - (twoBox1!.x + twoBox1!.width);
+  expect(twoRightGap).toBeLessThan(20);
+
+  const threeCard = page.getByTestId('creator-three-thumb');
+  const threeThumbs = threeCard.locator('.explore-creator-thumbs img');
+  await expect(threeThumbs).toHaveCount(3);
+  const [threeBox0, threeBox1, threeBox2] = await Promise.all([threeThumbs.nth(0).boundingBox(), threeThumbs.nth(1).boundingBox(), threeThumbs.nth(2).boundingBox()]);
+  expect(threeBox0!.width).toBeCloseTo(threeBox1!.width, 0);
+  expect(threeBox1!.width).toBeCloseTo(threeBox2!.width, 0);
+  // Three thumbnails are visibly narrower per-image than two, since they now
+  // share the same row width three ways instead of two.
+  expect(threeBox0!.width).toBeLessThan(twoBox0!.width);
+
+  await page.getByTestId('open-settings-topbar').click();
+  await page.getByTestId('settings-language-ar').click();
+  await page.getByRole('button', { name: 'رجوع' }).click();
+  await expect(page.getByTestId('creator-two-thumb').locator('.explore-creator-thumbs img')).toHaveCount(2);
+  await expect(page.getByTestId('creator-three-thumb').locator('.explore-creator-thumbs img')).toHaveCount(3);
+  const arTwoBoxes = await page.getByTestId('creator-two-thumb').locator('.explore-creator-thumbs img').evaluateAll((imgs) => imgs.map((img) => img.getBoundingClientRect().width));
+  expect(arTwoBoxes[0]).toBeCloseTo(arTwoBoxes[1], 0);
 });

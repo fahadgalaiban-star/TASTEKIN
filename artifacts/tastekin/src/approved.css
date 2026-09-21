@@ -155,8 +155,14 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .explore-creator-match { flex:0 0 auto; color:var(--tk-wine); font-size:10px; font-weight:800; white-space:nowrap; }
 .explore-creator-categories { color:var(--tk-stone); font-size:11px; }
 .explore-creator-chevron { flex:0 0 auto; width:16px; height:16px; color:var(--tk-stone); }
-.explore-creator-thumbs { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin-top:9px; }
-.explore-creator-thumbs img { width:100%; aspect-ratio:1 / 1; border-radius:9px; object-fit:cover; background:var(--tk-surface-muted); }
+/* flex, not a fixed 3-column grid — with fewer than 3 thumbnails a grid
+   leaves empty trailing cells (a blank gap next to a single thumbnail);
+   flex items only ever take up the space the real thumbnails need. */
+.explore-creator-thumbs { display:flex; gap:6px; margin-top:9px; }
+.explore-creator-thumbs img { flex:1 1 0; min-width:0; aspect-ratio:1 / 1; border-radius:9px; object-fit:cover; background:var(--tk-surface-muted); }
+/* A single thumbnail reads better as one wide, clean preview than as a
+   lone square with nothing beside it. */
+.explore-creator-thumbs.single img { aspect-ratio:2.4 / 1; }
 .approved-avatar { width:72px; height:72px; display:grid; flex:0 0 72px; place-items:center; border:3px solid var(--tk-wine); border-radius:50%; background:var(--tk-surface-muted); color:var(--tk-wine); font-size:20px; font-weight:800; }
 .approved-avatar img { width:100%; height:100%; border-radius:50%; object-fit:cover; object-position:center; }
 .identity .approved-avatar { width:58px; height:58px; flex-basis:58px; font-size:16px; }
