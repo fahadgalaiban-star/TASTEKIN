@@ -186,6 +186,11 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
    stays visible against the cover below it. */
 .creator-profile-travel .profile-head-left > .approved-avatar { position:relative; z-index:1; margin-top:-16px; flex:0 0 auto; border:3px solid var(--tk-page); background:var(--tk-page); box-shadow:0 3px 10px rgba(38,25,23,.2); }
 .profile-head-right { display:flex; flex-direction:column; align-items:flex-end; flex:0 0 auto; min-width:0; max-width:54%; padding-top:34px; }
+/* The visitor's head-right column holds only the Taste Match badge now —
+   the action row lives in its own full-width row below `.profile-head-row`
+   — so it sits close to the name instead of being pushed down to clear a
+   now-absent action column. */
+.profile-head-right.profile-head-right-visitor { padding-top:4px; }
 .profile-head-right .approved-match { margin:0; text-align:end; white-space:normal; }
 .profile-head-right .approved-actions { margin:8px 0 0; }
 .creator-profile-travel .profile-bio { margin-top:12px; }
@@ -239,45 +244,49 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .creator-profile .approved-match { margin:11px 0 0; }
 .approved-actions { display:grid; grid-template-columns:1fr 1.55fr; gap:9px; margin:12px 0 17px; }
 .composer-actions .approved-button.primary:disabled { opacity:1; background:var(--tk-wine); color:var(--tk-text-inverse); cursor:wait; }
-/* Both profile action rows sit inside the compact right-hand column,
-   directly under the Taste Match pill — never a full-width row of their
-   own. RTL mirrors automatically because logical padding and the inherited
-   flex direction keep icon and label together in either direction. */
-.approved-actions.profile-owner-actions, .approved-actions.profile-visitor-actions { display:flex; align-items:flex-start; justify-content:flex-end; }
-.approved-actions.profile-owner-actions { gap:4px; }
-.approved-actions.profile-visitor-actions { width:260px; max-width:calc(100vw - 32px); gap:6px; margin-top:64px; overflow:visible; }
+/* The owner's action row still sits inside the compact right-hand column,
+   directly under the name — it's a short two-button set (Edit profile /
+   Insights) that never needs to wrap. RTL mirrors automatically because
+   logical padding and the inherited flex direction keep icon and label
+   together in either direction. */
+.approved-actions.profile-owner-actions { display:flex; align-items:flex-start; justify-content:flex-end; gap:4px; }
 .approved-actions.profile-owner-actions > .approved-button { flex:0 0 auto; min-width:0; height:48px; border-radius:999px; padding-inline:11px; font-size:10.5px; white-space:nowrap; }
 .approved-actions.profile-owner-actions > .profile-edit-button { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .approved-actions.profile-owner-actions > .profile-insights-button { display:inline-flex; align-items:center; justify-content:center; gap:5px; border-color:var(--tk-wine); background:transparent; color:var(--tk-wine); }
 .profile-insights-button svg { flex:0 0 18px; }
-.approved-actions.profile-visitor-actions > * { flex-shrink:0; }
-.approved-actions.profile-visitor-actions > .profile-follow-button, .approved-actions.profile-visitor-actions > .profile-message-button { flex-shrink:0; height:48px; min-height:48px; padding-inline:0; font-size:10.5px; }
-.approved-actions.profile-visitor-actions > .profile-follow-button { flex-basis:76px; width:76px; min-width:76px; }
-.approved-actions.profile-visitor-actions > .profile-message-button { flex-basis:92px; width:92px; min-width:92px; }
-.approved-actions.profile-owner-actions > .report-trigger, .approved-actions.profile-visitor-actions > .report-trigger { flex:0 0 auto; align-self:center; width:26px; height:26px; }
+.approved-actions.profile-owner-actions > .report-trigger { flex:0 0 auto; align-self:center; width:26px; height:26px; }
+/* The visitor's action row is a full-width sibling of `.profile-head-row`
+   — never nested in the compact right-hand column — so Follow/Message can
+   take equal flexible width and the two circular controls stay fixed-size,
+   all four fitting one row without wrapping down to 390px. RTL mirrors the
+   order automatically since this is a plain flex row following `dir`. */
+.profile-visitor-action-row { display:flex; align-items:center; gap:8px; margin:14px 0 0; }
+.profile-visitor-action-row > .profile-follow-button, .profile-visitor-action-row > .profile-message-button { flex:1 1 0; min-width:0; height:48px; min-height:48px; padding-inline:0; border-radius:999px; font-size:13px; }
 .profile-follow-button, .profile-message-button { white-space:nowrap; }
-.profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:4px; color:var(--tk-wine); }
-.profile-circle-control { flex:0 0 auto; display:flex; flex-direction:column; align-items:center; gap:4px; }
+.profile-message-button { display:inline-flex; align-items:center; justify-content:center; gap:4px; border:1.5px solid var(--tk-wine); background:var(--tk-page); color:var(--tk-wine); }
+.profile-visitor-action-row > .profile-circle-icon-button, .profile-visitor-action-row > .report-trigger { flex:0 0 46px; width:46px; min-width:46px; height:46px; min-height:46px; }
 .profile-circle-icon-button { display:grid; place-items:center; padding:0; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); }
-.profile-circle-icon-button { flex:0 0 48px; width:48px; min-width:48px; height:48px; min-height:48px; }
 .profile-circle-icon-button:hover { background:var(--tk-surface-muted); }
 .profile-circle-icon-button.active { background:var(--tk-wine); border-color:var(--tk-wine); color:var(--tk-text-inverse); }
 .profile-circle-icon-button svg { width:18px; height:18px; flex:0 0 18px; }
-.profile-circle-label { font-size:9px; font-weight:700; color:var(--tk-stone); text-align:center; white-space:nowrap; }
+.profile-visitor-action-row > .report-trigger { border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-page); color:var(--tk-text-secondary); }
 .profile-featured { margin:14px 0 6px; }
 .profile-featured-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 9px; }
 .profile-featured-head h2 { margin:0; color:var(--tk-ink); font-size:12px; font-weight:800; letter-spacing:-.015em; }
 .profile-featured-viewall { border:0; background:transparent; padding:2px; color:var(--tk-wine); font-size:11px; font-weight:800; }
 .profile-featured-strip { display:flex; gap:8px; overflow-x:auto; padding:2px 2px 6px; scrollbar-width:none; }
 .profile-featured-strip::-webkit-scrollbar { display:none; }
-.profile-featured-card { position:relative; flex:0 0 84px; min-width:0; padding:0; border:0; background:transparent; color:var(--tk-ink); text-align:start; }
+/* Each card keeps a fixed flex-basis rather than flex:1 — so a single
+   featured collection stays a normal-sized card in the scroll strip
+   instead of stretching to fill the row's full width. */
+.profile-featured-card { position:relative; flex:0 0 152px; min-width:0; padding:0; border:0; background:transparent; color:var(--tk-ink); text-align:start; }
 /* Collection name lives as a one-line white overlay inside the bottom of
    the image — same treatment as the Edits grid tiles below — never a
    title or item count underneath the card. */
-.profile-featured-cover { position:relative; display:block; width:84px; height:105px; aspect-ratio:4 / 5; border-radius:12px; overflow:hidden; background:var(--tk-surface-muted); }
+.profile-featured-cover { position:relative; display:block; width:152px; height:190px; aspect-ratio:4 / 5; border-radius:14px; overflow:hidden; background:var(--tk-surface-muted); }
 .profile-featured-cover img { width:100%; height:100%; display:block; object-fit:cover; }
-.profile-featured-cover::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,transparent 55%,rgba(23,20,22,.65) 100%); pointer-events:none; }
-.profile-featured-title { position:absolute; z-index:1; bottom:8px; inset-inline:8px; overflow:hidden; color:var(--tk-text-inverse); font-size:11px; font-weight:800; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
+.profile-featured-cover::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,transparent 60%,rgba(23,20,22,.72) 100%); pointer-events:none; }
+.profile-featured-title { position:absolute; z-index:1; bottom:12px; inset-inline:12px; overflow:hidden; color:var(--tk-text-inverse); font-size:14px; font-weight:800; line-height:1.25; text-overflow:ellipsis; white-space:nowrap; }
 .approved-tabs { display:grid; grid-template-columns:repeat(3,1fr); margin:4px 0 17px; border-bottom:1px solid var(--tk-border); }
 .creator-profile-travel .approved-tabs button { height:48px; display:flex; align-items:center; justify-content:center; padding:0 5px; }
 .creator-profile-travel .approved-tabs { margin:4px 0 8px; }
@@ -305,17 +314,26 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .profile-travel-grid .profile-grid-media { position:absolute; inset:0; width:100%; height:100%; }
 .profile-travel-grid .video-duration-badge { font-size:11px; }
 .approved-collection strong { display:block; padding:10px 11px 12px; font-size:13px; }
+/* A place-category Edit that DOES have a real uploaded photo is still
+   image-led (the tile is the photo, full-bleed) — it just gains a subtle
+   bottom gradient and a compact name/rating overlay so it reads as a place
+   recommendation rather than a plain photo. Never a fabricated/stock image. */
+.place-grid-photo { color:var(--tk-text-inverse); }
+.profile-travel-grid .place-grid-photo::after { content:""; position:absolute; inset:0; z-index:1; background:linear-gradient(to bottom,transparent 55%,rgba(23,20,22,.72) 100%); pointer-events:none; }
+.place-grid-photo-overlay { position:absolute; z-index:2; inset-inline:8px; bottom:7px; display:flex; align-items:baseline; gap:6px; overflow:hidden; }
+.place-grid-photo-overlay strong { overflow:hidden; color:var(--tk-text-inverse); font-size:12px; font-weight:800; line-height:1.2; text-overflow:ellipsis; white-space:nowrap; }
+.place-grid-photo-overlay .taste-rating-label { flex:0 0 auto; color:var(--tk-text-inverse); font-size:10px; font-weight:700; }
+/* Only a place-category Edit published with no photo at all (an
+   intentional no-media recommendation) falls back to a text tile — kept
+   compact and centered so it reads as a tile among photos, not a stray
+   white card, and never fabricates an image to fill the space. */
 .place-grid-card { border:1px solid var(--tk-border); background:var(--tk-surface); box-shadow:0 8px 22px var(--tk-shadow-soft); }
-.place-grid-preview { height:100%; display:flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:6px; padding:14px; background:linear-gradient(145deg,var(--tk-surface),var(--tk-surface-muted)); color:var(--tk-wine); }
+.place-grid-preview { height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:5px; padding:10px; text-align:center; background:color-mix(in srgb,var(--tk-wine) 9%,var(--tk-surface-muted)); color:var(--tk-wine); }
 .place-grid-eyebrow { color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; }
-.place-grid-preview strong { padding:0; color:var(--tk-ink); font-size:16px; line-height:1.1; letter-spacing:-.035em; }
-.place-grid-location { display:inline-flex; align-items:center; gap:5px; color:var(--tk-stone); font-size:11px; line-height:1.35; }
-.place-grid-preview .taste-rating { gap:4px; }
-.place-grid-preview .taste-rating svg { width:14px; height:14px; }
-.place-grid-preview .taste-rating-label { font-size:10px; }
-.place-grid-preview p { display:-webkit-box; margin:1px 0 0; overflow:hidden; color:var(--tk-text-secondary); font-size:10px; line-height:1.4; -webkit-box-orient:vertical; -webkit-line-clamp:3; }
+.place-grid-preview strong { overflow:hidden; padding:0; color:var(--tk-ink); font-size:13px; line-height:1.15; letter-spacing:-.02em; text-overflow:ellipsis; white-space:nowrap; max-width:100%; }
+.place-grid-preview .taste-rating-label { font-size:10px; font-weight:700; }
 .profile-edits-empty { grid-column:1 / -1; padding:24px 14px; border:1px dashed var(--tk-border); border-radius:16px; color:var(--tk-text-secondary); font-size:12px; line-height:1.5; text-align:center; }
-.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; }
+.profile-travel-grid { grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px; margin-inline:-4px; }
 .approved-collection img { width:100%; height:145px; display:block; object-fit:cover; }
 .approved-collection span { display:block; padding:0 11px 12px; color:var(--tk-wine); font-size:11px; font-weight:700; }
 .approved-collection-hero { width:100%; height:218px; display:block; border-radius:20px; object-fit:cover; }
