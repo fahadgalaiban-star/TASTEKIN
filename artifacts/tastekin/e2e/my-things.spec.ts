@@ -246,22 +246,8 @@ test('Add item: Confirm & Add stays disabled until a photo, item type, and prima
   await page.getByRole('button', { name: 'Shirt', exact: true }).click();
   await expect(submit).toBeDisabled();
   await page.getByRole('button', { name: 'Blue', exact: true }).click();
-  // As of PR-3, style is optional (moved into "Optional details") — the
-  // button must already be enabled here, without ever touching style.
-  await expect(submit).toBeEnabled();
-});
-
-test('Add item: style remains available but optional inside Adjust details, and can be picked without blocking the others', async ({ page }) => {
-  await gotoAddScreen(page);
-  await page.getByTestId('my-things-photo-input').setInputFiles({ name: 'shirt.jpg', mimeType: 'image/jpeg', buffer: Buffer.from('fake-jpeg-bytes') });
-  await page.getByRole('button', { name: 'Shirt', exact: true }).click();
-  await page.getByRole('button', { name: 'Blue', exact: true }).click();
-  const submit = page.getByTestId('my-things-submit');
-  await expect(submit).toBeEnabled();
-
-  await page.getByText('Adjust details', { exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Casual', exact: true }).click();
+  // Style has no UI on the Add screen at all — the button must already be
+  // enabled here, without ever touching style.
   await expect(submit).toBeEnabled();
 });
 
@@ -588,9 +574,6 @@ async function gotoAddScreenWithAnalysis(page: Page) {
   await page.getByTestId('my-things-add').click();
 }
 
-function occasionField(page: Page) { return page.locator('.form-field').filter({ hasText: 'Occasion' }); }
-function seasonField(page: Page) { return page.locator('.form-field').filter({ hasText: 'Season' }); }
-
 test('Add item analysis: flag off — selecting a photo never triggers an analyze call', async ({ page }) => {
   let analyzeCalls = 0;
   await gotoAddScreen(page); // closetAnalysis defaults to false via mockMe
@@ -631,12 +614,6 @@ test('Add item analysis: a successful response appears as compact summary rows, 
   // No chip wall by default once AI has already supplied the values.
   await expect(page.getByRole('button', { name: 'Shirt', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Blue', exact: true })).toHaveCount(0);
-
-  await page.getByText('Adjust details', { exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
-  // occasion/season came back null — left unselected, not defaulted to anything.
-  await expect(occasionField(page).locator('button.selected')).toHaveCount(0);
-  await expect(seasonField(page).locator('button.selected')).toHaveCount(0);
 
   // Add to My Things is already reachable — nothing about analysis blocks it.
   await expect(page.getByTestId('my-things-submit')).toBeEnabled();
@@ -776,7 +753,8 @@ test('Add item analysis regression: a manual chip pick before a delayed analyze 
 
   // ...and once the delayed suggestion for those same two fields arrives,
   // it must not clobber the user's picks. Untouched fields (style/occasion/
-  // season) are still free to be filled in by the suggestion.
+  // season) are still free to be filled in by the suggestion in the background,
+  // even though there is no longer any UI on this screen to surface them.
   await expect(page.getByTestId('my-things-analyzing')).toHaveCount(0, { timeout: 5000 });
   await expect(page.getByRole('button', { name: 'Jacket', exact: true })).toHaveClass(/selected/);
   await expect(page.getByRole('button', { name: 'Navy', exact: true })).toHaveClass(/selected/);
@@ -785,11 +763,6 @@ test('Add item analysis regression: a manual chip pick before a delayed analyze 
   // Having already started editing manually, the screen never switches to
   // the compact summary once the suggestion lands — the walls stay put.
   await expect(page.getByTestId('my-things-summary')).toHaveCount(0);
-
-  await page.getByText('Adjust details', { exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Casual', exact: true })).toHaveClass(/selected/);
-  await expect(page.getByRole('button', { name: 'Everyday', exact: true })).toHaveClass(/selected/);
-  await expect(page.getByRole('button', { name: 'Summer', exact: true })).toHaveClass(/selected/);
 });
 
 // --- My Wardrobe / Considering organization ---------------------------------
