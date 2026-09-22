@@ -4427,9 +4427,6 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
 
   const chooseItemType = (next: string) => { setTouchedFields((prev) => new Set(prev).add('itemType')); setItemType(next); };
   const choosePrimaryColor = (next: string) => { setTouchedFields((prev) => new Set(prev).add('primaryColor')); setPrimaryColor(next); };
-  const chooseStyle = (next: string) => { setTouchedFields((prev) => new Set(prev).add('style')); setStyle(next === style ? '' : next); };
-  const chooseOccasion = (next: string) => { setTouchedFields((prev) => new Set(prev).add('occasion')); setOccasion(next === occasion ? '' : next); };
-  const chooseSeason = (next: string) => { setTouchedFields((prev) => new Set(prev).add('season')); setSeason(next === season ? '' : next); };
 
   const uploadClosetImage = async (toUpload: File): Promise<string> => {
     const response = await fetch('/api/closet-items/media', {
@@ -4546,13 +4543,6 @@ function AddClosetItemScreen({ ar, onDone, onUnavailable }: { ar: boolean; onDon
 
     <ClosetFieldEditorSheet open={editingField === 'itemType'} title={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={chooseItemType} onClose={() => setEditingField(null)} closeLabel={t('Close', 'إغلاق')} />
     <ClosetFieldEditorSheet open={editingField === 'primaryColor'} title={t('Primary color', 'اللون الأساسي')} options={CLOSET_PRIMARY_COLORS} value={primaryColor} onSelect={choosePrimaryColor} onClose={() => setEditingField(null)} closeLabel={t('Close', 'إغلاق')} />
-
-    <details className="nested-details"><summary>{t('Adjust details', 'تعديل التفاصيل')}</summary><div className="details-body">
-      <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={chooseStyle} disabled={fieldsLocked} />
-      <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={chooseOccasion} disabled={fieldsLocked} />
-      <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={chooseSeason} disabled={fieldsLocked} />
-      <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={fieldsLocked} placeholder={t('Optional', 'اختياري')} /></label>
-    </div></details>
 
     {itemId && phase === 'idle' && <p className="settings-note">{t('Your item was saved. Tap below to finish confirming it.', 'تم حفظ الغرض. اضغط أدناه لإتمام التأكيد.')}</p>}
     {!itemId && uploadId && phase === 'idle' && <p className="settings-note">{t('Your photo was uploaded. Tap below to save the item.', 'تم رفع الصورة. اضغط أدناه لحفظ الغرض.')}</p>}
