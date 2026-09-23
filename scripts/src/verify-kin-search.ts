@@ -95,6 +95,9 @@ let anthropicRequestCount = 0;
 // only "looks_product_page" mode reads this.
 let fakeProductPageBaseUrl = "";
 
+let anthropicRequestBodies: string[] = [];
+let lastStayReasonPrompt = "";
+
 function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
   return new Promise((resolve, reject) => {
     const server = http.createServer((req, res) => {
@@ -103,6 +106,7 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
       req.on("end", () => {
         if (req.method !== "POST" || req.url !== "/v1/messages") { res.writeHead(404); res.end(); return; }
         lastAnthropicRequestBody = Buffer.concat(chunks).toString("utf8");
+        anthropicRequestBodies.push(lastAnthropicRequestBody);
         anthropicRequestCount += 1;
         const mode = fakeAnthropicMode;
         if (mode.kind === "timeout") return; // never respond — the client's own request timeout must fire
@@ -118,6 +122,20 @@ function startFakeAnthropic(): Promise<{ server: http.Server; port: number }> {
         if (mode.kind === "refusal") {
           res.writeHead(200, { "content-type": "application/json" });
           res.end(JSON.stringify({ ...base, content: [], stop_reason: "refusal" }));
+          return;
+        }
+        // A request without the web_search tool is KIN's stay-reasons call
+        // (runKinStayReasons in kin-search.ts) — every other KIN request
+        // carries the tool. Answer one numbered line per listed stay, plus
+        // a stray extra line the parser must ignore.
+        const parsedAnthropicBody = JSON.parse(lastAnthropicRequestBody) as { tools?: unknown[]; messages?: Array<{ content: unknown }> };
+        if (!Array.isArray(parsedAnthropicBody.tools)) {
+          const prompt = typeof parsedAnthropicBody.messages?.[0]?.content === "string" ? parsedAnthropicBody.messages[0].content : "";
+          lastStayReasonPrompt = prompt;
+          const count = (prompt.match(/^\d+\. /gm) ?? []).length;
+          const lines = Array.from({ length: count }, (_, i) => `${i + 1}: Fake reason ${i + 1}`);
+          res.writeHead(200, { "content-type": "application/json" });
+          res.end(JSON.stringify({ ...base, stop_reason: "end_turn", content: [{ type: "text", text: [...lines, "99: ignored extra line"].join("\n"), citations: null }] }));
           return;
         }
         if (mode.kind === "no_results") {
@@ -320,6 +338,7 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
           formattedAddress: i === 2 ? undefined : `${i} Example Street`,
           location: { latitude: 48.85 + coordinateOffsets[i], longitude: 2.35 + coordinateOffsets[i] },
           rating: i % 2 === 0 ? 4.5 : undefined,
+          priceLevel: ["PRICE_LEVEL_INEXPENSIVE", "PRICE_LEVEL_MODERATE", "PRICE_LEVEL_EXPENSIVE"][i % 3],
           primaryType: parsedRequest.includedType ?? "tourist_attraction",
           types: [parsedRequest.includedType ?? "tourist_attraction"],
           regularOpeningHours: {
@@ -1830,6 +1849,194 @@ async function main() {
       } finally {
         stopServer(quotaServer);
       }
+    });
+
+    // --- KIN Travel: optional accommodation (Hotels / Apartments & Homes) ---
+    const staysRequest = (body: Record<string, unknown>, session: Session = userA) =>
+      session.request("/api/kin/travel/stays", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    type StayPayload = { placeId: string; kind: string; priceLevel: number | null; reason: string | null; photoUrl: string | null; photoAttribution: string | null; websiteUrl: string | null; rating: number | null };
+    type StaysGroup = { items: StayPayload[]; hasMore: boolean };
+    type PlanWithStays = { status: string; plan: { days: Array<{ places: Array<Record<string, unknown>> }>; stays?: { hotels?: StaysGroup; apartments?: StaysGroup } } };
+    const placesRequests = () => placesRequestBodies.map((body) => JSON.parse(body) as { textQuery: string; includedType?: string; strictTypeFiltering?: boolean; maxResultCount: number });
+
+    await check("accommodation validation: every malformed preference shape is rejected with 400 before any provider call, and accommodation is travel-only", async () => {
+      const placesBefore = googlePlacesRequestCount;
+      const anthropicBefore = anthropicRequestCount;
+      const malformed: unknown[] = [null, "hotels", [], {}, { hotels: "yes" }, { hotels: [] }, { hotels: { stars: 2 } }, { hotels: { stars: "4" } }, { hotels: { budget: 4 } }, { hotels: { budget: "2" } }, { apartments: { stayType: "villa" } }, { apartments: { budget: 0 } }, { cabins: {} }];
+      for (const accommodation of malformed) {
+        const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", accommodation });
+        assert.equal(response.status, 400, `expected 400 for ${JSON.stringify(accommodation)}`);
+      }
+      assert.equal((await userA.kinSearch({ mode: "looks", query: "ok", accommodation: { hotels: {} } })).status, 400);
+      assert.equal(googlePlacesRequestCount, placesBefore);
+      assert.equal(anthropicRequestCount, anthropicBefore);
+    });
+    await check("a plan without accommodation is unchanged: no stays field at all, and still exactly one Anthropic call", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      fakeGoogleRoutesMode = { kind: "ok" };
+      const anthropicBefore = anthropicRequestCount;
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", interests: ["museums"] });
+      await expectStatus(response, 200);
+      const payload = await response.json() as PlanWithStays;
+      assert.equal(payload.status, "ok");
+      assert.ok(!("stays" in payload.plan), "stays must be absent — not null, not empty — when no accommodation card was picked");
+      assert.equal(anthropicRequestCount - anthropicBefore, 1);
+    });
+    await check("hotels: star and budget preferences produce one typed hotel search, three real stays ranked by Google's real price level, and one shared reasons call", async () => {
+      placesRequestBodies = [];
+      anthropicRequestBodies = [];
+      const anthropicBefore = anthropicRequestCount;
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", interests: ["museums"], locale: "en", accommodation: { hotels: { stars: 4, budget: 2 } } });
+      await expectStatus(response, 200);
+      const payload = await response.json() as PlanWithStays;
+      assert.equal(payload.status, "ok");
+      assert.ok(payload.plan.stays?.hotels, "hotels group must be present");
+      assert.ok(!("apartments" in payload.plan.stays!), "an unrequested kind must be absent");
+      const hotels = payload.plan.stays!.hotels!;
+      assert.equal(hotels.items.length, 3, "exactly STAY_PAGE_SIZE stays initially");
+      assert.equal(hotels.hasMore, true, "7 real candidates minus 3 shown leaves more");
+      assert.deepEqual(hotels.items.map((stay) => stay.placeId), ["place-1", "place-4", "place-0"], "$$ must rank Google's MODERATE places first, keeping Google's own order inside the band, then the rest in Google order");
+      assert.deepEqual(hotels.items.map((stay) => stay.priceLevel), [2, 2, 1], "priceLevel is Google's own band, 1-4");
+      assert.ok(hotels.items.every((stay) => stay.kind === "hotel"));
+      assert.deepEqual(hotels.items.map((stay) => stay.reason), ["Fake reason 1", "Fake reason 2", "Fake reason 3"], "each stay gets the reason line with its own number");
+      assert.equal(typeof hotels.items[0].photoUrl, "string", "a place with a Google photo resolves to a real photo URL");
+      assert.equal(hotels.items[0].photoAttribution, "Fake Photographer 1");
+      assert.equal(hotels.items[2].websiteUrl, "https://fakeplace0.example.com");
+      for (const stay of hotels.items) {
+        for (const key of ["slot", "openingHours", "activityInterest", "nightlyRate", "price", "stars"]) assert.ok(!(key in stay), `${key} must never appear on a stay`);
+      }
+      for (const place of payload.plan.days.flatMap((day) => day.places)) assert.ok(!("priceLevel" in place), "itinerary places keep their exact shape — no priceLevel leaks onto them");
+      const hotelSearches = placesRequests().filter((request) => request.includedType === "hotel");
+      assert.equal(hotelSearches.length, 1, "one Places search for the hotel pool");
+      assert.equal(hotelSearches[0].textQuery, "mid-range 4-star hotels in Paris");
+      assert.equal(hotelSearches[0].strictTypeFiltering, false);
+      assert.equal(hotelSearches[0].maxResultCount, 20, "the whole pool is fetched once so paging never re-queries");
+      assert.ok(lastPlacesFieldMask.includes("places.priceLevel"));
+      assert.equal(anthropicRequestCount - anthropicBefore, 2, "exactly one narrative call plus one reasons call — never one per stay");
+      assert.match(lastStayReasonPrompt, /Accommodation preference: hotels \(4-star, mid-range\)/);
+      assert.match(lastStayReasonPrompt, /^1\. Fake Place 1 — hotel; area: 1 Example Street; price level: moderate/m);
+      assert.ok(!/^4\. /m.test(lastStayReasonPrompt), "the reasons prompt lists only the three stays being shown");
+      const narrative = anthropicRequestBodies.map((body) => JSON.parse(body) as { tools?: unknown; system?: string; messages: Array<{ content: unknown }> }).find((body) => Array.isArray(body.tools));
+      assert.ok(narrative, "the narrative call still carries the web_search tool");
+      assert.match(String(narrative!.messages[0].content), /Accommodation preference: hotels \(4-star, mid-range\)/);
+      assert.match(narrative!.system ?? "", /never name, price, rate, or describe any specific hotel or rental/);
+    });
+    await check("apartments: stay type and budget map to their own typed lodging search; both kinds share a single reasons call", async () => {
+      placesRequestBodies = [];
+      const anthropicBefore = anthropicRequestCount;
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Lisbon", accommodation: { hotels: {}, apartments: { stayType: "private_room", budget: 3 } } });
+      await expectStatus(response, 200);
+      const payload = await response.json() as PlanWithStays;
+      assert.equal(payload.status, "ok");
+      assert.ok(payload.plan.days.some((day) => day.places.length > 0), "an accommodation-only request still gets a normal itinerary");
+      const { hotels, apartments } = payload.plan.stays!;
+      assert.deepEqual(hotels!.items.map((stay) => stay.placeId), ["place-0", "place-1", "place-2"], "no budget: Google's own order, untouched");
+      assert.deepEqual(apartments!.items.map((stay) => stay.placeId), ["place-2", "place-5", "place-0"], "$$$ ranks EXPENSIVE (and VERY_EXPENSIVE) first");
+      assert.ok(apartments!.items.every((stay) => stay.kind === "apartment"));
+      assert.deepEqual(hotels!.items.map((stay) => stay.reason), ["Fake reason 1", "Fake reason 2", "Fake reason 3"]);
+      assert.deepEqual(apartments!.items.map((stay) => stay.reason), ["Fake reason 4", "Fake reason 5", "Fake reason 6"], "one numbered list covers both kinds");
+      const searches = placesRequests().filter((request) => request.includedType === "hotel" || request.includedType === "guest_house");
+      assert.deepEqual(searches.map((request) => [request.includedType, request.textQuery]).sort(), [
+        ["guest_house", "luxury private room guest houses and bed and breakfasts in Lisbon"],
+        ["hotel", "hotels in Lisbon"],
+      ]);
+      assert.equal(anthropicRequestCount - anthropicBefore, 2, "narrative + ONE reasons call for both kinds together");
+      assert.match(lastStayReasonPrompt, /^6\. /m);
+      assert.match(lastStayReasonPrompt, /apartment or home; area/);
+    });
+    await check("show more stays pages through the real candidate pool by exclusion — never regenerating the itinerary — until hasMore is false", async () => {
+      placesRequestBodies = [];
+      const routesBefore = googleRoutesRequestCount;
+      const anthropicBefore = anthropicRequestCount;
+      const accommodation = { hotels: { stars: 4, budget: 2 } };
+      const first = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-1", "place-4", "place-0"], locale: "en" });
+      await expectStatus(first, 200);
+      const firstPayload = await first.json() as { status: string; items: StayPayload[]; hasMore: boolean };
+      assert.equal(firstPayload.status, "ok");
+      assert.deepEqual(firstPayload.items.map((stay) => stay.placeId), ["place-2", "place-3", "place-5"], "the next three not yet shown, in ranked order");
+      assert.equal(firstPayload.hasMore, true);
+      assert.deepEqual(firstPayload.items.map((stay) => stay.reason), ["Fake reason 1", "Fake reason 2", "Fake reason 3"]);
+      assert.equal(firstPayload.items[1].photoUrl, null, "a place with no Google photo stays null — never a fabricated image");
+      assert.equal(firstPayload.items[1].photoAttribution, null);
+      const second = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-1", "place-4", "place-0", "place-2", "place-3", "place-5"] });
+      await expectStatus(second, 200);
+      const secondPayload = await second.json() as { status: string; items: StayPayload[]; hasMore: boolean };
+      assert.deepEqual(secondPayload.items.map((stay) => stay.placeId), ["place-6"]);
+      assert.equal(secondPayload.hasMore, false, "the pool is exhausted");
+      const third = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: Array.from({ length: 7 }, (_, i) => `place-${i}`) });
+      await expectStatus(third, 200);
+      const thirdPayload = await third.json() as { status: string; items: StayPayload[]; hasMore: boolean };
+      assert.deepEqual(thirdPayload, { status: "ok", items: [], hasMore: false }, "nothing left is reported honestly, never padded with repeats");
+      assert.equal(googleRoutesRequestCount, routesBefore, "paging stays must never touch Routes (the itinerary is not regenerated)");
+      assert.ok(placesRequests().every((request) => request.includedType === "hotel"), "only hotel-pool searches were made");
+      assert.equal(anthropicRequestCount - anthropicBefore, 2, "one reasons call per non-empty page, none for an empty page");
+      placesRequestBodies = [];
+      await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: { apartments: { stayType: "entire_home" } } }), 200);
+      await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: { apartments: { stayType: "apartment", budget: 1 } } }), 200);
+      await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: { apartments: {} } }), 200);
+      assert.deepEqual(placesRequests().map((request) => [request.includedType, request.textQuery]), [
+        ["lodging", "entire home vacation rentals in Rome"],
+        ["lodging", "budget-friendly serviced apartments and apartment hotels in Rome"],
+        ["lodging", "apartments and vacation rentals in Rome"],
+      ]);
+    });
+    await check("show more stays is validated, auth+flag gated, and consumes the daily KIN quota like every other action", async () => {
+      const accommodation = { hotels: {} };
+      assert.equal((await staysRequest({ kind: "hotel", accommodation })).status, 400);
+      assert.equal((await staysRequest({ destination: "Paris", kind: "villa", accommodation })).status, 400);
+      assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { apartments: {} } })).status, 400, "preferences for the requested kind are required");
+      assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: { stars: 1 } } })).status, 400);
+      assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: "place-1" })).status, 400);
+      assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation, locale: "fr" })).status, 400);
+      const anon = new Session(server.baseUrl);
+      assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation }, anon)).status, 401);
+      const quotaServer = await startServer({
+        ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1",
+        GOOGLE_MAPS_API_KEY: "fake-google-key", GOOGLE_PLACES_BASE_URL: `${googlePlacesBaseUrl}/places:searchText`, GOOGLE_ROUTES_BASE_URL: `${googleRoutesBaseUrl}/computeRoutes`,
+        GOOGLE_PLACES_PHOTO_BASE_URL: googlePlacesPhotoBaseUrl,
+      });
+      try {
+        const session = new Session(quotaServer.baseUrl);
+        await session.signup(`kin-stays-quota-${suffix}@example.com`, PASSWORD);
+        await expectStatus(await staysRequest({ destination: "Paris", kind: "hotel", accommodation }, session), 200);
+        assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation }, session)).status, 429);
+      } finally {
+        stopServer(quotaServer);
+      }
+      await expectStatus(await admin.setFlag("kin_search", false), 200);
+      assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation })).status, 403);
+      await expectStatus(await admin.setFlag("kin_search", true), 200);
+    });
+    await check("a failed reasons call leaves every stay's reason null (logged server-side) instead of failing the request or inventing text", async () => {
+      fakeAnthropicMode = { kind: "http_error", status: 500, errorType: "api_error", message: "fake provider failure" };
+      server.takeLog();
+      const response = await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: {} } });
+      await expectStatus(response, 200);
+      const payload = await response.json() as { status: string; items: StayPayload[] };
+      assert.equal(payload.status, "ok");
+      assert.equal(payload.items.length, 3);
+      assert.ok(payload.items.every((stay) => stay.reason === null));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const logged = findLogLine(server.takeLog(), "KIN search: Anthropic provider error");
+      assert.ok(logged, "the provider failure must be logged with its structured fields");
+      assert.equal(logged!.status, 500);
+      assert.equal(logged!.errorType, "api_error");
+      fakeAnthropicMode = { kind: "ok" };
+    });
+    await check("a Google failure for stays reports unavailable for Show more, and an empty group (never a failed plan) for the itinerary", async () => {
+      fakeGooglePlacesMode = { kind: "http_error", status: 503 };
+      const more = await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: {} } });
+      await expectStatus(more, 200);
+      assert.deepEqual(await more.json(), { status: "unavailable", reason: "unavailable" });
+      fakeGooglePlacesMode = { kind: "empty_type", includedType: "hotel" };
+      const response = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris", interests: ["museums"], accommodation: { hotels: { stars: 5 } } });
+      await expectStatus(response, 200);
+      const payload = await response.json() as PlanWithStays;
+      assert.equal(payload.status, "ok");
+      assert.ok(payload.plan.days.some((day) => day.places.length > 0), "the itinerary itself is unaffected");
+      assert.deepEqual(payload.plan.stays, { hotels: { items: [], hasMore: false } }, "no real hotels found is shown as an empty group, never padded");
+      fakeGooglePlacesMode = { kind: "ok" };
     });
 
     // --- KIN Looks: real product imagery from the page Anthropic already found ---

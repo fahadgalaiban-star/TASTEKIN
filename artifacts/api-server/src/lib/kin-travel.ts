@@ -8,14 +8,24 @@ import {
   type GooglePlaceOpeningPeriod,
   type GooglePlaceTypeFilter,
 } from "./google-places";
-import { runKinSearch, type KinSearchCitation, type KinSearchRequest, type KinTravelInterest } from "./kin-search";
+import {
+  runKinSearch,
+  runKinStayReasons,
+  type KinAccommodationRequest,
+  type KinSearchCitation,
+  type KinSearchRequest,
+  type KinStayBudget,
+  type KinStayReasonInput,
+  type KinTravelInterest,
+} from "./kin-search";
+import { logger } from "./logger";
 
 const MAX_TRIP_DAYS = 10;
 const MAX_FOOD_CANDIDATES_PER_SLOT = 20;
 
 export type KinTravelSlot = "COFFEE" | "BREAKFAST" | "LUNCH" | "DINNER";
 
-export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "primaryType" | "types"> & {
+export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "primaryType" | "types" | "priceLevel"> & {
   photoUrl: string | null;
   photoAttribution: string | null;
   slot: KinTravelSlot | null;
@@ -32,7 +42,7 @@ type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null;
  * alongside the URL since Google's ToS requires it be shown with the photo.
  */
 async function resolvePlace(place: TravelPlaceCandidate, date: string | null): Promise<KinTravelPlace | null> {
-  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, requestedSlot, activityInterest, ...rest } = place;
+  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, priceLevel: _priceLevel, requestedSlot, activityInterest, ...rest } = place;
   if (requestedSlot && !isOpenForSlot(requestedSlot, date, openingPeriods)) return null;
   const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
   return {
@@ -54,11 +64,37 @@ export type KinTravelDay = {
   routes: KinTravelRoute[];
 };
 
+export type KinStayKind = "hotel" | "apartment";
+
+/** One real Google place offered as somewhere to stay. reason is KIN's one-sentence explanation, or null when none could be produced — never fabricated. */
+export type KinTravelStay = {
+  kind: KinStayKind;
+  placeId: string;
+  name: string;
+  formattedAddress: string | null;
+  lat: number | null;
+  lng: number | null;
+  rating: number | null;
+  /** Google's own price level 1–4 (see google-places.ts) — the only price signal available; never a nightly rate. */
+  priceLevel: number | null;
+  websiteUrl: string | null;
+  mapsUrl: string | null;
+  photoUrl: string | null;
+  photoAttribution: string | null;
+  reason: string | null;
+};
+
+export type KinTravelStayGroup = { items: KinTravelStay[]; hasMore: boolean };
+
+/** Present on a plan only when the member picked Hotels and/or Apartments & Homes; each key only when that kind was picked. */
+export type KinTravelStays = { hotels?: KinTravelStayGroup; apartments?: KinTravelStayGroup };
+
 export type KinTravelPlan = {
   destination: string;
   narrative: string;
   citations: KinSearchCitation[];
   days: KinTravelDay[];
+  stays?: KinTravelStays;
 };
 
 export type KinTravelResult =
@@ -445,7 +481,13 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
   const placesResult = await placeBucketsForRequest(request, dayCount);
   if (placesResult.status !== "ok") return { status: "unavailable", reason: placesResult.reason };
 
-  const searchResult = await runKinSearch(request, myThingsItemContext, undefined, correlationId);
+  // Stays are looked up alongside the narrative call, not after it — they
+  // are independent (different Google queries, their own reasons call), so
+  // there is no reason to serialize the two round-trips.
+  const [searchResult, stays] = await Promise.all([
+    runKinSearch(request, myThingsItemContext, undefined, correlationId),
+    request.accommodation ? staysForPlan(request.destination, request.accommodation, request.locale, correlationId) : Promise.resolve(undefined),
+  ]);
   if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason ?? "incomplete recommendation" };
 
   const days: KinTravelDay[] = [];
@@ -477,8 +519,145 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
 
   return {
     status: "ok",
-    plan: { destination: request.destination, narrative: searchResult.answer, citations: searchResult.citations, days },
+    plan: { destination: request.destination, narrative: searchResult.answer, citations: searchResult.citations, days, ...(stays ? { stays } : {}) },
   };
+}
+
+// --- stays: optional Hotels / Apartments & Homes ---------------------------
+
+export const STAY_PAGE_SIZE = 3;
+// Google Text Search's maximum. The whole pool is fetched in one request so
+// "Show more stays" pages through real, distinct results by exclusion
+// rather than re-querying with a different (invented) query, and hasMore
+// turns false the moment the pool is exhausted.
+const STAY_CANDIDATE_POOL_SIZE = 20;
+
+const STAY_BUDGET_QUERY_WORDS: Record<KinStayBudget, string> = { 1: "budget-friendly", 2: "mid-range", 3: "luxury" };
+
+type StayIntent = { query: string; type: GooglePlaceTypeFilter; budget: KinStayBudget | undefined };
+
+/**
+ * Deterministic mapping from the closed preference enums to one Google
+ * Places text search per kind. Star class is not a field Places API (New)
+ * exposes, so the star preference shapes the query text ("4-star hotels")
+ * and the card shows Google's real user rating, never a claimed class.
+ */
+export function stayIntentFor(kind: KinStayKind, accommodation: KinAccommodationRequest, destination: string): StayIntent {
+  if (kind === "hotel") {
+    const prefs = accommodation.hotels ?? {};
+    const words = [prefs.budget ? STAY_BUDGET_QUERY_WORDS[prefs.budget] : null, prefs.stars ? `${prefs.stars}-star` : null, "hotels"].filter(Boolean);
+    return { query: `${words.join(" ")} in ${destination}`, type: "hotel", budget: prefs.budget };
+  }
+  const prefs = accommodation.apartments ?? {};
+  const subject = prefs.stayType === "entire_home" ? "entire home vacation rentals"
+    : prefs.stayType === "private_room" ? "private room guest houses and bed and breakfasts"
+    : prefs.stayType === "apartment" ? "serviced apartments and apartment hotels"
+    : "apartments and vacation rentals";
+  const words = [prefs.budget ? STAY_BUDGET_QUERY_WORDS[prefs.budget] : null, subject].filter(Boolean);
+  return { query: `${words.join(" ")} in ${destination}`, type: prefs.stayType === "private_room" ? "guest_house" : "lodging", budget: prefs.budget };
+}
+
+/** $ ↔ Google "inexpensive", $$ ↔ "moderate", $$$ ↔ "expensive"/"very expensive"; an unknown level never disqualifies a real place. */
+function matchesStayBudget(budget: KinStayBudget | undefined, priceLevel: number | null): boolean {
+  if (budget === undefined || priceLevel === null) return true;
+  return budget === 3 ? priceLevel >= 3 : priceLevel === budget;
+}
+
+/** Stable: Google's own relevance order is kept, but places whose real price level contradicts the stated budget move after the ones that fit or are unknown. */
+function rankStayCandidates(candidates: GooglePlace[], budget: KinStayBudget | undefined): GooglePlace[] {
+  return [
+    ...candidates.filter((candidate) => matchesStayBudget(budget, candidate.priceLevel)),
+    ...candidates.filter((candidate) => !matchesStayBudget(budget, candidate.priceLevel)),
+  ];
+}
+
+async function resolveStay(kind: KinStayKind, place: GooglePlace): Promise<KinTravelStay> {
+  const photoUrl = place.photoRef ? await resolvePlacePhotoUrl(place.photoRef.name) : null;
+  return {
+    kind,
+    placeId: place.placeId,
+    name: place.name,
+    formattedAddress: place.formattedAddress,
+    lat: place.lat,
+    lng: place.lng,
+    rating: place.rating,
+    priceLevel: place.priceLevel,
+    websiteUrl: place.websiteUrl,
+    mapsUrl: place.mapsUrl,
+    photoUrl,
+    photoAttribution: photoUrl ? place.photoRef!.attributionText : null,
+    reason: null,
+  };
+}
+
+type StayPageEntry = { stay: KinTravelStay; types: string[] };
+type StayPage = { status: "ok"; entries: StayPageEntry[]; hasMore: boolean } | { status: "unavailable"; reason: string };
+
+/** One page of real stays of one kind — the next STAY_PAGE_SIZE candidates not already shown. No reasons yet. */
+async function fetchStayPage(destination: string, kind: KinStayKind, accommodation: KinAccommodationRequest, excludePlaceIds: ReadonlySet<string>): Promise<StayPage> {
+  const intent = stayIntentFor(kind, accommodation, destination);
+  const result = await searchPlaces(intent.query, STAY_CANDIDATE_POOL_SIZE, intent.type, false);
+  if (result.status !== "ok") return { status: "unavailable", reason: `${kind} stays unavailable: ${result.reason}` };
+  const seen = new Set<string>();
+  const fresh = rankStayCandidates(result.places, intent.budget)
+    .filter((place) => !excludePlaceIds.has(place.placeId) && !seen.has(place.placeId) && Boolean(seen.add(place.placeId)));
+  const page = fresh.slice(0, STAY_PAGE_SIZE);
+  const stays = await Promise.all(page.map((place) => resolveStay(kind, place)));
+  return {
+    status: "ok",
+    entries: stays.map((stay, index) => ({ stay, types: page[index].types })),
+    hasMore: fresh.length > page.length,
+  };
+}
+
+function stayReasonInput(entry: StayPageEntry): KinStayReasonInput {
+  const { stay } = entry;
+  return { kind: stay.kind, name: stay.name, formattedAddress: stay.formattedAddress, rating: stay.rating, priceLevel: stay.priceLevel, types: entry.types };
+}
+
+/** One Anthropic call for every entry across all pages given — never one per stay or per kind. Mutates each stay's reason in place; a missing line leaves it null. */
+async function attachStayReasons(destination: string, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined, entries: StayPageEntry[], correlationId?: string): Promise<void> {
+  if (entries.length === 0) return;
+  const reasons = await runKinStayReasons({ destination, accommodation, locale, stays: entries.map(stayReasonInput) }, correlationId);
+  entries.forEach((entry, index) => { entry.stay.reason = reasons.get(index) ?? null; });
+}
+
+/**
+ * The plan's initial stays: one page per picked kind, fetched in parallel,
+ * then a single reasons call covering both. A kind whose lookup fails is
+ * returned empty (and logged) rather than failing the itinerary — the
+ * member still gets their days; the section simply has nothing to show.
+ */
+async function staysForPlan(destination: string, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined, correlationId?: string): Promise<KinTravelStays> {
+  const kinds: KinStayKind[] = [...(accommodation.hotels ? ["hotel" as const] : []), ...(accommodation.apartments ? ["apartment" as const] : [])];
+  const pages = await Promise.all(kinds.map((kind) => fetchStayPage(destination, kind, accommodation, new Set())));
+  await attachStayReasons(destination, accommodation, locale, pages.flatMap((page) => page.status === "ok" ? page.entries : []), correlationId);
+  const stays: KinTravelStays = {};
+  kinds.forEach((kind, index) => {
+    const page = pages[index];
+    if (page.status !== "ok") logger.warn({ correlationId: correlationId ?? null, kind, reason: page.reason }, "KIN travel: stay lookup unavailable");
+    const group: KinTravelStayGroup = page.status === "ok" ? { items: page.entries.map((entry) => entry.stay), hasMore: page.hasMore } : { items: [], hasMore: false };
+    if (kind === "hotel") stays.hotels = group; else stays.apartments = group;
+  });
+  return stays;
+}
+
+export type KinTravelStaysResult = { status: "ok"; group: KinTravelStayGroup } | { status: "unavailable"; reason: string };
+
+/** "Show more stays": the next page of one kind, excluding everything already shown. Never touches the itinerary. */
+export async function searchStays(
+  destination: string,
+  kind: KinStayKind,
+  accommodation: KinAccommodationRequest,
+  excludePlaceIds: ReadonlySet<string>,
+  locale: "en" | "ar" | undefined,
+  correlationId?: string,
+): Promise<KinTravelStaysResult> {
+  if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
+  const page = await fetchStayPage(destination, kind, accommodation, excludePlaceIds);
+  if (page.status !== "ok") return page;
+  await attachStayReasons(destination, accommodation, locale, page.entries, correlationId);
+  return { status: "ok", group: { items: page.entries.map((entry) => entry.stay), hasMore: page.hasMore } };
 }
 
 export type KinTravelSwapResult =

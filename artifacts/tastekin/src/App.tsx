@@ -6,7 +6,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -3024,7 +3024,19 @@ function KinRingsMark({ size = 40 }: { size?: number }) {
 type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; activityInterest?: KinMainInterest | KinSportSubchoice; openingHours: string | null };
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
-type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[] };
+// Optional accommodation — shared with api-server's lib/kin-travel.ts. Every
+// preference is a closed enum; the server maps it to its own Google Places
+// query. priceLevel is Google's own 1–4 band (never a nightly rate) and
+// reason is KIN's one sentence, or null when none was produced.
+type KinStayKind = 'hotel' | 'apartment';
+type KinHotelStars = 3 | 4 | 5;
+type KinStayBudget = 1 | 2 | 3;
+type KinApartmentStayType = 'entire_home' | 'apartment' | 'private_room';
+type KinAccommodationRequest = { hotels?: { stars?: KinHotelStars; budget?: KinStayBudget }; apartments?: { stayType?: KinApartmentStayType; budget?: KinStayBudget } };
+type KinTravelStay = { kind: KinStayKind; placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; priceLevel: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; reason: string | null };
+type KinTravelStayGroup = { items: KinTravelStay[]; hasMore: boolean };
+type KinTravelStays = { hotels?: KinTravelStayGroup; apartments?: KinTravelStayGroup };
+type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[]; stays?: KinTravelStays };
 type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unavailable'; reason: string; reasonCode?: string };
 
 /**
@@ -3130,6 +3142,106 @@ const KIN_SPORT_SUBCHOICES: { value: KinSportSubchoice; en: string; ar: string }
   { value: 'walking_places', en: 'Walking places', ar: 'أماكن للمشي' },
 ];
 
+const KIN_STAY_KIND_LABELS: Record<KinStayKind, { en: string; ar: string }> = {
+  hotel: { en: 'Hotels', ar: 'فنادق' },
+  apartment: { en: 'Apartments & Homes', ar: 'شقق ومنازل' },
+};
+const KIN_HOTEL_STAR_OPTIONS: { value: KinHotelStars | 'any'; en: string; ar: string; stars: number }[] = [
+  { value: 3, en: '3 Stars', ar: '3 نجوم', stars: 3 },
+  { value: 4, en: '4 Stars', ar: '4 نجوم', stars: 4 },
+  { value: 5, en: '5 Stars', ar: '5 نجوم', stars: 5 },
+  { value: 'any', en: 'Any rating', ar: 'أي تصنيف', stars: 1 },
+];
+const KIN_STAY_BUDGET_OPTIONS: { value: KinStayBudget; label: string }[] = [{ value: 1, label: '$' }, { value: 2, label: '$$' }, { value: 3, label: '$$$' }];
+const KIN_APARTMENT_STAY_TYPE_OPTIONS: { value: KinApartmentStayType; en: string; ar: string }[] = [
+  { value: 'entire_home', en: 'Entire home', ar: 'منزل كامل' },
+  { value: 'apartment', en: 'Apartment', ar: 'شقة' },
+  { value: 'private_room', en: 'Private room', ar: 'غرفة خاصة' },
+];
+
+type KinStayPreferences = { hotelStars: KinHotelStars | 'any' | null; hotelBudget: KinStayBudget | null; apartmentStayType: KinApartmentStayType | null; apartmentBudget: KinStayBudget | null };
+const EMPTY_STAY_PREFERENCES: KinStayPreferences = { hotelStars: null, hotelBudget: null, apartmentStayType: null, apartmentBudget: null };
+
+/** Google's price band as $-signs. Only ever shown as an approximation — Places never returns a nightly rate, and a missing band is said so rather than guessed. */
+function kinStayPriceLabel(priceLevel: number | null, ar: boolean): string {
+  if (priceLevel === null) return ar ? 'السعر غير مدرج' : 'Price not listed';
+  return `${'$'.repeat(Math.min(Math.max(priceLevel, 1), 4))} · ${ar ? 'لليلة تقريبًا' : 'approx. per night'}`;
+}
+
+/** The Hotel / Apartment preferences bottom sheet. Every choice is optional and tappable again to clear; Done simply closes it. */
+function KinStayPreferencesSheet({ kind, ar, prefs, onChange, onDone, onRemove }: { kind: KinStayKind | null; ar: boolean; prefs: KinStayPreferences; onChange: (next: KinStayPreferences) => void; onDone: () => void; onRemove: () => void }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const title = kind === 'apartment' ? t('Apartment preferences', 'تفضيلات الشقة') : t('Hotel preferences', 'تفضيلات الفندق');
+  const budget = kind === 'apartment' ? prefs.apartmentBudget : prefs.hotelBudget;
+  const setBudget = (value: KinStayBudget | null) => onChange(kind === 'apartment' ? { ...prefs, apartmentBudget: value } : { ...prefs, hotelBudget: value });
+  return <Drawer.Root open={kind !== null} onOpenChange={(next) => { if (!next) onDone(); }}>
+    <Drawer.Portal>
+      <Drawer.Overlay className="approved-drawer-overlay" />
+      <Drawer.Content className="approved-drawer-content kin-stay-sheet" aria-label={title} data-testid="kin-stay-sheet">
+        <div className="approved-drawer-handle" />
+        <h2 className="kin-stay-sheet-title">{title}</h2>
+        {kind === 'hotel' && <>
+          <span className="kin-stay-field-label">{t('Star rating', 'تصنيف النجوم')}</span>
+          <div className="kin-stay-options four">
+            {KIN_HOTEL_STAR_OPTIONS.map((option) => <button type="button" key={String(option.value)} aria-pressed={prefs.hotelStars === option.value} className={prefs.hotelStars === option.value ? 'selected' : ''}
+              data-testid={`kin-stay-stars-${option.value}`} onClick={() => onChange({ ...prefs, hotelStars: prefs.hotelStars === option.value ? null : option.value })}>
+              <span>{t(option.en, option.ar)}</span>
+              <span className="kin-stay-stars" aria-hidden="true">{Array.from({ length: option.stars }, (_, index) => <Star key={index} size={11} />)}</span>
+            </button>)}
+          </div>
+        </>}
+        {kind === 'apartment' && <>
+          <span className="kin-stay-field-label">{t('Stay type', 'نوع الإقامة')}</span>
+          <div className="kin-stay-options">
+            {KIN_APARTMENT_STAY_TYPE_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={prefs.apartmentStayType === option.value} className={prefs.apartmentStayType === option.value ? 'selected' : ''}
+              data-testid={`kin-stay-type-${option.value}`} onClick={() => onChange({ ...prefs, apartmentStayType: prefs.apartmentStayType === option.value ? null : option.value })}>{t(option.en, option.ar)}</button>)}
+          </div>
+        </>}
+        <span className="kin-stay-field-label">{t('Budget per night', 'الميزانية لليلة')}</span>
+        <div className="kin-stay-options">
+          {KIN_STAY_BUDGET_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={budget === option.value} className={budget === option.value ? 'selected' : ''}
+            data-testid={`kin-stay-budget-${option.value}`} onClick={() => setBudget(budget === option.value ? null : option.value)}>{option.label}</button>)}
+        </div>
+        <button type="button" className="kin-submit-btn kin-stay-done" data-testid="kin-stay-done" onClick={onDone}>{t('Done', 'تم')}</button>
+        <button type="button" className="kin-stay-remove" data-testid="kin-stay-remove" onClick={onRemove}>
+          {kind === 'apartment' ? t('Remove Apartments & Homes', 'إزالة الشقق والمنازل') : t('Remove Hotels', 'إزالة الفنادق')}
+        </button>
+      </Drawer.Content>
+    </Drawer.Portal>
+  </Drawer.Root>;
+}
+
+/** "View details" for one real stay — the same facts as its card plus its own website (https only) and Google Maps link. Nothing here is inferred. */
+function KinStayDetailsSheet({ stay, ar, selected, onSelect, onClose }: { stay: KinTravelStay | null; ar: boolean; selected: boolean; onSelect: () => void; onClose: () => void }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  return <Drawer.Root open={stay !== null} onOpenChange={(next) => { if (!next) onClose(); }}>
+    <Drawer.Portal>
+      <Drawer.Overlay className="approved-drawer-overlay" />
+      <Drawer.Content className="approved-drawer-content kin-stay-sheet" aria-label={stay?.name ?? t('Stay details', 'تفاصيل الإقامة')} data-testid="kin-stay-details-sheet">
+        <div className="approved-drawer-handle" />
+        {stay && <div className="kin-stay-details">
+          <div className="kin-stay-details-media">{stay.photoUrl ? <img src={stay.photoUrl} alt="" /> : <KinRingsMark size={40} />}</div>
+          {stay.photoAttribution && <span className="kin-photo-credit" style={{ margin: 0 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{stay.photoAttribution}</bdi></span>}
+          <h2 className="kin-stay-sheet-title" dir="auto"><bdi>{stay.name}</bdi></h2>
+          {stay.formattedAddress && <span className="kin-stay-area" style={{ whiteSpace: 'normal' }} dir="auto"><bdi>{stay.formattedAddress}</bdi></span>}
+          <div className="kin-stay-meta">
+            {stay.rating !== null && <span><Star size={11} fill="currentColor" aria-hidden="true" /> {stay.rating.toFixed(1)} · {t('Google rating', 'تقييم Google')}</span>}
+            <span>{kinStayPriceLabel(stay.priceLevel, ar)}</span>
+          </div>
+          {stay.reason && <p className="kin-stay-reason">{stay.reason}</p>}
+          <div className="kin-stay-details-links">
+            {stay.websiteUrl && /^https:\/\//i.test(stay.websiteUrl) && <a className="approved-button" href={stay.websiteUrl} target="_blank" rel="noopener noreferrer" data-testid="kin-stay-website">{t('Website', 'الموقع الإلكتروني')}</a>}
+            <a className="approved-button" href={buildKinPlaceMapsUrl(stay)} target="_blank" rel="noopener noreferrer" data-testid="kin-stay-maps">{t('Open in Google Maps', 'افتح في خرائط Google')}</a>
+          </div>
+          <button type="button" className="kin-submit-btn kin-stay-done" aria-pressed={selected} data-testid="kin-stay-details-select" onClick={onSelect}>
+            {selected ? t('Selected', 'تم الاختيار') : t('Select this stay', 'اختر هذه الإقامة')}
+          </button>
+        </div>}
+      </Drawer.Content>
+    </Drawer.Portal>
+  </Drawer.Root>;
+}
+
 // Shared by the Plan-tab timeline and the Route tab's stop list — the
 // guided flow's chip label for a resolved activity interest.
 function kinTravelInterestLabel(value: KinMainInterest | KinSportSubchoice, ar: boolean): string {
@@ -3151,7 +3263,7 @@ function kinPlaceCategoryLabel(place: KinTravelPlace, ar: boolean): string | nul
  * from its coordinates or, lacking those, its name. Every stop always gets
  * a working Directions action this way, never a dead link.
  */
-function buildKinPlaceMapsUrl(place: KinTravelPlace): string {
+function buildKinPlaceMapsUrl(place: { mapsUrl: string | null; lat: number | null; lng: number | null; name: string }): string {
   if (place.mapsUrl) return place.mapsUrl;
   const query = place.lat !== null && place.lng !== null ? `${place.lat},${place.lng}` : place.name;
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
@@ -3269,6 +3381,20 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const [planView, setPlanView] = useState<'plan' | 'route'>('plan');
   const [swappingPlaceKey, setSwappingPlaceKey] = useState<string | null>(null);
   const [travelActionNotice, setTravelActionNotice] = useState('');
+  // Optional accommodation (the Hotels / Apartments & Homes cards). The
+  // preferences that were actually sent are snapshotted at submit time so
+  // "Show more stays" always pages with exactly what the plan was built
+  // from, never the form's since-edited state.
+  const [hotelsSelected, setHotelsSelected] = useState(false);
+  const [apartmentsSelected, setApartmentsSelected] = useState(false);
+  const [stayPrefs, setStayPrefs] = useState<KinStayPreferences>(EMPTY_STAY_PREFERENCES);
+  const [staySheet, setStaySheet] = useState<KinStayKind | null>(null);
+  const [submittedAccommodation, setSubmittedAccommodation] = useState<KinAccommodationRequest | null>(null);
+  const [stayTab, setStayTab] = useState<KinStayKind>('hotel');
+  const [selectedStayIds, setSelectedStayIds] = useState<Record<KinStayKind, string | null>>({ hotel: null, apartment: null });
+  const [stayDetails, setStayDetails] = useState<KinTravelStay | null>(null);
+  const [loadingMoreStays, setLoadingMoreStays] = useState<KinStayKind | null>(null);
+  const [stayNotice, setStayNotice] = useState('');
 
   // Switching between the input form and a result screen (or between day
   // views) must land the member at the top of the new screen — otherwise
@@ -3365,6 +3491,25 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     return sub ? t(sub.en, sub.ar) : value;
   };
 
+  /** null when neither accommodation card is selected — the request then carries no accommodation at all and the itinerary is exactly as before. "Any rating" sends no stars. */
+  const buildAccommodation = (): KinAccommodationRequest | null => {
+    if (!hotelsSelected && !apartmentsSelected) return null;
+    const accommodation: KinAccommodationRequest = {};
+    if (hotelsSelected) {
+      accommodation.hotels = {
+        ...(stayPrefs.hotelStars && stayPrefs.hotelStars !== 'any' ? { stars: stayPrefs.hotelStars } : {}),
+        ...(stayPrefs.hotelBudget ? { budget: stayPrefs.hotelBudget } : {}),
+      };
+    }
+    if (apartmentsSelected) {
+      accommodation.apartments = {
+        ...(stayPrefs.apartmentStayType ? { stayType: stayPrefs.apartmentStayType } : {}),
+        ...(stayPrefs.apartmentBudget ? { budget: stayPrefs.apartmentBudget } : {}),
+      };
+    }
+    return accommodation;
+  };
+
   const submit = async () => {
     const trimmed = query.trim();
     const hasStylingPiece = Boolean(photoFile || selectedItemId || stylingItemIds.size > 0);
@@ -3377,6 +3522,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
+    setSelectedStayIds({ hotel: null, apartment: null }); setStayDetails(null); setLoadingMoreStays(null); setStayNotice(''); setSubmittedAccommodation(null);
     setLookSaved(false); setEnlargedResult(null); setTravelActionNotice('');
     // Captured now, before anything async — the request that goes out uses
     // exactly these values, and the result is later shown against exactly
@@ -3387,7 +3533,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     const submittedLocale: 'en' | 'ar' = ar ? 'ar' : 'en';
     try {
       if (mode === 'travel') {
-        if (mainInterests.size === 0 && !sportSelected) { setErrorMessage(t('Choose at least one interest.', 'اختر اهتمامًا واحدًا على الأقل.')); setState('idle'); return; }
+        if (mainInterests.size === 0 && !sportSelected && !hotelsSelected && !apartmentsSelected) { setErrorMessage(t('Choose at least one interest.', 'اختر اهتمامًا واحدًا على الأقل.')); setState('idle'); return; }
         if (sportSelected && sportSubchoices.size === 0) { setErrorMessage(t('Choose at least one Sport option.', 'اختر خيارًا واحدًا على الأقل من الرياضة.')); setState('idle'); return; }
         const interestList: (KinMainInterest | KinSportSubchoice)[] = [...mainInterests, ...(sportSelected ? sportSubchoices : [])];
         const trimmedDestination = destination.trim();
@@ -3398,12 +3544,16 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         if (interestList.length) body.interests = interestList;
         if (startDate) body.startDate = startDate;
         if (endDate) body.endDate = endDate;
+        const accommodation = buildAccommodation();
+        if (accommodation) body.accommodation = accommodation;
+        setSubmittedAccommodation(accommodation);
         const response = await fetch('/api/kin/travel/plan', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (response.status === 429) { setState('quota-exceeded'); return; }
         if (!response.ok) throw new Error(await describeFailedResponse(response));
         const payload = await response.json() as KinTravelResponse;
         if (payload.status !== 'ok') { setTravelReasonCode(payload.reasonCode ?? ''); setState('unavailable'); return; }
         setTravelPlan(payload.plan);
+        setStayTab(payload.plan.stays?.hotels ? 'hotel' : 'apartment');
         const travelReady = payload.plan.narrative.trim() || payload.plan.days.some((day) => day.places.length > 0);
         setState(travelReady ? 'ready' : 'empty');
         if (travelReady) { setView('travel-overview'); setPlanView('plan'); }
@@ -3624,6 +3774,63 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     if (next.has(value)) next.delete(value); else next.add(value);
     return next;
   });
+
+  // Tapping an accommodation card selects it and opens its preferences;
+  // tapping it again reopens the sheet, where "Remove …" deselects it.
+  const openStayCard = (kind: KinStayKind) => {
+    if (kind === 'hotel') setHotelsSelected(true); else setApartmentsSelected(true);
+    setStaySheet(kind);
+  };
+  const removeStayKind = (kind: KinStayKind) => {
+    if (kind === 'hotel') { setHotelsSelected(false); setStayPrefs((prev) => ({ ...prev, hotelStars: null, hotelBudget: null })); }
+    else { setApartmentsSelected(false); setStayPrefs((prev) => ({ ...prev, apartmentStayType: null, apartmentBudget: null })); }
+    setStaySheet(null);
+  };
+  const stayCardSummary = (kind: KinStayKind): string | null => {
+    const stayType = KIN_APARTMENT_STAY_TYPE_OPTIONS.find((option) => option.value === stayPrefs.apartmentStayType);
+    const parts = kind === 'hotel'
+      ? [
+        stayPrefs.hotelStars === 'any' ? t('Any rating', 'أي تصنيف') : stayPrefs.hotelStars ? t(`${stayPrefs.hotelStars} Stars`, `${stayPrefs.hotelStars} نجوم`) : null,
+        stayPrefs.hotelBudget ? '$'.repeat(stayPrefs.hotelBudget) : null,
+      ]
+      : [stayType ? t(stayType.en, stayType.ar) : null, stayPrefs.apartmentBudget ? '$'.repeat(stayPrefs.apartmentBudget) : null];
+    const present = parts.filter((part): part is string => Boolean(part));
+    return present.length ? present.join(' · ') : null;
+  };
+  const toggleStaySelection = (stay: KinTravelStay) => setSelectedStayIds((prev) => ({ ...prev, [stay.kind]: prev[stay.kind] === stay.placeId ? null : stay.placeId }));
+  /**
+   * "Show more stays": one more page of real stays of the active kind,
+   * excluding everything already shown, appended under the existing cards.
+   * Only the stays group changes — the days are never regenerated.
+   */
+  const loadMoreStays = async (kind: KinStayKind) => {
+    if (!travelPlan?.stays || !submittedAccommodation || loadingMoreStays) return;
+    const group = kind === 'hotel' ? travelPlan.stays.hotels : travelPlan.stays.apartments;
+    if (!group) return;
+    setLoadingMoreStays(kind); setStayNotice('');
+    try {
+      const response = await fetch('/api/kin/travel/stays', {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ destination: travelPlan.destination, kind, accommodation: submittedAccommodation, excludePlaceIds: group.items.map((stay) => stay.placeId), locale: ar ? 'ar' : 'en' }),
+      });
+      if (response.status === 429) { setStayNotice(t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')); return; }
+      if (!response.ok) throw new Error(await describeFailedResponse(response));
+      const payload = await response.json() as { status: 'ok'; items: KinTravelStay[]; hasMore: boolean } | { status: 'unavailable'; reason: string };
+      if (payload.status !== 'ok') { setStayNotice(t("KIN couldn't find more stays right now. Please try again shortly.", 'لم يتمكن كين من العثور على المزيد من الإقامات الآن. حاول مرة أخرى قريبًا.')); return; }
+      setTravelPlan((current) => {
+        if (!current?.stays) return current;
+        const key = kind === 'hotel' ? 'hotels' : 'apartments';
+        const existing = current.stays[key];
+        if (!existing) return current;
+        return { ...current, stays: { ...current.stays, [key]: { items: [...existing.items, ...payload.items], hasMore: payload.hasMore } } };
+      });
+      if (payload.items.length === 0) setStayNotice(t('No more stays found.', 'لا توجد إقامات أخرى.'));
+    } catch (err) {
+      setStayNotice(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingMoreStays(null);
+    }
+  };
   /**
    * Replaces one itinerary stop with a different real place at the same
    * destination (one additional Google Places lookup, excluding every
@@ -3767,6 +3974,53 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       </div>
       {heroPhoto?.photoAttribution && <span className="kin-photo-credit">{t('Photo', 'صورة')}: <bdi dir="auto">{heroPhoto.photoAttribution}</bdi></span>}
 
+      {travelPlan.stays && (() => {
+        // Rendered exactly once, above the day tabs and the first day —
+        // never inside a day. Absent entirely when no accommodation card
+        // was picked (stays is undefined), leaving the itinerary untouched.
+        const stays = travelPlan.stays;
+        const kinds: KinStayKind[] = [...(stays.hotels ? ['hotel' as const] : []), ...(stays.apartments ? ['apartment' as const] : [])];
+        const activeKind = kinds.includes(stayTab) ? stayTab : kinds[0];
+        const group = activeKind === 'hotel' ? stays.hotels : stays.apartments;
+        if (!activeKind || !group) return null;
+        return <section className="kin-stays" data-testid="kin-stays" data-kind={activeKind}>
+          <span className="kin-day-kicker">{t('Stay options', 'خيارات الإقامة')}</span>
+          {kinds.length > 1 && <div className="kin-day-tabs" data-testid="kin-stay-tabs">
+            {kinds.map((kind) => <button key={kind} type="button" className={kind === activeKind ? 'selected' : ''} data-testid={`kin-stay-tab-${kind}`} onClick={() => { setStayTab(kind); setStayNotice(''); }}>
+              {t(KIN_STAY_KIND_LABELS[kind].en, KIN_STAY_KIND_LABELS[kind].ar)}
+            </button>)}
+          </div>}
+          {group.items.length === 0
+            ? <Empty text={t('No stays found for these preferences.', 'لم يتم العثور على إقامات لهذه التفضيلات.')} />
+            : group.items.map((stay) => {
+              const selected = selectedStayIds[stay.kind] === stay.placeId;
+              return <article key={stay.placeId} className={`kin-stay-card ${selected ? 'selected' : ''}`} data-testid="kin-stay-card" data-selected={selected ? 'true' : 'false'}>
+                <div className="kin-stay-media">{stay.photoUrl ? <img src={stay.photoUrl} alt="" /> : <KinRingsMark size={24} />}</div>
+                <div className="kin-stay-body">
+                  <span className="kin-stay-name" dir="auto"><bdi>{stay.name}</bdi></span>
+                  {stay.formattedAddress && <span className="kin-stay-area" dir="auto"><bdi>{stay.formattedAddress}</bdi></span>}
+                  <div className="kin-stay-meta">
+                    {stay.rating !== null && <span data-testid="kin-stay-rating"><Star size={11} fill="currentColor" aria-hidden="true" /> {stay.rating.toFixed(1)}</span>}
+                    <span data-testid="kin-stay-price">{kinStayPriceLabel(stay.priceLevel, ar)}</span>
+                  </div>
+                  {stay.reason && <p className="kin-stay-reason" data-testid="kin-stay-reason">{stay.reason}</p>}
+                  {stay.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{stay.photoAttribution}</bdi></span>}
+                  <div className="kin-stay-actions">
+                    <button type="button" data-testid="kin-stay-details" onClick={() => setStayDetails(stay)}>{t('View details', 'عرض التفاصيل')}</button>
+                    <button type="button" className={selected ? 'selected' : ''} aria-pressed={selected} data-testid="kin-stay-select" onClick={() => toggleStaySelection(stay)}>
+                      {selected ? <><Check size={12} /> {t('Selected', 'تم الاختيار')}</> : t('Select', 'اختيار')}
+                    </button>
+                  </div>
+                </div>
+              </article>;
+            })}
+          <button type="button" className="kin-show-more-btn" data-testid="kin-stays-more" disabled={!group.hasMore || loadingMoreStays !== null} onClick={() => void loadMoreStays(activeKind)}>
+            {loadingMoreStays === activeKind ? t('Finding more stays…', 'جارٍ البحث عن المزيد…') : group.hasMore ? t('Show more stays', 'عرض المزيد من الإقامات') : t('No more stays', 'لا توجد إقامات أخرى')}
+          </button>
+          {stayNotice && <p className="settings-note" role="status" data-testid="kin-stays-notice">{stayNotice}</p>}
+        </section>;
+      })()}
+
       <div className="kin-segmented" data-testid="kin-plan-route-toggle">
         <button type="button" className={planView === 'plan' ? 'selected' : ''} onClick={() => setPlanView('plan')}>{t('Plan', 'الخطة')}</button>
         <button type="button" className={planView === 'route' ? 'selected' : ''} onClick={() => setPlanView('route')}>{t('Route', 'المسار')}</button>
@@ -3814,6 +4068,8 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         </div>}
         {travelActionNotice && <p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
       </div>}
+      <KinStayDetailsSheet stay={stayDetails} ar={ar} selected={stayDetails !== null && selectedStayIds[stayDetails.kind] === stayDetails.placeId}
+        onSelect={() => { if (stayDetails) toggleStaySelection(stayDetails); }} onClose={() => setStayDetails(null)} />
     </section>;
   }
 
@@ -3925,6 +4181,18 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         <p className="kin-step-subline">{t('Pick everything you want included.', 'اختر كل ما تريد تضمينه')}</p>
         <p className="kin-step-progress">{t('2 of 2', '2 من 2')}</p>
         <div className="kin-interest-grid" data-testid="kin-interest-grid">
+          {(['hotel', 'apartment'] as const).map((kind) => {
+            const selected = kind === 'hotel' ? hotelsSelected : apartmentsSelected;
+            const summary = selected ? stayCardSummary(kind) : null;
+            return <button type="button" key={kind} aria-pressed={selected} className={`kin-interest-card ${selected ? 'selected' : ''}`}
+              data-testid={kind === 'hotel' ? 'kin-interest-hotels' : 'kin-interest-apartments'} onClick={() => openStayCard(kind)}>
+              <span className="kin-interest-label">
+                <span>{t(KIN_STAY_KIND_LABELS[kind].en, KIN_STAY_KIND_LABELS[kind].ar)}</span>
+                {summary && <span className="kin-interest-summary" data-testid={`kin-stay-summary-${kind}`}>{summary}</span>}
+              </span>
+              {selected && <span className="kin-interest-check"><Check size={12} /></span>}
+            </button>;
+          })}
           {KIN_MAIN_INTERESTS.map((item) => <button type="button" key={item.value} aria-pressed={mainInterests.has(item.value)} className={`kin-interest-card ${mainInterests.has(item.value) ? 'selected' : ''}`}
             data-testid={`kin-interest-${item.value}`} onClick={() => toggleMainInterest(item.value)}>
             {t(item.en, item.ar)}
@@ -3941,6 +4209,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
             </div>}
           </div>
         </div>
+        <KinStayPreferencesSheet kind={staySheet} ar={ar} prefs={stayPrefs} onChange={setStayPrefs} onDone={() => setStaySheet(null)} onRemove={() => { if (staySheet) removeStayKind(staySheet); }} />
       </>}
       {errorMessage && <p className="workspace-notice" role="alert" data-testid="kin-error">{errorMessage}</p>}
       <div className="kin-card-actions">
