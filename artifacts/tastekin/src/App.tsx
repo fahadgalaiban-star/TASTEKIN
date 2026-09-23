@@ -12,7 +12,7 @@ import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
-import { apiUrl } from './native';
+import { apiUrl, isNativeApp, nativeClientFields, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -190,6 +190,14 @@ function track(name: string, metadata: Record<string, unknown> = {}) {
 // Server-provided media paths are app-relative (`/api/public-media/...`,
 // `/objects/...`); apiUrl() makes them absolute inside the native shell only.
 const imageSrc = (image?: string) => apiUrl(image?.startsWith('/objects/') ? `/api/storage${image}` : image || '');
+// Web: the cookie session ends via the /api/logout redirect, exactly as
+// before. Native shell: revoke the bearer token server-side (best effort),
+// always forget it locally, then re-read /api/me so the UI shows signed-out.
+async function signOut(refresh: () => Promise<void>) {
+  if (!isNativeApp) { window.location.assign('/api/logout'); return; }
+  await nativeSignOut();
+  await refresh();
+}
 const cropAspectRatio = (_aspect?: CropAspect, crop?: CropMetadata) => crop?.outputWidth && crop?.outputHeight ? `${crop.outputWidth} / ${crop.outputHeight}` : _aspect === 'square' ? '1 / 1' : _aspect === 'story' ? '9 / 16' : '4 / 5';
 // Home only: never show a photo taller (a smaller width/height ratio) than
 // 4:5, however it was actually cropped (notably 'story', 9:16) — square and
@@ -310,8 +318,11 @@ function useTasteSessionController(): TasteSession {
         headers: { 'Cache-Control': 'no-cache' },
       });
       const payload = response.ok
-        ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'>
+        ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'> & { nativeAuth?: unknown }
         : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
+      // Native shell only: drops the stored token when the server itself
+      // reports it invalid/revoked/expired (never on other failures).
+      await reconcileNativeSession(payload);
       setSnapshot((current) => {
         const next = {
           status: payload.user ? 'authenticated' as const : 'signed-out' as const,
@@ -1236,7 +1247,7 @@ function TastekinApp() {
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} videoUpload={videoUpload} onBack={() => go('composer')} onPublish={publishEdit} />}
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SavedScreen ar={ar} saved={saved} lists={savedLists} activeListId={activeSavedListId} edits={publicFeedEdits} onSelectList={setActiveSavedListId} onCreateList={() => setSavedListCreatorOpen(true)} onRenameList={renameSavedList} onDeleteList={deleteSavedList} onOpen={openEdit} onUnsave={(id) => void toggleSaved(id)} />}
-    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => openComposer()}>{t('Create an Edit', 'إنشاء منشور')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
+    {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => openComposer()}>{t('Create an Edit', 'إنشاء منشور')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
@@ -2343,7 +2354,7 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
         <a className="approved-button wide" href={`mailto:${session.supportEmail}`}>{t('Contact support', 'تواصل مع الدعم')}</a>
       </> : <p className="settings-note">{t('Support contact is not configured yet.', 'لم يتم تفعيل التواصل مع الدعم بعد.')}</p>}
     </div>
-    {session.status === 'authenticated' && <button data-testid="settings-sign-out" className="approved-button wide" onClick={() => window.location.assign('/api/logout')}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
+    {session.status === 'authenticated' && <button data-testid="settings-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
   </SimpleScreen>;
 }
 
@@ -2364,11 +2375,20 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     if (password.length < 8) { setError(t('Password must be at least 8 characters.', 'يجب ألا تقل كلمة المرور عن 8 أحرف.')); return; }
     setBusy(true);
     try {
-      const response = await fetch(mode === 'signup' ? '/api/auth/signup' : '/api/auth/login', {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password }),
+      // Native shell: the bearer-token routes (no cookie is ever set); the
+      // web keeps its cookie routes untouched.
+      const endpoint = isNativeApp
+        ? (mode === 'signup' ? '/api/auth/native/signup' : '/api/auth/native/login')
+        : (mode === 'signup' ? '/api/auth/signup' : '/api/auth/login');
+      const response = await fetch(endpoint, {
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password, ...(isNativeApp ? nativeClientFields() : {}) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { setError(data.error || t('Something went wrong. Please try again.', 'حدث خطأ ما. حاول مرة أخرى.')); return; }
+      if (isNativeApp) {
+        if (typeof data.token !== 'string' || !data.token) { setError(t('Something went wrong. Please try again.', 'حدث خطأ ما. حاول مرة أخرى.')); return; }
+        await storeNativeToken(data.token);
+      }
       await session.refresh();
       onDone();
     } catch {
@@ -2413,7 +2433,8 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
   };
 
   return <SimpleScreen kicker={t('Account', 'الحساب')} title={mode === 'signup' ? t('Create your account', 'أنشئ حسابك') : mode === 'forgot' ? t('Reset your password', 'إعادة تعيين كلمة المرور') : mode === 'reset' ? t('Choose a new password', 'اختر كلمة مرور جديدة') : t('Sign in', 'تسجيل الدخول')}>
-    {mode !== 'reset' && <>
+    {mode !== 'reset' && !isNativeApp && <>
+      {/* Browser-redirect providers stay web-only: the native shell offers email/password until system-browser OAuth (Google + Apple together) ships. */}
       <button className="approved-button wide" onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Continue with Replit', 'متابعة عبر Replit')}</button>
       {session.googleAuthConfigured && <button className="approved-button wide" onClick={() => window.location.assign('/api/auth/google?returnTo=/')}>{t('Continue with Google', 'متابعة عبر Google')}</button>}
       <div className="auth-divider">{t('or', 'أو')}</div>

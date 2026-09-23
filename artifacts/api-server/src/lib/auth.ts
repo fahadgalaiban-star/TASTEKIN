@@ -69,6 +69,41 @@ export async function createLocalUser(email: string, passwordHash: string) {
   return user;
 }
 
+type UserRow = NonNullable<Awaited<ReturnType<typeof findUserByEmail>>>;
+export type PasswordAuthResult = { ok: true; user: UserRow } | { ok: false; status: 400 | 401 | 409; error: string };
+
+/**
+ * The one email/password check shared by the web route (cookie session) and
+ * the native route (bearer session), so the two can never drift in what they
+ * accept or in the wording they reveal. Callers apply the login throttle
+ * around this; it does no rate limiting itself.
+ */
+export async function authenticateWithPassword(rawEmail: unknown, rawPassword: unknown): Promise<PasswordAuthResult> {
+  const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+  const password = typeof rawPassword === "string" ? rawPassword : "";
+  if (!email || !password) return { ok: false, status: 400, error: "Email and password are required." };
+  const user = await findUserByEmail(email);
+  if (!user || !user.passwordHash) {
+    return { ok: false, status: 401, error: user ? `This email signed up with ${user.authProvider === "google" ? "Google" : "Replit"} sign-in. Use that instead.` : "Incorrect email or password." };
+  }
+  const valid = await verifyPassword(password, user.passwordHash);
+  if (!valid) return { ok: false, status: 401, error: "Incorrect email or password." };
+  return { ok: true, user };
+}
+
+/** Shared email/password signup validation + creation (web and native). */
+export async function registerWithPassword(rawEmail: unknown, rawPassword: unknown): Promise<PasswordAuthResult> {
+  const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
+  const password = typeof rawPassword === "string" ? rawPassword : "";
+  if (!email || !email.includes("@")) return { ok: false, status: 400, error: "A valid email is required." };
+  if (!validatePassword(password)) return { ok: false, status: 400, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` };
+  const existing = await findUserByEmail(email);
+  if (existing) return { ok: false, status: 409, error: "An account with this email already exists." };
+  const passwordHash = await hashPassword(password);
+  const user = await createLocalUser(email, passwordHash);
+  return { ok: true, user };
+}
+
 export async function createPasswordResetToken(userId: string) {
   const token = crypto.randomBytes(32).toString("hex");
   await db.insert(passwordResetTokensTable).values({ token, userId, expiresAt: new Date(Date.now() + PASSWORD_RESET_TTL) });

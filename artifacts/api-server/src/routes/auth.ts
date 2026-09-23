@@ -3,10 +3,12 @@ import { Router, type IRouter } from "express";
 import { usersTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
-  clearSession, createLocalUser, createPasswordResetToken, createSession, consumePasswordResetToken,
-  findUserByEmail, getSessionId, hashPassword, MIN_PASSWORD_LENGTH, setSessionCookie, upsertGoogleUser,
-  upsertUser, validatePassword, verifyPassword,
+  authenticateWithPassword, clearSession, createPasswordResetToken, createSession, consumePasswordResetToken,
+  findUserByEmail, getSessionId, hashPassword, MIN_PASSWORD_LENGTH, registerWithPassword, setSessionCookie,
+  upsertGoogleUser, upsertUser, validatePassword,
 } from "../lib/auth";
+import { createNativeSession, isNativePlatform, revokeEverySession, revokeNativeSession } from "../lib/native-auth";
+import { isLoginThrottled, recordLoginFailure, recordLoginSuccess, sendLoginThrottled } from "../lib/login-rate-limit";
 import { logger } from "../lib/logger";
 import { ensureCreatorAccount, founderMappingConfigured, isCurrentUserAdmin } from "../lib/creator-account";
 import { resolveOnboardingStatus } from "../lib/onboarding";
@@ -69,7 +71,7 @@ router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates() });
+    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
     return;
   }
   try {
@@ -103,6 +105,7 @@ router.get("/me", async (req, res) => {
       onboardingStep: onboarding.step,
       googleAuthConfigured: await googleSignInAvailable(),
       featureFlags: await currentFlagStates(),
+      nativeAuth: req.nativeAuth ?? null,
     });
   } catch (error) {
     logger.error({ err: error, userId: req.user.id }, "GET /me failed");
@@ -160,40 +163,104 @@ function authErrorResponse(res: import("express").Response, error: unknown, acti
 }
 
 router.post("/auth/signup", async (req, res) => {
-  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-  const password = typeof req.body?.password === "string" ? req.body.password : "";
-  if (!email || !email.includes("@")) { res.status(400).json({ error: "A valid email is required." }); return; }
-  if (!validatePassword(password)) { res.status(400).json({ error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` }); return; }
   try {
-    const existing = await findUserByEmail(email);
-    if (existing) { res.status(409).json({ error: "An account with this email already exists." }); return; }
-    const passwordHash = await hashPassword(password);
-    const user = await createLocalUser(email, passwordHash);
-    const sid = await createSession({ user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+    const result = await registerWithPassword(req.body?.email, req.body?.password);
+    if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+    const sid = await createSession({ user: result.user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
     setSessionCookie(res, sid);
-    res.status(201).json({ user: { id: user.id, email: user.email } });
+    res.status(201).json({ user: { id: result.user.id, email: result.user.email } });
   } catch (error) {
     authErrorResponse(res, error, "Signup");
   }
 });
 
 router.post("/auth/login", async (req, res) => {
-  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-  const password = typeof req.body?.password === "string" ? req.body.password : "";
-  if (!email || !password) { res.status(400).json({ error: "Email and password are required." }); return; }
+  const email = typeof req.body?.email === "string" ? req.body.email : "";
+  // Same throttle as the native route (lib/login-rate-limit.ts): the two
+  // routes guard the same credentials.
+  if (isLoginThrottled(req, email)) { sendLoginThrottled(res); return; }
   try {
-    const user = await findUserByEmail(email);
-    if (!user || !user.passwordHash) {
-      res.status(401).json({ error: user ? `This email signed up with ${user.authProvider === "google" ? "Google" : "Replit"} sign-in. Use that instead.` : "Incorrect email or password." });
+    const result = await authenticateWithPassword(req.body?.email, req.body?.password);
+    if (!result.ok) {
+      if (result.status === 401) recordLoginFailure(req, email);
+      res.status(result.status).json({ error: result.error });
       return;
     }
-    const valid = await verifyPassword(password, user.passwordHash);
-    if (!valid) { res.status(401).json({ error: "Incorrect email or password." }); return; }
-    const sid = await createSession({ user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
+    recordLoginSuccess(email);
+    const sid = await createSession({ user: result.user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
     setSessionCookie(res, sid);
-    res.json({ user: { id: user.id, email: user.email } });
+    res.json({ user: { id: result.user.id, email: result.user.email } });
   } catch (error) {
     authErrorResponse(res, error, "Login");
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Native app (iOS/Android) sessions — bearer tokens, never cookies.
+// See lib/native-auth.ts for the model. The web routes above are unchanged.
+// ---------------------------------------------------------------------------
+function nativeClient(req: import("express").Request): { ok: true; platform: "ios" | "android"; appVersion: string | null } | { ok: false } {
+  const platform = req.body?.platform;
+  if (!isNativePlatform(platform)) return { ok: false };
+  const appVersion = typeof req.body?.appVersion === "string" && req.body.appVersion.trim() ? req.body.appVersion.trim().slice(0, 64) : null;
+  return { ok: true, platform, appVersion };
+}
+
+router.post("/auth/native/signup", async (req, res) => {
+  const client = nativeClient(req);
+  if (!client.ok) { res.status(400).json({ error: "Unsupported client." }); return; }
+  try {
+    const result = await registerWithPassword(req.body?.email, req.body?.password);
+    if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+    const session = await createNativeSession({ userId: result.user.id, platform: client.platform, appVersion: client.appVersion });
+    noStoreSessionResponse(res);
+    res.status(201).json({ token: session.token, expiresAt: session.expiresAt.toISOString(), user: { id: result.user.id, email: result.user.email } });
+  } catch (error) {
+    authErrorResponse(res, error, "Native signup");
+  }
+});
+
+router.post("/auth/native/login", async (req, res) => {
+  const client = nativeClient(req);
+  if (!client.ok) { res.status(400).json({ error: "Unsupported client." }); return; }
+  const email = typeof req.body?.email === "string" ? req.body.email : "";
+  if (isLoginThrottled(req, email)) { sendLoginThrottled(res); return; }
+  try {
+    const result = await authenticateWithPassword(req.body?.email, req.body?.password);
+    if (!result.ok) {
+      if (result.status === 401) recordLoginFailure(req, email);
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    recordLoginSuccess(email);
+    const session = await createNativeSession({ userId: result.user.id, platform: client.platform, appVersion: client.appVersion });
+    noStoreSessionResponse(res);
+    res.json({ token: session.token, expiresAt: session.expiresAt.toISOString(), user: { id: result.user.id, email: result.user.email } });
+  } catch (error) {
+    authErrorResponse(res, error, "Native login");
+  }
+});
+
+// Revokes the presented token. Idempotent: a token that is already invalid
+// still gets 204, so the app can always finish its local sign-out.
+router.post("/auth/native/logout", async (req, res) => {
+  try {
+    if (req.nativeSession) await revokeNativeSession(req.nativeSession.id, "logout");
+    res.status(204).end();
+  } catch (error) {
+    authErrorResponse(res, error, "Native logout");
+  }
+});
+
+// "Sign out everywhere" (lost device): revokes every native session AND every
+// web cookie session for the signed-in user. Requires a valid bearer session.
+router.post("/auth/native/logout-all", async (req, res) => {
+  if (!req.user || !req.nativeSession) { res.status(401).json({ error: "Sign in to do that." }); return; }
+  try {
+    await revokeEverySession(req.user.id, "logout_all");
+    res.status(204).end();
+  } catch (error) {
+    authErrorResponse(res, error, "Native logout-all");
   }
 });
 
@@ -225,6 +292,10 @@ router.post("/auth/reset-password", async (req, res) => {
     if (!userId) { res.status(400).json({ error: "This reset link is invalid or has expired." }); return; }
     const passwordHash = await hashPassword(password);
     await db.update(usersTable).set({ passwordHash, updatedAt: new Date() }).where(eq(usersTable.id, userId));
+    // A reset is the recovery path for a lost or compromised device: every
+    // existing native token and every web cookie session for this account
+    // stops working now, so only the new password gets back in.
+    await revokeEverySession(userId, "password_reset");
     res.json({ message: "Your password has been reset. You can now sign in." });
   } catch (error) {
     authErrorResponse(res, error, "Reset password");

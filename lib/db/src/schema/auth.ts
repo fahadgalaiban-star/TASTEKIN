@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, index, jsonb, pgTable, text, timestamp, varchar } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, text, timestamp, uuid, varchar } from "drizzle-orm/pg-core";
 
 export const sessionsTable = pgTable("sessions", {
   sid: varchar("sid").primaryKey(),
@@ -32,6 +32,27 @@ export const usersTable = pgTable("users", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });
+
+// Native (iOS/Android) app sessions. Entirely separate from the cookie
+// `sessions` table above: the app never sees or reuses a web `sid`. Only the
+// SHA-256 of the opaque bearer token is stored, so a database read can never
+// yield a usable credential. Revocation is a row update (immediate), idle
+// expiry is computed from last_used_at, absolute expiry from expires_at.
+export const nativeSessionsTable = pgTable("native_sessions", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => usersTable.id, { onDelete: "cascade" }),
+  tokenHash: varchar("token_hash").notNull().unique(),
+  platform: text("platform").notNull(),
+  appVersion: text("app_version"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  lastUsedAt: timestamp("last_used_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedReason: text("revoked_reason"),
+}, (table) => [
+  index("native_sessions_user_id_idx").on(table.userId),
+  index("native_sessions_expires_at_idx").on(table.expiresAt),
+]);
 
 export const passwordResetTokensTable = pgTable("password_reset_tokens", {
   token: varchar("token").primaryKey(),
