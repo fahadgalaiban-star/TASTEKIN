@@ -365,15 +365,15 @@ async function main() {
       }
     });
 
-    await check("a video Edit with access: 'locked' is rejected with 400 in this phase — paid/subscriber-only video stays out of scope even for a verified creator who could otherwise post locked content", async () => {
+    await check("a video Edit submitted with the legacy access: 'locked' value is accepted and persisted as public — TASTEKIN is free, nothing is ever locked", async () => {
       const owner = await freshOwner();
       await db.update(usersTable).set({ isVerified: true }).where(eq(usersTable.id, owner.userId));
       const video = await createReadyVideo(owner.session, `locked-${suffix}`);
       const edit = baseEdit("locked-video-edit", { status: "draft", access: "locked", video: { uploadId: video.id, bunnyVideoId: video.bunnyVideoId, bunnyLibraryId: video.bunnyLibraryId } });
       const response = await owner.session.saveWorkspace([edit], owner.revision);
-      await expectStatus(response, 400);
-      const body = await response.json() as { error: string };
-      assert.match(body.error, /must be public in this phase/);
+      await expectStatus(response, 200);
+      const body = await response.json() as { edits: Array<{ id: string; access: string }> };
+      assert.equal(body.edits.find((item) => item.id === "locked-video-edit")?.access, "public");
     });
 
     await check("request-upload rejects a declared sizeBytes over the 500MB limit before ever creating a Bunny video — a direct API call cannot reserve an over-limit upload", async () => {

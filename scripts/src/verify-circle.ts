@@ -189,12 +189,21 @@ try {
 
   const feedResponse = await api(owner.cookie, "GET", "/api/circle/feed");
   const feed = await feedResponse.json() as Array<{ edit: Record<string, unknown> }>;
-  const locked = feed.find((item) => item.edit.id === "circle-locked")?.edit;
-  assert.ok(locked);
-  assert.equal(locked.sourceImage, undefined);
-  assert.equal(locked.previewImage, undefined);
-  assert.equal(locked.image, "/api/public-media/circlecreator/circle-locked/preview");
-  assert.ok((await api(owner.cookie, "GET", "/api/public-media/circlecreator/circle-locked")).status >= 400);
+  // A workspace row that still carries the legacy `access: "locked"` value
+  // (stored before the paid tier was removed) is served as an ordinary
+  // public Edit: never a blurred preview, never a lock, never the source
+  // rendition.
+  const legacy = feed.find((item) => item.edit.id === "circle-locked")?.edit;
+  assert.ok(legacy);
+  assert.equal(legacy.access, "public");
+  assert.equal(legacy.sourceImage, undefined);
+  assert.equal(legacy.previewImage, undefined);
+  assert.equal(legacy.image, "/private/source.webp");
+  const published = feed.find((item) => item.edit.id === "circle-public")?.edit;
+  assert.ok(published);
+  assert.equal(published.access, "public");
+  assert.equal(published.image, "/api/public-media/circlecreator/circle-public");
+  assert.equal(JSON.stringify(feed).includes("/preview"), false);
 
   assert.equal((await api(owner.cookie, "DELETE", "/api/circle/members/circlecreator")).status, 204);
   assert.equal((await scalar("SELECT count(*)::int AS n FROM my_circle_memberships WHERE owner_user_id=$1 AND creator_id='creator'", [owner.id])).n, 0);

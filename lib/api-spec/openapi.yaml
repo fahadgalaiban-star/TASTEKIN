@@ -882,7 +882,9 @@ components:
         title: { type: string }
         caption: { type: string }
         contentType: { type: string }
-        access: { type: string, enum: [public, subscribers] }
+        # TASTEKIN is free: every Edit is public. (The former "subscribers"
+        # value is gone with the paywall.)
+        access: { type: string, enum: [public] }
         image: { type: string }
         altText: { type: string }
         location: { type: string }
@@ -934,7 +936,8 @@ components:
         location: { type: string }
         locationAr: { type: string }
         altText: { type: string }
-        access: { type: string, enum: [public, locked] }
+        # Always "public" — legacy locked values are normalized server-side.
+        access: { type: string, enum: [public] }
         status: { type: string, enum: [draft, published, archived] }
         image: { type: ["string", "null"] }
         crop: { $ref: "#/components/schemas/CreatorCrop" }
@@ -958,7 +961,7 @@ components:
         description: { type: string }
         image: { type: string }
         itemCount: { type: number, format: int32 }
-        access: { type: string, enum: [public, mixed, subscribers] }
+        access: { type: string, enum: [public] }
         updatedAt: { type: string }
     ExploreResults:
       type: object
@@ -1236,6 +1239,9 @@ components:
         mapsUrl: { type: ["string", "null"], maxLength: 1024 }
         tasteRating: { type: ["number", "null"], format: int32, minimum: 1, maximum: 5 }
         creatorReview: { type: ["string", "null"], maxLength: 2000 }
+        # "locked" is a legacy value from the removed paid tier. It is still
+        # accepted on input for backward compatibility, but the server always
+        # persists and returns "public" (see api-server lib/edit-access.ts).
         access: { type: string, enum: [public, locked] }
         status: { type: string, enum: [draft, published, archived] }
         collectionIds:
@@ -1251,6 +1257,7 @@ components:
         titleAr: { type: string, maxLength: 160 }
         description: { type: string, maxLength: 2000 }
         descriptionAr: { type: string, maxLength: 2000 }
+        # "locked" is legacy input only — always stored/returned as "public".
         access: { type: string, enum: [public, locked] }
         # No minLength: a collection built entirely from `uploads` (no
         # linked Edit at all) has no Edit to cover it with, and the

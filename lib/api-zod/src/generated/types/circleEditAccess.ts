@@ -11,5 +11,4 @@ export type CircleEditAccess = typeof CircleEditAccess[keyof typeof CircleEditAc
 
 export const CircleEditAccess = {
   public: 'public',
-  locked: 'locked',
 } as const;

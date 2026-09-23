@@ -7,9 +7,10 @@
 - Public follower and following totals are intentionally never exposed.
 - The public username may change; the internal `creator_id` never changes.
 - Only a TASTEKIN administrator can approve the Taste Seal.
-- Only verified creators may publish subscriber-only Edits or collections.
 - A visitor may start a new conversation only with a verified creator.
-- Paid subscription entitlements are **not** simulated in Phase 1. Stripe belongs to Phase 3.
+- TASTEKIN v1 is free: every published Edit and collection is public. (The Phase 1
+  "subscriber-only" tier was removed before launch; a legacy `access: "locked"` value in
+  a stored workspace is read as public — see `api-server/src/lib/edit-access.ts`.)
 
 ## What changed
 
@@ -58,15 +59,14 @@ Use two real test accounts (A and B), plus the configured admin.
 2. A publishes a public Edit; B can see it but cannot edit, archive, delete, or access its source media.
 3. B follows and saves A; refresh and sign in again; both states persist without public counts.
 4. B changes username; confirm their creator ID and media ownership remain unchanged.
-5. An unverified account cannot publish a locked Edit or locked collection and has no Subscribe button.
+5. Every published Edit and collection is visible to visitors; there is no Subscribe button, price or lock anywhere.
 6. Submit a Taste Seal application; confirm it is pending and cannot self-approve.
-7. An admin approves it; confirm the seal, Subscribe button, locked publishing, and inbound DMs become available.
+7. An admin approves it; confirm the seal and inbound DMs become available.
 8. A non-admin receives `403` from every `/api/admin/*` endpoint.
 9. Repeat image crop, upload, draft, Publish, refresh, profile grid, Home, and public detail checks at 390 px.
 
 ## Known boundary before launch
 
-Phase 1 establishes identity, ownership, persistence, and authorization. A public paid launch
-must wait for Phase 2 moderation/admin operations and Phase 3 Stripe entitlements/webhooks.
-The current subscription screen is presentation only and must not be treated as payment proof.
+Phase 1 establishes identity, ownership, persistence, and authorization. The public launch is
+a free app: there is no paid tier, no entitlement check and no payment integration to wait for.
 

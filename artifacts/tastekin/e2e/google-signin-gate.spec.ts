@@ -8,7 +8,7 @@ test('Continue with Google is hidden when Google auth is not configured, shown w
   await page.route('**/api/me', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({ user: null, role: 'consumer', creator: null, subscribed: false, supportEmail: null, needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured }),
+      body: JSON.stringify({ user: null, role: 'consumer', creator: null, supportEmail: null, needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured }),
     });
   });
 

@@ -26,7 +26,7 @@ appears. Daily limit (50) blocked this yesterday.
   UI locale. Decide after real users.
 - Shopping links need a product data source. Web
   search returns articles, not products. Blocked on
-  company formation, same as Stripe Connect.
+  company formation. (v1 is free — no payments.)
 
 ## Not yet ported from handoff/claude-code-2026-09-05
 - link-preview.ts logo/social-image filtering

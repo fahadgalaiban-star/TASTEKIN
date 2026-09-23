@@ -4,7 +4,7 @@
 // found"). Root cause: the frontend's public-profile fetch
 // (GET /api/creators/:username/profile) had a client-side fallback
 // (`discoveryCreatorProfiles`) that rendered a fully interactive profile UI
-// — Follow, Subscribe, Message, and a working-looking Report/Block/Mute
+// — Follow, Message, and a working-looking Report/Block/Mute
 // menu — for usernames with NO backing `creator_workspaces` row at all. The
 // backend's 404 was correct and honest the whole time: there was genuinely
 // nothing to report/block/mute. The fix removes that phantom-profile

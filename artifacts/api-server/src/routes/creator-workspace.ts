@@ -26,16 +26,13 @@ import {
   lockVideoUploadsForUpdate,
 } from "../lib/video-upload-lifecycle";
 import { attachResolvedPlayback, batchResolveVideoRows, collectVideoUploadIds } from "../lib/video-playback";
+import { coerceAccessToPublic, normalizeLegacyCollection, normalizeLegacyEdit } from "../lib/edit-access";
 
 const router: IRouter = Router();
 function noStoreAccountResponse(res: import("express").Response) {
   res.set("Cache-Control", "private, no-store, max-age=0");
   res.vary("Cookie");
 }
-const legacyLockedPreviews: Record<string, string> = {
-  "private-hotel": "/tastekin-media/private-hotel-preview.webp",
-  "training-week": "/tastekin-media/training-week-preview.webp",
-};
 const privateObjectPath = /^\/objects\/uploads\/[0-9a-fA-F-]{36}$/;
 const VIDEO_UPLOAD_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -94,9 +91,6 @@ function validatePlaceFields(edit: EditRecord): string | null {
     if (isPublished && !PLACE_CATEGORIES.has(category)) {
       return "A photo or video is required to publish this edit";
     }
-    if (isPublished && edit.access === "locked") {
-      return "Photo/video-free place edits must be public because subscriber-only edits require protected preview media";
-    }
     // Published no-media place edits require placeName, locationLabel, and at least rating or review
     if (isPublished && PLACE_CATEGORIES.has(category)) {
       const placeName = typeof edit.placeName === "string" ? edit.placeName.trim() : "";
@@ -133,13 +127,6 @@ function validateVideoField(edit: EditRecord): string | null {
     || (typeof edit.previewImage === "string" && edit.previewImage.length > 0);
   if (hasImage) {
     return "An Edit cannot have both a photo and a video — remove one before saving";
-  }
-  // Paid/subscriber-only video is explicitly out of scope for this phase —
-  // a video Edit must be public, draft or published, regardless of the
-  // creator's verified/subscription status (which is what access: "locked"
-  // otherwise only depends on for a photo Edit).
-  if (edit.access === "locked") {
-    return "Video Edits must be public in this phase — subscriber-only video is not yet supported";
   }
   return null;
 }
@@ -347,14 +334,6 @@ router.put("/creator-profile", async (req, res): Promise<void> => {
   }
 });
 
-function normalizeLegacyLockedEdit(edit: Record<string, unknown>) {
-  const preview = typeof edit.id === "string" ? legacyLockedPreviews[edit.id] : undefined;
-  if (edit.access === "locked" && preview && edit.image === "/tastekin-media/private-hotel-source.webp") {
-    return { ...edit, image: preview, sourceImage: undefined, previewImage: preview };
-  }
-  return edit;
-}
-
 /**
  * Uploaded-photo collection items have no backing Edit, so they are never
  * gated by publishedIds — they're only ever visible when the collection
@@ -370,11 +349,29 @@ function publicCollection(collection: Record<string, unknown>, publishedIds: Set
   return { ...collection, editIds, uploads, itemOrder };
 }
 
+/**
+ * Owner view. Every Edit and collection is public in the free product; a
+ * legacy `access: "locked"` value stored before the paywall was removed is
+ * read as public here (see lib/edit-access.ts) and is persisted as public by
+ * the owner's next ordinary save.
+ */
+/**
+ * Visitor view of one published Edit: private object paths become the public
+ * media route; the source rendition is never exposed.
+ */
+function publicEditView(edit: Record<string, unknown>, username: string): Record<string, unknown> {
+  const normalized = normalizeLegacyEdit(edit);
+  const image = typeof normalized.image === "string" && normalized.image.startsWith("/objects/")
+    ? `/api/public-media/${encodeURIComponent(username)}/${normalized.id}`
+    : normalized.image;
+  return { ...normalized, image, sourceImage: undefined, previewImage: undefined };
+}
+
 function serializeWorkspace(workspace: Awaited<ReturnType<typeof getWorkspace>>) {
   return {
     creatorId: workspace.creatorId,
-    edits: (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit),
-    collections: workspace.collections,
+    edits: (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyEdit),
+    collections: (workspace.collections as Array<Record<string, unknown>>).map(normalizeLegacyCollection),
     revision: workspace.revision,
     updatedAt: workspace.updatedAt,
   };
@@ -407,36 +404,14 @@ router.get("/creator-workspace", async (req, res) => {
       res.json(GetCreatorWorkspaceResponse.parse({ ...serialized, edits }));
       return;
     }
+    const username = normalizeProfile(workspace.profile).username;
     const edits = (workspace.edits as Array<Record<string, unknown>>)
-      .map(normalizeLegacyLockedEdit)
-      .filter((edit) => {
-        if (edit.status !== "published") return false;
-        if (edit.access === "public") return true;
-        if (edit.access === "locked") {
-          return typeof edit.previewImage === "string" || (typeof edit.id === "string" && Boolean(legacyLockedPreviews[edit.id]));
-        }
-        return false;
-      })
-      .map((edit): Record<string, unknown> => {
-        if (edit.access === "locked") {
-          const username = normalizeProfile(workspace.profile).username;
-          const previewImage = typeof edit.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(username)}/${edit.id}/preview` : typeof edit.id === "string" ? legacyLockedPreviews[edit.id] : undefined;
-          return { ...edit, image: previewImage, sourceImage: undefined, previewImage };
-        }
-        // Public edit: strip private fields, rewrite object URLs
-        const publicEdit: Record<string, unknown> = {
-          ...edit,
-          sourceImage: undefined,
-          previewImage: undefined,
-        };
-        if (typeof edit.image === "string" && edit.image.startsWith("/objects/")) {
-          publicEdit.image = `/api/public-media/${encodeURIComponent(normalizeProfile(workspace.profile).username)}/${edit.id}`;
-        }
-        return publicEdit;
-      });
+      .filter((edit) => edit.status === "published")
+      .map((edit) => publicEditView(edit, username));
     const publishedIds = new Set(edits.map((edit) => edit.id));
     const collections = (workspace.collections as Array<Record<string, unknown>>)
-      .filter((collection) => collection.access === "public" && (typeof collection.coverEditId !== "string" || !collection.coverEditId || publishedIds.has(collection.coverEditId)))
+      .map(normalizeLegacyCollection)
+      .filter((collection) => typeof collection.coverEditId !== "string" || !collection.coverEditId || publishedIds.has(collection.coverEditId))
       .map((collection) => publicCollection(collection, publishedIds));
     const resolvedEdits = await withResolvedVideoPlayback(edits, workspace.ownerUserId, workspace.creatorId);
     res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits: resolvedEdits, collections }));
@@ -460,14 +435,12 @@ router.get("/creators/:username/workspace", async (req, res) => {
       return;
     }
     const username = normalizeProfile(workspace.profile).username;
-    const edits: Array<Record<string, unknown>> = (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)
-      .filter((edit) => edit.status === "published" && (edit.access === "public" || (edit.access === "locked" && typeof edit.previewImage === "string")))
-      .map((edit) => edit.access === "locked"
-        ? { ...edit, image: typeof edit.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(username)}/${edit.id}/preview` : edit.previewImage, sourceImage: undefined, previewImage: undefined }
-        : { ...edit, image: typeof edit.image === "string" && edit.image.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(username)}/${edit.id}` : edit.image, sourceImage: undefined, previewImage: undefined });
+    const edits: Array<Record<string, unknown>> = (workspace.edits as Array<Record<string, unknown>>)
+      .filter((edit) => edit.status === "published")
+      .map((edit) => publicEditView(edit, username));
     const publishedIds = new Set(edits.map((edit) => edit.id));
     const collections = (workspace.collections as Array<Record<string, unknown>>)
-      .filter((collection) => collection.access === "public")
+      .map(normalizeLegacyCollection)
       .map((collection) => publicCollection(collection, publishedIds));
     const resolvedEdits = await withResolvedVideoPlayback(edits, workspace.ownerUserId, workspace.creatorId);
     res.json(GetCreatorWorkspaceResponse.parse({ ...serializeWorkspace(workspace), edits: resolvedEdits, collections }));
@@ -504,11 +477,9 @@ router.get("/public-feed", async (req, res) => {
     const videoPlaybackEnabled = await isFeatureEnabled("video_upload");
     const perWorkspaceEdits = visibleRows.map(({ workspace, verified }) => {
       const profile = normalizeProfile(workspace.profile);
-      const edits = (workspace.edits as Array<Record<string, unknown>>).map(normalizeLegacyLockedEdit)
-        .filter((edit) => edit.status === "published" && (edit.access === "public" || (edit.access === "locked" && Boolean(verified) && typeof edit.previewImage === "string")))
-        .map((edit) => edit.access === "locked"
-          ? { ...edit, image: typeof edit.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(profile.username)}/${edit.id}/preview` : edit.previewImage, sourceImage: undefined, previewImage: undefined }
-          : { ...edit, image: typeof edit.image === "string" && edit.image.startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(profile.username)}/${edit.id}` : edit.image, sourceImage: undefined, previewImage: undefined });
+      const edits = (workspace.edits as Array<Record<string, unknown>>)
+        .filter((edit) => edit.status === "published")
+        .map((edit) => publicEditView(edit, profile.username));
       return { workspace, verified, profile, edits };
     });
     const videoRowsById = videoPlaybackEnabled
@@ -596,10 +567,11 @@ router.put("/creator-workspace", async (req, res) => {
     res.status(400).json({ error: "Workspace revision is required" });
     return;
   }
-  if (!authorization.verified && (parsed.data.edits.some((edit) => edit.access === "locked") || parsed.data.collections.some((collection) => collection.access === "locked"))) {
-    res.status(403).json({ error: "Subscriber-only content is available only to verified TASTEKIN creators" });
-    return;
-  }
+  // TASTEKIN is free: the legacy `access: "locked"` value is still accepted
+  // from an older client for backward compatibility, but everything is
+  // persisted as public. This is the only write-side transformation.
+  parsed.data.edits = parsed.data.edits.map(coerceAccessToPublic);
+  parsed.data.collections = parsed.data.collections.map(coerceAccessToPublic);
   // A video field must never survive into a saved Edit while the feature is
   // disabled — this is the actual publish/persist path video-uploads.ts's
   // own videoUploadFlagMw does not (and cannot) cover, since that

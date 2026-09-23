@@ -11,7 +11,6 @@ function meBody({ authenticated = true, myThings = true, kinSearch = true, close
     language,
     notifyPush: true,
     notifyEmail: true,
-    subscribed: false,
     supportEmail: null,
     needsOnboarding: false,
     onboardingStep: 'done',

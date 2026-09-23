@@ -71,7 +71,7 @@ router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, subscribed: false, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
+    res.json({ user: null, role: "consumer", creator: null, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
     return;
   }
   try {
@@ -96,10 +96,6 @@ router.get("/me", async (req, res) => {
       language: account?.language ?? "en",
       notifyPush: account?.notifyPush ?? true,
       notifyEmail: account?.notifyEmail ?? true,
-      // No subscriptions table exists yet — this is the real, honest server
-      // answer (everyone is unsubscribed) rather than a client-side guess,
-      // and becomes a real entitlement check once Stripe is connected.
-      subscribed: false,
       supportEmail: configuredSupportEmail(),
       needsOnboarding: onboarding.needsOnboarding,
       onboardingStep: onboarding.step,

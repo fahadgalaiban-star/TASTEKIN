@@ -773,19 +773,6 @@ h1, h2, h3, h4, p, a, button, label, input, body { overflow-wrap: break-word; }
 .language-option { border: 1px solid hsl(var(--border)); background: transparent; color: hsl(var(--muted-foreground)); border-radius: 999px; padding: .4rem .65rem; font-size: .72rem; }
 .language-option.active { background: hsl(var(--primary)); color: hsl(var(--primary-foreground)); border-color: hsl(var(--primary)); }
 .preference-note { color: hsl(var(--muted-foreground)); font-size: .9rem; line-height: 1.55; margin: .9rem 0 0; }
-.subscribe-hero { display: grid; gap: .7rem; justify-items: start; }
-.subscribe-hero h1 { font-size: clamp(2rem, 8vw, 3.2rem); line-height: 1.05; margin: 0; }
-.subscribe-hero p { color: hsl(var(--muted-foreground)); font-size: 1rem; line-height: 1.55; margin: 0; }
-.subscription-price { display: flex; align-items: baseline; gap: .4rem; border-block: 1px solid hsl(var(--border)); padding: 1.3rem 0; margin: 1.7rem 0 1rem; }
-.subscription-price strong { font-size: 2.3rem; font-weight: 600; letter-spacing: -.04em; }
-.subscription-price span { color: hsl(var(--muted-foreground)); }
-.benefits-list { list-style: none; display: grid; gap: .75rem; padding: 0; margin: 0 0 1.5rem; color: hsl(var(--primary)); }
-.benefits-list li { display: flex; align-items: center; gap: .55rem; font-size: .95rem; }
-.benefits-list svg { color: hsl(var(--accent)); flex: 0 0 auto; }
-.checkout-card, .access-confirmation { display: grid; gap: .7rem; padding: 1rem; background: hsl(var(--secondary)); border-radius: .85rem; }
-.checkout-card p, .access-confirmation span { margin: 0; color: hsl(var(--muted-foreground)); font-size: .9rem; line-height: 1.5; }
-.access-confirmation strong { color: hsl(var(--primary)); }
-.access-confirmation > svg { color: hsl(var(--accent)); }
 .reset-demo-link { margin: 1rem auto 0; border: 0; background: transparent; }
 .rtl-mode { font-family: var(--app-font-arabic); }
 .rtl-mode .serif, .rtl-mode .mono { font-family: var(--app-font-arabic); letter-spacing: 0; }

@@ -17,6 +17,7 @@ import closetItemsRouter from "./closet-items";
 import kinRouter from "./kin";
 import circleRouter from "./circle";
 import videoUploadsRouter from "./video-uploads";
+import accountRouter from "./account";
 
 const router: IRouter = Router();
 
@@ -38,5 +39,6 @@ router.use(closetItemsRouter);
 router.use(kinRouter);
 router.use(circleRouter);
 router.use(videoUploadsRouter);
+router.use(accountRouter);
 
 export default router;

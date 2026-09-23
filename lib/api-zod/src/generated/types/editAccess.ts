@@ -11,5 +11,4 @@ export type EditAccess = typeof EditAccess[keyof typeof EditAccess];
 
 export const EditAccess = {
   public: 'public',
-  subscribers: 'subscribers',
 } as const;

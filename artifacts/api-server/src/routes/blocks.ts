@@ -15,8 +15,8 @@ function isCheckViolation(error: unknown) {
 /**
  * Blocking is a private, mutual-visibility control — never a moderation
  * action against content. Creating a block only ever removes the free
- * "follow" relationship in both directions; it never touches subscriptions,
- * payments, reports, or any published content.
+ * "follow" relationship in both directions; it never touches reports or any
+ * published content.
  */
 router.post("/blocks", async (req, res): Promise<void> => {
   const user = requireUser(req, res);

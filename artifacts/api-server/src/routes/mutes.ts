@@ -19,8 +19,8 @@ function isCheckViolation(error: unknown) {
  * restriction on what the muted account can do. It only ever changes what
  * the muter sees in passive/personalized surfaces (handled in
  * creator-workspace.ts's public feed, discovery.ts's Explore, and
- * engagement.ts's comment lists/counts) — it never touches follows,
- * subscriptions, payments, or any interaction endpoint, and it never
+ * engagement.ts's comment lists/counts) — it never touches follows or any
+ * interaction endpoint, and it never
  * weakens an existing Block (areUsersBlocked checks run independently and
  * always take precedence wherever both apply).
  */

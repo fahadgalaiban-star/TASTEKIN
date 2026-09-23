@@ -23,9 +23,10 @@ export const ANALYTICS_EVENT_NAMES = [
   "save_removed",
   "follow_added",
   "follow_removed",
-  "subscription_started",
-  "subscription_completed",
 ] as const;
+// `subscription_started` / `subscription_completed` were removed with the
+// paid tier (TASTEKIN v1 is free). Historical rows with those names may still
+// exist in analytics_events; they are simply no longer accepted or reported.
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
 
 export const analyticsEvents = pgTable("analytics_events", {

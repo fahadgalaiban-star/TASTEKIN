@@ -164,10 +164,10 @@ async function main() {
     assert.equal(grant.code, 0, `admin-grant should exit 0: ${grant.stdout}`);
 
     const publicEditId = `edit-${suffix}-public`;
-    const lockedEditId = `edit-${suffix}-locked`;
+    const draftEditId = `edit-${suffix}-draft`;
     await addEditsToWorkspace(ownerWorkspace.creatorId, [
       { id: publicEditId, status: "published", access: "public", title: "A public Edit" },
-      { id: lockedEditId, status: "published", access: "locked", title: "A locked Edit" },
+      { id: draftEditId, status: "draft", access: "public", title: "An unpublished draft Edit" },
     ]);
     const comment = await commenter.postComment(publicEditId, "This is a normal comment");
 
@@ -247,8 +247,8 @@ async function main() {
       assert.equal(response.status, 404);
     });
 
-    await check("reporting a locked Edit you cannot read returns the same generic 404 (no existence oracle)", async () => {
-      const response = await reporter.report({ targetType: "edit", targetId: lockedEditId, reason: "spam" });
+    await check("reporting an unpublished draft Edit you cannot read returns the same generic 404 (no existence oracle)", async () => {
+      const response = await reporter.report({ targetType: "edit", targetId: draftEditId, reason: "spam" });
       assert.equal(response.status, 404);
     });
 

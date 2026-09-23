@@ -14,7 +14,7 @@ import path from 'node:path';
 // api-server + a disposable Postgres database — those checks can't be
 // exercised meaningfully against a page.route() fake of the same server.
 
-type Access = 'public' | 'locked';
+type Access = 'public';
 type Edit = {
   id: string;
   category: string;

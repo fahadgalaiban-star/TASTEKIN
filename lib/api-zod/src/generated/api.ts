@@ -29,7 +29,7 @@ export const GetFeedResponseItem = zod.object({
   "title": zod.string(),
   "caption": zod.string(),
   "contentType": zod.string(),
-  "access": zod.enum(['public', 'subscribers']),
+  "access": zod.enum(['public']),
   "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
@@ -109,7 +109,7 @@ export const GetCreatorResponse = zod.object({
   "title": zod.string(),
   "caption": zod.string(),
   "contentType": zod.string(),
-  "access": zod.enum(['public', 'subscribers']),
+  "access": zod.enum(['public']),
   "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
@@ -130,7 +130,7 @@ export const GetCreatorResponse = zod.object({
   "description": zod.string(),
   "image": zod.string(),
   "itemCount": zod.number(),
-  "access": zod.enum(['public', 'mixed', 'subscribers']),
+  "access": zod.enum(['public']),
   "updatedAt": zod.string().optional()
 }))
 }))
@@ -174,7 +174,7 @@ export const ExploreResponse = zod.object({
   "title": zod.string(),
   "caption": zod.string(),
   "contentType": zod.string(),
-  "access": zod.enum(['public', 'subscribers']),
+  "access": zod.enum(['public']),
   "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
@@ -195,7 +195,7 @@ export const ExploreResponse = zod.object({
   "description": zod.string(),
   "image": zod.string(),
   "itemCount": zod.number(),
-  "access": zod.enum(['public', 'mixed', 'subscribers']),
+  "access": zod.enum(['public']),
   "updatedAt": zod.string().optional()
 })),
   "places": zod.array(zod.string()),
@@ -342,7 +342,7 @@ export const GetEditResponse = zod.object({
   "title": zod.string(),
   "caption": zod.string(),
   "contentType": zod.string(),
-  "access": zod.enum(['public', 'subscribers']),
+  "access": zod.enum(['public']),
   "image": zod.string().optional(),
   "altText": zod.string().optional(),
   "location": zod.string().optional(),
@@ -1676,7 +1676,7 @@ export const GetCircleFeedResponseItem = zod.object({
   "location": zod.string(),
   "locationAr": zod.string(),
   "altText": zod.string(),
-  "access": zod.enum(['public', 'locked']),
+  "access": zod.enum(['public']),
   "status": zod.enum(['draft', 'published', 'archived']),
   "image": zod.string().nullish(),
   "crop": zod.object({

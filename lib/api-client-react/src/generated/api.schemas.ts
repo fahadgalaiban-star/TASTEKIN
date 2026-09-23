@@ -189,7 +189,6 @@ export type EditAccess = typeof EditAccess[keyof typeof EditAccess];
 
 export const EditAccess = {
   public: 'public',
-  subscribers: 'subscribers',
 } as const;
 
 export interface Edit {
@@ -221,8 +220,6 @@ export type CollectionAccess = typeof CollectionAccess[keyof typeof CollectionAc
 
 export const CollectionAccess = {
   public: 'public',
-  mixed: 'mixed',
-  subscribers: 'subscribers',
 } as const;
 
 export interface Collection {
@@ -263,7 +260,6 @@ export type CircleEditAccess = typeof CircleEditAccess[keyof typeof CircleEditAc
 
 export const CircleEditAccess = {
   public: 'public',
-  locked: 'locked',
 } as const;
 
 export type CircleEditStatus = typeof CircleEditStatus[keyof typeof CircleEditStatus];

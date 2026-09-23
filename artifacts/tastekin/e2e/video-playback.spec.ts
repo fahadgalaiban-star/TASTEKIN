@@ -11,7 +11,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 // about the *rendered* behavior: autoplay/pause coordination, controls,
 // poster-only screens, the detail player, safe fallback, and layout.
 
-type Access = 'public' | 'locked';
+type Access = 'public';
 type VideoRef = {
   uploadId: string; bunnyVideoId: string; bunnyLibraryId: string;
   playbackUrl?: string | null; posterUrl?: string | null;

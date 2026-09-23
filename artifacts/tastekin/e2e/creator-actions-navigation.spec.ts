@@ -24,7 +24,6 @@ async function mockSession(page: Page, getLanguage: () => 'en' | 'ar', setLangua
         language: getLanguage(),
         notifyPush: true,
         notifyEmail: true,
-        subscribed: false,
         supportEmail: null,
         needsOnboarding: false,
         onboardingStep: 'done',

@@ -18,7 +18,6 @@ test('language toggle in Settings persists server-side and drives LTR/RTL app-wi
         language,
         notifyPush: true,
         notifyEmail: true,
-        subscribed: false,
         supportEmail: null,
       }),
     });
