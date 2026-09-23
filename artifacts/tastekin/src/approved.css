@@ -36,6 +36,10 @@ button { font:inherit; cursor:pointer; }
 :where(button,a,input,textarea,select,[role="button"]):focus-visible { outline:2px solid var(--tk-focus); outline-offset:2px; }
 .approved-app { min-height:100dvh; background:var(--tk-ivory); color:var(--tk-ink); }
 .approved-shell { width:min(100%,440px); min-height:100dvh; margin:auto; padding:14px 16px 98px; }
+/* Native shell only (class set by src/native.ts): the WebView extends under
+   the status bar / notch, so keep the top bar and content out of it. */
+html.native-app .approved-shell { padding-top:max(14px, env(safe-area-inset-top)); padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); }
+html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:transparent; }
 .approved-topbar { position:relative; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .approved-logo { position:absolute; left:50%; width:115px; max-height:32px; object-fit:contain; transform:translateX(-50%); }
 .approved-topbar-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }
