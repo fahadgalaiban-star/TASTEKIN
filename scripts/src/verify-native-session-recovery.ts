@@ -1,18 +1,76 @@
 /**
  * Disposable-Postgres regression test. DATABASE_URL selects only the server
- * where a new, uniquely named throwaway database will be created. Never uses
- * PROD_DB_URL and never connects to the configured database itself for DDL.
+ * where a new, uniquely named throwaway database will be created. No
+ * production credential is required: PROD_DB_URL is optional, is only parsed
+ * (never connected to, never printed) and only serves to refuse a run whose
+ * disposable target would coincide with production.
+ *
+ * Usage:
+ *   DATABASE_URL=postgresql://... pnpm --filter @workspace/scripts run verify:native-session-recovery
  */
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { randomUUID, createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
-import { runRecovery } from "./native-session-recovery";
+import { APPLY_CONFIRMATION, parseCliArgs, runRecovery } from "./native-session-recovery";
 
-const folder = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../lib/db/migrations");
+const here = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(here, "../..");
+const folder = path.resolve(here, "../../lib/db/migrations");
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
+
+/** Argument contract, without any database: both supported pnpm forms and every refusal. */
+function verifyCliContract(): void {
+  assert.equal(parseCliArgs([]), "dry-run");
+  assert.equal(parseCliArgs(["--"]), "dry-run", "pnpm may forward a bare separator on a dry run");
+  assert.equal(parseCliArgs(["--apply", `--confirm=${APPLY_CONFIRMATION}`]), "apply");
+  assert.equal(parseCliArgs([`--confirm=${APPLY_CONFIRMATION}`, "--apply"]), "apply");
+  assert.equal(parseCliArgs(["--", "--apply", `--confirm=${APPLY_CONFIRMATION}`]), "apply", "pnpm-forwarded separator");
+  for (const bad of [
+    ["--apply"],
+    [`--confirm=${APPLY_CONFIRMATION}`],
+    ["--apply", "--confirm=WRONG"],
+    ["--apply", "--confirm="],
+    ["--apply", `--confirm=${APPLY_CONFIRMATION}`, "--extra"],
+    ["--", "--", "--apply", `--confirm=${APPLY_CONFIRMATION}`],
+    ["--apply", "--", `--confirm=${APPLY_CONFIRMATION}`],
+    ["--apply", "--apply"],
+    ["--dry-run"],
+  ]) {
+    assert.throws(() => parseCliArgs(bad), /^Error: Usage: native-session-recovery/, `must refuse: ${JSON.stringify(bad)}`);
+  }
+  console.log("PASS: CLI argument contract (both supported forms accepted, every other shape refused)");
+
+  // End to end through pnpm itself, with no PROD_DB_URL in the environment:
+  // a correctly parsed apply must get as far as the credential check (and
+  // stop there), proving the documented commands are not refused as usage.
+  const env = { ...process.env };
+  delete env.PROD_DB_URL;
+  const run = (extra: string[]) => spawnSync("pnpm", ["--filter", "@workspace/scripts", "run", "recover:native-sessions", ...extra], { cwd: repoRoot, env, encoding: "utf8" });
+  for (const form of [
+    ["--", "--apply", `--confirm=${APPLY_CONFIRMATION}`],
+    ["--apply", `--confirm=${APPLY_CONFIRMATION}`],
+    [],
+  ]) {
+    const result = run(form);
+    const output = `${result.stdout}\n${result.stderr}`;
+    assert.notEqual(result.status, 0, `must not succeed without PROD_DB_URL: ${JSON.stringify(form)}`);
+    assert.match(output, /PROD_DB_URL is required/, `must reach the credential check: ${JSON.stringify(form)}`);
+    assert.doesNotMatch(output, /Usage: native-session-recovery/, `must not be a usage refusal: ${JSON.stringify(form)}`);
+  }
+  const usage = run(["--apply"]);
+  assert.notEqual(usage.status, 0);
+  assert.match(`${usage.stdout}\n${usage.stderr}`, /Usage: native-session-recovery/);
+  assert.doesNotMatch(`${usage.stdout}\n${usage.stderr}`, /PROD_DB_URL is required/);
+  console.log("PASS: pnpm invocation with and without '--' reaches the credential check; --apply alone is refused");
+}
+
+function databaseName(address: URL): string {
+  return decodeURIComponent(address.pathname.replace(/^\//, ""));
+}
 
 async function snapshot(pool: pg.Pool) {
   const [ledger, columns, indexes, constraints] = await Promise.all([
@@ -31,29 +89,39 @@ async function snapshot(pool: pg.Pool) {
 }
 
 async function verify() {
+  verifyCliContract();
+
   const base = process.env.DATABASE_URL;
-  if (!base || !process.env.PROD_DB_URL || !process.env.PGHOST || !process.env.PGDATABASE) {
-    throw new Error("Development and production database configuration required to prove disposable isolation");
-  }
-  // The verifier runs only against the platform-provided development database
-  // server, never against a caller-supplied arbitrary DATABASE_URL.
+  if (!base) throw new Error("DATABASE_URL (a disposable development server, never production) is required");
   const baseAddress = new URL(base);
-  const production = new URL(process.env.PROD_DB_URL);
-  if (baseAddress.hostname !== process.env.PGHOST ||
-      decodeURIComponent(baseAddress.pathname.slice(1)) !== process.env.PGDATABASE ||
-      baseAddress.host === production.host ||
-      decodeURIComponent(baseAddress.pathname) === decodeURIComponent(production.pathname)) {
-    throw new Error("Refusing to create a test database without a distinct development server and database");
-  }
   const dbName = `native_recovery_verify_${randomUUID().replaceAll("-", "").slice(0, 16)}`;
+  // PROD_DB_URL is optional. When present it is parsed only — never connected
+  // to and never printed — so that a run whose disposable target (this
+  // server's admin database, or the throwaway database about to be created)
+  // coincides with production is refused.
+  if (process.env.PROD_DB_URL) {
+    let production: URL;
+    try {
+      production = new URL(process.env.PROD_DB_URL);
+    } catch {
+      throw new Error("PROD_DB_URL is present but is not a parseable URL; refusing to run");
+    }
+    const sameServer = production.host === baseAddress.host;
+    const sameDatabase = databaseName(production) === databaseName(baseAddress) || databaseName(production) === dbName;
+    if (sameServer && sameDatabase) {
+      throw new Error("Refusing to run: the disposable test target coincides with the configured production database");
+    }
+  }
   const testAddress = new URL(base);
   testAddress.pathname = `/${dbName}`;
   const admin = new pg.Pool({ connectionString: base, max: 1 });
+  admin.on("error", () => {});
   let created = false;
   try {
     await admin.query(`CREATE DATABASE ${quote(dbName)}`);
     created = true;
     const pool = new pg.Pool({ connectionString: testAddress.toString(), max: 2 });
+    pool.on("error", () => {});
     try {
       await pool.query("CREATE SCHEMA drizzle");
       await pool.query(`CREATE TABLE drizzle.__drizzle_migrations

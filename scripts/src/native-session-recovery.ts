@@ -286,19 +286,40 @@ export async function runRecovery(client: PoolClient, mode: Mode): Promise<"read
   }
 }
 
-async function cli(): Promise<void> {
-  const args = process.argv.slice(2);
+export const APPLY_CONFIRMATION = confirmText;
+
+/**
+ * CLI argument contract. Exactly two invocation shapes are accepted:
+ *   (none)                                  → dry run
+ *   --apply --confirm=<exact typed text>     → apply
+ * pnpm forwards a standalone "--" to the script verbatim, so exactly one
+ * leading separator is tolerated; both `pnpm run recover:native-sessions
+ * --apply --confirm=…` and the same with `--` before the flags reach the
+ * same check. Anything else (a second "--", a missing or wrong confirmation,
+ * extra arguments) is refused before any environment or database access.
+ */
+export function parseCliArgs(argv: readonly string[]): Mode {
+  const args = argv[0] === "--" ? argv.slice(1) : [...argv];
   const apply = args.includes("--apply");
   const valid = apply
     ? args.length === 2 && args.includes(`--confirm=${confirmText}`)
     : args.length === 0;
   if (!valid) throw new RecoveryRefusal(`Usage: native-session-recovery [--apply --confirm=${confirmText}]`);
+  return apply ? "apply" : "dry-run";
+}
+
+async function cli(): Promise<void> {
+  const mode = parseCliArgs(process.argv.slice(2));
   if (!process.env.PROD_DB_URL) throw new RecoveryRefusal("PROD_DB_URL is required");
   const pool = new pg.Pool({ connectionString: process.env.PROD_DB_URL, max: 1, connectionTimeoutMillis: 10000 });
+  // An idle-client error (e.g. the server closing the connection after the
+  // run) must never surface as an unhandled 'error' event — same protection
+  // the boot migration runner applies to its lock client.
+  pool.on("error", () => {});
   try {
     const client = await pool.connect();
     try {
-      const result = await runRecovery(client, apply ? "apply" : "dry-run");
+      const result = await runRecovery(client, mode);
       console.log(result === "ready"
         ? "DRY RUN: reviewed sources, 17 existing ledger records, and 0017–0021 schema match; 0022 absent. No writes made."
         : "APPLIED: ledger 0017–0022 and native_sessions created and verified atomically.");
