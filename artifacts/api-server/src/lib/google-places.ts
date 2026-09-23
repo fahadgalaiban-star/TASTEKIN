@@ -15,6 +15,7 @@ const FIELD_MASK = [
   "places.formattedAddress",
   "places.location",
   "places.rating",
+  "places.priceLevel",
   "places.primaryType",
   "places.types",
   "places.regularOpeningHours.periods",
@@ -65,7 +66,23 @@ export function normalizeGoogleMapsUrl(value: unknown): string | null {
  */
 export type GooglePlacePhotoRef = { name: string; attributionText: string | null; attributionUri: string | null };
 
-export type GooglePlaceTypeFilter = "cafe" | "restaurant" | "bakery" | "museum" | "park" | "gym";
+export type GooglePlaceTypeFilter = "cafe" | "restaurant" | "bakery" | "museum" | "park" | "gym" | "hotel" | "lodging" | "guest_house";
+
+/**
+ * Google's own PRICE_LEVEL_* enum collapsed to 1 (inexpensive) … 4 (very
+ * expensive). This is the only price signal Places returns for a stay — it
+ * is never a nightly rate, and anything unspecified/free stays null rather
+ * than being guessed.
+ */
+const PRICE_LEVELS: Record<string, number> = {
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
+function normalizePriceLevel(value: unknown): number | null {
+  return typeof value === "string" && PRICE_LEVELS[value] !== undefined ? PRICE_LEVELS[value] : null;
+}
 export type GooglePlaceOpeningPeriod = {
   open: { day: number; hour: number; minute: number };
   close: { day: number; hour: number; minute: number } | null;
@@ -78,6 +95,7 @@ export type GooglePlace = {
   lat: number | null;
   lng: number | null;
   rating: number | null;
+  priceLevel: number | null;
   primaryType: string | null;
   types: string[];
   openingPeriods: GooglePlaceOpeningPeriod[];
@@ -154,6 +172,7 @@ function normalizePlacesResponse(payload: unknown, maxResults: number): GooglePl
       lat: location && typeof location.latitude === "number" ? location.latitude : null,
       lng: location && typeof location.longitude === "number" ? location.longitude : null,
       rating: typeof item.rating === "number" ? item.rating : null,
+      priceLevel: normalizePriceLevel(item.priceLevel),
       primaryType: typeof item.primaryType === "string" ? item.primaryType : null,
       types: Array.isArray(item.types) ? item.types.filter((type): type is string => typeof type === "string") : [],
       openingPeriods: normalizeOpeningPeriods(item),

@@ -915,6 +915,50 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-show-more-btn { width:100%; min-height:48px; padding:10px 16px; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); font-size:13px; font-weight:700; }
 .kin-show-more-btn:disabled { opacity:.6; }
 
+/* KIN Travel — optional accommodation (Hotels / Apartments & Homes) */
+.kin-interest-label { display:flex; min-width:0; flex-direction:column; gap:2px; }
+.kin-interest-summary { font-size:11px; font-weight:600; opacity:.85; }
+/* The sheet never exceeds the visible viewport (dynamic-viewport units for
+   mobile browser chrome, with a vh fallback); only its body scrolls, so Done
+   and Remove stay reachable, and nothing reserves empty height. */
+.kin-stay-sheet { max-height:85vh; max-height:min(88dvh, calc(100dvh - 16px)); overflow:hidden; padding-bottom:0; }
+.kin-stay-sheet-title { flex:0 0 auto; margin:0 0 6px; color:var(--tk-ink); font-family:'Lora', serif; font-size:24px; font-weight:500; line-height:1.2; letter-spacing:-.01em; text-align:start; overflow-wrap:anywhere; }
+.kin-stay-sheet-body { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding-bottom:4px; }
+.kin-stay-sheet-footer { flex:0 0 auto; padding:12px 0 max(12px, env(safe-area-inset-bottom)); background:var(--tk-card); }
+.kin-stay-field-label { display:block; margin:12px 0 8px; color:var(--tk-stone); font-size:13px; font-weight:600; text-align:start; }
+.kin-stay-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.kin-stay-options-stars { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (min-width:480px) { .kin-stay-options-stars { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+.kin-stay-options button { min-width:0; min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:8px 6px; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:600; text-align:center; overflow-wrap:anywhere; }
+.kin-stay-options button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.kin-stay-stars { display:inline-flex; gap:1px; }
+.kin-stay-hint { margin:8px 0 0; color:var(--tk-stone); font-size:11px; line-height:1.4; text-align:start; }
+.kin-stay-done { margin-top:0; }
+.kin-stay-remove { width:100%; min-height:44px; margin-top:4px; border:0; background:transparent; color:var(--tk-stone); font-size:12px; font-weight:700; text-decoration:underline; }
+.kin-stays { margin:0 0 20px; }
+.kin-stays > .kin-day-kicker { display:block; margin-bottom:10px; }
+.kin-stays .kin-day-tabs { margin-bottom:10px; }
+.kin-stay-card { display:flex; gap:12px; margin-bottom:10px; padding:12px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); }
+.kin-stay-card.selected { border-color:var(--tk-wine); box-shadow:inset 0 0 0 1px var(--tk-wine); }
+.kin-stay-media { flex:0 0 96px; aspect-ratio:4/5; border-radius:10px; overflow:hidden; background:var(--tk-surface-muted); display:flex; align-items:center; justify-content:center; }
+.kin-stay-media img { width:100%; height:100%; object-fit:cover; }
+.kin-stay-media svg { width:24px; height:24px; color:var(--tk-wine); opacity:.5; }
+.kin-stay-body { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; }
+.kin-stay-name { display:block; color:var(--tk-text); font-family:Lora, serif; font-size:16px; line-height:1.2; }
+.kin-stay-area { color:var(--tk-stone); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.kin-stay-meta { display:flex; flex-wrap:wrap; gap:10px; color:var(--tk-stone); font-size:11px; font-weight:700; }
+.kin-stay-meta span { display:inline-flex; align-items:center; gap:3px; }
+.kin-stay-reason { margin:2px 0 0; color:var(--tk-ink); font-size:12px; line-height:1.4; }
+.kin-stay-actions { display:flex; gap:8px; margin-top:6px; }
+.kin-stay-actions button { flex:1; display:inline-flex; align-items:center; justify-content:center; gap:4px; min-height:40px; padding:0 8px; border:1px solid var(--tk-border); border-radius:999px; background:var(--tk-surface); color:var(--tk-wine); font-size:11px; font-weight:800; letter-spacing:.04em; text-transform:uppercase; }
+.kin-stay-actions button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.kin-stay-details { display:flex; flex-direction:column; gap:8px; }
+.kin-stay-details-media { aspect-ratio:16/10; border-radius:14px; overflow:hidden; background:var(--tk-surface-muted); display:flex; align-items:center; justify-content:center; }
+.kin-stay-details-media img { width:100%; height:100%; object-fit:cover; }
+.kin-stay-details-media svg { color:var(--tk-wine); opacity:.5; }
+.kin-stay-details-links { display:flex; gap:8px; margin-top:6px; }
+.kin-stay-details-links a { flex:1; display:inline-flex; align-items:center; justify-content:center; min-height:44px; text-align:center; text-decoration:none; }
+
 @media (max-width:390px) {
   .kin-style-heading .kin-headline { font-size:29px; }
   .kin-piece-preview { min-height:226px; }

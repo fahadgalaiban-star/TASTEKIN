@@ -12,13 +12,14 @@ import { getClosetMediaDownloadURL } from "../lib/private-media-storage";
 import {
   isValidHttpsUrl,
   runKinSearch,
+  validateAccommodation,
   validateKinSearchRequest,
   type KinLooksOption,
   type KinSearchCitation,
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { runKinTravelPlan, swapPlace, type ActivityInterest, type KinTravelSlot } from "../lib/kin-travel";
+import { hasCachedStayPool, runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -313,7 +314,7 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     return;
   }
 
-  const result = await runKinTravelPlan(validated.value, itemContext, String(req.id));
+  const result = await runKinTravelPlan(validated.value, user.id, itemContext, String(req.id));
   if (result.status !== "ok") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel plan unavailable");
@@ -395,6 +396,72 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     return;
   }
   res.json({ status: "ok", place: result.place, routes: result.routes });
+});
+
+const MAX_STAY_EXCLUDES = 60;
+
+/**
+ * "Show more stays": the next three real stays of one kind for the same
+ * destination and the same preferences the plan was built with, excluding
+ * every stay already shown. Never regenerates the itinerary. Served from
+ * the plan's cached candidate pool, which costs no provider search, no
+ * Anthropic call, and no daily-quota attempt; only when that pool is gone
+ * (expired, evicted, or a different instance) is one attempt reserved and
+ * the providers called again — reserved before the call, like every other
+ * KIN action.
+ */
+router.post("/kin/travel/stays", requireUserMw, kinSearchFlagMw, async (req, res) => {
+  const user = req.user!;
+  const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+  const destination = typeof body.destination === "string" ? body.destination.trim() : "";
+  if (!destination || destination.length > MAX_TEXT_LENGTH) {
+    res.status(400).json({ error: "destination is required" });
+    return;
+  }
+  if (body.kind !== "hotel" && body.kind !== "apartment") {
+    res.status(400).json({ error: "kind must be 'hotel' or 'apartment'" });
+    return;
+  }
+  const kind = body.kind as KinStayKind;
+  const accommodation = validateAccommodation(body.accommodation);
+  if (!accommodation.ok) {
+    res.status(400).json({ error: accommodation.error });
+    return;
+  }
+  if ((kind === "hotel" && !accommodation.value.hotels) || (kind === "apartment" && !accommodation.value.apartments)) {
+    res.status(400).json({ error: "accommodation must include preferences for the requested kind" });
+    return;
+  }
+  if (body.locale !== undefined && body.locale !== "en" && body.locale !== "ar") {
+    res.status(400).json({ error: "locale must be 'en' or 'ar'" });
+    return;
+  }
+  const locale = body.locale as "en" | "ar" | undefined;
+  if (body.excludePlaceIds !== undefined && !Array.isArray(body.excludePlaceIds)) {
+    res.status(400).json({ error: "excludePlaceIds must be an array" });
+    return;
+  }
+  const excludePlaceIds = Array.isArray(body.excludePlaceIds)
+    ? body.excludePlaceIds.filter((id): id is string => typeof id === "string").slice(0, MAX_STAY_EXCLUDES)
+    : [];
+
+  if (!hasCachedStayPool(user.id, destination, kind, accommodation.value, locale)) {
+    const reservation = await reserveKinSearchAttempt(user.id);
+    if ("rateLimited" in reservation) {
+      daily429(res);
+      return;
+    }
+  }
+
+  const result = await searchStays(user.id, destination, kind, accommodation.value, new Set(excludePlaceIds), locale, String(req.id));
+  if (result.status !== "ok") {
+    if (result.reason !== "not configured") {
+      req.log.warn({ reason: result.reason, userId: user.id, kind }, "KIN travel stays unavailable");
+    }
+    res.json({ status: "unavailable", reason: "unavailable" });
+    return;
+  }
+  res.json({ status: "ok", items: result.group.items, hasMore: result.group.hasMore });
 });
 
 // --- persistence: saved recommendations, trips, trip items ----------------

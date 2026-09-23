@@ -211,6 +211,22 @@ export const KIN_TRAVEL_INTERESTS = [
 export type KinTravelInterest = (typeof KIN_TRAVEL_INTERESTS)[number];
 const MAX_TRAVEL_ITEMS = 6;
 
+/**
+ * Optional accommodation preferences from the guided flow's Hotels /
+ * Apartments & Homes cards. Every value is a closed enum the server maps to
+ * its own Google Places query — never free text. Absent entirely when the
+ * member picked neither card, in which case the itinerary is unchanged.
+ */
+export const KIN_HOTEL_STARS = [3, 4, 5] as const;
+export type KinHotelStars = (typeof KIN_HOTEL_STARS)[number];
+export const KIN_STAY_BUDGETS = [1, 2, 3] as const;
+export type KinStayBudget = (typeof KIN_STAY_BUDGETS)[number];
+export const KIN_APARTMENT_STAY_TYPES = ["entire_home", "apartment", "private_room"] as const;
+export type KinApartmentStayType = (typeof KIN_APARTMENT_STAY_TYPES)[number];
+export type KinHotelPreferences = { stars?: KinHotelStars; budget?: KinStayBudget };
+export type KinApartmentPreferences = { stayType?: KinApartmentStayType; budget?: KinStayBudget };
+export type KinAccommodationRequest = { hotels?: KinHotelPreferences; apartments?: KinApartmentPreferences };
+
 export type KinSearchRequest = {
   mode: KinSearchMode;
   query: string;
@@ -242,6 +258,8 @@ export type KinSearchRequest = {
    * Travel's own prompt is untouched by this field.
    */
   locale?: "en" | "ar";
+  /** Travel only — see KinAccommodationRequest. Never affects Looks. */
+  accommodation?: KinAccommodationRequest;
 };
 
 export type KinSearchCitation = { title: string | null; url: string };
@@ -407,6 +425,62 @@ export function validateKinSearchRequest(body: unknown): KinSearchValidationResu
     return { ok: false, error: "endDate must not be before startDate" };
   }
 
+  if (record.accommodation !== undefined) {
+    if (mode !== "travel") return { ok: false, error: "accommodation is only valid for travel" };
+    const accommodation = validateAccommodation(record.accommodation);
+    if (!accommodation.ok) return accommodation;
+    value.accommodation = accommodation.value;
+  }
+
+  return { ok: true, value };
+}
+
+function validateStayBudget(value: unknown): { ok: true; value: KinStayBudget | undefined } | { ok: false; error: string } {
+  if (value === undefined) return { ok: true, value: undefined };
+  if (typeof value !== "number" || !(KIN_STAY_BUDGETS as readonly number[]).includes(value)) return { ok: false, error: "budget must be 1, 2, or 3" };
+  return { ok: true, value: value as KinStayBudget };
+}
+
+/**
+ * Closed-enum validation for the Hotels / Apartments & Homes preference
+ * sheets — shared by the plan request and the "Show more stays" endpoint
+ * so both accept exactly the same shape. At least one of hotels/apartments
+ * must be present; every field inside is optional (the sheets have no
+ * required choice), but anything present must be one of the fixed values.
+ */
+export function validateAccommodation(raw: unknown): { ok: true; value: KinAccommodationRequest } | { ok: false; error: string } {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "accommodation must be an object" };
+  const record = raw as Record<string, unknown>;
+  const value: KinAccommodationRequest = {};
+  if (record.hotels !== undefined) {
+    if (!record.hotels || typeof record.hotels !== "object" || Array.isArray(record.hotels)) return { ok: false, error: "accommodation.hotels must be an object" };
+    const hotels = record.hotels as Record<string, unknown>;
+    const prefs: KinHotelPreferences = {};
+    if (hotels.stars !== undefined) {
+      if (typeof hotels.stars !== "number" || !(KIN_HOTEL_STARS as readonly number[]).includes(hotels.stars)) return { ok: false, error: "stars must be 3, 4, or 5" };
+      prefs.stars = hotels.stars as KinHotelStars;
+    }
+    const budget = validateStayBudget(hotels.budget);
+    if (!budget.ok) return budget;
+    if (budget.value !== undefined) prefs.budget = budget.value;
+    value.hotels = prefs;
+  }
+  if (record.apartments !== undefined) {
+    if (!record.apartments || typeof record.apartments !== "object" || Array.isArray(record.apartments)) return { ok: false, error: "accommodation.apartments must be an object" };
+    const apartments = record.apartments as Record<string, unknown>;
+    const prefs: KinApartmentPreferences = {};
+    if (apartments.stayType !== undefined) {
+      if (typeof apartments.stayType !== "string" || !(KIN_APARTMENT_STAY_TYPES as readonly string[]).includes(apartments.stayType)) {
+        return { ok: false, error: "stayType must be entire_home, apartment, or private_room" };
+      }
+      prefs.stayType = apartments.stayType as KinApartmentStayType;
+    }
+    const budget = validateStayBudget(apartments.budget);
+    if (!budget.ok) return budget;
+    if (budget.value !== undefined) prefs.budget = budget.value;
+    value.apartments = prefs;
+  }
+  if (!value.hotels && !value.apartments) return { ok: false, error: "accommodation must include hotels or apartments" };
   return { ok: true, value };
 }
 
@@ -460,8 +534,25 @@ function travelSystemPrompt(locale: "en" | "ar" | undefined): string {
     "When you can find current weather or climate information for the destination and dates, briefly suggest what to wear day to day, referencing any existing wardrobe item given as context rather than replacing it.",
     "Return a complete, final travel plan in this response. Never narrate your search process, say that you will resume or continue searching, promise a later answer, or discuss an inability to access real-time search.",
     "Write a warm, concise, editorial plan organized around what the member actually asked for. Never invent a URL, venue name, or event.",
+    "If the context lists accommodation preferences, you may acknowledge the kind of stay the member wants in one short sentence, but never name, price, rate, or describe any specific hotel or rental — the app shows real stay options separately, from its own data.",
     languageLine,
   ].join(" ");
+}
+
+const STAY_BUDGET_WORDS: Record<KinStayBudget, string> = { 1: "budget-friendly", 2: "mid-range", 3: "luxury" };
+const APARTMENT_STAY_TYPE_WORDS: Record<KinApartmentStayType, string> = { entire_home: "entire home", apartment: "apartment", private_room: "private room" };
+
+function accommodationContextLines(accommodation: KinAccommodationRequest): string[] {
+  const lines: string[] = [];
+  if (accommodation.hotels) {
+    const details = [accommodation.hotels.stars ? `${accommodation.hotels.stars}-star` : null, accommodation.hotels.budget ? STAY_BUDGET_WORDS[accommodation.hotels.budget] : null].filter(Boolean);
+    lines.push(`Accommodation preference: hotels${details.length ? ` (${details.join(", ")})` : ""}`);
+  }
+  if (accommodation.apartments) {
+    const details = [accommodation.apartments.stayType ? APARTMENT_STAY_TYPE_WORDS[accommodation.apartments.stayType] : null, accommodation.apartments.budget ? STAY_BUDGET_WORDS[accommodation.apartments.budget] : null].filter(Boolean);
+    lines.push(`Accommodation preference: apartments and homes${details.length ? ` (${details.join(", ")})` : ""}`);
+  }
+  return lines;
 }
 
 function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: string): string {
@@ -474,6 +565,7 @@ function buildUserMessage(request: KinSearchRequest, myThingsItemContext?: strin
     if (request.destination) context.push(`Destination: ${request.destination}`);
     if (request.startDate) context.push(`Start date: ${request.startDate}`);
     if (request.endDate) context.push(`End date: ${request.endDate}`);
+    if (request.accommodation) context.push(...accommodationContextLines(request.accommodation));
   }
   if (myThingsItemContext) context.push(`Existing wardrobe item to consider: ${myThingsItemContext}`);
 
@@ -698,5 +790,107 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
   } catch (error) {
     logProviderError(error, { model: kinSearchModel(), webSearchEnabled: maxWebUses() > 0, correlationId });
     return { status: "unavailable", reason: sanitizeErrorReason("kin search request failed", error) };
+  }
+}
+
+// --- KIN Travel stays: one short "why KIN picked this" per real stay ------
+
+// Sized for one sentence per candidate across a whole stay pool (up to 20
+// per kind, both kinds in one call) — see staysForPlan in kin-travel.ts.
+const MAX_STAY_REASON_TOKENS = 2000;
+const MAX_STAY_REASON_LENGTH = 240;
+
+/** The real, code-supplied facts about one stay — the only material the model may reason from. */
+export type KinStayReasonInput = {
+  kind: "hotel" | "apartment";
+  name: string;
+  formattedAddress: string | null;
+  rating: number | null;
+  priceLevel: number | null;
+  types: string[];
+};
+
+function stayReasonsSystemPrompt(locale: "en" | "ar" | undefined): string {
+  const languageLine = locale === "ar"
+    ? "Write every sentence in Arabic, keeping the stay's own name exactly as given."
+    : locale === "en"
+      ? "Write every sentence in English, keeping the stay's own name exactly as given."
+      : "Write in the member's language, keeping the stay's own name exactly as given.";
+  return [
+    "You are KIN, TASTEKIN's travel assistant. The member is choosing where to stay. Below is a numbered list of real places the app already found, each with the only facts available about it.",
+    "For each numbered stay, write exactly one sentence (at most 25 words) explaining why it could suit this member's trip and stated preferences, using ONLY the facts given for that stay.",
+    "Never invent or imply amenities, nightly prices, star classes, distances, availability, reviews, or anything not listed. If the facts are thin, keep the sentence general rather than guessing.",
+    "Output exactly one line per stay, in the same order, in the form `<number>: <sentence>` — no headings, no extra lines, no markdown.",
+    languageLine,
+  ].join(" ");
+}
+
+const PRICE_LEVEL_WORDS: Record<number, string> = { 1: "inexpensive", 2: "moderate", 3: "expensive", 4: "very expensive" };
+
+function stayReasonsUserMessage(destination: string, accommodation: KinAccommodationRequest, stays: KinStayReasonInput[]): string {
+  const lines = [`Destination: ${destination}`, ...accommodationContextLines(accommodation), "", "Stays:"];
+  stays.forEach((stay, index) => {
+    const facts = [
+      stay.kind === "hotel" ? "hotel" : "apartment or home",
+      stay.formattedAddress ? `area: ${stay.formattedAddress}` : null,
+      stay.rating !== null ? `Google rating ${stay.rating}` : null,
+      stay.priceLevel !== null && PRICE_LEVEL_WORDS[stay.priceLevel] ? `price level: ${PRICE_LEVEL_WORDS[stay.priceLevel]}` : null,
+      stay.types.length ? `place types: ${stay.types.slice(0, 4).join(", ")}` : null,
+    ].filter(Boolean);
+    lines.push(`${index + 1}. ${stay.name} — ${facts.join("; ")}`);
+  });
+  return lines.join("\n");
+}
+
+/**
+ * Mechanical parse of `<number>: <sentence>` lines — the same fixed-delimiter
+ * idea as parseLooksOptions. A stay the model skipped simply has no reason
+ * (null on the card), never a fabricated one; anything past the cap is cut.
+ */
+export function parseStayReasons(answer: string, count: number): Map<number, string> {
+  const reasons = new Map<number, string>();
+  for (const rawLine of answer.split("\n")) {
+    const match = rawLine.trim().match(/^(\d+)\s*[:.)-]\s*(.+)$/);
+    if (!match) continue;
+    const index = Number.parseInt(match[1], 10) - 1;
+    if (!Number.isInteger(index) || index < 0 || index >= count || reasons.has(index)) continue;
+    const sentence = match[2].trim().replace(/\s+/g, " ").slice(0, MAX_STAY_REASON_LENGTH);
+    if (sentence) reasons.set(index, sentence);
+  }
+  return reasons;
+}
+
+/**
+ * One Anthropic call, no web search, for every stay in the list at once —
+ * never one call per stay. Returns the reasons it could parse, keyed by
+ * list index; any provider failure yields an empty map so the stays are
+ * still shown (with no reason) rather than the whole plan failing. Never
+ * retried — a retry is a second charge.
+ */
+export async function runKinStayReasons(
+  input: { destination: string; accommodation: KinAccommodationRequest; stays: KinStayReasonInput[]; locale?: "en" | "ar" },
+  correlationId?: string,
+): Promise<Map<number, string>> {
+  const client = anthropicClient();
+  if (!client || input.stays.length === 0) return new Map();
+  try {
+    const response = await client.messages.create(
+      {
+        model: kinSearchModel(),
+        max_tokens: MAX_STAY_REASON_TOKENS,
+        system: stayReasonsSystemPrompt(input.locale),
+        messages: [{ role: "user", content: stayReasonsUserMessage(input.destination, input.accommodation, input.stays) }],
+        thinking: { type: "adaptive" },
+        output_config: { effort: "low" },
+      },
+      { timeout: kinSearchTimeoutMs(), maxRetries: 0 },
+    );
+    logger.info({ correlationId: correlationId ?? null, providerRequestId: response.id, mode: "travel_stays", model: response.model, stopReason: response.stop_reason }, "KIN search: Anthropic completion");
+    if (response.stop_reason === "refusal") return new Map();
+    const answer = response.content.filter((block): block is Anthropic.TextBlock => block.type === "text").map((block) => block.text).join("\n");
+    return parseStayReasons(answer, input.stays.length);
+  } catch (error) {
+    logProviderError(error, { model: kinSearchModel(), webSearchEnabled: false, correlationId });
+    return new Map();
   }
 }

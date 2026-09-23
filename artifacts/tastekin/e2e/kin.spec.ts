@@ -533,7 +533,7 @@ test('Arabic Travel labels, Maps names, Back navigation, and both 390×844 steps
   await expect(page.getByRole('link', { name: 'افتح متحف المستقبل في خرائط Google' })).toHaveText('الاتجاهات');
   await expect(page.getByRole('link', { name: 'افتح حديقة زعبيل في خرائط Google' })).toHaveText('الاتجاهات');
   // Non-Latin destination is never touched by the display-casing cleanup.
-  await expect(page.locator('.kin-headline')).toHaveText('دبي، مصمم من أجلك.');
+  await expect(page.locator('.kin-headline')).toHaveText('دبي، مصمّمة على ذوقك.');
   await expect(page.locator('[data-testid="kin-hero-tag"]')).toHaveText('دبي');
 
   // Route tab is RTL-safe: an ordered stop list plus one combined
@@ -778,7 +778,7 @@ test('a Latin venue name and a mixed Arabic/Latin venue name render in full, not
   };
 
   // Destination isolation: "Paris" stays Latin-cased and legible inside the Arabic sentence and hero tag.
-  await expect(page.locator('.kin-headline')).toHaveText('Paris، مصمم من أجلك.');
+  await expect(page.locator('.kin-headline')).toHaveText('Paris، مصمّمة على ذوقك.');
   await expect(page.getByTestId('kin-hero-tag')).toHaveText('Paris');
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 
@@ -1504,4 +1504,310 @@ test('an Arabic blank-description photo request sends the localized fallback que
   await page.getByTestId('kin-save').click();
   await expect(page.getByTestId('kin-save')).toHaveText('تم الحفظ');
   expect(savedQuery).toBe(params.get('query'));
+});
+
+// --- KIN Travel: optional accommodation (Hotels / Apartments & Homes) ------
+
+function stayFixture(kind: 'hotel' | 'apartment', index: number) {
+  return {
+    kind,
+    placeId: `${kind}-${index}`,
+    name: `${kind === 'hotel' ? 'Hotel' : 'Apartment'} ${index}`,
+    formattedAddress: `${index} Stay Street, Old Town`,
+    lat: 48.85 + index * 0.001,
+    lng: 2.35,
+    rating: 4.2 + index * 0.1,
+    priceLevel: index === 3 ? null : (index % 3) + 1,
+    websiteUrl: index === 1 ? 'https://hotel-one.example.com' : null,
+    mapsUrl: `https://maps.google.com/?cid=${kind}-${index}`,
+    photoUrl: null,
+    photoAttribution: index === 1 ? 'Stay Photographer' : null,
+    reason: index === 3 ? null : `KIN reason for ${kind} ${index}`,
+  };
+}
+
+function planWithStays(destination: string, stays: Record<string, unknown> | undefined) {
+  return {
+    status: 'ok',
+    plan: {
+      destination,
+      narrative: '',
+      citations: [],
+      days: [{
+        dayIndex: 0,
+        date: null,
+        routes: [],
+        places: [{ placeId: 'stop-1', name: 'Museum Stop', formattedAddress: null, lat: 48.86, lng: 2.34, rating: 4.6, websiteUrl: null, mapsUrl: 'https://maps.google.com/?cid=stop-1', photoUrl: null, photoAttribution: null, slot: null, activityInterest: 'museums', openingHours: null }],
+      }],
+      ...(stays ? { stays } : {}),
+    },
+  };
+}
+
+async function gotoTravelInterests(page: Page, destination: string) {
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill(destination);
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByRole('heading', { name: 'Choose your interests' })).toBeVisible();
+}
+
+test('Travel step 2 offers optional Hotels and Apartments & Homes cards first; with neither picked the request carries no accommodation and the plan has no Stay options', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  let sentBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('Rome', undefined)) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoTravelInterests(page, 'Rome');
+  const cards = page.getByTestId('kin-interest-grid').locator('.kin-interest-card');
+  await expect(cards.nth(0)).toHaveText('Hotels');
+  await expect(cards.nth(1)).toHaveText('Apartments & Homes');
+  await expect(page.getByTestId('kin-interest-hotels')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('kin-interest-apartments')).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.getByTestId('kin-stay-sheet')).toHaveCount(0);
+  await page.getByTestId('kin-interest-museums').click();
+  await page.getByTestId('kin-travel-submit').click();
+  await expect.poll(() => sentBody?.destination).toBe('Rome');
+  expect(sentBody?.accommodation).toBeUndefined();
+  await expect(page.getByTestId('kin-day-preview')).toBeVisible();
+  await expect(page.getByTestId('kin-stays')).toHaveCount(0);
+  await expect(page.getByText('Stay options')).toHaveCount(0);
+});
+
+test('Hotels opens the Hotel preferences sheet; star and budget picks are sent as structured accommodation; Stay options render once above Day 1 with details, select, and paging', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  let sentBody: Record<string, unknown> | undefined;
+  let planCalls = 0;
+  let staysBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    planCalls += 1;
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('Paris', { hotels: { items: [stayFixture('hotel', 1), stayFixture('hotel', 2), stayFixture('hotel', 3)], hasMore: true } })) });
+  });
+  await page.route('**/api/kin/travel/stays', async (route) => {
+    staysBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', items: [stayFixture('hotel', 4), stayFixture('hotel', 5), stayFixture('hotel', 6)], hasMore: false }) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoTravelInterests(page, 'Paris');
+
+  await page.getByTestId('kin-interest-hotels').click();
+  const sheet = page.getByTestId('kin-stay-sheet');
+  await expect(sheet).toBeVisible();
+  await expect(sheet.getByRole('heading', { name: 'Hotel preferences' })).toBeVisible();
+  await expect(sheet.getByText('Star rating')).toBeVisible();
+  await expect(sheet.getByText('Budget per night')).toBeVisible();
+  await expect(sheet.getByText('Stay type')).toHaveCount(0);
+  for (const label of ['3 Stars', '4 Stars', '5 Stars', 'Any rating', '$', '$$', '$$$']) await expect(sheet.getByText(label, { exact: true })).toBeVisible();
+  // Star rating is only ever a search preference — the sheet says so.
+  await expect(page.getByTestId('kin-stay-stars-hint')).toHaveText("A search preference only — KIN can't verify a hotel's official star class.");
+  await page.getByTestId('kin-stay-stars-4').click();
+  await expect(page.getByTestId('kin-stay-stars-4')).toHaveAttribute('aria-pressed', 'true');
+  await page.getByTestId('kin-stay-budget-2').click();
+  await page.getByTestId('kin-stay-done').click();
+  await expect(sheet).toBeHidden();
+  await expect(page.getByTestId('kin-interest-hotels')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('kin-stay-summary-hotel')).toHaveText('4 Stars · $$');
+  await page.getByTestId('kin-interest-cafes').click();
+  await page.getByTestId('kin-travel-submit').click();
+  await expect.poll(() => sentBody?.destination).toBe('Paris');
+  expect(sentBody?.interests).toEqual(['cafes']);
+  expect(sentBody?.accommodation).toEqual({ hotels: { stars: 4, budget: 2 } });
+
+  const stays = page.getByTestId('kin-stays');
+  await expect(stays).toBeVisible();
+  await expect(stays.getByText('Stay options')).toBeVisible();
+  await expect(page.getByTestId('kin-stay-tabs')).toHaveCount(0);
+  const cards = page.getByTestId('kin-stay-card');
+  await expect(cards).toHaveCount(3);
+  const first = cards.nth(0);
+  await expect(first).toContainText('Hotel 1');
+  await expect(first).toContainText('1 Stay Street, Old Town');
+  await expect(first.getByTestId('kin-stay-rating')).toHaveText('4.3 · Google rating');
+  // Google's price band is labeled as exactly that — never presented as a nightly rate.
+  await expect(first.getByTestId('kin-stay-price')).toHaveText('Price level: $$');
+  await expect(page.getByText(/per night/)).toHaveCount(0);
+  await expect(first.getByTestId('kin-stay-reason')).toHaveText('KIN reason for hotel 1');
+  await expect(first).toContainText('Stay Photographer');
+  // A stay with no Google price band and no reason says so, and shows nothing invented.
+  const third = cards.nth(2);
+  await expect(third.getByTestId('kin-stay-price')).toHaveText('Price unavailable');
+  await expect(third.getByTestId('kin-stay-reason')).toHaveCount(0);
+  // Once, above the first day — never inside a day's timeline.
+  const [staysBox, toggleBox, dayBox] = await Promise.all([stays.boundingBox(), page.getByTestId('kin-plan-route-toggle').boundingBox(), page.getByTestId('kin-day-preview').boundingBox()]);
+  expect(staysBox!.y + staysBox!.height).toBeLessThanOrEqual(toggleBox!.y);
+  expect(staysBox!.y + staysBox!.height).toBeLessThanOrEqual(dayBox!.y);
+  await expect(page.getByTestId('kin-day-preview').getByTestId('kin-stay-card')).toHaveCount(0);
+
+  // Select is a single choice per kind.
+  await first.getByTestId('kin-stay-select').click();
+  await expect(first.getByTestId('kin-stay-select')).toHaveAttribute('aria-pressed', 'true');
+  await expect(first.getByTestId('kin-stay-select')).toHaveText('Selected');
+  await expect(first).toHaveAttribute('data-selected', 'true');
+  await cards.nth(1).getByTestId('kin-stay-select').click();
+  await expect(first).toHaveAttribute('data-selected', 'false');
+  await expect(cards.nth(1)).toHaveAttribute('data-selected', 'true');
+
+  // View details shows the same real facts plus the stay's own links.
+  await first.getByTestId('kin-stay-details').click();
+  const details = page.getByTestId('kin-stay-details-sheet');
+  await expect(details).toBeVisible();
+  await expect(details).toContainText('Hotel 1');
+  await expect(details).toContainText('KIN reason for hotel 1');
+  await expect(details.getByTestId('kin-stay-website')).toHaveAttribute('href', 'https://hotel-one.example.com');
+  await expect(details.getByTestId('kin-stay-maps')).toHaveAttribute('href', 'https://maps.google.com/?cid=hotel-1');
+  await expect(details.getByTestId('kin-stay-details-select')).toHaveText('Select this stay');
+  await details.getByTestId('kin-stay-details-select').click();
+  await expect(details.getByTestId('kin-stay-details-select')).toHaveText('Selected');
+  await page.keyboard.press('Escape');
+  await expect(details).toBeHidden();
+  await expect(first).toHaveAttribute('data-selected', 'true');
+  await expect(cards.nth(1)).toHaveAttribute('data-selected', 'false');
+
+  // Show more stays appends a new page from the same submitted preferences and never re-plans.
+  const more = page.getByTestId('kin-stays-more');
+  await expect(more).toHaveText('Show more stays');
+  await more.click();
+  await expect.poll(() => staysBody?.kind).toBe('hotel');
+  expect(staysBody).toEqual({ destination: 'Paris', kind: 'hotel', accommodation: { hotels: { stars: 4, budget: 2 } }, excludePlaceIds: ['hotel-1', 'hotel-2', 'hotel-3'], locale: 'en' });
+  await expect(cards).toHaveCount(6);
+  await expect(cards.nth(3)).toContainText('Hotel 4');
+  await expect(first).toHaveAttribute('data-selected', 'true');
+  await expect(more).toBeDisabled();
+  await expect(more).toHaveText('No more stays');
+  expect(planCalls).toBe(1);
+  await expect(page.getByTestId('kin-travel-place')).toHaveCount(1);
+});
+
+test('both cards: Remove deselects from the sheet, Any rating sends no stars, the Apartment sheet has stay type, accommodation alone is a valid request, and Stay options get Hotels / Apartments & Homes tabs', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  let sentBody: Record<string, unknown> | undefined;
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    sentBody = route.request().postDataJSON();
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('Lisbon', {
+      hotels: { items: [stayFixture('hotel', 1), stayFixture('hotel', 2), stayFixture('hotel', 3)], hasMore: false },
+      apartments: { items: [stayFixture('apartment', 1), stayFixture('apartment', 2)], hasMore: false },
+    })) });
+  });
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoTravelInterests(page, 'Lisbon');
+
+  await page.getByTestId('kin-interest-hotels').click();
+  await page.getByTestId('kin-stay-remove').click();
+  await expect(page.getByTestId('kin-stay-sheet')).toBeHidden();
+  await expect(page.getByTestId('kin-interest-hotels')).toHaveAttribute('aria-pressed', 'false');
+  await page.getByTestId('kin-interest-hotels').click();
+  await page.getByTestId('kin-stay-stars-any').click();
+  await page.getByTestId('kin-stay-done').click();
+  await expect(page.getByTestId('kin-stay-summary-hotel')).toHaveText('Any rating');
+
+  await page.getByTestId('kin-interest-apartments').click();
+  const sheet = page.getByTestId('kin-stay-sheet');
+  await expect(sheet.getByRole('heading', { name: 'Apartment preferences' })).toBeVisible();
+  await expect(sheet.getByText('Stay type')).toBeVisible();
+  await expect(sheet.getByText('Star rating')).toHaveCount(0);
+  for (const label of ['Entire home', 'Apartment', 'Private room']) await expect(sheet.getByText(label, { exact: true })).toBeVisible();
+  await page.getByTestId('kin-stay-type-entire_home').click();
+  await page.getByTestId('kin-stay-budget-3').click();
+  await page.getByTestId('kin-stay-done').click();
+  await expect(page.getByTestId('kin-stay-summary-apartment')).toHaveText('Entire home · $$$');
+
+  await page.getByTestId('kin-travel-submit').click();
+  await expect.poll(() => sentBody?.destination).toBe('Lisbon');
+  expect(sentBody?.interests).toBeUndefined();
+  expect(sentBody?.accommodation).toEqual({ hotels: {}, apartments: { stayType: 'entire_home', budget: 3 } });
+
+  const tabs = page.getByTestId('kin-stay-tabs');
+  await expect(tabs).toBeVisible();
+  await expect(tabs.getByTestId('kin-stay-tab-hotel')).toHaveText('Hotels');
+  await expect(tabs.getByTestId('kin-stay-tab-apartment')).toHaveText('Apartments & Homes');
+  await expect(tabs.getByTestId('kin-stay-tab-hotel')).toHaveClass(/selected/);
+  await expect(page.getByTestId('kin-stay-card')).toHaveCount(3);
+  await expect(page.getByTestId('kin-stay-card').first()).toContainText('Hotel 1');
+  await tabs.getByTestId('kin-stay-tab-apartment').click();
+  await expect(tabs.getByTestId('kin-stay-tab-apartment')).toHaveClass(/selected/);
+  await expect(page.getByTestId('kin-stay-card')).toHaveCount(2);
+  await expect(page.getByTestId('kin-stay-card').first()).toContainText('Apartment 1');
+  await expect(page.getByTestId('kin-stays-more')).toBeDisabled();
+  await expect(page.getByTestId('kin-stays')).toHaveCount(1);
+  await expect(page.getByTestId('kin-day-preview').getByTestId('kin-stay-card')).toHaveCount(0);
+});
+
+test('Arabic accommodation cards, preference sheet, and Stay options are RTL-safe with no horizontal overflow at 390×844', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  await page.route('**/api/kin/travel/plan', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('دبي', { hotels: { items: [stayFixture('hotel', 1), stayFixture('hotel', 2), stayFixture('hotel', 3)], hasMore: true } })) });
+  });
+  await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('nav-kin').click();
+  await page.getByTestId('kin-mode-travel').click();
+  await page.getByTestId('kin-destination').fill('دبي');
+  await page.getByTestId('kin-travel-next').click();
+  await expect(page.getByTestId('kin-interest-hotels')).toHaveText('فنادق');
+  await expect(page.getByTestId('kin-interest-apartments')).toHaveText('شقق ومنازل');
+  await page.getByTestId('kin-interest-hotels').click();
+  const sheet = page.getByTestId('kin-stay-sheet');
+  await expect(sheet.getByRole('heading', { name: 'تفضيلات الفندق' })).toBeVisible();
+  await expect(sheet.getByText('تصنيف النجوم', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kin-stay-stars-hint')).toHaveText('تفضيل للبحث فقط — لا يمكن لكين التحقق من تصنيف النجوم الرسمي للفندق.');
+  await expect(sheet.getByText('الميزانية لليلة', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kin-stay-stars-4')).toHaveText('4 نجوم');
+  await expect(page.getByTestId('kin-stay-stars-any')).toHaveText('أي تصنيف');
+  const done = page.getByTestId('kin-stay-done');
+  await expect(done).toHaveText('تم');
+  // Measured once the sheet's slide-up has settled: it must span the full
+  // 390px width from x=0 (not sit shifted in RTL), sit entirely inside the
+  // viewport with Done and Remove reachable, lay the four star options out
+  // as a 2×2 grid with nothing clipped, and the page itself must never
+  // scroll horizontally.
+  const layout = () => page.evaluate(() => {
+    const rect = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!.getBoundingClientRect();
+    const sheet = rect('kin-stay-sheet');
+    const stars = ['kin-stay-stars-3', 'kin-stay-stars-4', 'kin-stay-stars-5', 'kin-stay-stars-any'].map(rect);
+    return {
+      scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth,
+      sheetX: sheet.x, sheetRight: sheet.right, sheetTop: sheet.y, doneBottom: rect('kin-stay-done').bottom, removeBottom: rect('kin-stay-remove').bottom, viewport: window.innerHeight,
+      starsInside: stars.every((s) => s.x >= 0 && s.right <= 390),
+      twoByTwo: stars[0].y === stars[1].y && stars[2].y === stars[3].y && stars[2].y > stars[0].y,
+    };
+  });
+  await expect.poll(async () => {
+    const l = await layout();
+    return l.sheetX === 0 && l.sheetRight === 390 && l.sheetTop >= 0 && l.doneBottom <= l.viewport && l.removeBottom <= l.viewport && l.starsInside && l.twoByTwo;
+  }).toBe(true);
+  expect((await layout()).scrollWidth).toBe((await layout()).clientWidth);
+  await page.getByTestId('kin-stay-stars-4').click();
+  await done.click();
+  await expect(page.getByTestId('kin-stay-summary-hotel')).toHaveText('4 نجوم');
+  await page.getByTestId('kin-travel-submit').click();
+  const stays = page.getByTestId('kin-stays');
+  await expect(stays.getByText('خيارات الإقامة')).toBeVisible();
+  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-details')).toHaveText('عرض التفاصيل');
+  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-select')).toHaveText('اختيار');
+  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-price')).toHaveText('مستوى السعر: $$');
+  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-rating')).toHaveText('4.3 · تقييم Google');
+  await expect(page.getByTestId('kin-stays-more')).toHaveText('عرض المزيد من الإقامات');
+  const overview = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
+  expect(overview.scrollWidth).toBe(overview.clientWidth);
+});
+
+test('the Arabic Travel headline agrees in gender with the destination: feminine by default, masculine for the known masculine country names', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  for (const [destination, headline] of [['باريس', 'باريس، مصمّمة على ذوقك.'], ['لبنان', 'لبنان، مصمّم على ذوقك.'], ['المغرب', 'المغرب، مصمّم على ذوقك.'], ['Paris', 'Paris، مصمّمة على ذوقك.']] as const) {
+    await page.route('**/api/kin/travel/plan', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays(destination, undefined)) });
+    });
+    await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('nav-kin').click();
+    await page.getByTestId('kin-mode-travel').click();
+    await page.getByTestId('kin-destination').fill(destination);
+    await page.getByTestId('kin-travel-next').click();
+    await page.getByTestId('kin-interest-museums').click();
+    await page.getByTestId('kin-travel-submit').click();
+    await expect(page.locator('.kin-headline')).toHaveText(headline);
+    await page.unroute('**/api/kin/travel/plan');
+  }
 });
