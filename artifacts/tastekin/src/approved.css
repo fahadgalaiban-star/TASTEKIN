@@ -918,15 +918,22 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 /* KIN Travel — optional accommodation (Hotels / Apartments & Homes) */
 .kin-interest-label { display:flex; min-width:0; flex-direction:column; gap:2px; }
 .kin-interest-summary { font-size:11px; font-weight:600; opacity:.85; }
-.kin-stay-sheet { max-height:85vh; overflow-y:auto; }
-.kin-stay-sheet-title { margin:0 0 6px; color:var(--tk-ink); font-family:'Lora', serif; font-size:24px; font-weight:500; line-height:1.2; letter-spacing:-.01em; text-align:start; }
-.kin-stay-field-label { display:block; margin:14px 0 8px; color:var(--tk-stone); font-size:13px; font-weight:600; text-align:start; }
+/* The sheet never exceeds the visible viewport (dynamic-viewport units for
+   mobile browser chrome, with a vh fallback); only its body scrolls, so Done
+   and Remove stay reachable, and nothing reserves empty height. */
+.kin-stay-sheet { max-height:85vh; max-height:min(88dvh, calc(100dvh - 16px)); overflow:hidden; padding-bottom:0; }
+.kin-stay-sheet-title { flex:0 0 auto; margin:0 0 6px; color:var(--tk-ink); font-family:'Lora', serif; font-size:24px; font-weight:500; line-height:1.2; letter-spacing:-.01em; text-align:start; overflow-wrap:anywhere; }
+.kin-stay-sheet-body { flex:1 1 auto; min-height:0; overflow-y:auto; -webkit-overflow-scrolling:touch; overscroll-behavior:contain; padding-bottom:4px; }
+.kin-stay-sheet-footer { flex:0 0 auto; padding:12px 0 max(12px, env(safe-area-inset-bottom)); background:var(--tk-card); }
+.kin-stay-field-label { display:block; margin:12px 0 8px; color:var(--tk-stone); font-size:13px; font-weight:600; text-align:start; }
 .kin-stay-options { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-.kin-stay-options.four { grid-template-columns:repeat(4,minmax(0,1fr)); }
-.kin-stay-options button { min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:8px 4px; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:600; }
+.kin-stay-options-stars { grid-template-columns:repeat(2,minmax(0,1fr)); }
+@media (min-width:480px) { .kin-stay-options-stars { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+.kin-stay-options button { min-width:0; min-height:52px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; padding:8px 6px; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:600; text-align:center; overflow-wrap:anywhere; }
 .kin-stay-options button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .kin-stay-stars { display:inline-flex; gap:1px; }
-.kin-stay-done { margin-top:20px; }
+.kin-stay-hint { margin:8px 0 0; color:var(--tk-stone); font-size:11px; line-height:1.4; text-align:start; }
+.kin-stay-done { margin-top:0; }
 .kin-stay-remove { width:100%; min-height:44px; margin-top:4px; border:0; background:transparent; color:var(--tk-stone); font-size:12px; font-weight:700; text-decoration:underline; }
 .kin-stays { margin:0 0 20px; }
 .kin-stays > .kin-day-kicker { display:block; margin-bottom:10px; }

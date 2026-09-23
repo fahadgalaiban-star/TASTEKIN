@@ -473,7 +473,7 @@ async function routeBetween(from: KinTravelNeighbour, to: KinTravelNeighbour): P
  * nothing genuine to add over plain KIN Travel search, so it reports
  * unavailable rather than fabricating an itinerary.
  */
-export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemContext?: string, correlationId?: string): Promise<KinTravelResult> {
+export async function runKinTravelPlan(request: KinSearchRequest, userId: string, myThingsItemContext?: string, correlationId?: string): Promise<KinTravelResult> {
   if (!request.destination) return { status: "unavailable", reason: "destination required" };
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
 
@@ -486,7 +486,7 @@ export async function runKinTravelPlan(request: KinSearchRequest, myThingsItemCo
   // there is no reason to serialize the two round-trips.
   const [searchResult, stays] = await Promise.all([
     runKinSearch(request, myThingsItemContext, undefined, correlationId),
-    request.accommodation ? staysForPlan(request.destination, request.accommodation, request.locale, correlationId) : Promise.resolve(undefined),
+    request.accommodation ? staysForPlan(userId, request.destination, request.accommodation, request.locale, correlationId) : Promise.resolve(undefined),
   ]);
   if (searchResult.status !== "ok") return { status: "unavailable", reason: searchResult.reason ?? "incomplete recommendation" };
 
@@ -590,62 +590,142 @@ async function resolveStay(kind: KinStayKind, place: GooglePlace): Promise<KinTr
   };
 }
 
-type StayPageEntry = { stay: KinTravelStay; types: string[] };
-type StayPage = { status: "ok"; entries: StayPageEntry[]; hasMore: boolean } | { status: "unavailable"; reason: string };
+/**
+ * The candidate pool for one (member, destination, kind, preferences,
+ * locale): Google's ranked results plus KIN's reason for every one of them,
+ * produced once. "Show more stays" pages through this — it never re-runs
+ * the Places search or the reasons call while the pool is alive, and it
+ * consumes no daily-quota attempt on a hit (see routes/kin.ts). Kept in
+ * process memory with a TTL and a size cap; on a miss (expired, evicted,
+ * or another autoscale instance) the providers are called once more, and
+ * that miss is the only case that costs a quota attempt.
+ */
+type StayPool = { candidates: GooglePlace[]; reasons: Map<string, string | null>; expiresAt: number };
+const STAY_POOL_TTL_MS = 60 * 60 * 1000;
+const STAY_POOL_MAX_ENTRIES = 500;
+const stayPools = new Map<string, StayPool>();
 
-/** One page of real stays of one kind — the next STAY_PAGE_SIZE candidates not already shown. No reasons yet. */
-async function fetchStayPage(destination: string, kind: KinStayKind, accommodation: KinAccommodationRequest, excludePlaceIds: ReadonlySet<string>): Promise<StayPage> {
+function stayPoolKey(userId: string, destination: string, kind: KinStayKind, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined): string {
+  const prefs = kind === "hotel" ? accommodation.hotels ?? {} : accommodation.apartments ?? {};
+  return [userId, destination.trim().toLowerCase(), kind, JSON.stringify(prefs), locale ?? ""].join("|");
+}
+
+function getStayPool(key: string): StayPool | null {
+  const pool = stayPools.get(key);
+  if (!pool) return null;
+  if (pool.expiresAt <= Date.now()) { stayPools.delete(key); return null; }
+  return pool;
+}
+
+function setStayPool(key: string, pool: StayPool): void {
+  if (!stayPools.has(key) && stayPools.size >= STAY_POOL_MAX_ENTRIES) {
+    const oldest = stayPools.keys().next().value;
+    if (oldest !== undefined) stayPools.delete(oldest);
+  }
+  stayPools.set(key, pool);
+}
+
+/** Whether "Show more stays" can be served without any provider call — the route reserves a quota attempt only when this is false. */
+export function hasCachedStayPool(userId: string, destination: string, kind: KinStayKind, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined): boolean {
+  return getStayPool(stayPoolKey(userId, destination, kind, accommodation, locale)) !== null;
+}
+
+/** Test-only: forget every cached pool so a fresh process state can be simulated. */
+export function clearStayPoolsForTests(): void {
+  stayPools.clear();
+}
+
+type StayCandidatesResult = { status: "ok"; candidates: GooglePlace[] } | { status: "unavailable"; reason: string };
+
+/** One Google Places text search for the whole ranked, deduplicated pool of one kind. */
+async function fetchStayCandidates(destination: string, kind: KinStayKind, accommodation: KinAccommodationRequest): Promise<StayCandidatesResult> {
   const intent = stayIntentFor(kind, accommodation, destination);
   const result = await searchPlaces(intent.query, STAY_CANDIDATE_POOL_SIZE, intent.type, false);
   if (result.status !== "ok") return { status: "unavailable", reason: `${kind} stays unavailable: ${result.reason}` };
   const seen = new Set<string>();
-  const fresh = rankStayCandidates(result.places, intent.budget)
-    .filter((place) => !excludePlaceIds.has(place.placeId) && !seen.has(place.placeId) && Boolean(seen.add(place.placeId)));
-  const page = fresh.slice(0, STAY_PAGE_SIZE);
-  const stays = await Promise.all(page.map((place) => resolveStay(kind, place)));
-  return {
-    status: "ok",
-    entries: stays.map((stay, index) => ({ stay, types: page[index].types })),
-    hasMore: fresh.length > page.length,
-  };
-}
-
-function stayReasonInput(entry: StayPageEntry): KinStayReasonInput {
-  const { stay } = entry;
-  return { kind: stay.kind, name: stay.name, formattedAddress: stay.formattedAddress, rating: stay.rating, priceLevel: stay.priceLevel, types: entry.types };
-}
-
-/** One Anthropic call for every entry across all pages given — never one per stay or per kind. Mutates each stay's reason in place; a missing line leaves it null. */
-async function attachStayReasons(destination: string, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined, entries: StayPageEntry[], correlationId?: string): Promise<void> {
-  if (entries.length === 0) return;
-  const reasons = await runKinStayReasons({ destination, accommodation, locale, stays: entries.map(stayReasonInput) }, correlationId);
-  entries.forEach((entry, index) => { entry.stay.reason = reasons.get(index) ?? null; });
+  const candidates = rankStayCandidates(result.places, intent.budget).filter((place) => !seen.has(place.placeId) && Boolean(seen.add(place.placeId)));
+  return { status: "ok", candidates };
 }
 
 /**
- * The plan's initial stays: one page per picked kind, fetched in parallel,
- * then a single reasons call covering both. A kind whose lookup fails is
- * returned empty (and logged) rather than failing the itinerary — the
- * member still gets their days; the section simply has nothing to show.
+ * One Anthropic call for every candidate of every pool given — never one
+ * per stay, per page, or per kind. Keyed by kind + placeId (the same place
+ * can legitimately appear in both kinds' pools). A line the model skipped
+ * is null, never invented.
  */
-async function staysForPlan(destination: string, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined, correlationId?: string): Promise<KinTravelStays> {
+async function reasonsForPools(
+  destination: string,
+  accommodation: KinAccommodationRequest,
+  locale: "en" | "ar" | undefined,
+  pools: Array<{ kind: KinStayKind; candidates: GooglePlace[] }>,
+  correlationId?: string,
+): Promise<Map<string, string | null>> {
+  const inputs = pools.flatMap(({ kind, candidates }) => candidates.map((place) => ({ kind, place })));
+  const byKey = new Map<string, string | null>();
+  if (inputs.length === 0) return byKey;
+  const stays: KinStayReasonInput[] = inputs.map(({ kind, place }) => ({
+    kind, name: place.name, formattedAddress: place.formattedAddress, rating: place.rating, priceLevel: place.priceLevel, types: place.types,
+  }));
+  const reasons = await runKinStayReasons({ destination, accommodation, locale, stays }, correlationId);
+  inputs.forEach(({ kind, place }, index) => byKey.set(`${kind}:${place.placeId}`, reasons.get(index) ?? null));
+  return byKey;
+}
+
+function poolReasonsForKind(byKey: Map<string, string | null>, kind: KinStayKind, candidates: GooglePlace[]): Map<string, string | null> {
+  return new Map(candidates.map((place) => [place.placeId, byKey.get(`${kind}:${place.placeId}`) ?? null]));
+}
+
+/** The next STAY_PAGE_SIZE candidates not already shown, with only their photos resolved now (Google photo URLs are short-lived, so they are never cached). */
+async function pageFromPool(kind: KinStayKind, pool: StayPool, excludePlaceIds: ReadonlySet<string>): Promise<KinTravelStayGroup> {
+  const fresh = pool.candidates.filter((place) => !excludePlaceIds.has(place.placeId));
+  const page = fresh.slice(0, STAY_PAGE_SIZE);
+  const items = await Promise.all(page.map((place) => resolveStay(kind, place)));
+  for (const stay of items) stay.reason = pool.reasons.get(stay.placeId) ?? null;
+  return { items, hasMore: fresh.length > page.length };
+}
+
+/**
+ * The plan's initial stays: one pool per picked kind, fetched in parallel,
+ * then a single reasons call covering every candidate of both — cached so
+ * paging costs nothing further. A kind whose lookup fails is returned
+ * empty (and logged) rather than failing the itinerary — the member still
+ * gets their days; the section simply has nothing to show.
+ */
+async function staysForPlan(userId: string, destination: string, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined, correlationId?: string): Promise<KinTravelStays> {
   const kinds: KinStayKind[] = [...(accommodation.hotels ? ["hotel" as const] : []), ...(accommodation.apartments ? ["apartment" as const] : [])];
-  const pages = await Promise.all(kinds.map((kind) => fetchStayPage(destination, kind, accommodation, new Set())));
-  await attachStayReasons(destination, accommodation, locale, pages.flatMap((page) => page.status === "ok" ? page.entries : []), correlationId);
+  const results = await Promise.all(kinds.map((kind) => fetchStayCandidates(destination, kind, accommodation)));
+  const fetched = kinds.map((kind, index) => ({ kind, result: results[index] }));
+  const byKey = await reasonsForPools(
+    destination, accommodation, locale,
+    fetched.flatMap(({ kind, result }) => result.status === "ok" ? [{ kind, candidates: result.candidates }] : []),
+    correlationId,
+  );
+  const groups = await Promise.all(fetched.map(async ({ kind, result }): Promise<[KinStayKind, KinTravelStayGroup]> => {
+    if (result.status !== "ok") {
+      logger.warn({ correlationId: correlationId ?? null, kind, reason: result.reason }, "KIN travel: stay lookup unavailable");
+      return [kind, { items: [], hasMore: false }];
+    }
+    const pool: StayPool = { candidates: result.candidates, reasons: poolReasonsForKind(byKey, kind, result.candidates), expiresAt: Date.now() + STAY_POOL_TTL_MS };
+    setStayPool(stayPoolKey(userId, destination, kind, accommodation, locale), pool);
+    return [kind, await pageFromPool(kind, pool, new Set())];
+  }));
   const stays: KinTravelStays = {};
-  kinds.forEach((kind, index) => {
-    const page = pages[index];
-    if (page.status !== "ok") logger.warn({ correlationId: correlationId ?? null, kind, reason: page.reason }, "KIN travel: stay lookup unavailable");
-    const group: KinTravelStayGroup = page.status === "ok" ? { items: page.entries.map((entry) => entry.stay), hasMore: page.hasMore } : { items: [], hasMore: false };
+  for (const [kind, group] of groups) {
     if (kind === "hotel") stays.hotels = group; else stays.apartments = group;
-  });
+  }
   return stays;
 }
 
 export type KinTravelStaysResult = { status: "ok"; group: KinTravelStayGroup } | { status: "unavailable"; reason: string };
 
-/** "Show more stays": the next page of one kind, excluding everything already shown. Never touches the itinerary. */
+/**
+ * "Show more stays": the next page of one kind from the cached pool,
+ * excluding everything already shown. Only on a pool miss are the Places
+ * search and the reasons call made (once, for the whole pool). Never
+ * touches the itinerary.
+ */
 export async function searchStays(
+  userId: string,
   destination: string,
   kind: KinStayKind,
   accommodation: KinAccommodationRequest,
@@ -654,10 +734,16 @@ export async function searchStays(
   correlationId?: string,
 ): Promise<KinTravelStaysResult> {
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
-  const page = await fetchStayPage(destination, kind, accommodation, excludePlaceIds);
-  if (page.status !== "ok") return page;
-  await attachStayReasons(destination, accommodation, locale, page.entries, correlationId);
-  return { status: "ok", group: { items: page.entries.map((entry) => entry.stay), hasMore: page.hasMore } };
+  const key = stayPoolKey(userId, destination, kind, accommodation, locale);
+  let pool = getStayPool(key);
+  if (!pool) {
+    const result = await fetchStayCandidates(destination, kind, accommodation);
+    if (result.status !== "ok") return result;
+    const byKey = await reasonsForPools(destination, accommodation, locale, [{ kind, candidates: result.candidates }], correlationId);
+    pool = { candidates: result.candidates, reasons: poolReasonsForKind(byKey, kind, result.candidates), expiresAt: Date.now() + STAY_POOL_TTL_MS };
+    setStayPool(key, pool);
+  }
+  return { status: "ok", group: await pageFromPool(kind, pool, excludePlaceIds) };
 }
 
 export type KinTravelSwapResult =

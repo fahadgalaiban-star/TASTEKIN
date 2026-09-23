@@ -3162,10 +3162,10 @@ const KIN_APARTMENT_STAY_TYPE_OPTIONS: { value: KinApartmentStayType; en: string
 type KinStayPreferences = { hotelStars: KinHotelStars | 'any' | null; hotelBudget: KinStayBudget | null; apartmentStayType: KinApartmentStayType | null; apartmentBudget: KinStayBudget | null };
 const EMPTY_STAY_PREFERENCES: KinStayPreferences = { hotelStars: null, hotelBudget: null, apartmentStayType: null, apartmentBudget: null };
 
-/** Google's price band as $-signs. Only ever shown as an approximation — Places never returns a nightly rate, and a missing band is said so rather than guessed. */
+/** Google's price band as $-signs, labeled as exactly that — Places never returns a nightly room rate, so this is never presented as one, and a missing band says so rather than guessing. */
 function kinStayPriceLabel(priceLevel: number | null, ar: boolean): string {
-  if (priceLevel === null) return ar ? 'السعر غير مدرج' : 'Price not listed';
-  return `${'$'.repeat(Math.min(Math.max(priceLevel, 1), 4))} · ${ar ? 'لليلة تقريبًا' : 'approx. per night'}`;
+  if (priceLevel === null) return ar ? 'السعر غير متاح' : 'Price unavailable';
+  return `${ar ? 'مستوى السعر' : 'Price level'}: ${'$'.repeat(Math.min(Math.max(priceLevel, 1), 4))}`;
 }
 
 /** The Hotel / Apartment preferences bottom sheet. Every choice is optional and tappable again to clear; Done simply closes it. */
@@ -3180,32 +3180,37 @@ function KinStayPreferencesSheet({ kind, ar, prefs, onChange, onDone, onRemove }
       <Drawer.Content className="approved-drawer-content kin-stay-sheet" aria-label={title} data-testid="kin-stay-sheet">
         <div className="approved-drawer-handle" />
         <h2 className="kin-stay-sheet-title">{title}</h2>
-        {kind === 'hotel' && <>
-          <span className="kin-stay-field-label">{t('Star rating', 'تصنيف النجوم')}</span>
-          <div className="kin-stay-options four">
-            {KIN_HOTEL_STAR_OPTIONS.map((option) => <button type="button" key={String(option.value)} aria-pressed={prefs.hotelStars === option.value} className={prefs.hotelStars === option.value ? 'selected' : ''}
-              data-testid={`kin-stay-stars-${option.value}`} onClick={() => onChange({ ...prefs, hotelStars: prefs.hotelStars === option.value ? null : option.value })}>
-              <span>{t(option.en, option.ar)}</span>
-              <span className="kin-stay-stars" aria-hidden="true">{Array.from({ length: option.stars }, (_, index) => <Star key={index} size={11} />)}</span>
-            </button>)}
-          </div>
-        </>}
-        {kind === 'apartment' && <>
-          <span className="kin-stay-field-label">{t('Stay type', 'نوع الإقامة')}</span>
+        <div className="kin-stay-sheet-body" data-testid="kin-stay-sheet-body">
+          {kind === 'hotel' && <>
+            <span className="kin-stay-field-label">{t('Star rating', 'تصنيف النجوم')}</span>
+            <div className="kin-stay-options kin-stay-options-stars" data-testid="kin-stay-stars-grid">
+              {KIN_HOTEL_STAR_OPTIONS.map((option) => <button type="button" key={String(option.value)} aria-pressed={prefs.hotelStars === option.value} className={prefs.hotelStars === option.value ? 'selected' : ''}
+                data-testid={`kin-stay-stars-${option.value}`} onClick={() => onChange({ ...prefs, hotelStars: prefs.hotelStars === option.value ? null : option.value })}>
+                <span>{t(option.en, option.ar)}</span>
+                <span className="kin-stay-stars" aria-hidden="true">{Array.from({ length: option.stars }, (_, index) => <Star key={index} size={11} />)}</span>
+              </button>)}
+            </div>
+            <p className="kin-stay-hint" data-testid="kin-stay-stars-hint">{t("A search preference only — KIN can't verify a hotel's official star class.", 'تفضيل للبحث فقط — لا يمكن لكين التحقق من تصنيف النجوم الرسمي للفندق.')}</p>
+          </>}
+          {kind === 'apartment' && <>
+            <span className="kin-stay-field-label">{t('Stay type', 'نوع الإقامة')}</span>
+            <div className="kin-stay-options">
+              {KIN_APARTMENT_STAY_TYPE_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={prefs.apartmentStayType === option.value} className={prefs.apartmentStayType === option.value ? 'selected' : ''}
+                data-testid={`kin-stay-type-${option.value}`} onClick={() => onChange({ ...prefs, apartmentStayType: prefs.apartmentStayType === option.value ? null : option.value })}>{t(option.en, option.ar)}</button>)}
+            </div>
+          </>}
+          <span className="kin-stay-field-label">{t('Budget per night', 'الميزانية لليلة')}</span>
           <div className="kin-stay-options">
-            {KIN_APARTMENT_STAY_TYPE_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={prefs.apartmentStayType === option.value} className={prefs.apartmentStayType === option.value ? 'selected' : ''}
-              data-testid={`kin-stay-type-${option.value}`} onClick={() => onChange({ ...prefs, apartmentStayType: prefs.apartmentStayType === option.value ? null : option.value })}>{t(option.en, option.ar)}</button>)}
+            {KIN_STAY_BUDGET_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={budget === option.value} className={budget === option.value ? 'selected' : ''}
+              data-testid={`kin-stay-budget-${option.value}`} onClick={() => setBudget(budget === option.value ? null : option.value)}>{option.label}</button>)}
           </div>
-        </>}
-        <span className="kin-stay-field-label">{t('Budget per night', 'الميزانية لليلة')}</span>
-        <div className="kin-stay-options">
-          {KIN_STAY_BUDGET_OPTIONS.map((option) => <button type="button" key={option.value} aria-pressed={budget === option.value} className={budget === option.value ? 'selected' : ''}
-            data-testid={`kin-stay-budget-${option.value}`} onClick={() => setBudget(budget === option.value ? null : option.value)}>{option.label}</button>)}
         </div>
-        <button type="button" className="kin-submit-btn kin-stay-done" data-testid="kin-stay-done" onClick={onDone}>{t('Done', 'تم')}</button>
-        <button type="button" className="kin-stay-remove" data-testid="kin-stay-remove" onClick={onRemove}>
-          {kind === 'apartment' ? t('Remove Apartments & Homes', 'إزالة الشقق والمنازل') : t('Remove Hotels', 'إزالة الفنادق')}
-        </button>
+        <div className="kin-stay-sheet-footer">
+          <button type="button" className="kin-submit-btn kin-stay-done" data-testid="kin-stay-done" onClick={onDone}>{t('Done', 'تم')}</button>
+          <button type="button" className="kin-stay-remove" data-testid="kin-stay-remove" onClick={onRemove}>
+            {kind === 'apartment' ? t('Remove Apartments & Homes', 'إزالة الشقق والمنازل') : t('Remove Hotels', 'إزالة الفنادق')}
+          </button>
+        </div>
       </Drawer.Content>
     </Drawer.Portal>
   </Drawer.Root>;
@@ -3219,7 +3224,7 @@ function KinStayDetailsSheet({ stay, ar, selected, onSelect, onClose }: { stay: 
       <Drawer.Overlay className="approved-drawer-overlay" />
       <Drawer.Content className="approved-drawer-content kin-stay-sheet" aria-label={stay?.name ?? t('Stay details', 'تفاصيل الإقامة')} data-testid="kin-stay-details-sheet">
         <div className="approved-drawer-handle" />
-        {stay && <div className="kin-stay-details">
+        {stay && <div className="kin-stay-details kin-stay-sheet-body">
           <div className="kin-stay-details-media">{stay.photoUrl ? <img src={stay.photoUrl} alt="" /> : <KinRingsMark size={40} />}</div>
           {stay.photoAttribution && <span className="kin-photo-credit" style={{ margin: 0 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{stay.photoAttribution}</bdi></span>}
           <h2 className="kin-stay-sheet-title" dir="auto"><bdi>{stay.name}</bdi></h2>
@@ -4000,7 +4005,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   <span className="kin-stay-name" dir="auto"><bdi>{stay.name}</bdi></span>
                   {stay.formattedAddress && <span className="kin-stay-area" dir="auto"><bdi>{stay.formattedAddress}</bdi></span>}
                   <div className="kin-stay-meta">
-                    {stay.rating !== null && <span data-testid="kin-stay-rating"><Star size={11} fill="currentColor" aria-hidden="true" /> {stay.rating.toFixed(1)}</span>}
+                    {stay.rating !== null && <span data-testid="kin-stay-rating"><Star size={11} fill="currentColor" aria-hidden="true" /> {stay.rating.toFixed(1)} · {t('Google rating', 'تقييم Google')}</span>}
                     <span data-testid="kin-stay-price">{kinStayPriceLabel(stay.priceLevel, ar)}</span>
                   </div>
                   {stay.reason && <p className="kin-stay-reason" data-testid="kin-stay-reason">{stay.reason}</p>}

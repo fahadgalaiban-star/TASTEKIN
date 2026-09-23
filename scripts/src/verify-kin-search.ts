@@ -1916,7 +1916,8 @@ async function main() {
       assert.equal(anthropicRequestCount - anthropicBefore, 2, "exactly one narrative call plus one reasons call — never one per stay");
       assert.match(lastStayReasonPrompt, /Accommodation preference: hotels \(4-star, mid-range\)/);
       assert.match(lastStayReasonPrompt, /^1\. Fake Place 1 — hotel; area: 1 Example Street; price level: moderate/m);
-      assert.ok(!/^4\. /m.test(lastStayReasonPrompt), "the reasons prompt lists only the three stays being shown");
+      assert.match(lastStayReasonPrompt, /^7\. Fake Place 6/m, "the whole 7-candidate pool is described once, up front, so paging never needs Anthropic again");
+      assert.ok(!/^8\. /m.test(lastStayReasonPrompt));
       const narrative = anthropicRequestBodies.map((body) => JSON.parse(body) as { tools?: unknown; system?: string; messages: Array<{ content: unknown }> }).find((body) => Array.isArray(body.tools));
       assert.ok(narrative, "the narrative call still carries the web_search tool");
       assert.match(String(narrative!.messages[0].content), /Accommodation preference: hotels \(4-star, mid-range\)/);
@@ -1935,44 +1936,59 @@ async function main() {
       assert.deepEqual(apartments!.items.map((stay) => stay.placeId), ["place-2", "place-5", "place-0"], "$$$ ranks EXPENSIVE (and VERY_EXPENSIVE) first");
       assert.ok(apartments!.items.every((stay) => stay.kind === "apartment"));
       assert.deepEqual(hotels!.items.map((stay) => stay.reason), ["Fake reason 1", "Fake reason 2", "Fake reason 3"]);
-      assert.deepEqual(apartments!.items.map((stay) => stay.reason), ["Fake reason 4", "Fake reason 5", "Fake reason 6"], "one numbered list covers both kinds");
+      assert.deepEqual(apartments!.items.map((stay) => stay.reason), ["Fake reason 8", "Fake reason 9", "Fake reason 10"], "one numbered list covers both kinds' whole pools (7 hotels, then 7 apartments)");
       const searches = placesRequests().filter((request) => request.includedType === "hotel" || request.includedType === "guest_house");
       assert.deepEqual(searches.map((request) => [request.includedType, request.textQuery]).sort(), [
         ["guest_house", "luxury private room guest houses and bed and breakfasts in Lisbon"],
         ["hotel", "hotels in Lisbon"],
       ]);
       assert.equal(anthropicRequestCount - anthropicBefore, 2, "narrative + ONE reasons call for both kinds together");
-      assert.match(lastStayReasonPrompt, /^6\. /m);
+      assert.match(lastStayReasonPrompt, /^14\. /m);
+      assert.ok(!/^15\. /m.test(lastStayReasonPrompt));
       assert.match(lastStayReasonPrompt, /apartment or home; area/);
     });
-    await check("show more stays pages through the real candidate pool by exclusion — never regenerating the itinerary — until hasMore is false", async () => {
-      placesRequestBodies = [];
-      const routesBefore = googleRoutesRequestCount;
+    await check("show more stays pages the plan's cached candidate pool by exclusion — no Places search, no Anthropic call, no quota attempt, no itinerary change — until hasMore is false", async () => {
+      const placesBefore = googlePlacesRequestCount;
       const anthropicBefore = anthropicRequestCount;
+      const routesBefore = googleRoutesRequestCount;
+      const usageRows = async () => (await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, userAAccount.user.id))).length;
+      const usageBefore = await usageRows();
+      // Same member, destination, preferences, and locale as the hotels plan above — its pool is cached.
       const accommodation = { hotels: { stars: 4, budget: 2 } };
       const first = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-1", "place-4", "place-0"], locale: "en" });
       await expectStatus(first, 200);
       const firstPayload = await first.json() as { status: string; items: StayPayload[]; hasMore: boolean };
       assert.equal(firstPayload.status, "ok");
-      assert.deepEqual(firstPayload.items.map((stay) => stay.placeId), ["place-2", "place-3", "place-5"], "the next three not yet shown, in ranked order");
+      assert.deepEqual(firstPayload.items.map((stay) => stay.placeId), ["place-2", "place-3", "place-5"], "the next three not yet shown, in the pool's ranked order");
       assert.equal(firstPayload.hasMore, true);
-      assert.deepEqual(firstPayload.items.map((stay) => stay.reason), ["Fake reason 1", "Fake reason 2", "Fake reason 3"]);
+      assert.deepEqual(firstPayload.items.map((stay) => stay.reason), ["Fake reason 4", "Fake reason 5", "Fake reason 6"], "reasons come from the pool described once at plan time — positions 4-6");
       assert.equal(firstPayload.items[1].photoUrl, null, "a place with no Google photo stays null — never a fabricated image");
       assert.equal(firstPayload.items[1].photoAttribution, null);
-      const second = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-1", "place-4", "place-0", "place-2", "place-3", "place-5"] });
+      const second = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-1", "place-4", "place-0", "place-2", "place-3", "place-5"], locale: "en" });
       await expectStatus(second, 200);
       const secondPayload = await second.json() as { status: string; items: StayPayload[]; hasMore: boolean };
       assert.deepEqual(secondPayload.items.map((stay) => stay.placeId), ["place-6"]);
+      assert.deepEqual(secondPayload.items.map((stay) => stay.reason), ["Fake reason 7"]);
       assert.equal(secondPayload.hasMore, false, "the pool is exhausted");
-      const third = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: Array.from({ length: 7 }, (_, i) => `place-${i}`) });
+      const third = await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: Array.from({ length: 7 }, (_, i) => `place-${i}`), locale: "en" });
       await expectStatus(third, 200);
-      const thirdPayload = await third.json() as { status: string; items: StayPayload[]; hasMore: boolean };
-      assert.deepEqual(thirdPayload, { status: "ok", items: [], hasMore: false }, "nothing left is reported honestly, never padded with repeats");
-      assert.equal(googleRoutesRequestCount, routesBefore, "paging stays must never touch Routes (the itinerary is not regenerated)");
-      assert.ok(placesRequests().every((request) => request.includedType === "hotel"), "only hotel-pool searches were made");
-      assert.equal(anthropicRequestCount - anthropicBefore, 2, "one reasons call per non-empty page, none for an empty page");
+      assert.deepEqual(await third.json(), { status: "ok", items: [], hasMore: false }, "nothing left is reported honestly, never padded with repeats");
+      assert.equal(googlePlacesRequestCount, placesBefore, "paging a cached pool never re-runs the Places search");
+      assert.equal(anthropicRequestCount, anthropicBefore, "paging a cached pool never calls Anthropic");
+      assert.equal(googleRoutesRequestCount, routesBefore, "paging stays never touches Routes — the itinerary is not regenerated");
+      assert.equal(await usageRows(), usageBefore, "paging a cached pool consumes no daily-quota attempt");
+
+      // A pool miss (preferences never planned) calls each provider exactly once, then pages from the new pool for free.
       placesRequestBodies = [];
-      await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: { apartments: { stayType: "entire_home" } } }), 200);
+      const missPlacesBefore = googlePlacesRequestCount;
+      const missAnthropicBefore = anthropicRequestCount;
+      const entireHome = { apartments: { stayType: "entire_home" } };
+      await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: entireHome }), 200);
+      const again = await staysRequest({ destination: "Rome", kind: "apartment", accommodation: entireHome, excludePlaceIds: ["place-0", "place-1", "place-2"] });
+      await expectStatus(again, 200);
+      assert.deepEqual((await again.json() as { items: StayPayload[] }).items.map((stay) => stay.placeId), ["place-3", "place-4", "place-5"]);
+      assert.equal(googlePlacesRequestCount - missPlacesBefore, 1, "one Places search for the missed pool, none for its next page");
+      assert.equal(anthropicRequestCount - missAnthropicBefore, 1, "one reasons call for the missed pool, none for its next page");
       await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: { apartments: { stayType: "apartment", budget: 1 } } }), 200);
       await expectStatus(await staysRequest({ destination: "Rome", kind: "apartment", accommodation: { apartments: {} } }), 200);
       assert.deepEqual(placesRequests().map((request) => [request.includedType, request.textQuery]), [
@@ -1981,7 +1997,7 @@ async function main() {
         ["lodging", "apartments and vacation rentals in Rome"],
       ]);
     });
-    await check("show more stays is validated, auth+flag gated, and consumes the daily KIN quota like every other action", async () => {
+    await check("show more stays is validated, auth+flag gated, free while the plan's pool is cached, and reserves a daily-quota attempt only on a pool miss", async () => {
       const accommodation = { hotels: {} };
       assert.equal((await staysRequest({ kind: "hotel", accommodation })).status, 400);
       assert.equal((await staysRequest({ destination: "Paris", kind: "villa", accommodation })).status, 400);
@@ -1992,15 +2008,26 @@ async function main() {
       const anon = new Session(server.baseUrl);
       assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation }, anon)).status, 401);
       const quotaServer = await startServer({
-        ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1",
+        ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "2",
         GOOGLE_MAPS_API_KEY: "fake-google-key", GOOGLE_PLACES_BASE_URL: `${googlePlacesBaseUrl}/places:searchText`, GOOGLE_ROUTES_BASE_URL: `${googleRoutesBaseUrl}/computeRoutes`,
         GOOGLE_PLACES_PHOTO_BASE_URL: googlePlacesPhotoBaseUrl,
       });
       try {
         const session = new Session(quotaServer.baseUrl);
-        await session.signup(`kin-stays-quota-${suffix}@example.com`, PASSWORD);
-        await expectStatus(await staysRequest({ destination: "Paris", kind: "hotel", accommodation }, session), 200);
-        assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation }, session)).status, 429);
+        const account = await session.signup(`kin-stays-quota-${suffix}@example.com`, PASSWORD);
+        const usageRows = async () => (await db.select().from(kinSearchUsage).where(eq(kinSearchUsage.ownerUserId, account.user.id))).length;
+        // The plan itself is the one attempt; every page of its cached pool is free.
+        await expectStatus(await session.kinTravelPlan({ query: "plan my trip", destination: "Paris", locale: "en", accommodation }), 200);
+        assert.equal(await usageRows(), 1);
+        await expectStatus(await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-0", "place-1", "place-2"], locale: "en" }, session), 200);
+        await expectStatus(await staysRequest({ destination: "Paris", kind: "hotel", accommodation, excludePlaceIds: ["place-0", "place-1", "place-2", "place-3", "place-4", "place-5"], locale: "en" }, session), 200);
+        assert.equal(await usageRows(), 1, "cached paging must never record a quota attempt");
+        // A miss reserves one attempt (the second and last allowed here); the next miss is refused before any provider call.
+        const placesBefore = googlePlacesRequestCount;
+        await expectStatus(await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: { stars: 3 } }, locale: "en" }, session), 200);
+        assert.equal(await usageRows(), 2);
+        assert.equal((await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: { stars: 5 } }, locale: "en" }, session)).status, 429);
+        assert.equal(googlePlacesRequestCount - placesBefore, 1, "a refused miss never reaches Google");
       } finally {
         stopServer(quotaServer);
       }
@@ -2011,7 +2038,7 @@ async function main() {
     await check("a failed reasons call leaves every stay's reason null (logged server-side) instead of failing the request or inventing text", async () => {
       fakeAnthropicMode = { kind: "http_error", status: 500, errorType: "api_error", message: "fake provider failure" };
       server.takeLog();
-      const response = await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: {} } });
+      const response = await staysRequest({ destination: "Oslo", kind: "hotel", accommodation: { hotels: {} } });
       await expectStatus(response, 200);
       const payload = await response.json() as { status: string; items: StayPayload[] };
       assert.equal(payload.status, "ok");
@@ -2026,7 +2053,7 @@ async function main() {
     });
     await check("a Google failure for stays reports unavailable for Show more, and an empty group (never a failed plan) for the itinerary", async () => {
       fakeGooglePlacesMode = { kind: "http_error", status: 503 };
-      const more = await staysRequest({ destination: "Paris", kind: "hotel", accommodation: { hotels: {} } });
+      const more = await staysRequest({ destination: "Bergen", kind: "hotel", accommodation: { hotels: {} } });
       await expectStatus(more, 200);
       assert.deepEqual(await more.json(), { status: "unavailable", reason: "unavailable" });
       fakeGooglePlacesMode = { kind: "empty_type", includedType: "hotel" };

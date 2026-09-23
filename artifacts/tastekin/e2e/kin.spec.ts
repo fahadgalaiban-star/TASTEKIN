@@ -1601,6 +1601,8 @@ test('Hotels opens the Hotel preferences sheet; star and budget picks are sent a
   await expect(sheet.getByText('Budget per night')).toBeVisible();
   await expect(sheet.getByText('Stay type')).toHaveCount(0);
   for (const label of ['3 Stars', '4 Stars', '5 Stars', 'Any rating', '$', '$$', '$$$']) await expect(sheet.getByText(label, { exact: true })).toBeVisible();
+  // Star rating is only ever a search preference — the sheet says so.
+  await expect(page.getByTestId('kin-stay-stars-hint')).toHaveText("A search preference only — KIN can't verify a hotel's official star class.");
   await page.getByTestId('kin-stay-stars-4').click();
   await expect(page.getByTestId('kin-stay-stars-4')).toHaveAttribute('aria-pressed', 'true');
   await page.getByTestId('kin-stay-budget-2').click();
@@ -1623,13 +1625,15 @@ test('Hotels opens the Hotel preferences sheet; star and budget picks are sent a
   const first = cards.nth(0);
   await expect(first).toContainText('Hotel 1');
   await expect(first).toContainText('1 Stay Street, Old Town');
-  await expect(first.getByTestId('kin-stay-rating')).toHaveText('4.3');
-  await expect(first.getByTestId('kin-stay-price')).toHaveText('$$ · approx. per night');
+  await expect(first.getByTestId('kin-stay-rating')).toHaveText('4.3 · Google rating');
+  // Google's price band is labeled as exactly that — never presented as a nightly rate.
+  await expect(first.getByTestId('kin-stay-price')).toHaveText('Price level: $$');
+  await expect(page.getByText(/per night/)).toHaveCount(0);
   await expect(first.getByTestId('kin-stay-reason')).toHaveText('KIN reason for hotel 1');
   await expect(first).toContainText('Stay Photographer');
   // A stay with no Google price band and no reason says so, and shows nothing invented.
   const third = cards.nth(2);
-  await expect(third.getByTestId('kin-stay-price')).toHaveText('Price not listed');
+  await expect(third.getByTestId('kin-stay-price')).toHaveText('Price unavailable');
   await expect(third.getByTestId('kin-stay-reason')).toHaveCount(0);
   // Once, above the first day — never inside a day's timeline.
   const [staysBox, toggleBox, dayBox] = await Promise.all([stays.boundingBox(), page.getByTestId('kin-plan-route-toggle').boundingBox(), page.getByTestId('kin-day-preview').boundingBox()]);
@@ -1747,21 +1751,33 @@ test('Arabic accommodation cards, preference sheet, and Stay options are RTL-saf
   await page.getByTestId('kin-interest-hotels').click();
   const sheet = page.getByTestId('kin-stay-sheet');
   await expect(sheet.getByRole('heading', { name: 'تفضيلات الفندق' })).toBeVisible();
-  await expect(sheet.getByText('تصنيف النجوم')).toBeVisible();
-  await expect(sheet.getByText('الميزانية لليلة')).toBeVisible();
+  await expect(sheet.getByText('تصنيف النجوم', { exact: true })).toBeVisible();
+  await expect(page.getByTestId('kin-stay-stars-hint')).toHaveText('تفضيل للبحث فقط — لا يمكن لكين التحقق من تصنيف النجوم الرسمي للفندق.');
+  await expect(sheet.getByText('الميزانية لليلة', { exact: true })).toBeVisible();
   await expect(page.getByTestId('kin-stay-stars-4')).toHaveText('4 نجوم');
   await expect(page.getByTestId('kin-stay-stars-any')).toHaveText('أي تصنيف');
   const done = page.getByTestId('kin-stay-done');
   await expect(done).toHaveText('تم');
   // Measured once the sheet's slide-up has settled: it must span the full
-  // 390px width from x=0 (not sit shifted in RTL) with Done inside the
-  // viewport, and the page itself must never scroll horizontally.
+  // 390px width from x=0 (not sit shifted in RTL), sit entirely inside the
+  // viewport with Done and Remove reachable, lay the four star options out
+  // as a 2×2 grid with nothing clipped, and the page itself must never
+  // scroll horizontally.
   const layout = () => page.evaluate(() => {
-    const sheet = document.querySelector<HTMLElement>('[data-testid="kin-stay-sheet"]')!.getBoundingClientRect();
-    const button = document.querySelector<HTMLElement>('[data-testid="kin-stay-done"]')!.getBoundingClientRect();
-    return { scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth, sheetX: sheet.x, sheetRight: sheet.right, buttonBottom: button.bottom, viewport: window.innerHeight };
+    const rect = (id: string) => document.querySelector<HTMLElement>(`[data-testid="${id}"]`)!.getBoundingClientRect();
+    const sheet = rect('kin-stay-sheet');
+    const stars = ['kin-stay-stars-3', 'kin-stay-stars-4', 'kin-stay-stars-5', 'kin-stay-stars-any'].map(rect);
+    return {
+      scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth,
+      sheetX: sheet.x, sheetRight: sheet.right, sheetTop: sheet.y, doneBottom: rect('kin-stay-done').bottom, removeBottom: rect('kin-stay-remove').bottom, viewport: window.innerHeight,
+      starsInside: stars.every((s) => s.x >= 0 && s.right <= 390),
+      twoByTwo: stars[0].y === stars[1].y && stars[2].y === stars[3].y && stars[2].y > stars[0].y,
+    };
   });
-  await expect.poll(async () => { const l = await layout(); return l.sheetX === 0 && l.sheetRight === 390 && l.buttonBottom <= l.viewport; }).toBe(true);
+  await expect.poll(async () => {
+    const l = await layout();
+    return l.sheetX === 0 && l.sheetRight === 390 && l.sheetTop >= 0 && l.doneBottom <= l.viewport && l.removeBottom <= l.viewport && l.starsInside && l.twoByTwo;
+  }).toBe(true);
   expect((await layout()).scrollWidth).toBe((await layout()).clientWidth);
   await page.getByTestId('kin-stay-stars-4').click();
   await done.click();
@@ -1771,7 +1787,8 @@ test('Arabic accommodation cards, preference sheet, and Stay options are RTL-saf
   await expect(stays.getByText('خيارات الإقامة')).toBeVisible();
   await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-details')).toHaveText('عرض التفاصيل');
   await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-select')).toHaveText('اختيار');
-  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-price')).toHaveText('$$ · لليلة تقريبًا');
+  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-price')).toHaveText('مستوى السعر: $$');
+  await expect(page.getByTestId('kin-stay-card').first().getByTestId('kin-stay-rating')).toHaveText('4.3 · تقييم Google');
   await expect(page.getByTestId('kin-stays-more')).toHaveText('عرض المزيد من الإقامات');
   const overview = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
   expect(overview.scrollWidth).toBe(overview.clientWidth);

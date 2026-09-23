@@ -795,7 +795,9 @@ export async function runKinSearch(request: KinSearchRequest, myThingsItemContex
 
 // --- KIN Travel stays: one short "why KIN picked this" per real stay ------
 
-const MAX_STAY_REASON_TOKENS = 600;
+// Sized for one sentence per candidate across a whole stay pool (up to 20
+// per kind, both kinds in one call) — see staysForPlan in kin-travel.ts.
+const MAX_STAY_REASON_TOKENS = 2000;
 const MAX_STAY_REASON_LENGTH = 240;
 
 /** The real, code-supplied facts about one stay — the only material the model may reason from. */

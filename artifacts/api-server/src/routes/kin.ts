@@ -19,7 +19,7 @@ import {
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
+import { hasCachedStayPool, runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -314,7 +314,7 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     return;
   }
 
-  const result = await runKinTravelPlan(validated.value, itemContext, String(req.id));
+  const result = await runKinTravelPlan(validated.value, user.id, itemContext, String(req.id));
   if (result.status !== "ok") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel plan unavailable");
@@ -403,9 +403,12 @@ const MAX_STAY_EXCLUDES = 60;
 /**
  * "Show more stays": the next three real stays of one kind for the same
  * destination and the same preferences the plan was built with, excluding
- * every stay already shown. Never regenerates the itinerary. Counts against
- * the same daily quota as every other KIN action — it spends a Google
- * Places search and one Anthropic reasons call.
+ * every stay already shown. Never regenerates the itinerary. Served from
+ * the plan's cached candidate pool, which costs no provider search, no
+ * Anthropic call, and no daily-quota attempt; only when that pool is gone
+ * (expired, evicted, or a different instance) is one attempt reserved and
+ * the providers called again — reserved before the call, like every other
+ * KIN action.
  */
 router.post("/kin/travel/stays", requireUserMw, kinSearchFlagMw, async (req, res) => {
   const user = req.user!;
@@ -442,13 +445,15 @@ router.post("/kin/travel/stays", requireUserMw, kinSearchFlagMw, async (req, res
     ? body.excludePlaceIds.filter((id): id is string => typeof id === "string").slice(0, MAX_STAY_EXCLUDES)
     : [];
 
-  const reservation = await reserveKinSearchAttempt(user.id);
-  if ("rateLimited" in reservation) {
-    daily429(res);
-    return;
+  if (!hasCachedStayPool(user.id, destination, kind, accommodation.value, locale)) {
+    const reservation = await reserveKinSearchAttempt(user.id);
+    if ("rateLimited" in reservation) {
+      daily429(res);
+      return;
+    }
   }
 
-  const result = await searchStays(destination, kind, accommodation.value, new Set(excludePlaceIds), locale, String(req.id));
+  const result = await searchStays(user.id, destination, kind, accommodation.value, new Set(excludePlaceIds), locale, String(req.id));
   if (result.status !== "ok") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id, kind }, "KIN travel stays unavailable");
