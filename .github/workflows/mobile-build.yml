@@ -59,8 +59,13 @@ jobs:
           path: artifacts/tastekin/dist/public
           retention-days: 7
 
+  # Both native jobs package the exact bundle the `web` job built and
+  # validated. The workspace pins native build binaries to linux-x64 only
+  # (pnpm-workspace.yaml overrides for Replit), so the Vite build itself must
+  # run on Ubuntu; the native jobs only need the Capacitor CLI.
   android:
     name: Android (debug APK + unsigned release AAB)
+    needs: web
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -80,8 +85,10 @@ jobs:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
       - uses: gradle/actions/setup-gradle@v4
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck:libs
-      - run: pnpm --filter @workspace/tastekin run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: artifacts/tastekin/dist/public
       - name: Sync web assets into the Android project
         working-directory: artifacts/tastekin
         run: npx cap sync android
@@ -104,6 +111,7 @@ jobs:
 
   ios:
     name: iOS (unsigned simulator + device build)
+    needs: web
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -115,8 +123,10 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck:libs
-      - run: pnpm --filter @workspace/tastekin run build
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: artifacts/tastekin/dist/public
       - name: Sync web assets into the iOS project
         working-directory: artifacts/tastekin
         run: npx cap sync ios
