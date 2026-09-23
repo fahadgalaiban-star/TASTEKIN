@@ -3047,6 +3047,17 @@ type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unav
  * The raw value the member typed is still what's sent to the server for
  * every search/query — this never replaces it, only how it's shown.
  */
+// Arabic place names are grammatically feminine in the overwhelming
+// majority of cases — every city, and most countries — so the Travel
+// headline's adjective defaults to the feminine form. The few well-known
+// masculine country names keep correct agreement via this list; a
+// Latin-script destination typed into the Arabic UI takes the default.
+const KIN_MASCULINE_ARABIC_DESTINATIONS = new Set(['لبنان', 'المغرب', 'العراق', 'الأردن', 'السودان', 'اليمن', 'الصومال']);
+function kinArabicHeadlineSuffix(destination: string): string {
+  const name = destination.trim().replace(/[ً-ْ]/g, '');
+  return KIN_MASCULINE_ARABIC_DESTINATIONS.has(name) ? '، مصمّم على ذوقك.' : '، مصمّمة على ذوقك.';
+}
+
 function formatKinDestinationDisplay(value: string): string {
   return value.replace(/(^|\s)([a-z])/g, (_match, boundary: string, letter: string) => `${boundary}${letter.toUpperCase()}`);
 }
@@ -3966,7 +3977,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     return <section data-testid="kin-screen">
       <button type="button" className="kin-back-button" data-testid="kin-back" aria-label={t('Back', 'رجوع')} onClick={backToForm}><ArrowLeft size={18} /></button>
       <span className="kin-kicker">{t('KIN Travel', 'كين ترافل')}</span>
-      <h1 className="kin-headline">{ar ? <><bdi dir="auto">{displayDestination}</bdi>، مصمم من أجلك.</> : <><bdi dir="auto">{displayDestination}</bdi>, shaped around you.</>}</h1>
+      <h1 className="kin-headline">{ar ? <><bdi dir="auto">{displayDestination}</bdi>{kinArabicHeadlineSuffix(travelPlan.destination)}</> : <><bdi dir="auto">{displayDestination}</bdi>, shaped around you.</>}</h1>
       {dateRange && <p className="kin-subline" dir="auto" data-testid="kin-travel-dates">{dateRange}</p>}
 
       <div className="kin-hero" data-testid="kin-travel-hero">

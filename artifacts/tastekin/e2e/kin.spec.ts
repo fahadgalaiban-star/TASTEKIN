@@ -533,7 +533,7 @@ test('Arabic Travel labels, Maps names, Back navigation, and both 390×844 steps
   await expect(page.getByRole('link', { name: 'افتح متحف المستقبل في خرائط Google' })).toHaveText('الاتجاهات');
   await expect(page.getByRole('link', { name: 'افتح حديقة زعبيل في خرائط Google' })).toHaveText('الاتجاهات');
   // Non-Latin destination is never touched by the display-casing cleanup.
-  await expect(page.locator('.kin-headline')).toHaveText('دبي، مصمم من أجلك.');
+  await expect(page.locator('.kin-headline')).toHaveText('دبي، مصمّمة على ذوقك.');
   await expect(page.locator('[data-testid="kin-hero-tag"]')).toHaveText('دبي');
 
   // Route tab is RTL-safe: an ordered stop list plus one combined
@@ -778,7 +778,7 @@ test('a Latin venue name and a mixed Arabic/Latin venue name render in full, not
   };
 
   // Destination isolation: "Paris" stays Latin-cased and legible inside the Arabic sentence and hero tag.
-  await expect(page.locator('.kin-headline')).toHaveText('Paris، مصمم من أجلك.');
+  await expect(page.locator('.kin-headline')).toHaveText('Paris، مصمّمة على ذوقك.');
   await expect(page.getByTestId('kin-hero-tag')).toHaveText('Paris');
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 
@@ -1792,4 +1792,22 @@ test('Arabic accommodation cards, preference sheet, and Stay options are RTL-saf
   await expect(page.getByTestId('kin-stays-more')).toHaveText('عرض المزيد من الإقامات');
   const overview = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, clientWidth: document.documentElement.clientWidth }));
   expect(overview.scrollWidth).toBe(overview.clientWidth);
+});
+
+test('the Arabic Travel headline agrees in gender with the destination: feminine by default, masculine for the known masculine country names', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, language: 'ar' });
+  for (const [destination, headline] of [['باريس', 'باريس، مصمّمة على ذوقك.'], ['لبنان', 'لبنان، مصمّم على ذوقك.'], ['المغرب', 'المغرب، مصمّم على ذوقك.'], ['Paris', 'Paris، مصمّمة على ذوقك.']] as const) {
+    await page.route('**/api/kin/travel/plan', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays(destination, undefined)) });
+    });
+    await page.goto('/?lang=ar', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('nav-kin').click();
+    await page.getByTestId('kin-mode-travel').click();
+    await page.getByTestId('kin-destination').fill(destination);
+    await page.getByTestId('kin-travel-next').click();
+    await page.getByTestId('kin-interest-museums').click();
+    await page.getByTestId('kin-travel-submit').click();
+    await expect(page.locator('.kin-headline')).toHaveText(headline);
+    await page.unroute('**/api/kin/travel/plan');
+  }
 });
