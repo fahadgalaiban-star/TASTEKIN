@@ -26,6 +26,8 @@
     "verify:video-upload-lifecycle": "tsx ./src/verify-video-upload-lifecycle.ts",
     "verify:video-upload-webhook-recovery": "tsx ./src/verify-video-upload-webhook-recovery.ts",
     "verify:migrations": "tsx ./src/verify-migrations.ts",
+    "verify:native-session-recovery": "tsx ./src/verify-native-session-recovery.ts",
+    "recover:native-sessions": "tsx ./src/native-session-recovery.ts",
     "verify:video-upload-migration-replay": "tsx ./src/verify-video-upload-migration-replay.ts",
     "verify:creator-workspace-video": "tsx ./src/verify-creator-workspace-video.ts",
     "verify:video-playback": "tsx ./src/verify-video-playback.ts",
