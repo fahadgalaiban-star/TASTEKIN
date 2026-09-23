@@ -12,6 +12,7 @@ import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
+import { apiUrl } from './native';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -186,7 +187,9 @@ function track(name: string, metadata: Record<string, unknown> = {}) {
     body: JSON.stringify({ name, metadata }),
   }).catch(() => { /* analytics must never surface an error to the user */ });
 }
-const imageSrc = (image?: string) => image?.startsWith('/objects/') ? `/api/storage${image}` : image || '';
+// Server-provided media paths are app-relative (`/api/public-media/...`,
+// `/objects/...`); apiUrl() makes them absolute inside the native shell only.
+const imageSrc = (image?: string) => apiUrl(image?.startsWith('/objects/') ? `/api/storage${image}` : image || '');
 const cropAspectRatio = (_aspect?: CropAspect, crop?: CropMetadata) => crop?.outputWidth && crop?.outputHeight ? `${crop.outputWidth} / ${crop.outputHeight}` : _aspect === 'square' ? '1 / 1' : _aspect === 'story' ? '9 / 16' : '4 / 5';
 // Home only: never show a photo taller (a smaller width/height ratio) than
 // 4:5, however it was actually cropped (notably 'story', 9:16) — square and
@@ -1285,7 +1288,7 @@ function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorPro
   const initials = (profile.displayName || '?').trim().slice(0, 1).toUpperCase();
   const [imageFailed, setImageFailed] = useState(false);
   useEffect(() => setImageFailed(false), [image]);
-  return <div className="approved-avatar">{image && !imageFailed ? <img src={image} alt={profile.displayName} onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{initials}</span>}</div>;
+  return <div className="approved-avatar">{image && !imageFailed ? <img src={apiUrl(image)} alt={profile.displayName} onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{initials}</span>}</div>;
 }
 function ExploreScreen({ ar, saved, toggleSaved, edits, allEdits, onOpenProfile, onOpenEdit, onSignIn }: { ar: boolean; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; allEdits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void; onSignIn: () => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
@@ -2202,7 +2205,7 @@ function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boole
     {state === 'error' && <div className="workspace-notice">{ar ? 'تعذر تحميل الرسائل.' : 'Could not load your messages.'}<button onClick={() => void load()}>{ar ? 'حاول مجدداً' : 'Try again'}</button></div>}
     {state === 'ready' && !conversations.length && <Empty text={ar ? 'لا توجد محادثات بعد. ابدأ من ملف المبدع.' : 'No conversations yet. Start from a creator profile.'} />}
     <div className="inbox-list">{conversations.map((item) => <button key={item.id} className="inbox-row" onClick={() => onOpen(item.id)}>
-      <span className="inbox-avatar">{item.participantAvatar ? <img src={item.participantAvatar} alt="" /> : <Inbox size={19} />}</span>
+      <span className="inbox-avatar">{item.participantAvatar ? <img src={apiUrl(item.participantAvatar)} alt="" /> : <Inbox size={19} />}</span>
       <span><strong>{item.participantName}</strong><small>{item.lastMessage || (ar ? 'ابدأ المحادثة' : 'Start the conversation')}</small></span>
       {item.unreadCount > 0 && <b>{item.unreadCount}</b>}
     </button>)}</div>
@@ -3747,7 +3750,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const pieceCard = (firstStylingItemId || resultReference) && <div className="kin-piece-card" data-testid="kin-piece-card">
     {resultReference
       ? <div className="kin-piece-media" data-testid="kin-look-reference"><img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>
-      : <div className="kin-piece-media" data-testid="kin-look-reference"><img src={`/api/closet-items/${encodeURIComponent(firstStylingItemId!)}/image`} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>}
+      : <div className="kin-piece-media" data-testid="kin-look-reference"><img src={apiUrl(`/api/closet-items/${encodeURIComponent(firstStylingItemId!)}/image`)} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>}
     <div className="kin-piece-info">
       <span className="kin-piece-kicker">{t('Your piece', 'قطعتك')}</span>
       <span className="kin-piece-desc">
@@ -4110,7 +4113,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
               {[...stylingItemIds, ...(selectedItemId ? [selectedItemId] : [])].map((id) => {
                 const item = myThingsItems.find(i => i.id === id);
                 return <div className="kin-piece-preview-item" key={id}>
-                  <img src={`/api/closet-items/${encodeURIComponent(id)}/image`} alt="" />
+                  <img src={apiUrl(`/api/closet-items/${encodeURIComponent(id)}/image`)} alt="" />
                   {item && <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>}
                 </div>;
               })}
@@ -4474,7 +4477,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { 
       {visibleItems.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
         <button type="button" data-testid="my-things-open" aria-label={t('Item options', 'خيارات الغرض')} onClick={() => setOpenItemId(item.id)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
           <div className="profile-grid-media">
-            <img src={`/api/closet-items/${item.id}/image`} alt="" />
+            <img src={apiUrl(`/api/closet-items/${item.id}/image`)} alt="" />
             {item.confirmationStatus === 'pending_review' && <span className="profile-grid-access">{t('Pending', 'قيد المراجعة')}</span>}
           </div>
           <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
@@ -4894,7 +4897,7 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
 
   return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Edit item', 'تعديل الغرض')}>
     <div className="image-uploader" style={{ aspectRatio: 1, cursor: 'default' }}>
-      <img src={`/api/closet-items/${item.id}/image`} alt="" />
+      <img src={apiUrl(`/api/closet-items/${item.id}/image`)} alt="" />
     </div>
 
     <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={setItemType} disabled={saving} />
@@ -4987,7 +4990,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
 
   return <section className="creator-profile creator-profile-travel">
     <div className="profile-cover" data-testid="profile-cover">
-      {profile.coverImage ? <img src={profile.coverImage} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
+      {profile.coverImage ? <img src={apiUrl(profile.coverImage)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
       {ownerView && <label className="profile-cover-edit" aria-label={t('Change cover photo', 'تغيير صورة الغلاف')} data-testid="profile-cover-edit">
         <Camera size={15} />
         <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" disabled={coverUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadCover(file); event.target.value = ''; }} />
@@ -5391,7 +5394,7 @@ function ProfileEditor({ ar, form, photo, busy, error, saved, onChange, onPhotoP
     try { setSource(await prepareImage(file)); } catch (cause) { setImageError(cause instanceof Error ? cause.message : t('Could not prepare your photo.', 'تعذر تجهيز صورتك.')); event.target.value = ''; } finally { setProcessing(false); }
   };
   if (source) return <ProfilePhotoCropper ar={ar} source={source} onCancel={() => { URL.revokeObjectURL(source.url); setSource(null); }} onConfirm={(next) => { URL.revokeObjectURL(source.url); setSource(null); onPhotoPrepared(next); }} />;
-  return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || form.avatar} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div><div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{error}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
+  return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || apiUrl(form.avatar)} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div><div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{error}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
 }
 
 // --- Video Foundation, Phase 3A: the composer's upload state machine -------

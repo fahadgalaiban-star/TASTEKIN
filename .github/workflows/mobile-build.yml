@@ -1,0 +1,161 @@
+# Validates that the Capacitor shells (artifacts/tastekin/ios + android) still
+# build from the current web bundle. Build validation only: nothing here signs,
+# uploads or submits to App Store Connect / Google Play, and no developer-account
+# credentials are required. Store signing and submission are a later, separate
+# step.
+name: Mobile build validation
+
+on:
+  pull_request:
+    paths:
+      - 'artifacts/tastekin/**'
+      - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/mobile-build.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/tastekin/**'
+      - 'lib/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/mobile-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: mobile-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Remote production API the bundled app talks to (see docs/MOBILE.md).
+  # Set the repository variable TASTEKIN_API_BASE_URL; an empty value still
+  # builds (the shell logs an error at runtime) so validation never depends on it.
+  VITE_API_BASE_URL: ${{ vars.TASTEKIN_API_BASE_URL }}
+
+jobs:
+  web:
+    name: Web bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck:libs
+      - run: pnpm --filter @workspace/tastekin run typecheck
+      - run: pnpm --filter @workspace/tastekin run build
+      - name: Capacitor config + sync sanity
+        working-directory: artifacts/tastekin
+        run: npx cap sync
+      - uses: actions/upload-artifact@v4
+        with:
+          name: web-dist
+          path: artifacts/tastekin/dist/public
+          retention-days: 7
+
+  # Both native jobs package the exact bundle the `web` job built and
+  # validated. The workspace pins native build binaries to linux-x64 only
+  # (pnpm-workspace.yaml overrides for Replit), so the Vite build itself must
+  # run on Ubuntu; the native jobs only need the Capacitor CLI.
+  android:
+    name: Android (debug APK + unsigned release AAB)
+    needs: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: artifacts/tastekin/dist/public
+      - name: Sync web assets into the Android project
+        working-directory: artifacts/tastekin
+        run: npx cap sync android
+      - name: Build
+        working-directory: artifacts/tastekin/android
+        # assembleDebug → installable debug APK for internal testing.
+        # bundleRelease → unsigned release bundle; proves the release variant
+        # compiles. Signing is intentionally not configured here.
+        run: ./gradlew --no-daemon assembleDebug bundleRelease
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-debug-apk
+          path: artifacts/tastekin/android/app/build/outputs/apk/debug/*.apk
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-release-aab-unsigned
+          path: artifacts/tastekin/android/app/build/outputs/bundle/release/*.aab
+          retention-days: 7
+
+  ios:
+    name: iOS (unsigned simulator + device build)
+    needs: web
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-dist
+          path: artifacts/tastekin/dist/public
+      - name: Sync web assets into the iOS project
+        working-directory: artifacts/tastekin
+        run: npx cap sync ios
+      - name: Show toolchain
+        run: xcodebuild -version && xcrun simctl list runtimes | head -20
+      - name: Resolve Swift packages
+        working-directory: artifacts/tastekin/ios/App
+        run: xcodebuild -resolvePackageDependencies -project App.xcodeproj -scheme App
+      - name: Build for iOS Simulator
+        working-directory: artifacts/tastekin/ios/App
+        run: |
+          xcodebuild build -quiet \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO
+      - name: Build for device (unsigned)
+        working-directory: artifacts/tastekin/ios/App
+        # Compiles the Release configuration for arm64 without signing —
+        # catches device-only build problems without any certificate.
+        run: |
+          xcodebuild build -quiet \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/DerivedData \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY=""
