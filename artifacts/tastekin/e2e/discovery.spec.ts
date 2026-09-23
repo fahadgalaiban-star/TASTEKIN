@@ -78,7 +78,9 @@ const privateHotelFeed = {
   location: 'Kuwait City, Kuwait',
   locationAr: 'مدينة الكويت، الكويت',
   altText: 'Private hotel preview.',
-  access: 'locked',
+  // Stored before the paid tier was removed; the API now serves it as an
+  // ordinary public Edit and the client never branches on access.
+  access: 'public',
   status: 'published',
   collectionIds: ['coastal-edit'],
 };
@@ -169,7 +171,7 @@ test.beforeEach(async ({ page }) => {
         ],
         collections: [
           { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
-          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'public', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
         ],
       }),
     });
@@ -292,56 +294,43 @@ test('renders the default creator feed and the owner profile travel layout witho
   await expect(page.locator('.approved-logo')).toBeVisible();
 });
 
-test('hides a Featured collection whose only cover is a locked Edit, instead of showing it blurred or dark', async ({ page }) => {
+test('shows every Featured collection with a real cover, including one whose cover Edit predates the free product, at full clarity', async ({ page }) => {
   // "The Coastal Edit" (from the shared beforeEach mock) has no coverImage
-  // of its own — its only cover comes from the locked private-hotel Edit,
-  // whose image is already a pre-blurred subscriber preview. There is no
-  // real, unblurred photo to show for it here, so the Featured collections
-  // strip must omit the card entirely rather than render it blurred or dark.
+  // of its own — its cover comes from the private-hotel Edit, which was a
+  // "subscribers only" Edit before TASTEKIN became free. It is an ordinary
+  // public Edit now, so the collection shows like any other: no blur, no
+  // lock, no paywall label.
   await openConsumerProfile(page);
   const featuredCards = page.locator('[data-testid^="featured-collection-"]');
-  await expect(featuredCards).toHaveCount(1);
+  await expect(featuredCards).toHaveCount(2);
   await expect(page.getByTestId('featured-collection-quiet-luxury')).toBeVisible();
-  await expect(page.getByTestId('featured-collection-coastal-edit')).toHaveCount(0);
-  await expect(page.getByText('The Coastal Edit')).toHaveCount(0);
+  await expect(page.getByTestId('featured-collection-coastal-edit')).toBeVisible();
+  await expect(page.getByText('Subscribers only')).toHaveCount(0);
+  await expect(page.locator('.approved-detail-art.locked, .approved-access, .collection-gate')).toHaveCount(0);
 });
 
 test('"View all" is hidden with zero or one visible Featured collection, shown only with two or more, for owner and visitor alike', async ({ page }) => {
-  // Default beforeEach mock: exactly one visible Featured collection
-  // (quiet-luxury; coastal-edit is filtered out — see the test above).
+  // Default beforeEach mock: two visible Featured collections — "View all"
+  // is present.
   await openConsumerProfile(page);
   await expect(page.getByTestId('featured-collection-quiet-luxury')).toBeVisible();
-  await expect(page.getByTestId('profile-featured-viewall')).toHaveCount(0);
+  await expect(page.getByTestId('featured-collection-coastal-edit')).toBeVisible();
+  await expect(page.getByTestId('profile-featured-viewall')).toBeVisible();
+  await page.getByTestId('profile-featured-viewall').click();
+  await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
 
-  // Add a second real, visible public collection and reopen the profile —
-  // "View all" must now appear.
-  const secondPublicEdit = { ...quietTailoringFeed, id: 'weekend-market', title: 'Weekend market finds', titleAr: 'اكتشافات سوق نهاية الأسبوع', collectionIds: ['weekend-picks'] };
-  await page.route('**/api/creator-workspace', async (route) => {
-    await route.fulfill({
-      contentType: 'application/json',
-      body: JSON.stringify({
-        creatorId: 'fheed', revision: 1,
-        edits: [{ ...quietTailoringFeed, collectionIds: ['quiet-luxury'] }, privateHotelFeed, secondPublicEdit],
-        collections: [
-          { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: '', descriptionAr: '', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
-          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: '', descriptionAr: '', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
-          { id: 'weekend-picks', title: 'Weekend Picks', titleAr: 'اختيارات نهاية الأسبوع', description: '', descriptionAr: '', access: 'public', coverEditId: 'weekend-market', editIds: ['weekend-market'] },
-        ],
-      }),
-    });
-  });
+  // Feature a single collection and reopen the profile — "View all" must
+  // disappear.
   await page.route('**/api/creator-featured-collections', async (route) => {
-    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ collectionIds: ['quiet-luxury', 'coastal-edit', 'weekend-picks'] }) });
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ collectionIds: ['quiet-luxury'] }) });
   });
   // This SPA keeps screen state in memory, not the URL — a reload lands
   // back on Home, so the profile must be re-opened after it.
   await page.reload();
   await openConsumerProfile(page);
   await expect(page.getByTestId('featured-collection-quiet-luxury')).toBeVisible();
-  await expect(page.getByTestId('featured-collection-weekend-picks')).toBeVisible();
-  await expect(page.getByTestId('profile-featured-viewall')).toBeVisible();
-  await page.getByTestId('profile-featured-viewall').click();
-  await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
+  await expect(page.getByTestId('featured-collection-coastal-edit')).toHaveCount(0);
+  await expect(page.getByTestId('profile-featured-viewall')).toHaveCount(0);
 });
 
 test('shows the compact "Get verified" card before applying, then a Pending chip once a pending application exists', async ({ page }) => {
@@ -881,22 +870,24 @@ test('keeps visitor Profile actions at their approved dimensions for short and l
   }
 });
 
-test('keeps locked profile edits excluded from the grid for both the owner and a visitor preview', async ({ page }) => {
-  const lockedEdit = () => page.locator('.approved-grid-card').filter({ hasText: 'The stay, the packing list, and where I ate.' });
+test('shows an Edit that predates the free product in the grid like any other, with no paywall treatment, for the owner and a visitor preview', async ({ page }) => {
+  const hotelTile = () => page.getByTestId('profile-edit-private-hotel');
 
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
   await expect(page.getByRole('button', { name: 'Follow' })).toHaveCount(0);
-  // The Profile Edits grid shows only public, published Edits — for the
-  // owner's own (non-preview) view too. A locked Edit is excluded entirely
-  // rather than shown with a lock badge, blur, or dark placeholder tile.
-  await expect(lockedEdit()).toHaveCount(0);
+  // The former "subscribers only" private-hotel Edit renders as a plain
+  // photo tile next to quiet-tailoring: no lock badge, blur, dark
+  // placeholder or "Subscribers only" label.
+  await expect(hotelTile()).toBeVisible();
+  await expect(hotelTile()).toHaveClass(/photo-grid-card/);
   await expect(page.getByTestId('profile-edits-grid')).not.toContainText('Subscribers only');
+  await expect(page.locator('.approved-access')).toHaveCount(0);
   await page.getByRole('button', { name: 'More options' }).click();
   await page.getByTestId('profile-view-public').click();
   await expect(page.getByRole('button', { name: 'Follow' })).toBeDisabled();
   // Same holds for a visitor (including the owner previewing as one).
-  await expect(lockedEdit()).toHaveCount(0);
+  await expect(hotelTile()).toBeVisible();
   await expect(page.getByTestId('profile-edits-grid')).not.toContainText('Subscribers only');
 });
 
@@ -1016,16 +1007,13 @@ test('keeps owner controls compact without a standalone preview button and persi
         revision: 1,
         edits: [
           { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: '/tastekin-media/quiet-tailoring.webp', location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Tailoring.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
-          { id: 'private-hotel', category: 'Travel', title: 'Private hotel weekend', titleAr: 'عطلة فندقية خاصة', caption: 'The stay, the packing list, and where I ate.', captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.', image: '/tastekin-media/private-hotel-preview.webp', location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'Private hotel preview.', access: 'locked', status: 'published', collectionIds: ['coastal-edit'] },
+          { id: 'private-hotel', category: 'Travel', title: 'Private hotel weekend', titleAr: 'عطلة فندقية خاصة', caption: 'The stay, the packing list, and where I ate.', captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.', image: '/tastekin-media/private-hotel-preview.webp', location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'Private hotel preview.', access: 'public', status: 'published', collectionIds: ['coastal-edit'] },
         ],
         collections: [
           { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
-          // An explicit coverImage keeps this collection's Featured-strip card
-          // visible on its own uploaded cover, independent of its 'locked'
-          // access (which otherwise hides a collection whose only cover would
-          // come from a locked Edit's blurred preview) — this test exercises
-          // feature/unfeature toggling, not that unrelated cover-visibility rule.
-          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverImage: '/tastekin-media/private-hotel-preview.webp', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+          // An explicit uploaded coverImage — this test exercises
+          // feature/unfeature toggling, not cover resolution.
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'public', coverImage: '/tastekin-media/private-hotel-preview.webp', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
         ],
       }),
     });
@@ -1075,20 +1063,33 @@ test('keeps owner controls compact without a standalone preview button and persi
   await expect(page.getByTestId('featured-collection-quiet-luxury')).toHaveCount(0);
 });
 
-test('keeps a subscriber-only edit on its locked preview until media access is authorized', async ({ page }) => {
-  await switchToConsumer(page);
+test('opens an Edit that was "subscribers only" before the free product as an ordinary public Edit: no lock, no price, no subscribe button', async ({ page }) => {
+  // A visitor (not the owner) reading the former private-hotel Edit from
+  // the public feed.
+  await page.route('**/api/me', async (route) => {
+    await route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'private, no-store, max-age=0' }, body: JSON.stringify({ user: { id: 'visitor-1', email: 'visitor@tastekin.test' }, role: 'consumer', creator: null, isAdmin: false, language: 'en', featureFlags: {} }) });
+  });
+  await page.route('**/api/public-feed', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ items: [{ creatorUsername: 'fheed', creatorName: 'Fheed Alaiban', creatorVerified: true, creatorAvatar: '/tastekin-media/fheed-profile.webp', following: false, edit: privateHotelFeed }] }) });
+  });
+  await page.route('**/api/edits/private-hotel/engagement', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ editId: 'private-hotel', likeCount: 0, commentCount: 0, liked: false, saved: false }) });
+  });
+  await page.route('**/api/edits/private-hotel/comments', async (route) => {
+    await route.fulfill({ contentType: 'application/json', body: '[]' });
+  });
+  await page.reload();
   await page.getByTestId('nav-home').click();
   await page.getByTestId('edit-title-private-hotel').click();
 
-  await expect(page.locator('.approved-detail-art')).toHaveClass(/locked/);
-  await expect(page.getByText('This edit is for subscribers')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Subscribe/ })).toBeVisible();
-
-  await page.getByRole('button', { name: /Subscribe/ }).click();
-  await expect(page.getByRole('heading', { name: 'Subscribe to Fheed Alaiban' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Subscribe/ })).toBeDisabled();
-  await expect(page.getByText('No payment or access is being simulated.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Save this edit' })).toHaveCount(0);
+  await expect(page.getByText('Public Edit')).toBeVisible();
+  await expect(page.locator('.approved-detail-art')).not.toHaveClass(/locked/);
+  await expect(page.locator('.approved-detail-art img')).toHaveAttribute('src', '/tastekin-media/private-hotel-preview.webp');
+  await expect(page.getByText('This edit is for subscribers')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /Subscribe/ })).toHaveCount(0);
+  await expect(page.getByText(/\$19\.99|\$1\.49|Stripe/)).toHaveCount(0);
+  // The ordinary engagement panel is offered instead of a paywall.
+  await expect(page.getByRole('group', { name: 'Edit engagement' }).or(page.getByLabel('Edit engagement'))).toBeVisible();
 });
 
 test('caps a portrait Home photo taller than 4:5 at 4:5, and leaves square and landscape photos alone', async ({ page }) => {

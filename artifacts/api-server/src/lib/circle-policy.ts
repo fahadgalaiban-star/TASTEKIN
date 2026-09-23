@@ -1,3 +1,5 @@
+import { normalizeLegacyEdit } from "./edit-access";
+
 export type CircleCandidate = {
   ownerUserId: string | null;
   verified: boolean;
@@ -15,13 +17,15 @@ export function circleFeedVisible(ownerUserId: string | null, viewerUserId: stri
   return member && verified && ownerUserId !== viewerUserId && (!ownerUserId || !blockedOwners.has(ownerUserId));
 }
 
+/**
+ * Public shape of a Circle Edit: every Edit is public (legacy `locked` values
+ * are normalized), private object paths are rewritten to the public-media
+ * route, and the source/preview renditions are never exposed.
+ */
 export function sanitizeCircleEdit(edit: Record<string, unknown>, username: string) {
-  if (edit.access === "locked" && typeof edit.previewImage !== "string") return null;
-  const locked = edit.access === "locked";
-  const preview = edit.previewImage;
-  const image = locked
-    ? (preview as string).startsWith("/objects/") ? `/api/public-media/${encodeURIComponent(username)}/${edit.id}/preview` : preview
-    : typeof edit.image === "string" && edit.image.startsWith("/objects/")
-      ? `/api/public-media/${encodeURIComponent(username)}/${edit.id}` : edit.image;
-  return { ...edit, image, sourceImage: undefined, previewImage: undefined };
+  const normalized = normalizeLegacyEdit(edit);
+  const image = typeof normalized.image === "string" && normalized.image.startsWith("/objects/")
+    ? `/api/public-media/${encodeURIComponent(username)}/${normalized.id}`
+    : normalized.image;
+  return { ...normalized, image, sourceImage: undefined, previewImage: undefined };
 }

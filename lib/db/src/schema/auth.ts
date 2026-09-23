@@ -23,7 +23,7 @@ export const usersTable = pgTable("users", {
   // at; onboardingCompletedAt is the durable "has finished onboarding" value
   // requested for completion — null until the wizard (or an established/
   // admin/verified-account bypass) sets it. Neither column implies or grants
-  // isAdmin, isVerified, or any creator/subscriber entitlement.
+  // isAdmin, isVerified, or any creator entitlement.
   onboardingStep: text("onboarding_step").notNull().default("basics"),
   onboardingCompletedAt: timestamp("onboarding_completed_at", { withTimezone: true }),
   authProvider: text("auth_provider").notNull().default("replit"),

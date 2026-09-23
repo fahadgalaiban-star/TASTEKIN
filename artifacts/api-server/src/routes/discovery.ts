@@ -112,7 +112,7 @@ const edits = [
     title: "A slower morning",
     caption: "The small rituals that make a Tuesday feel like a Sunday.",
     contentType: "Routine",
-    access: "subscribers",
+    access: "public",
     image: images.ritual,
     altText: "Amber fragrance bottle and folded linen on a table",
     location: "At home",
@@ -167,7 +167,7 @@ const collections = [
     description: "A guide to dressing, moving, and staying somewhere beautifully.",
     image: images.travel,
     itemCount: 8,
-    access: "mixed",
+    access: "public",
     updatedAt: "Updated 3 days ago",
   },
   {
@@ -182,10 +182,10 @@ const collections = [
   },
 ];
 
-const publicEdit = <T extends (typeof edits)[number]>(edit: T) =>
-  edit.access === "subscribers"
-    ? { ...edit, image: "", altText: "Subscribers only edit preview" }
-    : edit;
+// Every seeded discovery Edit is public in the free product; the previous
+// "subscribers only" blanking is gone, so this is an identity kept only to
+// keep the call sites below unchanged.
+const publicEdit = <T extends (typeof edits)[number]>(edit: T) => edit;
 
 type Creator = (typeof creators)[number] & { ownerUserId?: string };
 

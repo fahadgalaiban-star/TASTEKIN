@@ -73,7 +73,6 @@ html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:t
 .approved-art { position:relative; display:block; width:100%; height:auto; aspect-ratio:4 / 5; padding:0; overflow:hidden; border:0; background:var(--tk-surface-muted); }
 .approved-art img { width:100%; height:100%; display:block; object-fit:cover; background:var(--tk-surface-muted); }
 .approved-art::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,transparent 45%,rgba(23,20,22,.42)); pointer-events:none; }
-.approved-access { position:absolute; z-index:1; top:10px; inset-inline-start:10px; display:inline-flex; align-items:center; gap:4px; padding:6px 9px; border-radius:999px; background:var(--tk-wine); color:var(--tk-text-inverse); font-size:10px; font-weight:800; }
 .approved-caption { padding:11px 13px 14px; color:var(--tk-stone); font-size:12px; line-height:1.45; }
 .approved-caption-row { display:flex; align-items:start; justify-content:space-between; gap:8px; }
 .approved-card-title { padding:0; border:0; background:transparent; color:var(--tk-ink); font-size:15px; font-weight:800; line-height:1.18; text-align:start; }
@@ -112,7 +111,6 @@ html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:t
 .place-card { position:relative; overflow:visible; border:1px solid var(--tk-border); background:var(--tk-surface); box-shadow:0 8px 24px var(--tk-shadow-soft); }
 .place-card-main { position:relative; width:100%; display:grid; gap:10px; padding:18px; border:0; background:linear-gradient(135deg,var(--tk-surface),var(--tk-surface-muted)); color:var(--tk-ink); text-align:start; }
 .place-card-category { color:var(--tk-wine); font-size:10px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-.place-card-main .approved-access { top:13px; }
 .place-card-open { display:inline-flex; align-items:center; gap:4px; color:var(--tk-wine); font-size:11px; font-weight:800; }
 .place-details { display:grid; gap:8px; margin:11px 0 14px; }
 .place-details.compact { margin:9px 0 0; }
@@ -129,7 +127,6 @@ html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:t
 .place-map-link:hover { text-decoration:underline; }
 .place-detail-panel { position:relative; margin:15px 0 12px; padding:19px; border:1px solid var(--tk-border); border-radius:20px; background:linear-gradient(135deg,var(--tk-surface),var(--tk-surface-muted)); }
 .place-detail-panel .place-details { margin:0; }
-.place-detail-panel .approved-access { position:static; width:max-content; margin-bottom:13px; }
 .edit-detail-caption { margin:2px 0 14px; color:var(--tk-stone); font-size:13px; line-height:1.5; }
 .approved-button { min-height:46px; padding:0 15px; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); font-size:13px; font-weight:800; }
 .approved-button.primary { background:var(--tk-wine); color:var(--tk-text-inverse); }
@@ -375,9 +372,6 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-list button { min-height:60px; display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border:1px solid var(--tk-border); border-radius:15px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:700; text-align:start; }
 .approved-detail-art { position:relative; width:100%; margin:15px 0 12px; overflow:hidden; border-radius:20px; background:var(--tk-surface-muted); }
 .approved-detail-art img { width:100%; height:100%; display:block; object-fit:cover; }
-.approved-detail-art.locked img { filter:blur(3px) saturate(.7); transform:scale(1.05); }
-.approved-detail-art.locked > div { position:absolute; inset:0; display:grid; place-content:center; justify-items:center; gap:10px; background:rgba(23,20,22,.38); color:var(--tk-text-inverse); text-align:center; }
-.approved-detail-art.locked > div strong { font-size:20px; }
 /* Phase 3B — video playback cards. .video-card-media mirrors .approved-art's
    own box (position, 4:5, overflow, muted background) so it can stand in
    for it directly on the Home feed (not nested inside a <button>, since it
@@ -409,8 +403,6 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .workspace-notice button { margin-inline-start:8px; padding:0; border:0; background:transparent; color:var(--tk-wine); font:inherit; font-weight:800; text-decoration:underline; }
 .workspace-sync { margin:8px 0 12px; padding:9px 11px; border:1px solid #c9dcd5; border-radius:12px; background:#eef7f3; color:#296657; font-size:11px; font-weight:700; line-height:1.4; }
 .approved-location { display:flex; align-items:center; gap:5px; margin:8px 0 14px; color:var(--tk-stone); font-size:12px; }
-.collection-gate { display:grid; justify-items:center; gap:8px; margin-top:22px; text-align:center; }
-.collection-gate svg { color:var(--tk-wine); }
 .workspace-head, .composer-title { display:flex; align-items:start; justify-content:space-between; gap:12px; }
 .workspace-head .approved-title, .composer-title .approved-title { margin-top:18px; }
 .workspace-head p { max-width:220px; margin:7px 0 17px; color:var(--tk-stone); font-size:12px; line-height:1.45; }
@@ -526,9 +518,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .form-two { display:grid; grid-template-columns:1fr 1fr; gap:9px; }
 .form-two .form-field { min-width:0; }
 .form-two.place-category-row { grid-template-columns:1fr; }
-.access-toggle { display:grid; grid-template-columns:1fr 1.35fr; gap:7px; margin:7px 0 14px; }
-.access-toggle button, .collection-checks button { min-height:42px; display:flex; align-items:center; justify-content:center; gap:6px; padding:7px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:700; text-align:center; }
-.access-toggle button.selected, .collection-checks button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
+.collection-checks button { min-height:42px; display:flex; align-items:center; justify-content:center; gap:6px; padding:7px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); color:var(--tk-ink); font-size:11px; font-weight:700; text-align:center; }
+.collection-checks button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .collection-checks { display:flex; flex-wrap:wrap; gap:7px; margin:7px 0 15px; }
 .collection-checks button { min-height:34px; padding:6px 9px; }
 .composer-actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; margin:17px 0 8px; }
@@ -1084,3 +1075,19 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
   padding-bottom:24px;
 }
 .composer-publish-footer .approved-button { width:100%; min-height:52px; }
+
+/* Store-facing legal pages (Privacy Policy, Terms of Use) and the
+   account-deletion flow — semantic tokens only, same type scale as Settings. */
+.legal-doc { display:grid; gap:12px; margin-top:8px; font-size:14px; line-height:1.6; color:var(--tk-text); }
+.legal-doc h2 { margin:14px 0 0; font-size:16px; letter-spacing:-.02em; }
+.legal-doc p { margin:0; }
+.legal-doc ul { margin:0; padding-inline-start:20px; display:grid; gap:6px; }
+.legal-doc li { margin:0; }
+.legal-doc section { display:grid; gap:8px; }
+.legal-effective { color:var(--tk-stone); font-size:12px; font-weight:700; }
+.legal-contact a { color:var(--tk-wine); font-weight:700; text-decoration:none; }
+.settings-danger { border-color:var(--tk-danger); }
+.settings-danger h3 { color:var(--tk-danger); }
+.delete-account-ack { align-items:flex-start; gap:10px; }
+.delete-account-ack input { margin-top:3px; }
+.approved-button.danger:disabled { border-color:var(--tk-border); color:var(--tk-disabled-text); background:var(--tk-disabled-surface); }

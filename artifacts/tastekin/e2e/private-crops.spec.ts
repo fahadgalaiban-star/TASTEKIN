@@ -1,7 +1,8 @@
 import { expect, test, type Browser, type Page, type Route } from '@playwright/test';
 import path from 'node:path';
 
-type Access = 'public' | 'locked';
+// TASTEKIN is free: every Edit is public (the API normalizes legacy values).
+type Access = 'public';
 type Edit = {
   id: string;
   category: string;
@@ -167,19 +168,9 @@ class PrivateCropApi {
       ...this.workspace,
       edits: this.workspace.edits
         .filter((edit) => edit.status === 'published')
-        .map((edit) => {
-          if (edit.access === 'locked' && edit.image) {
-            return {
-              ...edit,
-              image: `/api/public-media/fheed/${edit.id}/preview`,
-              previewImage: `/api/public-media/fheed/${edit.id}/preview`,
-              sourceImage: undefined,
-            };
-          }
-          return edit.image?.startsWith('/objects/')
-            ? { ...edit, image: `/api/public-media/fheed/${edit.id}` }
-            : edit;
-        }),
+        .map((edit) => edit.image?.startsWith('/objects/')
+          ? { ...edit, image: `/api/public-media/fheed/${edit.id}`, sourceImage: undefined, previewImage: undefined }
+          : { ...edit, sourceImage: undefined, previewImage: undefined }),
     };
   }
 
@@ -315,17 +306,10 @@ class PrivateCropApi {
       return;
     }
 
-    const previewMatch = url.pathname.match(/^\/api\/public-media\/[^/]+\/([^/]+)\/preview$/);
-    if (previewMatch) {
-      const edit = this.workspace.edits.find((item) => item.id === previewMatch[1]);
-      await this.image(route, edit?.access === 'locked' && Boolean(edit.previewImage) ? 200 : 404);
-      return;
-    }
-
     const publicMatch = url.pathname.match(/^\/api\/public-media\/[^/]+\/([^/]+)$/);
     if (publicMatch) {
       const edit = this.workspace.edits.find((item) => item.id === publicMatch[1]);
-      await this.image(route, edit?.access === 'public' && edit.status === 'published' ? 200 : 404);
+      await this.image(route, edit?.status === 'published' ? 200 : 404);
       return;
     }
 
@@ -407,33 +391,34 @@ test('an authenticated creator persists each exact canonical crop format after p
   await context.close();
 });
 
-test('anonymous visitors receive only a locked crop preview and cannot retrieve its source or crop', async ({ browser }) => {
+test('anonymous visitors receive the published crop through the public media route and can never retrieve the private renditions', async ({ browser }) => {
   const api = new PrivateCropApi();
-  const locked: Edit = {
+  const seeded: Edit = {
     ...existingEdit,
-    id: 'seeded-locked-edit',
-    title: 'Locked crop stays private',
-    access: 'locked',
+    id: 'seeded-public-edit',
+    title: 'Published crop is public',
+    access: 'public',
     image: '/objects/uploads/seeded-crop',
     sourceImage: '/objects/uploads/seeded-source',
     previewImage: '/objects/uploads/seeded-preview',
   };
-  api.workspace.edits.push(locked);
+  api.workspace.edits.push(seeded);
 
   const visitorContext = await browser.newContext();
   const visitor = await visitorContext.newPage();
   await api.attach(visitor);
   await visitor.goto('/');
-  await expect(visitor.getByRole('button', { name: 'Locked crop stays private' })).toBeVisible();
-  const card = visitor.locator('article').filter({ hasText: 'Locked crop stays private' });
-  await expect(card.locator('img')).toHaveAttribute('src', `/api/public-media/fheed/${locked!.id}/preview`);
+  await expect(visitor.getByRole('button', { name: 'Published crop is public' })).toBeVisible();
+  const card = visitor.locator('article').filter({ hasText: 'Published crop is public' });
+  await expect(card.locator('img')).toHaveAttribute('src', `/api/public-media/fheed/${seeded!.id}`);
+  await expect(card.locator('.approved-access')).toHaveCount(0);
 
-  const [preview, source, crop] = await visitor.evaluate(async ({ id, sourceImage, image }) => Promise.all([
-    fetch(`/api/public-media/fheed/${id}/preview`).then((response) => response.status),
+  const [publicMedia, source, crop] = await visitor.evaluate(async ({ id, sourceImage, image }) => Promise.all([
+    fetch(`/api/public-media/fheed/${id}`).then((response) => response.status),
     fetch(`/api/storage${sourceImage}`).then((response) => response.status),
     fetch(`/api/storage${image}`).then((response) => response.status),
-  ]), { id: locked!.id, sourceImage: locked!.sourceImage, image: locked!.image });
-  expect(preview).toBe(200);
+  ]), { id: seeded!.id, sourceImage: seeded!.sourceImage, image: seeded!.image });
+  expect(publicMedia).toBe(200);
   expect(source).toBe(404);
   expect(crop).toBe(404);
 
@@ -502,7 +487,7 @@ test('creator profile photo, private birthday, and public age settings persist w
   await page.getByTestId('nav-explore').click();
   await page.getByTestId('fheed-profile-mini').click();
   await expect(page.getByRole('button', { name: 'Follow' })).toBeVisible();
-  await expect(page.getByRole('button', { name: /Subscribe · \$19\.99/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Subscribe/ })).toHaveCount(0);
   await expect(page.getByText(/followers/i)).toHaveCount(0);
   await context.close();
 });

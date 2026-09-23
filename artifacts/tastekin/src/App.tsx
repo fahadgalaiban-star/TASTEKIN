@@ -5,7 +5,7 @@ import { Drawer } from 'vaul';
 import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
-  Home, ImagePlus, Link2, LockKeyhole, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
+  Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
   Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
@@ -13,6 +13,7 @@ import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIO
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
 import { apiUrl, isNativeApp, nativeClientFields, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
+import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -29,13 +30,23 @@ type Language = 'en' | 'ar';
 const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
 type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
-type Screen = 'home' | 'explore' | 'add' | 'kin' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'subscribe' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'adminFeatureFlags' | 'adminAnalytics' | 'blockedAccounts' | 'mutedAccounts' | 'settings' | 'auth' | 'onboarding' | 'myThings' | 'myThingsAdd' | 'myThingsEdit';
+type Screen = 'home' | 'explore' | 'add' | 'kin' | 'saved' | 'you' | 'profile' | 'profileEdit' | 'verificationApply' | 'collections' | 'collection' | 'about' | 'match' | 'edit' | 'composer' | 'creatorPreview' | 'collectionManager' | 'tune-taste' | 'inbox' | 'conversation' | 'insights' | 'adminVerification' | 'adminReports' | 'adminFeatureFlags' | 'adminAnalytics' | 'blockedAccounts' | 'mutedAccounts' | 'settings' | 'auth' | 'onboarding' | 'myThings' | 'myThingsAdd' | 'myThingsEdit' | 'privacy' | 'terms' | 'deleteAccount';
 // The five bottom-tab destinations. Navigating to one of these always
 // replaces the current history entry (never pushes) so switching tabs can
 // never grow a back-button stack; every other screen is a "nested" one that
 // pushes a real history entry when it's opened, so the OS/browser Back
 // gesture — not just the on-screen arrow — can return to it.
 const ROOT_SCREENS: Screen[] = ['home', 'explore', 'kin', 'saved', 'you'];
+// Public, store-facing pages served by plain URL (the API server falls back
+// to index.html for every non-API path): the Privacy Policy, the Terms of
+// Use, and the account-deletion page linked from Google Play.
+function publicPageForPath(pathname: string): Screen | null {
+  const path = pathname.replace(/\/+$/, '') || '/';
+  if (path === '/privacy') return 'privacy';
+  if (path === '/terms') return 'terms';
+  if (path === '/delete-account') return 'deleteAccount';
+  return null;
+}
 
 type Category = 'All' | 'Fashion' | 'Travel' | 'Places' | 'Restaurants' | 'DailyRoutine' | 'PersonalCare' | 'HealthFitness' | 'Decor' | 'Books' | 'Vlogs';
 type HomeFeedTab = 'for-you' | 'following' | 'my-circle';
@@ -45,7 +56,10 @@ const homeFeedHeaderCopy: Record<HomeFeedTab, { en: string; ar: string; enSub: s
   'my-circle': { en: 'My Circle', ar: 'دائرتي', enSub: 'The creators you keep close', arSub: 'المبدعون الأقرب إليك' },
 };
 type EditStatus = 'draft' | 'published' | 'archived';
-type Access = 'public' | 'locked';
+// TASTEKIN is free: every Edit and collection is public. The server still
+// accepts the legacy 'locked' value from older clients but always returns
+// 'public', so nothing here branches on access any more.
+type Access = 'public';
 type ImageMetadata = { name: string; size: number; contentType: string };
 
 const CircleSparkleIcon = ({ className, style }: { className?: string; style?: React.CSSProperties }) => (
@@ -144,11 +158,9 @@ const blankCreatorProfile: CreatorProfile = {
 const seedEdits: CreatorEdit[] = [
   { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: media('quiet-tailoring.webp'), location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Fheed seated outside a London café in a linen polo.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
   { id: 'black-uniform', category: 'Fashion', title: 'The all-black uniform', titleAr: 'الإطلالة السوداء الكاملة', caption: 'Three pieces I return to when I want less noise.', captionAr: 'ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً.', image: media('black-uniform.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A black evening outfit on Fheed.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
-  { id: 'private-hotel', category: 'Travel', title: 'Private hotel weekend', titleAr: 'عطلة فندقية خاصة', caption: 'The stay, the packing list, and where I ate.', captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.', image: media('private-hotel-preview.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A blurred private hotel preview.', access: 'locked', status: 'published', collectionIds: ['coastal-edit'] },
   { id: 'coastal-notes', category: 'Travel', title: 'Coastal notes', titleAr: 'ملاحظات من الساحل', caption: 'A slow itinerary for wind, coffee, and open horizons.', captionAr: 'برنامج هادئ للهواء والقهوة والأفق.', image: media('coastal-notes.webp'), location: 'The Aegean Coast', locationAr: 'ساحل إيجه', altText: 'A calm coastal landscape.', access: 'public', status: 'published', collectionIds: ['coastal-edit'] },
   { id: 'places-returning', category: 'Places', title: 'Places worth returning to', titleAr: 'أماكن تستحق العودة إليها', caption: 'A Kuwaiti table and a London room I keep thinking about.', captionAr: 'مائدة كويتية ومكان في لندن لا يفارق ذاكرتي.', image: media('places-returning.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A table set in a considered restaurant.', access: 'public', status: 'published', collectionIds: [] },
   { id: 'what-i-ordered', category: 'Restaurants', title: 'What I ordered', titleAr: 'ما طلبته', caption: 'A simple lunch worth repeating.', captionAr: 'غداء بسيط يستحق التكرار.', image: media('what-i-ordered.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A plated lunch at a restaurant.', access: 'public', status: 'published', collectionIds: [] },
-  { id: 'training-week', category: 'HealthFitness', title: 'Training week', titleAr: 'أسبوع التدريب', caption: 'The strength and recovery routine I actually keep.', captionAr: 'روتين القوة والاستشفاء الذي ألتزم به فعلاً.', image: media('training-week-preview.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A blurred training session preview.', access: 'locked', status: 'published', collectionIds: [] },
   { id: 'sunday-reset', category: 'DailyRoutine', title: 'Sunday reset', titleAr: 'استعادة نشاط الأحد', caption: 'A realistic reset for movement, food, and planning.', captionAr: 'ترتيب واقعي للحركة والطعام والتخطيط.', image: media('sunday-reset.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A quiet Sunday scene.', access: 'public', status: 'published', collectionIds: [] },
   { id: 'morning-ritual', category: 'PersonalCare', title: 'A simple morning ritual', titleAr: 'روتين صباحي بسيط', caption: 'The personal-care steps that help me start well.', captionAr: 'خطوات العناية الشخصية التي تساعدني على بداية أفضل.', image: media('hotel-breakfast-source.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A quiet hotel breakfast table.', access: 'public', status: 'published', collectionIds: [] },
   { id: 'home-light', category: 'Decor', title: 'Light at home', titleAr: 'إضاءة المنزل', caption: 'Small changes for a calmer room.', captionAr: 'تغييرات صغيرة لغرفة أكثر هدوءاً.', image: media('quiet-tailoring.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A calm corner with soft natural light.', access: 'public', status: 'published', collectionIds: [] },
@@ -159,7 +171,7 @@ const seedEdits: CreatorEdit[] = [
 ];
 const seedCollections: CreatorCollection[] = [
   { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring', 'black-uniform'] },
-  { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'locked', coverEditId: 'private-hotel', editIds: ['private-hotel', 'coastal-notes'] },
+  { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر.', access: 'public', coverEditId: 'coastal-notes', editIds: ['coastal-notes'] },
 ];
 
 const read = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(`tastekin:${key}`) || '') as T; } catch { return fallback; } };
@@ -231,7 +243,6 @@ const publishValidationMessage = (edit: EditForm | CreatorEdit, ar: boolean) => 
   if (!edit.category) return ar ? 'اختر فئة قبل النشر.' : 'Choose a category before publishing.';
   if (edit.mapsUrl?.trim() && !isSafeMapsUrl(edit.mapsUrl)) return ar ? 'استخدم رابطًا صالحًا من خرائط Google أو Apple.' : 'Use a valid Google Maps or Apple Maps link.';
   const hasMedia = Boolean(edit.image) || Boolean(edit.video);
-  if (!hasMedia && edit.access === 'locked') return ar ? 'التوصيات بلا صورة أو فيديو يجب أن تكون عامة لأن التعديلات الخاصة تحتاج معاينة محمية.' : 'Place recommendations with no photo or video must be public because subscriber-only edits need protected preview media.';
   if (hasMedia) return '';
   if (!isPlaceCategory(edit.category)) return ar ? 'أضف صورة أو فيديو، أو اختر المطاعم أو الأماكن أو السفر لتوصية بلا صورة.' : 'Add a photo or video, or choose Restaurants, Places, or Travel for a no-media recommendation.';
   if (!edit.placeName?.trim()) return ar ? 'أضف صورة أو فيديو لنشر هذا التعديل.' : 'Add a photo or video to publish this Edit.';
@@ -250,23 +261,17 @@ function collectionCoverImage(collection: CreatorCollection, edits: CreatorEdit[
 }
 
 /**
- * A collection whose only available cover comes from a locked Edit has no
- * real (unblurred) photo to show here — that Edit's own `image` is already
- * the blurred/dark subscriber preview, never the source photo. Rather than
- * render that as this collection's cover (which would read as a paywall
- * treatment), the compact Featured collections strip skips it entirely. An
- * explicit `collection.coverImage` (an uploaded cover) is always a normal,
- * visible photo and is never hidden by this check.
+ * The compact Featured collections strip only shows a collection that has a
+ * real photo to use as its cover: an uploaded cover, its cover Edit's photo,
+ * or its first uploaded item.
  */
 function collectionHasVisibleCover(collection: CreatorCollection, edits: CreatorEdit[]) {
   if (collection.coverImage) return true;
   const chosen = collection.coverEditId ? edits.find((edit) => edit.id === collection.coverEditId) : undefined;
   const first = chosen || edits.find((edit) => edit.id === collection.editIds[0]);
-  if (first) return Boolean(first.image) && first.access !== 'locked';
+  if (first) return Boolean(first.image);
   return Boolean(collection.uploads?.[0]?.image);
 }
-
-function Price({ ar, withVerb = true }: { ar: boolean; withVerb?: boolean }) { return ar ? <>{withVerb && 'اشترك · '}<bdi dir="ltr">19.99</bdi> دولار شهريًا</> : <>{withVerb && 'Subscribe · '}$19.99 / month</>; }
 
 type TasteSessionSnapshot = {
   status: 'loading' | 'authenticated' | 'signed-out';
@@ -279,9 +284,6 @@ type TasteSessionSnapshot = {
   language: Language | null;
   notifyPush: boolean;
   notifyEmail: boolean;
-  // No subscriptions table exists yet; the server always answers false
-  // (honestly, not simulated) until Stripe entitlements are connected.
-  subscribed: boolean;
   supportEmail: string | null;
   // Server-computed and server-authorized (see GET /api/me): whether this
   // account still needs to go through new-user onboarding, and which step to
@@ -307,7 +309,7 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
     status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false,
-    language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null,
+    language: null, notifyPush: true, notifyEmail: true, supportEmail: null,
     needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: {}, revision: 0,
   });
   const refresh = useCallback(async () => {
@@ -319,7 +321,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'> & { nativeAuth?: unknown }
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
       // Native shell only: drops the stored token when the server itself
       // reports it invalid/revoked/expired (never on other failures).
       await reconcileNativeSession(payload);
@@ -333,7 +335,6 @@ function useTasteSessionController(): TasteSession {
           language: (payload.language === 'ar' || payload.language === 'en') ? payload.language : null,
           notifyPush: payload.notifyPush ?? true,
           notifyEmail: payload.notifyEmail ?? true,
-          subscribed: Boolean(payload.subscribed),
           supportEmail: payload.supportEmail ?? null,
           needsOnboarding: Boolean(payload.needsOnboarding),
           onboardingStep: isOnboardingStep(payload.onboardingStep) ? payload.onboardingStep : 'done',
@@ -351,7 +352,6 @@ function useTasteSessionController(): TasteSession {
           && current.notifyPush === next.notifyPush
           && current.googleAuthConfigured === next.googleAuthConfigured
           && current.notifyEmail === next.notifyEmail
-          && current.subscribed === next.subscribed
           && current.supportEmail === next.supportEmail
           && current.needsOnboarding === next.needsOnboarding
           && current.onboardingStep === next.onboardingStep
@@ -395,12 +395,20 @@ function TastekinApp() {
   const [language, setLanguage] = useState<Language>(() => new URLSearchParams(location.search).get('lang') === 'ar' ? 'ar' : read('interface-language', 'en'));
   const [passwordResetToken] = useState<string | null>(() => window.location.pathname === '/reset-password' ? new URLSearchParams(location.search).get('token') : null);
   const [authError] = useState<string | null>(() => new URLSearchParams(location.search).get('authError'));
-  const [screen, setScreen] = useState<Screen>(() => passwordResetToken || authError ? 'auth' : 'home');
+  // Store-facing public pages reachable by plain URL (no app needed): the
+  // Privacy Policy, the Terms of Use, and the account-deletion page Google
+  // Play links to. They open as ordinary nested screens.
+  const [publicPageScreen] = useState<Screen | null>(() => publicPageForPath(window.location.pathname));
+  const [screen, setScreen] = useState<Screen>(() => passwordResetToken || authError ? 'auth' : publicPageScreen ?? 'home');
   // Set for the duration of a single go() call that's restoring a screen the
   // browser/OS Back gesture (or the visible back arrow, via history.back())
   // already popped to — history itself is the source of truth for that
   // transition, so go() must not push or replace another entry on top of it.
   const isRestoringFromHistoryRef = useRef(false);
+  // Where AuthScreen returns after a successful sign-in. Only the public
+  // account-deletion page sets this (so a Google Play visitor lands back on
+  // it after signing in); everything else keeps the existing Home landing.
+  const authReturnScreen = useRef<Screen | null>(null);
   const [homeFeedTab, setHomeFeedTab] = useState<HomeFeedTab>('for-you');
   useEffect(() => {
     if (!myCircleEnabled && homeFeedTab === 'my-circle') setHomeFeedTab('for-you');
@@ -417,10 +425,6 @@ function TastekinApp() {
     if (savedConfirmationTimer.current !== null) window.clearTimeout(savedConfirmationTimer.current);
   }, []);
   const [following, setFollowing] = useState(false);
-  // Real subscription state is introduced with Stripe entitlements in Phase 3;
-  // until then this is the server's own honest answer (see GET /api/me),
-  // never a client-side guess.
-  const subscribed = session.subscribed;
   const [visitorPreview, setVisitorPreview] = useState(false);
   const [profileVisitorMode, setProfileVisitorMode] = useState(false);
   const [creatorEdits, setCreatorEdits] = useState<CreatorEdit[]>(seedEdits);
@@ -861,7 +865,6 @@ function TastekinApp() {
     else if (screen === 'explore') track('explore_viewed');
     else if (screen === 'profile') { if (viewedCreatorProfile.username) track('creator_profile_viewed', { creatorId: viewedCreatorProfile.username }); }
     else if (screen === 'edit') { const creatorId = selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername); track('edit_viewed', creatorId ? { editId: selectedEdit.id, creatorId } : { editId: selectedEdit.id }); }
-    else if (screen === 'subscribe') track('subscription_started');
     else if (screen === 'onboarding') track('onboarding_started');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
@@ -1248,15 +1251,18 @@ function TastekinApp() {
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SavedScreen ar={ar} saved={saved} lists={savedLists} activeListId={activeSavedListId} edits={publicFeedEdits} onSelectList={setActiveSavedListId} onCreateList={() => setSavedListCreatorOpen(true)} onRenameList={renameSavedList} onDeleteList={deleteSavedList} onOpen={openEdit} onUnsave={(id) => void toggleSaved(id)} />}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => openComposer()}>{t('Create an Edit', 'إنشاء منشور')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
-    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} subscribed={subscribed} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onSignIn={() => go('auth')} />}
-    {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => go('home')} />}
+    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} onSignIn={() => go('auth')} />}
+    {screen === 'privacy' && <LegalScreen ar={ar} kind="privacy" />}
+    {screen === 'terms' && <LegalScreen ar={ar} kind="terms" />}
+    {screen === 'deleteAccount' && <DeleteAccountScreen ar={ar} onSignIn={() => { authReturnScreen.current = 'deleteAccount'; go('auth'); }} onDeleted={() => go('home')} onOpenPrivacy={() => go('privacy')} />}
+    {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => { const next = authReturnScreen.current ?? 'home'; authReturnScreen.current = null; go(next); }} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onAbout={() => go('about')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
-     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><ProfileSectionTabs ar={ar} active="collections" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
-     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} canView={isCollectionOwnerView || !publicProfileViewer || subscribed} onOpen={openEdit} onSubscribe={() => go('subscribe')} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
-    {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><ProfileSectionTabs ar={ar} active="about" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div>{publicProfileViewer && viewedCreatorProfile.verified && <button className="approved-button primary wide" onClick={() => go('subscribe')}><Price ar={ar} /></button>}</SimpleScreen>}
-    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} subscribed={subscribed} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSubscribe={() => go('subscribe')} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} />}
+     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><ProfileSectionTabs ar={ar} active="collections" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
+     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
+    {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><ProfileSectionTabs ar={ar} active="about" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div></SimpleScreen>}
+    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -1271,7 +1277,6 @@ function TastekinApp() {
     {screen === 'myThingsAdd' && <AddClosetItemScreen ar={ar} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'myThingsEdit' && editingClosetItem && <EditClosetItemScreen ar={ar} item={editingClosetItem} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
-     {screen === 'subscribe' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t(`Subscribe to ${viewedCreatorProfile.displayName}`, `اشترك في ${viewedCreatorProfile.displayName}`)}><div className="approved-panel"><h3><Price ar={ar} withVerb={false} /></h3><p>{t('Private travel diaries, training routines, outfit details, and early collections.', 'مذكرات سفر خاصة، برامج تدريب، تفاصيل إطلالات، ومجموعات مبكرة.')}</p></div>{publicProfileViewer && <><button className="approved-button primary wide" disabled><Price ar={ar} /></button><p className="workspace-notice">{t('Secure checkout will open after Stripe entitlements are connected. No payment or access is being simulated.', 'سيتاح الدفع الآمن بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p></>}</SimpleScreen>}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
    </main>
     <CreateSavedListDrawer ar={ar} open={savedListCreatorOpen} onClose={() => setSavedListCreatorOpen(false)} onCreate={createSavedList} />
@@ -1525,7 +1530,7 @@ async function advanceOnboarding(): Promise<{ step: OnboardingStep; completed: b
  * session.onboardingStep (server state), so closing the app or signing out
  * mid-way and returning resumes exactly here, not from scratch.
  *
- * Deliberately never touches isAdmin, isVerified, subscriptions, or the
+ * Deliberately never touches isAdmin, isVerified, or the
  * Taste Seal — completing this flow only ever sets onboarding_completed_at.
  * Taste ordering here is a plain, deterministic reflection of the
  * categories/tags the user picked — no matching/recommendation claim.
@@ -1989,8 +1994,8 @@ function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutopla
     </article>;
   }
   const noPhoto = !edit.image;
-  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span>{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
-  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><img src={imageSrc(edit.image)} alt={edit.altText} />{edit.access === 'locked' && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}</button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
+  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
+  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><img src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
 
 function SavedScreen({ ar, saved, lists, activeListId, edits, onSelectList, onCreateList, onRenameList, onDeleteList, onOpen, onUnsave }: { ar: boolean; saved: string[]; lists: SavedList[]; activeListId: string | null; edits: CreatorEdit[]; onSelectList: (id: string | null) => void; onCreateList: () => void; onRenameList: (id: string, name: string) => Promise<void>; onDeleteList: (id: string) => Promise<void>; onOpen: (edit: CreatorEdit) => void; onUnsave: (id: string) => void }) {
@@ -2076,22 +2081,19 @@ function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean
     </Drawer.Content></Drawer.Portal>
   </Drawer.Root>;
 }
-function EditDetail({ edit, creatorUsername, ar, subscribed, saved, owner, onSave, onSubscribe, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; subscribed: boolean; saved: boolean; owner: boolean; onSave: () => void; onSubscribe: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
-  const locked = edit.access === 'locked';
+function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; saved: boolean; owner: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
   const caption = publicCaptionLine(edit, ar);
   const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption;
   const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
-  return <SimpleScreen kicker={locked ? (ar ? 'للمشتركين فقط' : 'Subscribers only') : (ar ? 'تعديل عام' : 'Public Edit')} title={detailTitle}>
-    {edit.image && <div className={`approved-detail-art ${locked ? 'locked' : ''}`} style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} />{locked && <div><LockKeyhole size={26} />{caption && <strong>{caption}</strong>}</div>}</div>}
+  return <SimpleScreen kicker={ar ? 'تعديل عام' : 'Public Edit'} title={detailTitle}>
+    {edit.image && <div className="approved-detail-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} /></div>}
     {edit.video && <VideoDetailPlayer video={edit.video} ar={ar} />}
     {isPlaceCategory(edit.category) && caption && caption !== detailTitle && <p className="edit-detail-caption">{caption}</p>}
-    {!edit.image && !edit.video && <div className={`place-detail-panel ${locked ? 'locked' : ''}`}>{locked && <span className="approved-access"><LockKeyhole size={11} /> {ar ? 'للمشتركين فقط' : 'Subscribers only'}</span>}<PlaceDetails edit={edit} ar={ar} showName={false} /></div>}
+    {!edit.image && !edit.video && <div className="place-detail-panel"><PlaceDetails edit={edit} ar={ar} showName={false} /></div>}
     {!edit.placeName && (edit.location || edit.locationAr) && <div className="approved-location"><MapPin size={14} />{placeLocation(edit, ar)}</div>}
-    {locked ? <div className="approved-panel"><h3>{ar ? 'هذا التعديل للمشتركين' : 'This edit is for subscribers'}</h3><p>{ar ? 'تظل الوسائط الخاصة محمية إلى أن يتم تأكيد اشتراكك في حسابك.' : 'Private media stays protected until your subscription is confirmed on your account.'}</p><button className="approved-button primary wide" onClick={onSubscribe}>{subscribed ? (ar ? 'بانتظار تأكيد الاشتراك' : 'Subscription pending confirmation') : <Price ar={ar} />}</button></div> : <>
-      {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} />}
-      {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
-      <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} />
-    </>}
+    {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} />}
+    {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
+    <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} />
   </SimpleScreen>;
 }
 
@@ -2286,7 +2288,7 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
   </SimpleScreen>;
 }
 
-function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onOpenAdminReports, onOpenBlockedAccounts, onOpenMutedAccounts, onOpenAdminFeatureFlags, onOpenAdminAnalytics, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; subscribed: boolean; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onOpenAdminReports: () => void; onOpenBlockedAccounts: () => void; onOpenMutedAccounts: () => void; onOpenAdminFeatureFlags: () => void; onOpenAdminAnalytics: () => void; onSignIn: () => void }) {
+function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onOpenAdminReports, onOpenBlockedAccounts, onOpenMutedAccounts, onOpenAdminFeatureFlags, onOpenAdminAnalytics, onOpenPrivacy, onOpenTerms, onOpenDeleteAccount, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onOpenAdminReports: () => void; onOpenBlockedAccounts: () => void; onOpenMutedAccounts: () => void; onOpenAdminFeatureFlags: () => void; onOpenAdminAnalytics: () => void; onOpenPrivacy: () => void; onOpenTerms: () => void; onOpenDeleteAccount: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   // UI-level convenience only — the server independently rejects
@@ -2315,11 +2317,6 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
       <h3>{t('Language', 'اللغة')}</h3>
       <div className="approved-segment"><button data-testid="settings-language-en" className={!ar ? 'selected' : ''} onClick={() => onSetLanguage('en')}>English</button><button data-testid="settings-language-ar" className={ar ? 'selected' : ''} onClick={() => onSetLanguage('ar')}>العربية</button></div>
     </div>
-    <div className="settings-section">
-      <h3>{t('Subscription', 'الاشتراك')}</h3>
-      <div className="settings-row"><span>{t('Status', 'الحالة')}</span><strong>{subscribed ? t('Subscribed', 'مشترك') : t('No active subscription', 'لا يوجد اشتراك نشط')}</strong></div>
-      <p className="settings-note">{t('Secure billing will open here once Stripe entitlements are connected. No payment or access is being simulated.', 'ستتاح إدارة الفوترة هنا بعد ربط صلاحيات Stripe. لا يتم حالياً محاكاة أي دفع أو وصول.')}</p>
-    </div>
     {notificationPreferencesEnabled ? <div className="settings-section">
       <h3>{t('Notifications', 'الإشعارات')}</h3>
       <label className="settings-toggle"><span>{t('Push notifications', 'إشعارات فورية')}</span><input type="checkbox" checked={pushNotifications} onChange={togglePush} disabled={session.status !== 'authenticated'} /></label>
@@ -2333,7 +2330,7 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
       <h3>{t('Creator info', 'معلومات المبدع')}</h3>
       <div className="settings-row"><span>{t('Verification', 'التوثيق')}</span><strong>{creatorProfile.verified ? t('Verified', 'موثّق') : t('Not verified', 'غير موثّق')}</strong></div>
       {!creatorProfile.verified && <button className="approved-button wide" onClick={onApplyVerification}>{t('Apply for verification', 'التقديم للتوثيق')}</button>}
-      <p className="settings-note">{t('Content locking is set per Edit in the composer (Public or Subscribers only) when you create or edit it.', 'يتم تحديد قفل المحتوى لكل تعديل من داخل محرر النشر (عام أو للمشتركين فقط) عند إنشائه أو تعديله.')}</p>
+      <p className="settings-note">{t('Everything you publish on TASTEKIN is free for everyone to see.', 'كل ما تنشره على TASTEKIN متاح مجاناً للجميع.')}</p>
     </div>}
     <div className="settings-section">
       <h3>{t('Privacy & Safety', 'الخصوصية والأمان')}</h3>
@@ -2354,7 +2351,123 @@ function SettingsScreen({ ar, owner, creatorProfile, subscribed, onApplyVerifica
         <a className="approved-button wide" href={`mailto:${session.supportEmail}`}>{t('Contact support', 'تواصل مع الدعم')}</a>
       </> : <p className="settings-note">{t('Support contact is not configured yet.', 'لم يتم تفعيل التواصل مع الدعم بعد.')}</p>}
     </div>
+    <div className="settings-section">
+      <h3>{t('Legal', 'الشروط والخصوصية')}</h3>
+      <button data-testid="settings-privacy" className="approved-button wide" onClick={onOpenPrivacy}><FileText size={16} /> {t('Privacy Policy', 'سياسة الخصوصية')}</button>
+      <button data-testid="settings-terms" className="approved-button wide" onClick={onOpenTerms}><FileText size={16} /> {t('Terms of Use', 'شروط الاستخدام')}</button>
+      <p className="settings-note">{t(`Effective ${LEGAL_EFFECTIVE_DATE}.`, `سارية اعتباراً من ${LEGAL_EFFECTIVE_DATE}.`)}</p>
+    </div>
     {session.status === 'authenticated' && <button data-testid="settings-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
+    {session.status === 'authenticated' && <div className="settings-section settings-danger">
+      <h3>{t('Delete account', 'حذف الحساب')}</h3>
+      <p className="settings-note">{t('Permanently delete your TASTEKIN account and the content you created. This cannot be undone.', 'احذف حساب TASTEKIN الخاص بك والمحتوى الذي أنشأته نهائياً. لا يمكن التراجع عن هذا الإجراء.')}</p>
+      <button data-testid="settings-delete-account" className="approved-button wide danger" onClick={onOpenDeleteAccount}><Trash2 size={16} /> {t('Delete account', 'حذف الحساب')}</button>
+    </div>}
+  </SimpleScreen>;
+}
+
+/**
+ * Privacy Policy / Terms of Use, rendered from src/legal.ts in the interface
+ * language. Reachable from Settings and by plain URL (/privacy, /terms).
+ */
+function LegalScreen({ ar, kind }: { ar: boolean; kind: LegalDocumentKind }) {
+  const document = legalDocument(kind, ar ? 'ar' : 'en');
+  return <SimpleScreen kicker="TASTEKIN" title={document.title}>
+    <article className="legal-doc" data-testid={`legal-${kind}`}>
+      <p className="legal-effective">{ar ? `سارية اعتباراً من ${LEGAL_EFFECTIVE_DATE}` : `Effective ${LEGAL_EFFECTIVE_DATE}`}</p>
+      <p>{document.intro}</p>
+      {document.sections.map((section) => <section key={section.heading}>
+        <h2>{section.heading}</h2>
+        {section.paragraphs?.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+        {section.bullets && <ul>{section.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul>}
+      </section>)}
+      <p className="legal-contact"><a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
+    </article>
+  </SimpleScreen>;
+}
+
+/**
+ * Permanent account deletion — a deliberate two-step flow. Step 1 explains
+ * exactly what is removed and what is kept; step 2 requires an explicit
+ * acknowledgement plus typing the confirmation word before the server call.
+ * The server (POST /api/me/delete-account) only ever deletes the caller's
+ * own account, revokes every web and native session, and the client then
+ * finishes its own sign-out. Also served at /delete-account for visitors
+ * without the app (Google Play's data-deletion link): signed-out visitors see
+ * the same explanation and a sign-in button that returns here.
+ */
+function DeleteAccountScreen({ ar, onSignIn, onDeleted, onOpenPrivacy }: { ar: boolean; onSignIn: () => void; onDeleted: () => void; onOpenPrivacy: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [step, setStep] = useState<'explain' | 'confirm' | 'done'>('explain');
+  const [acknowledged, setAcknowledged] = useState(false);
+  const [typed, setTyped] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const confirmed = acknowledged && typed.trim().toUpperCase() === 'DELETE';
+  const deleteNow = async () => {
+    if (!confirmed || busy) return;
+    setBusy(true); setError('');
+    try {
+      const response = await fetch('/api/me/delete-account', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'DELETE' }) });
+      const data = await response.json().catch(() => ({})) as { error?: string; code?: string };
+      if (!response.ok) {
+        if (data.code === 'admin_account') setError(t('Administrator accounts cannot delete themselves. Ask another administrator to remove the admin role first.', 'لا يمكن لحسابات المسؤولين حذف نفسها. اطلب من مسؤول آخر إزالة صلاحية الإدارة أولاً.'));
+        else if (data.code === 'audit_trail') setError(t('This account holds administrative records and must be handed over by an operator before it can be deleted. Contact support.', 'يحتوي هذا الحساب على سجلات إدارية ويجب تسليمه عبر مشغّل قبل حذفه. تواصل مع الدعم.'));
+        else setError(data.error || t('Your account could not be deleted right now. Nothing was changed. Please try again.', 'تعذر حذف حسابك الآن. لم يتغير شيء. حاول مرة أخرى.'));
+        return;
+      }
+      // Sessions are already revoked server-side; finish the local sign-out
+      // (native: forget the secure-storage token) and re-read /api/me.
+      if (isNativeApp) await nativeSignOut();
+      await session.refresh();
+      setStep('done');
+    } catch {
+      setError(t('Network error. Nothing was changed. Please try again.', 'خطأ في الشبكة. لم يتغير شيء. حاول مرة أخرى.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (step === 'done') {
+    return <SimpleScreen kicker={t('Account', 'الحساب')} title={t('Your account has been deleted', 'تم حذف حسابك')}>
+      <p data-testid="delete-account-done">{t('Your TASTEKIN account and the content you created have been permanently deleted. Any remaining photo or video files are removed shortly after.', 'تم حذف حساب TASTEKIN الخاص بك والمحتوى الذي أنشأته نهائياً. تُزال أي ملفات صور أو فيديو متبقية بعد ذلك بوقت قصير.')}</p>
+      <button className="approved-button primary wide" onClick={onDeleted}>{t('Done', 'تم')}</button>
+    </SimpleScreen>;
+  }
+  return <SimpleScreen kicker={t('Account', 'الحساب')} title={t('Delete your account', 'حذف حسابك')}>
+    <div className="approved-panel">
+      <h3>{t('This is permanent', 'هذا الإجراء نهائي')}</h3>
+      <p>{t('Deleting your account removes it completely and cannot be undone.', 'يؤدي حذف حسابك إلى إزالته بالكامل ولا يمكن التراجع عن ذلك.')}</p>
+    </div>
+    <div className="legal-doc">
+      <h2>{t('What is deleted', 'ما الذي يُحذف')}</h2>
+      <ul>
+        <li>{t('Your account, email and sign-in details, and every signed-in session on the web and in the app.', 'حسابك وبريدك وبيانات تسجيل الدخول، وكل جلسة مسجلة الدخول على الويب وفي التطبيق.')}</li>
+        <li>{t('Your creator profile, published and draft Edits, collections, photos and videos.', 'ملف المبدع الخاص بك، والتعديلات المنشورة والمسودات، والمجموعات، والصور والفيديوهات.')}</li>
+        <li>{t('Your likes, saves and lists, comments, follows, My Circle, private messages, My Things items and KIN searches, trips and saved recommendations.', 'إعجاباتك ومحفوظاتك وقوائمك وتعليقاتك ومتابعاتك ودائرتك ورسائلك الخاصة وعناصر أشيائي وعمليات بحث KIN والرحلات والتوصيات المحفوظة.')}</li>
+        <li>{t('Your blocks, mutes, verification application and settings.', 'الحظر والكتم وطلب التوثيق والإعدادات الخاصة بك.')}</li>
+      </ul>
+      <h2>{t('What is kept', 'ما الذي يُحتفظ به')}</h2>
+      <ul>
+        <li>{t('Reports and moderation records may be kept for safety, with an internal identifier that no longer links to you.', 'قد يُحتفظ بالبلاغات وسجلات الإشراف لأغراض السلامة بمعرّف داخلي لم يعد مرتبطاً بك.')}</li>
+      </ul>
+      <p><button type="button" className="auth-link" onClick={onOpenPrivacy}>{t('Read the Privacy Policy', 'اقرأ سياسة الخصوصية')}</button></p>
+    </div>
+    {session.status !== 'authenticated' && <>
+      <p className="settings-note">{t('Sign in to the account you want to delete to continue. No support contact is required.', 'سجّل الدخول إلى الحساب الذي تريد حذفه للمتابعة. لا حاجة للتواصل مع الدعم.')}</p>
+      <button data-testid="delete-account-sign-in" className="approved-button primary wide" onClick={onSignIn}>{t('Sign in to continue', 'تسجيل الدخول للمتابعة')}</button>
+    </>}
+    {session.status === 'authenticated' && step === 'explain' && <>
+      <p className="settings-note">{t(`Signed in as ${session.user?.email ?? 'your account'}.`, `مسجل الدخول باسم ${session.user?.email ?? 'حسابك'}.`)}</p>
+      <button data-testid="delete-account-continue" className="approved-button wide danger" onClick={() => setStep('confirm')}>{t('Continue to delete', 'المتابعة إلى الحذف')}</button>
+    </>}
+    {session.status === 'authenticated' && step === 'confirm' && <div className="settings-danger">
+      <label className="settings-toggle delete-account-ack"><input data-testid="delete-account-acknowledge" type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>{t('I understand this permanently deletes my account and everything I created.', 'أفهم أن هذا يحذف حسابي وكل ما أنشأته نهائياً.')}</span></label>
+      <label className="form-field"><span>{t('Type DELETE to confirm', 'اكتب DELETE للتأكيد')}</span><input data-testid="delete-account-confirm-input" type="text" autoComplete="off" autoCapitalize="characters" dir="ltr" value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="DELETE" /></label>
+      {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
+      <button data-testid="delete-account-submit" className="approved-button wide danger" disabled={!confirmed || busy} onClick={() => void deleteNow()}><Trash2 size={16} /> {busy ? t('Deleting…', 'جارٍ الحذف…') : t('Delete my account permanently', 'احذف حسابي نهائياً')}</button>
+      <button className="approved-button wide" disabled={busy} onClick={() => { setStep('explain'); setAcknowledged(false); setTyped(''); setError(''); }}>{t('Cancel', 'إلغاء')}</button>
+    </div>}
   </SimpleScreen>;
 }
 
@@ -2808,8 +2921,6 @@ const ANALYTICS_EVENT_LABELS: Record<string, { en: string; ar: string }> = {
   save_removed: { en: 'Save removed', ar: 'إزالة حفظ' },
   follow_added: { en: 'Follow added', ar: 'إضافة متابعة' },
   follow_removed: { en: 'Follow removed', ar: 'إزالة متابعة' },
-  subscription_started: { en: 'Subscription started', ar: 'بدء اشتراك' },
-  subscription_completed: { en: 'Subscription completed', ar: 'اكتمال اشتراك' },
 };
 
 /**
@@ -2941,7 +3052,7 @@ type MutedAccountRow = { id: string; username: string | null; displayName: strin
  * Lists accounts the signed-in user has muted and lets them unmute.
  * Mute is private and one-directional — the muted account is never told
  * about this list, and unmuting restores visibility immediately without
- * affecting follows, subscriptions, or any interaction.
+ * affecting follows or any interaction.
  */
 function MutedAccountsScreen({ ar, onSignIn }: { ar: boolean; onSignIn: () => void }) {
   const session = useTasteSession();
@@ -4956,10 +5067,8 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
   const myCircleEnabled = session.featureFlags.my_circle === true;
   const [sealOpen, setSealOpen] = useState(false);
   // This Profile presentation — the Edits grid and the Featured collections
-  // strip alike — never shows anything but public, published Edits, for
-  // owner and visitor alike. Locked/subscriber Edits stay excluded entirely
-  // rather than rendered with a paywall label or a dark/blurred placeholder.
-  const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published' && edit.access === 'public'), [edits]);
+  // strip alike — shows published Edits only, for owner and visitor alike.
+  const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
   const visibleFeaturedCollections = useMemo(() => featuredCollections.filter((collection) => collectionHasVisibleCover(collection, publishedEdits)), [featuredCollections, publishedEdits]);
   useEffect(() => {
     if (ownerView || !profile.username) return;
@@ -5001,7 +5110,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
 
   // A blank username means the requested creator genuinely does not exist
   // server-side (see viewedCreatorProfile above) — never render Follow,
-  // Subscribe, Message, or the Report/Block/Mute menu against a profile
+  // Message, or the Report/Block/Mute menu against a profile
   // that isn't real; those all require a real creator_workspaces row.
   if (!ownerView && !profile.username) {
     return <SimpleScreen kicker={ar ? 'الملف الشخصي' : 'Profile'} title={ar ? 'الحساب غير متاح' : 'Account unavailable'}>
@@ -5169,7 +5278,7 @@ function CreatorDashboard({ ar, displayName, edits, collections, busy, onNew, on
     const caption = (ar ? item.captionAr || item.caption || '' : item.caption || item.captionAr || '').split(/\r?\n/, 1)[0].trim();
     return title || caption || t('Photo Edit', 'تعديل صورة');
   };
-  const internalMeta = (item: CreatorEdit) => [item.access === 'locked' ? t('Subscribers only', 'للمشتركين فقط') : t('Public', 'عام'), placeLocation(item, ar)].filter(Boolean).join(' · ');
+  const internalMeta = (item: CreatorEdit) => [t('Public', 'عام'), placeLocation(item, ar)].filter(Boolean).join(' · ');
   return <section className="creator-workspace">
     <span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span>
     <div className="workspace-head"><div><h1 className="approved-title">{ar ? `مساء الخير، ${displayName}.` : `Good afternoon, ${displayName}.`}</h1><p>{t('Shape the next thing people save.', 'اصنع ما سيحفظه الناس لاحقاً.')}</p></div><button className="approved-button primary" onClick={onNew} disabled={busy}><Plus size={16} /> {t('New Edit', 'تعديل جديد')}</button></div>
@@ -5902,11 +6011,11 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
       })}
       {!collections.length && <Empty text={t('No Collections yet. Create one to start grouping your Edits.', 'لا توجد مجموعات بعد. أنشئ واحدة لتبدأ بتجميع تعديلاتك.')} />}
     </div>}
-    {editing !== null && <div className="manager-form"><h2>{t('Edit details', 'تعديل التفاصيل')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')}>{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')}>{t('Subscribers Only', 'للمشتركين فقط')}</button></div><button className="approved-button primary wide" onClick={onSave}>{t('Save changes', 'حفظ التغييرات')}</button></div>}
-    {editing === null && <div className="manager-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><span className="form-label">{t('Visibility', 'الوصول')}</span><div className="access-toggle"><button className={form.access === 'public' ? 'selected' : ''} onClick={() => update('access', 'public')}>{t('Public', 'عام')}</button><button className={form.access === 'locked' ? 'selected' : ''} onClick={() => update('access', 'locked')}>{t('Subscribers Only', 'للمشتركين فقط')}</button></div><button className="approved-button primary wide" onClick={onSave} disabled={!form.title.trim()}>{t('Create collection', 'إنشاء المجموعة')}</button></div>}
+    {editing !== null && <div className="manager-form"><h2>{t('Edit details', 'تعديل التفاصيل')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave}>{t('Save changes', 'حفظ التغييرات')}</button></div>}
+    {editing === null && <div className="manager-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave} disabled={!form.title.trim()}>{t('Create collection', 'إنشاء المجموعة')}</button></div>}
   </section>;
 }
-function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, canView, onOpen, onSubscribe, onAddEdits, onUploadPhotos, onRemoveItem, onReorder, onEditDetails, onUploadCover, onClearCover }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; allPublishedEdits: CreatorEdit[]; owner: boolean; canView: boolean; onOpen: (edit: CreatorEdit) => void; onSubscribe: () => void; onAddEdits: (editIds: string[]) => void; onUploadPhotos: (files: File[]) => void; onRemoveItem: (itemId: string) => void; onReorder: (order: string[]) => void; onEditDetails: () => void; onUploadCover: (file: File) => void; onClearCover: () => void }) {
+function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, onOpen, onAddEdits, onUploadPhotos, onRemoveItem, onReorder, onEditDetails, onUploadCover, onClearCover }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; allPublishedEdits: CreatorEdit[]; owner: boolean; onOpen: (edit: CreatorEdit) => void; onAddEdits: (editIds: string[]) => void; onUploadPhotos: (files: File[]) => void; onRemoveItem: (itemId: string) => void; onReorder: (order: string[]) => void; onEditDetails: () => void; onUploadCover: (file: File) => void; onClearCover: () => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [manageMode, setManageMode] = useState(false);
   const [addChoice, setAddChoice] = useState(false);
@@ -5928,12 +6037,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, can
   useEffect(() => { setOrder(combinedIds); }, [edits, uploads]);
   const orderedItems = order.map((id) => { const item = itemsById.get(id); return item ? { id, ...item } : null; }).filter((item): item is { id: string; image: string; label: string; kind: 'edit' | 'upload'; edit?: CreatorEdit } => Boolean(item));
   const totalCount = collection.editIds.length + uploads.length;
-  // The owner always renders their own Collection at full clarity: ownership
-  // (not the Collection's visibility setting) decides whether any lock
-  // treatment applies, here and for the cover/picker images below.
   const cover = collectionCoverImage(collection, edits);
-
-  if (!owner && !canView && collection.access === 'locked') return <SimpleScreen kicker={t('Subscribers only', 'للمشتركين فقط')} title={ar ? collection.titleAr : collection.title}><div className="approved-panel collection-gate"><LockKeyhole size={25} /><h3>{t('A private creator collection.', 'مجموعة خاصة من المبدع.')}</h3><p>{t('Subscribe to unlock the complete collection and its field notes.', 'اشترك لفتح المجموعة الكاملة وملاحظاتها.')}</p><button className="approved-button primary wide" onClick={onSubscribe}><Price ar={ar} /></button></div></SimpleScreen>;
 
   const beginDrag = (id: string) => (event: ReactPointerEvent<HTMLButtonElement>) => {
     if (!manageMode) return;
@@ -5980,7 +6084,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, can
         <p className="profile-taste-meta">
           {t(`${totalCount} items`, `${totalCount} عنصر`)}
           {' · '}
-          {collection.access === 'locked' ? <span className="collection-visibility"><LockKeyhole size={12} /> {t('Subscribers only', 'للمشتركين فقط')}</span> : <span className="collection-visibility"><Globe size={12} /> {t('Public', 'عام')}</span>}
+          <span className="collection-visibility"><Globe size={12} /> {t('Public', 'عام')}</span>
         </p>
       </div>
       {owner && <button className="approved-button" onClick={onEditDetails}><Pencil size={14} /> {t('Edit details', 'تعديل التفاصيل')}</button>}

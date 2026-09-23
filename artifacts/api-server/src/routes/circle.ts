@@ -31,19 +31,6 @@ function publicEdit(edit: Record<string, unknown>, username: string) {
   return sanitizeCircleEdit(edit, username);
 }
 
-const legacyLockedPreviews: Record<string, string> = {
-  "private-hotel": "/tastekin-media/private-hotel-preview.webp",
-  "training-week": "/tastekin-media/training-week-preview.webp",
-};
-
-function normalizeLockedEdit(edit: Record<string, unknown>) {
-  const preview = typeof edit.id === "string" ? legacyLockedPreviews[edit.id] : undefined;
-  if (edit.access === "locked" && preview && edit.image === "/tastekin-media/private-hotel-source.webp") {
-    return { ...edit, image: preview, sourceImage: undefined, previewImage: preview };
-  }
-  return edit;
-}
-
 async function requireUser(req: import("express").Request, res: import("express").Response) {
   noStore(res);
   if (!req.isAuthenticated()) {
@@ -138,7 +125,7 @@ router.get("/circle/feed", async (req, res): Promise<void> => {
     circleFeedVisible(workspace.ownerUserId, user.id, Boolean(verified), memberIds.has(workspace.creatorId), blocked),
   ).flatMap(({ workspace }) => {
     const profile = profileOf(workspace.profile);
-    return (workspace.edits as Array<Record<string, unknown>>).map(normalizeLockedEdit).filter((edit) => edit.status === "published" && (edit.access === "public" || edit.access === "locked"))
+    return (workspace.edits as Array<Record<string, unknown>>).filter((edit) => edit.status === "published")
       .map((edit) => publicEdit(edit, profile.username))
       .flatMap((edit) => edit ? [GetCircleFeedResponseItem.parse({ creatorUsername: profile.username, creatorName: profile.displayName, creatorVerified: true, edit })] : []);
   });

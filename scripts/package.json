@@ -16,6 +16,7 @@
     "verify:mutes": "tsx ./src/verify-mutes.ts",
     "verify:cors-auth": "tsx ./src/verify-cors-auth.ts",
     "verify:native-auth": "tsx ./src/verify-native-auth.ts",
+    "verify:account-deletion": "tsx ./src/verify-account-deletion.ts",
     "verify:profile-safety-actions": "tsx ./src/verify-profile-safety-actions.ts",
     "verify:feature-flags": "tsx ./src/verify-feature-flags.ts",
     "verify:analytics": "tsx ./src/verify-analytics.ts",

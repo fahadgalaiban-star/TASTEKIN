@@ -11,6 +11,4 @@ export type CollectionAccess = typeof CollectionAccess[keyof typeof CollectionAc
 
 export const CollectionAccess = {
   public: 'public',
-  mixed: 'mixed',
-  subscribers: 'subscribers',
 } as const;

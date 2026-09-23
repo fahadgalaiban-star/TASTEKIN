@@ -2,6 +2,11 @@ export const FHEED_CREATOR_ID = "fheed";
 
 const media = (name: string) => `/tastekin-media/${name}`;
 
+// Free product: every seeded Edit and collection is public. The original
+// "subscribers only" demo Edits (a blurred hotel preview and a blurred training
+// preview) were test seeds for a paywall that no longer exists and are not
+// seeded any more. Existing workspaces are never rewritten by this file — it
+// is only read when a workspace is first created.
 export const fheedWorkspaceSeed = {
   profile: {
     displayName: "Fheed Alaiban",
@@ -18,11 +23,9 @@ export const fheedWorkspaceSeed = {
   edits: [
     { id: "quiet-tailoring", category: "Fashion", title: "Quiet tailoring", titleAr: "أناقة هادئة", caption: "A soft-structured look for a long city day.", captionAr: "إطلالة مريحة ومنسّقة ليوم طويل في المدينة.", image: media("quiet-tailoring.webp"), location: "Mayfair, London", locationAr: "مايفير، لندن", altText: "Fheed seated outside a London café in a linen polo.", access: "public", status: "published", collectionIds: ["quiet-luxury"] },
     { id: "black-uniform", category: "Fashion", title: "The all-black uniform", titleAr: "الإطلالة السوداء الكاملة", caption: "Three pieces I return to when I want less noise.", captionAr: "ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً.", image: media("black-uniform.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A black evening outfit on Fheed.", access: "public", status: "published", collectionIds: ["quiet-luxury"] },
-    { id: "private-hotel", category: "Travel", title: "Private hotel weekend", titleAr: "عطلة فندقية خاصة", caption: "The stay, the packing list, and where I ate.", captionAr: "الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.", image: media("private-hotel-preview.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A blurred private hotel preview.", access: "locked", status: "published", collectionIds: ["coastal-edit"] },
     { id: "coastal-notes", category: "Travel", title: "Coastal notes", titleAr: "ملاحظات من الساحل", caption: "A slow itinerary for wind, coffee, and open horizons.", captionAr: "برنامج هادئ للهواء والقهوة والأفق.", image: media("coastal-notes.webp"), location: "The Aegean Coast", locationAr: "ساحل إيجه", altText: "A calm coastal landscape.", access: "public", status: "published", collectionIds: ["coastal-edit"] },
     { id: "places-returning", category: "Places", title: "Places worth returning to", titleAr: "أماكن تستحق العودة إليها", caption: "A Kuwaiti table and a London room I keep thinking about.", captionAr: "مائدة كويتية ومكان في لندن لا يفارق ذاكرتي.", image: media("places-returning.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A table set in a considered restaurant.", access: "public", status: "published", collectionIds: [] },
     { id: "what-i-ordered", category: "Restaurants", title: "What I ordered", titleAr: "ما طلبته", caption: "A simple lunch worth repeating.", captionAr: "غداء بسيط يستحق التكرار.", image: media("what-i-ordered.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A plated lunch at a restaurant.", access: "public", status: "published", collectionIds: [] },
-    { id: "training-week", category: "HealthFitness", title: "Training week", titleAr: "أسبوع التدريب", caption: "The strength and recovery routine I actually keep.", captionAr: "روتين القوة والاستشفاء الذي ألتزم به فعلاً.", image: media("training-week-preview.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A blurred training session preview.", access: "locked", status: "published", collectionIds: [] },
     { id: "sunday-reset", category: "DailyRoutine", title: "Sunday reset", titleAr: "استعادة نشاط الأحد", caption: "A realistic reset for movement, food, and planning.", captionAr: "ترتيب واقعي للحركة والطعام والتخطيط.", image: media("sunday-reset.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A quiet Sunday scene.", access: "public", status: "published", collectionIds: [] },
     { id: "morning-ritual", category: "PersonalCare", title: "A simple morning ritual", titleAr: "روتين صباحي بسيط", caption: "The personal-care steps that help me start well.", captionAr: "خطوات العناية الشخصية التي تساعدني على بداية أفضل.", image: media("hotel-breakfast-source.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A quiet hotel breakfast table.", access: "public", status: "published", collectionIds: [] },
     { id: "home-light", category: "Decor", title: "Light at home", titleAr: "إضاءة المنزل", caption: "Small changes for a calmer room.", captionAr: "تغييرات صغيرة لغرفة أكثر هدوءاً.", image: media("quiet-tailoring.webp"), location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "A calm corner with soft natural light.", access: "public", status: "published", collectionIds: [] },
@@ -33,6 +36,6 @@ export const fheedWorkspaceSeed = {
   ],
   collections: [
     { id: "quiet-luxury", title: "Quiet Luxury", titleAr: "فخامة هادئة", description: "Tailoring, materials, and a quieter way to dress.", descriptionAr: "تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.", access: "public", coverEditId: "quiet-tailoring", editIds: ["quiet-tailoring", "black-uniform"] },
-    { id: "coastal-edit", title: "The Coastal Edit", titleAr: "اختيارات الساحل", description: "Places, packing and private travel notes.", descriptionAr: "أماكن وحقائب وملاحظات سفر خاصة.", access: "locked", coverEditId: "private-hotel", editIds: ["private-hotel", "coastal-notes"] },
+    { id: "coastal-edit", title: "The Coastal Edit", titleAr: "اختيارات الساحل", description: "Places, packing and travel notes.", descriptionAr: "أماكن وحقائب وملاحظات سفر.", access: "public", coverEditId: "coastal-notes", editIds: ["coastal-notes"] },
   ],
 } as const;

@@ -109,11 +109,25 @@ in an autoscaled deployment each instance keeps its own budget (roughly N×)
 and a restart resets them; bcrypt cost 12 remains the floor. A shared store
 can replace the Map behind the same functions later.
 
+## Store-required account controls (PR-3)
+
+TASTEKIN v1 is completely free — no subscriptions, purchases, locked content
+or payment SDKs anywhere in the app or API. The remaining store requirements
+ship in the web bundle, so the shell gets them for free:
+
+- **Account deletion**: Settings → Delete account (two-step, EN/AR), backed
+  by `POST /api/me/delete-account`; also a public web page at
+  `/delete-account` for Google Play's data-deletion link. Details, data
+  affected and refusal rules: `docs/ACCOUNT-DELETION.md`.
+- **Privacy Policy / Terms of Use**: Settings → Legal, and public pages at
+  `/privacy` and `/terms` (EN/AR, copy in `src/legal.ts`, effective date in
+  `LEGAL_EFFECTIVE_DATE`). Contact: `support@tastekin.app`.
+
 ## What is deliberately *not* in the shell yet
 
 - Google / Apple sign-in on native (system-browser OAuth), Replit login.
-- Deep links / universal links, push notifications, in-app purchases (the
-  first release is free; no store products).
+- Deep links / universal links, push notifications. No in-app purchases,
+  ever, for v1 (free app; no store products).
 - Brand token / font alignment (Noto fonts, Warm Ivory `#F5F1E9` etc.) — the web
   app still uses its current tokens.
 
@@ -162,6 +176,8 @@ cd artifacts/tastekin && python3 native/generate-assets.py
 ## Before public store submission (tracked separately)
 
 Free app, no In-App Purchase / Play Billing / Stripe / product IDs / paywall.
-Still required: native auth, removal of paid-content remnants in the web app,
-account deletion, Privacy Policy and Terms URLs, reviewer demo access, and
-Apple sign-in alongside Google sign-in if Google ships on iOS.
+Done: native auth (PR-2), paid-content removal, account deletion, Privacy
+Policy and Terms URLs (PR-3). Still required: the production origin for
+`TASTEKIN_API_BASE_URL` / the public legal URLs, reviewer demo access, store
+listing metadata, and Apple sign-in alongside Google sign-in if Google ships
+on iOS.

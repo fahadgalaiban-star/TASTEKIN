@@ -59,7 +59,7 @@ import { mutedUserIds } from "../lib/mutes";
 
 const router: IRouter = Router();
 
-type WorkspaceEdit = { id?: unknown; status?: unknown; access?: unknown };
+type WorkspaceEdit = { id?: unknown; status?: unknown };
 
 function privateResponse(res: Response) {
   res.set("Cache-Control", "private, no-store");
@@ -77,7 +77,9 @@ export async function getEditContext(editId: string, userId?: string) {
   if (!workspace) return null;
   const edit = (workspace.edits as WorkspaceEdit[]).find((item) => item && item.id === editId)!;
   const owner = Boolean(userId && workspace.ownerUserId === userId);
-  const publicEdit = edit.status === "published" && edit.access === "public";
+  // Every published Edit is public in the free product (a legacy
+  // `access: "locked"` value no longer restricts anything).
+  const publicEdit = edit.status === "published";
   // A block is mutual and total: once either account has blocked the other,
   // neither can read the other's content through this shared resolver —
   // every engagement route (likes, saves, comments, views) goes through it.

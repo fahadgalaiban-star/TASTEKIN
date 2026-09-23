@@ -76,8 +76,6 @@ const EVENT_VALIDATORS: Record<AnalyticsEventName, Validator> = {
   save_removed: editViewed,
   follow_added: creatorProfileViewed,
   follow_removed: creatorProfileViewed,
-  subscription_started: noMetadata,
-  subscription_completed: noMetadata,
 };
 
 const EVENT_NAME_SET = new Set<string>(ANALYTICS_EVENT_NAMES);

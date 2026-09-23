@@ -6,13 +6,13 @@ Read this file at the start of every session. It is the master rule set. If any 
 
 ## 1. Context
 
-TASTEKIN is a mobile-first social creator marketplace: paid subscriptions, taste-matching, admin-controlled creator verification ("Taste Seal"), and an AI styling/travel feature called **KIN**.
+TASTEKIN is a mobile-first social creator app: taste-matching, admin-controlled creator verification ("Taste Seal"), and an AI styling/travel feature called **KIN**. **v1 is completely free** — no subscriptions, paid or locked content, in-app purchases or payment SDKs.
 
 - Solo founder/developer. **Works from an iPhone.** No desktop.
 - Stack: pnpm monorepo, Drizzle ORM, Neon PostgreSQL, Express 5, React, Replit Autoscale
 - Repo: `fahadgalaiban-star/TASTEKIN`
 - Live: `cheerful-easygoing-bytes.replit.app`
-- Revenue: flat subscription, 80/20 creator/platform split. Stripe Connect is blocked on company formation — do not scaffold payout code.
+- Revenue: none in v1 (founder decision: the app is free). Do not add payment SDKs, product IDs, paywalls or payout code.
 
 ### iPhone constraint (hard)
 

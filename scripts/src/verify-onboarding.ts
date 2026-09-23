@@ -233,7 +233,7 @@ async function main() {
       assert.equal(me.onboardingStep, "done");
     });
 
-    await check("onboarding never grants admin, verification, or subscriber access on its own", async () => {
+    await check("onboarding never grants admin or verification on its own", async () => {
       const me = await a.me();
       assert.equal(me.isAdmin, false);
     });

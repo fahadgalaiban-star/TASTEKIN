@@ -98,11 +98,19 @@ async function publicProfileCoverMedia(username: string, res: import("express").
   res.redirect(302, await getPrivateMediaDownloadURL(coverImage));
 }
 
+/**
+ * Every published Edit is public in the free product. The legacy `/preview`
+ * route is kept only so links minted before the paywall was removed keep
+ * resolving; it serves the same full photo as the main route (a blurred
+ * preview rendition is never served any more).
+ */
 async function publicEditMedia(username: string, editId: string, preview: boolean, res: import("express").Response) {
   const workspace = await creatorByUsername(username);
-  const edit = (workspace?.edits as Array<Record<string, unknown>> | undefined)?.find((item) => item.id === editId && item.status === "published" && item.access === (preview ? "locked" : "public"));
-  const image = preview ? edit?.previewImage : edit?.image;
-  if (typeof image !== "string" || !image.startsWith("/objects/")) { res.status(404).json({ error: preview ? "Media preview not found" : "Media object not found" }); return; }
+  const edit = (workspace?.edits as Array<Record<string, unknown>> | undefined)?.find((item) => item.id === editId && item.status === "published");
+  const image = typeof edit?.image === "string" && edit.image.startsWith("/objects/")
+    ? edit.image
+    : typeof edit?.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? edit.previewImage : null;
+  if (!image) { res.status(404).json({ error: preview ? "Media preview not found" : "Media object not found" }); return; }
   res.redirect(302, await getPrivateMediaDownloadURL(image));
 }
 

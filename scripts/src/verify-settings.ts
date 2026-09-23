@@ -97,7 +97,6 @@ class Session {
       language: string | null;
       notifyPush: boolean;
       notifyEmail: boolean;
-      subscribed: boolean;
       supportEmail: string | null;
       googleAuthConfigured: boolean;
     };
@@ -154,7 +153,7 @@ async function main() {
       assert.equal(me.language, "en");
       assert.equal(me.notifyPush, true);
       assert.equal(me.notifyEmail, true);
-      assert.equal(me.subscribed, false, "no subscriptions table exists yet — must never be simulated as true");
+      assert.equal("subscribed" in me, false, "TASTEKIN is free — /api/me exposes no subscription field at all");
     });
 
     await check("unauthenticated PUT /api/settings is rejected with 401", async () => {

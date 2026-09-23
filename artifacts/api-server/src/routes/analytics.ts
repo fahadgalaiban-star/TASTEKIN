@@ -69,7 +69,6 @@ async function summarizeWindow(days: number) {
     { step: "explore_viewed", count: eventCounts.explore_viewed ?? 0 },
     { step: "creator_profile_viewed", count: eventCounts.creator_profile_viewed ?? 0 },
     { step: "edit_viewed", count: eventCounts.edit_viewed ?? 0 },
-    { step: "subscription_started", count: eventCounts.subscription_started ?? 0 },
   ];
 
   return {

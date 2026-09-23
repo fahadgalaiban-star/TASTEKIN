@@ -32,14 +32,15 @@ TASTEKIN helps people discover creators, places, products, and routines through 
 
 - Phase 1 uses deterministic seeded discovery data and a provider-neutral relationship endpoint; production persistence and auth expansion belong to the next phases.
 - Browser demo state (taste selections, saved edits, follows) is stored under a TASTEKIN-prefixed localStorage namespace so refreshes preserve the consumer journey without exposing secrets.
-- Locked media is represented with an explicit access label and presentation blur/lock state; subscriber entitlement and protected object storage are intentionally deferred to Phase 2.
+- TASTEKIN is free: every published Edit and collection is public. Legacy `locked` values in stored workspaces are normalized to public on read (`api-server/src/lib/edit-access.ts`); private object storage is served through public-media routes for published Edits only.
 
 ## Product
 
 - Welcome, sign-in/sign-up, and Taste onboarding.
 - Mobile-first Home, Explore, Saved, and You navigation.
 - Creator profiles with explainable Taste Match details and creator-scoped Collections.
-- Public and Subscribers Only Edit cards/details, persistent save/follow relationships, and intentional loading, empty, error, and unavailable states.
+- Public Edit cards/details, persistent save/follow relationships, and intentional loading, empty, error, and unavailable states.
+- Store-required account controls: two-step account deletion (Settings and `/delete-account`), Privacy Policy (`/privacy`) and Terms of Use (`/terms`) in English and Arabic.
 
 ## User preferences
 

@@ -7,18 +7,19 @@ const VISITOR = {
 const NOURA_AVATAR = `/api/public-profile-media/${encodeURIComponent(VISITOR.username)}`;
 const LAYLA_AVATAR = '/tastekin-media/private-hotel-preview.webp';
 
-const edit = (id: string, access: 'public' | 'locked') => ({
+// Two public fixture Edits (TASTEKIN is free — every Edit is public).
+const edit = (id: string, variant: 'uniform' | 'hotel') => ({
   id,
   category: 'Fashion',
-  title: access === 'public' ? 'A considered uniform' : 'Private hotel weekend',
-  titleAr: access === 'public' ? 'إطلالة مدروسة' : 'عطلة فندقية خاصة',
-  caption: access === 'public' ? 'A quiet uniform for an everyday city.' : 'The stay, the packing list, and where I ate.',
-  captionAr: access === 'public' ? 'إطلالة هادئة ليوم عادي في المدينة.' : 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.',
-  image: access === 'public' ? '/tastekin-media/quiet-tailoring.webp' : '/tastekin-media/private-hotel-preview.webp',
+  title: variant === 'uniform' ? 'A considered uniform' : 'Private hotel weekend',
+  titleAr: variant === 'uniform' ? 'إطلالة مدروسة' : 'عطلة فندقية خاصة',
+  caption: variant === 'uniform' ? 'A quiet uniform for an everyday city.' : 'The stay, the packing list, and where I ate.',
+  captionAr: variant === 'uniform' ? 'إطلالة هادئة ليوم عادي في المدينة.' : 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.',
+  image: variant === 'uniform' ? '/tastekin-media/quiet-tailoring.webp' : '/tastekin-media/private-hotel-preview.webp',
   location: 'Kuwait City, Kuwait',
   locationAr: 'مدينة الكويت، الكويت',
-  altText: access === 'public' ? 'A considered outfit.' : 'Private hotel preview.',
-  access,
+  altText: variant === 'uniform' ? 'A considered outfit.' : 'Private hotel preview.',
+  access: 'public',
   status: 'published',
   collectionIds: [],
 });
@@ -42,12 +43,12 @@ async function session(page: Page, authenticated: boolean, language: 'en' | 'ar'
     body: JSON.stringify(authenticated ? {
       user: { id: 'member', email: 'member@tastekin.test' }, role: owner ? 'creator' : 'consumer',
       creator: owner ? { id: 'owner', handle: 'owner', displayName: 'Owner', verified: true, ownsWorkspace: true } : null,
-      isAdmin: false, language, notifyPush: true, notifyEmail: true, subscribed: false,
+      isAdmin: false, language, notifyPush: true, notifyEmail: true,
       supportEmail: null, needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false,
       featureFlags: { my_circle: myCircle },
     } : {
       user: null, role: 'consumer', creator: null, isAdmin: false, language: null,
-      notifyPush: true, notifyEmail: true, subscribed: false, supportEmail: null,
+      notifyPush: true, notifyEmail: true, supportEmail: null,
       needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: { my_circle: myCircle },
     }),
   }));
@@ -105,9 +106,9 @@ test('authenticated Home exposes My Circle, renders protected feed safely, and s
   let refreshed = false;
   await page.route('**/api/circle/feed', async (route) => {
     const items = [
-      { creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('circle-public', 'public') },
-      { creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: { ...edit('circle-locked', 'locked'), sourceImage: '/objects/private-hotel-source', previewImage: '/tastekin-media/private-hotel-preview.webp' } },
-      { creatorUsername: 'layla', creatorName: 'Layla', creatorVerified: true, edit: { ...edit('circle-public', 'public'), caption: 'Layla owns this duplicate edit ID.' } },
+      { creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('circle-public', 'uniform') },
+      { creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: { ...edit('circle-hotel', 'hotel'), sourceImage: '/objects/private-hotel-source' } },
+      { creatorUsername: 'layla', creatorName: 'Layla', creatorVerified: true, edit: { ...edit('circle-public', 'uniform'), caption: 'Layla owns this duplicate edit ID.' } },
     ];
     await route.fulfill({ contentType: 'application/json', body: JSON.stringify(refreshed ? [items[2]] : items) });
   });
@@ -124,7 +125,7 @@ test('authenticated Home exposes My Circle, renders protected feed safely, and s
   await expect(page.getByTestId('edit-card-circle-public').first().locator('.feed-creator-avatar img')).toHaveAttribute('src', NOURA_AVATAR);
   await expect(page.locator('img[src*="/objects/"]')).toHaveCount(0);
   await expect(page.getByTestId('edit-title-circle-public').first()).toBeVisible();
-  await expect(page.getByTestId('edit-title-circle-locked')).toBeVisible();
+  await expect(page.getByTestId('edit-title-circle-hotel')).toBeVisible();
   await expect(page.getByText('Layla owns this duplicate edit ID.')).toBeVisible();
   await expect(page.getByText('/objects/private-hotel-source')).toHaveCount(0);
   await expect(page.getByRole('combobox', { name: 'Filter creators' })).toHaveCount(0);
@@ -154,14 +155,14 @@ test('creator identity, media, and Save keep separate navigation across every Ho
     creatorVerified: true,
     creatorAvatar: NOURA_AVATAR,
     following: true,
-    edit: edit('home-navigation', 'public'),
+    edit: edit('home-navigation', 'uniform'),
   };
   await page.route('**/api/public-feed', async (route) => route.fulfill({
     contentType: 'application/json', body: JSON.stringify({ items: [publicItem] }),
   }));
   await page.route('**/api/circle/feed', async (route) => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify([{ creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('circle-navigation', 'public') }]),
+    body: JSON.stringify([{ creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('circle-navigation', 'uniform') }]),
   }));
   let saveRequest: { method: string; body: unknown } | null = null;
   await page.route('**/api/edits/circle-navigation/save', async (route) => {
@@ -221,7 +222,7 @@ test('My Circle keeps its loading state until members and feed are both ready', 
   });
   await page.route('**/api/circle/feed', async (route) => route.fulfill({
     contentType: 'application/json',
-    body: JSON.stringify([{ creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('loading-complete', 'public') }]),
+    body: JSON.stringify([{ creatorUsername: VISITOR.username, creatorName: VISITOR.displayName, creatorVerified: true, edit: edit('loading-complete', 'uniform') }]),
   }));
   await page.goto('/');
   await page.getByTestId('home-tab-my-circle').click();
