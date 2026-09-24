@@ -53,6 +53,16 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "User-uploaded video via Bunny Stream (backend foundation only in this phase — no upload endpoint, webhook, or UI is gated by this flag yet; it exists so later phases have a kill switch from day one). Missing Bunny configuration (BUNNY_STREAM_API_KEY/BUNNY_STREAM_LIBRARY_ID) never affects startup or any other feature while this flag is disabled.",
     defaultEnabled: false,
   },
+  {
+    key: "kin_travel_car_rental",
+    description: "KIN Travel car-rental referral: adds a 'Rent a car' link to a travel plan that opens the configured external partner (KIN_CAR_RENTAL_REFERRAL_URL) in a new tab, pre-filled with the destination and, when entered, the travel dates. TASTEKIN is a referral intermediary only — booking, payment, insurance, changes, cancellations and customer support stay with the partner. Nothing is emitted or shown while disabled, or while no partner URL is configured.",
+    defaultEnabled: false,
+  },
+  {
+    key: "kin_travel_restaurant_reservations",
+    description: "KIN Travel restaurant reservations referral: adds a 'Reserve a table' link, only on restaurant and café stops (never museums, parks, shops or other places), that opens the configured external partner (KIN_RESTAURANT_RESERVATION_URL) in a new tab. TASTEKIN is a referral intermediary only — the reservation, any payment, changes, cancellations and support stay with the partner. Nothing is emitted or shown while disabled, or while no partner URL is configured.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];

@@ -2199,6 +2199,149 @@ async function main() {
       assert.equal(rows.length, 0);
     });
 
+    // --- KIN Travel referrals: car rental + restaurant reservations (each flag OFF by default) ---
+    const REFERRAL_ENV = {
+      KIN_CAR_RENTAL_REFERRAL_URL: "https://cars.partner.example/search?city={destination}&from={startDate}&to={endDate}",
+      KIN_CAR_RENTAL_PARTNER_NAME: "CarPartner",
+      KIN_RESTAURANT_RESERVATION_URL: "https://tables.partner.example/reserve?name={name}&address={address}&place={placeId}",
+      KIN_RESTAURANT_RESERVATION_PARTNER_NAME: "TablePartner",
+    };
+    type ReferralPlace = { placeId: string; name: string; formattedAddress: string | null; slot: string | null; venueKind: string | null; reservation?: { url: string; partnerName: string | null } };
+    type ReferralPlan = { referrals?: { carRental?: { url: string; partnerName: string | null } }; days: Array<{ places: ReferralPlace[] }> };
+    const foodRequest = { query: "great restaurants for dinner and nice places for coffee", destination: "Paris", startDate: "2026-10-01", endDate: "2026-10-02" };
+    const planPlaces = (plan: ReferralPlan) => plan.days.flatMap((day) => day.places);
+    await check("referral flags are declared, OFF by default, and independent", async () => {
+      const listing = await admin.request("/api/admin/feature-flags");
+      await expectStatus(listing, 200);
+      const flags = (await listing.json() as { flags: Array<{ key: string; enabled: boolean }> }).flags;
+      for (const key of ["kin_travel_car_rental", "kin_travel_restaurant_reservations"]) {
+        const flag = flags.find((item) => item.key === key);
+        assert.ok(flag, `${key} must be a declared flag`);
+        assert.equal(flag.enabled, false, `${key} must be OFF by default`);
+      }
+    });
+    await check("flags OFF: a plan carries venue kinds (restaurant/café from Google's own types, null otherwise) but no referral field and no reservation on any place", async () => {
+      fakeAnthropicMode = { kind: "ok" };
+      fakeGooglePlacesMode = { kind: "ok" };
+      fakeGoogleRoutesMode = { kind: "ok" };
+      const response = await userA.kinTravelPlan(foodRequest);
+      await expectStatus(response, 200);
+      const plan = (await response.json() as { plan: ReferralPlan }).plan;
+      assert.equal("referrals" in plan, false, "no referrals field while the flag is off");
+      const places = planPlaces(plan);
+      assert.ok(places.some((place) => place.slot === "DINNER" && place.venueKind === "restaurant"), "dinner stops are restaurants");
+      assert.ok(places.some((place) => place.slot === "COFFEE" && place.venueKind === "cafe"), "coffee stops are cafés");
+      assert.ok(places.every((place) => place.reservation === undefined), "no reservation link on any place while the flag is off");
+      const attractions = await userA.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+      await expectStatus(attractions, 200);
+      const attractionPlan = (await attractions.json() as { plan: ReferralPlan }).plan;
+      assert.ok(planPlaces(attractionPlan).every((place) => place.venueKind === null), "tourist attractions are never restaurants/cafés");
+    });
+    await expectStatus(await admin.setFlag("kin_travel_car_rental", true), 200);
+    await expectStatus(await admin.setFlag("kin_travel_restaurant_reservations", true), 200);
+    try {
+      await check("flags ON but no partner URL configured: still nothing is emitted", async () => {
+        const response = await userA.kinTravelPlan(foodRequest);
+        await expectStatus(response, 200);
+        const plan = (await response.json() as { plan: ReferralPlan }).plan;
+        assert.equal("referrals" in plan, false);
+        assert.ok(planPlaces(plan).every((place) => place.reservation === undefined));
+      });
+      const referralServer = await startServer({
+        ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1000",
+        GOOGLE_MAPS_API_KEY: "fake-google-key", GOOGLE_PLACES_BASE_URL: `${googlePlacesBaseUrl}/places:searchText`, GOOGLE_ROUTES_BASE_URL: `${googleRoutesBaseUrl}/computeRoutes`,
+        GOOGLE_PLACES_PHOTO_BASE_URL: googlePlacesPhotoBaseUrl,
+        ...REFERRAL_ENV,
+      });
+      try {
+        const referralUser = new Session(referralServer.baseUrl);
+        await referralUser.signup(`kin-referral-${suffix}@example.com`, PASSWORD);
+        await check("flags ON + partner configured: the car-rental link carries the encoded destination and both travel dates, on https, with the partner name", async () => {
+          const response = await referralUser.kinTravelPlan({ ...foodRequest, destination: "São Paulo" });
+          await expectStatus(response, 200);
+          const plan = (await response.json() as { plan: ReferralPlan }).plan;
+          assert.equal(plan.referrals?.carRental?.url, "https://cars.partner.example/search?city=S%C3%A3o%20Paulo&from=2026-10-01&to=2026-10-02");
+          assert.equal(plan.referrals?.carRental?.partnerName, "CarPartner");
+        });
+        await check("without travel dates the car-rental link still carries the destination and leaves the date parameters empty", async () => {
+          const response = await referralUser.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+          await expectStatus(response, 200);
+          const plan = (await response.json() as { plan: ReferralPlan }).plan;
+          assert.equal(plan.referrals?.carRental?.url, "https://cars.partner.example/search?city=Paris&from=&to=");
+        });
+        await check("reservation links appear on restaurants and cafés only, never on attractions, with the place name and address encoded", async () => {
+          const response = await referralUser.kinTravelPlan(foodRequest);
+          await expectStatus(response, 200);
+          const places = planPlaces((await response.json() as { plan: ReferralPlan }).plan);
+          const dinner = places.find((place) => place.slot === "DINNER");
+          assert.ok(dinner?.reservation, "a dinner restaurant carries a reservation link");
+          assert.ok(dinner.reservation.url.startsWith("https://tables.partner.example/reserve?name=Fake%20Place%20"), dinner.reservation.url);
+          assert.ok(dinner.reservation.url.includes(`&place=${encodeURIComponent(dinner.placeId)}`));
+          assert.equal(dinner.reservation.partnerName, "TablePartner");
+          assert.ok(places.filter((place) => place.slot === "COFFEE").every((place) => place.venueKind === "cafe" && place.reservation !== undefined), "café stops carry a reservation link");
+          assert.ok(places.filter((place) => place.venueKind === null).every((place) => place.reservation === undefined), "non-restaurant places never carry one");
+          const attractions = await referralUser.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
+          await expectStatus(attractions, 200);
+          assert.ok(planPlaces((await attractions.json() as { plan: ReferralPlan }).plan).every((place) => place.reservation === undefined), "an attractions-only plan has no reservation links at all");
+        });
+        await check("swap-place decorates a restaurant replacement with a reservation link and an attraction replacement with none", async () => {
+          const dinnerSwap = await referralUser.request("/api/kin/travel/swap-place", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ destination: "Paris", excludePlaceIds: [], slot: "DINNER" }),
+          });
+          await expectStatus(dinnerSwap, 200);
+          const dinnerPlace = (await dinnerSwap.json() as { status: string; place: ReferralPlace }).place;
+          assert.equal(dinnerPlace.venueKind, "restaurant");
+          assert.ok(dinnerPlace.reservation?.url.startsWith("https://tables.partner.example/reserve?"));
+          const attractionSwap = await referralUser.request("/api/kin/travel/swap-place", {
+            method: "POST", headers: { "content-type": "application/json" },
+            body: JSON.stringify({ destination: "Paris", excludePlaceIds: [] }),
+          });
+          await expectStatus(attractionSwap, 200);
+          const attractionPlace = (await attractionSwap.json() as { status: string; place: ReferralPlace }).place;
+          assert.equal(attractionPlace.venueKind, null);
+          assert.equal(attractionPlace.reservation, undefined);
+        });
+        await check("no partner secret or API key leaks into a referral response", async () => {
+          const response = await referralUser.kinTravelPlan(foodRequest);
+          const text = await response.text();
+          assert.ok(!text.includes("fake-google-key") && !text.includes("fake-test-key"));
+        });
+      } finally {
+        stopServer(referralServer);
+      }
+      await check("a non-https partner template is refused: nothing is emitted even with the flags on", async () => {
+        const insecureServer = await startServer({
+          ANTHROPIC_API_KEY: "fake-test-key", ANTHROPIC_BASE_URL: anthropicBaseUrl, KIN_SEARCH_DAILY_LIMIT: "1000",
+          GOOGLE_MAPS_API_KEY: "fake-google-key", GOOGLE_PLACES_BASE_URL: `${googlePlacesBaseUrl}/places:searchText`, GOOGLE_ROUTES_BASE_URL: `${googleRoutesBaseUrl}/computeRoutes`,
+          GOOGLE_PLACES_PHOTO_BASE_URL: googlePlacesPhotoBaseUrl,
+          KIN_CAR_RENTAL_REFERRAL_URL: "http://cars.partner.example/search?city={destination}",
+          KIN_RESTAURANT_RESERVATION_URL: "javascript:alert({name})",
+        });
+        try {
+          const session = new Session(insecureServer.baseUrl);
+          await session.signup(`kin-insecure-${suffix}@example.com`, PASSWORD);
+          const response = await session.kinTravelPlan(foodRequest);
+          await expectStatus(response, 200);
+          const plan = (await response.json() as { plan: ReferralPlan }).plan;
+          assert.equal("referrals" in plan, false);
+          assert.ok(planPlaces(plan).every((place) => place.reservation === undefined));
+        } finally {
+          stopServer(insecureServer);
+        }
+      });
+    } finally {
+      await expectStatus(await admin.setFlag("kin_travel_car_rental", false), 200);
+      await expectStatus(await admin.setFlag("kin_travel_restaurant_reservations", false), 200);
+    }
+    await check("flags switched back OFF: the plan carries no referral data again", async () => {
+      const response = await userA.kinTravelPlan(foodRequest);
+      await expectStatus(response, 200);
+      const plan = (await response.json() as { plan: ReferralPlan }).plan;
+      assert.equal("referrals" in plan, false);
+      assert.ok(planPlaces(plan).every((place) => place.reservation === undefined));
+    });
+
     // --- missing API key: server never crashes, consumes nothing, degrades gracefully ---
     await check("missing ANTHROPIC_API_KEY: server boots fine, search returns the structured unavailable response, and never reaches a provider", async () => {
       const noKeyServer = await startServer({ ANTHROPIC_API_KEY: undefined, ANTHROPIC_BASE_URL: anthropicBaseUrl });

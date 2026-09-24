@@ -19,6 +19,7 @@ import {
   type KinTravelInterest,
 } from "./kin-search";
 import { logger } from "./logger";
+import { venueKindFor, type KinReferralLink, type KinVenueKind } from "./kin-referrals";
 
 const MAX_TRIP_DAYS = 10;
 const MAX_FOOD_CANDIDATES_PER_SLOT = 20;
@@ -31,6 +32,10 @@ export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "
   slot: KinTravelSlot | null;
   activityInterest?: ActivityInterest;
   openingHours: string | null;
+  /** Derived from Google's own place types: "restaurant" | "cafe" for somewhere a table can be reserved, null for every other kind of place. */
+  venueKind: KinVenueKind | null;
+  /** External reservation referral — present only when the kin_travel_restaurant_reservations flag is on AND a partner URL is configured AND the place is a restaurant/café (see lib/kin-referrals.ts). Never emitted otherwise. */
+  reservation?: KinReferralLink;
 };
 
 type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null; activityInterest?: ActivityInterest };
@@ -42,7 +47,7 @@ type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null;
  * alongside the URL since Google's ToS requires it be shown with the photo.
  */
 async function resolvePlace(place: TravelPlaceCandidate, date: string | null): Promise<KinTravelPlace | null> {
-  const { photoRef, openingPeriods, primaryType: _primaryType, types: _types, priceLevel: _priceLevel, requestedSlot, activityInterest, ...rest } = place;
+  const { photoRef, openingPeriods, primaryType, types, priceLevel: _priceLevel, requestedSlot, activityInterest, ...rest } = place;
   if (requestedSlot && !isOpenForSlot(requestedSlot, date, openingPeriods)) return null;
   const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
   return {
@@ -52,6 +57,7 @@ async function resolvePlace(place: TravelPlaceCandidate, date: string | null): P
     slot: requestedSlot,
     ...(activityInterest ? { activityInterest } : {}),
     openingHours: openingHoursForDate(date, openingPeriods),
+    venueKind: venueKindFor(primaryType, types),
   };
 }
 
@@ -95,6 +101,8 @@ export type KinTravelPlan = {
   citations: KinSearchCitation[];
   days: KinTravelDay[];
   stays?: KinTravelStays;
+  /** External referrals — present only when the corresponding flag is on AND a partner is configured (see lib/kin-referrals.ts). */
+  referrals?: { carRental?: KinReferralLink };
 };
 
 export type KinTravelResult =
