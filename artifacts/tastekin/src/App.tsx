@@ -4242,9 +4242,10 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
           {activeDay.places.map((place, index) => {
             const key = `${activeDay.dayIndex}:${place.placeId}`;
             const categoryLabel = kinPlaceCategoryLabel(place, ar);
-            // Restaurants/cafés only, and only while the flag is on: a small
-            // pill beside the stop's existing actions plus a one-line note
-            // under them. With the flag off the card is exactly as before.
+            // Restaurants/cafés only, and only while the flag is on: a compact
+            // burgundy "Reserve" button right after Directions in the stop's
+            // existing actions row. With the flag off the card is exactly as
+            // before. The single disclaimer sits below the day's itinerary.
             const reservation = reservationLinkFor(place, reservationsEnabled);
             return <div key={place.placeId} className="kin-timeline-item" data-testid="kin-travel-place">
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
@@ -4258,14 +4259,11 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{place.photoAttribution}</bdi></span>}
                   <div className="kin-timeline-actions">
                     {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={t(`Open ${place.name} in Google Maps`, `افتح ${place.name} في خرائط Google`)}>{t('Directions', 'الاتجاهات')}</a>}
-                    {reservation && <a className="kin-reserve-link" href={reservation.url} target="_blank" rel="noopener noreferrer sponsored" data-testid="kin-reserve-table" aria-label={reservation.partnerName ? t(`Reserve a table at ${place.name} with ${reservation.partnerName}`, `احجز طاولة في ${place.name} عبر ${reservation.partnerName}`) : t(`Reserve a table at ${place.name}`, `احجز طاولة في ${place.name}`)}>{t('Reserve a table', 'احجز طاولة')} <ExternalLink size={12} aria-hidden="true" /></a>}
+                    {reservation && <a className="kin-reserve-link" href={reservation.url} target="_blank" rel="noopener noreferrer sponsored" data-testid="kin-reserve-table" aria-label={t(`Reserve a table at ${place.name}`, `احجز طاولة في ${place.name}`)}>{t('Reserve', 'احجز')}<ExternalLink size={11} aria-hidden="true" /></a>}
                     <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
                       {addedTripItems.has(key) ? t('Saved', 'تم الحفظ') : addingTripItemKey === key ? t('Saving…', 'جارٍ الحفظ…') : t('Save to trip', 'احفظ للرحلة')}
                     </button>
                   </div>
-                  {reservation && <p className="kin-reserve-note" data-testid="kin-reservation-disclaimer">{reservation.partnerName
-                    ? t(`Reservation opens on ${reservation.partnerName}’s website. Payment, changes, cancellations and support are handled by ${reservation.partnerName}.`, `يُفتح الحجز على موقع ${reservation.partnerName}. يتولى ${reservation.partnerName} الدفع والتعديلات والإلغاء والدعم.`)
-                    : t('Reservation opens on the partner’s website. Payment, changes, cancellations and support are handled by the partner.', 'يُفتح الحجز على موقع الشريك. يتولى الشريك الدفع والتعديلات والإلغاء والدعم.')}</p>}
                 </div>
                 <button className="kin-timeline-swap" data-testid="kin-swap-place" disabled={swappingPlaceKey === key} onClick={() => void swapTravelPlace(activeDay, place)}>
                   {swappingPlaceKey === key ? t('SWAPPING…', 'جارٍ التبديل…') : t('SWAP', 'تبديل')}
@@ -4274,6 +4272,8 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
             </div>;
           })}
         </div>}
+        {activeDay.places.some((place) => reservationLinkFor(place, reservationsEnabled) !== null) &&
+          <p className="kin-reserve-note" data-testid="kin-reservation-disclaimer">{t('Reservations open on the partner’s website. The partner handles booking, payment, changes, cancellations and support.', 'يفتح الحجز في موقع الشريك، ويتولى الشريك الحجز والدفع والتعديلات والإلغاء والدعم.')}</p>}
         {travelActionNotice &&<p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
       </div>}
       <KinStayDetailsSheet stay={stayDetails} ar={ar} selected={stayDetails !== null && selectedStayIds[stayDetails.kind] === stayDetails.placeId}

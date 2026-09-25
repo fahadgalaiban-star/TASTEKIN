@@ -943,8 +943,8 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-referral-copy { margin:4px 0 0; color:inherit; opacity:.9; font-size:13px; line-height:1.5; }
 .kin-referral-link { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:46px; padding:0 15px; border-radius:999px; background:var(--tk-text-inverse); color:var(--tk-wine); font-size:14px; font-weight:800; text-decoration:none; }
 .kin-referral-disclaimer { margin:0; color:inherit; opacity:.82; font-size:11px; line-height:1.55; }
-.kin-timeline-actions a.kin-reserve-link { flex:1 1 100%; gap:6px; padding:8px 12px; text-align:center; line-height:1.25; border-radius:999px; background:var(--tk-wine); color:var(--tk-text-inverse); font-size:12px; letter-spacing:0; text-transform:none; text-decoration:none; }
-.kin-reserve-note { margin:10px 0 0; padding-top:8px; border-top:1px solid var(--tk-border); color:var(--tk-stone); font-size:11px; line-height:1.5; }
+.kin-timeline-actions a.kin-reserve-link { flex:0 0 auto; gap:4px; min-width:0; min-height:30px; padding:0 12px; border-radius:999px; background:var(--tk-wine); color:var(--tk-text-inverse); font-size:11px; letter-spacing:.02em; text-transform:none; text-decoration:none; white-space:nowrap; }
+.kin-reserve-note { margin:14px 0 0; color:var(--tk-stone); font-size:11px; line-height:1.5; }
 .kin-stay-card.selected { border-color:var(--tk-wine); box-shadow:inset 0 0 0 1px var(--tk-wine); }
 .kin-stay-media { flex:0 0 96px; aspect-ratio:4/5; border-radius:10px; overflow:hidden; background:var(--tk-surface-muted); display:flex; align-items:center; justify-content:center; }
 .kin-stay-media img { width:100%; height:100%; object-fit:cover; }

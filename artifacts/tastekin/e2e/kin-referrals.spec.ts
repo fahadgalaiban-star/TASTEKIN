@@ -8,8 +8,8 @@ import { expect, test, type Page } from '@playwright/test';
 // carries referral data and prove the client shows it only when its flag is
 // on (defense in depth), renders https links in a new tab with the required
 // rel, places the car-rental card directly below the trip summary and before
-// Day 1, and puts the reservation pill beside the existing actions of
-// restaurant/café stops only.
+// Day 1, and puts a compact "Reserve" button beside Directions on
+// restaurant/café stops only, with one disclaimer below the day's itinerary.
 
 type Flags = { carRental?: boolean; reservations?: boolean };
 
@@ -83,7 +83,7 @@ async function expectSecureExternalLink(page: Page, testId: string, href: string
   await expect(link).toHaveAttribute('rel', REFERRAL_REL);
 }
 
-test('both flags ON (English): burgundy car-rental card directly below the trip summary and before Day 1; reservation pill beside the existing actions on the restaurant and café only; every referral link is secure and sponsored', async ({ page }) => {
+test('both flags ON (English): burgundy car-rental card directly below the trip summary and before Day 1; compact Reserve button beside Directions on the restaurant and café only; one disclaimer below the itinerary; every referral link is secure and sponsored', async ({ page }) => {
   await openTravelPlan(page, 'en', { carRental: true, reservations: true });
 
   const card = page.getByTestId('kin-car-rental');
@@ -105,22 +105,31 @@ test('both flags ON (English): burgundy car-rental card directly below the trip 
   await expect(cards.nth(0).getByTestId('kin-reservation-disclaimer')).toHaveCount(0);
   for (const index of [1, 2]) {
     const stop = cards.nth(index);
-    // Inside the existing actions row, after the name (never above it), next to Directions and Save to trip, which are untouched.
+    // Inside the existing actions row, after the name (never above it), immediately after Directions; Directions, Save to trip and Swap are untouched.
     await expect(stop.locator('.kin-timeline-name ~ .kin-timeline-actions [data-testid="kin-reserve-table"]')).toHaveCount(1);
     await expect(stop.locator('.kin-timeline-actions a').first()).toHaveText('Directions');
+    await expect(stop.locator('.kin-timeline-actions a[aria-label$="in Google Maps"] + [data-testid="kin-reserve-table"]')).toHaveCount(1);
     await expect(stop.getByTestId('kin-add-to-trip')).toHaveCount(1);
     await expect(stop.getByTestId('kin-swap-place')).toHaveCount(1);
     const link = stop.getByTestId('kin-reserve-table');
-    await expect(link).toHaveText(/Reserve a table/);
+    // Short visible label, full accessible name, one line, no overflow.
+    await expect(link).toHaveText(/^Reserve$/);
     await expect(link).toHaveAttribute('target', '_blank');
     await expect(link).toHaveAttribute('rel', REFERRAL_REL);
     expect(await link.getAttribute('href')).toMatch(/^https:\/\/tables\.partner\.example\//);
-    await expect(stop.getByTestId('kin-reservation-disclaimer')).toContainText('Reservation opens on TablePartner');
-    await expect(stop.getByTestId('kin-reservation-disclaimer')).toContainText('Payment, changes, cancellations and support are handled by TablePartner.');
+    expect(await link.evaluate((el) => getComputedStyle(el).whiteSpace)).toBe('nowrap');
+    expect(await link.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+    expect((await link.boundingBox())!.height).toBeLessThan(40);
+    // No disclaimer inside the card.
+    await expect(stop.getByTestId('kin-reservation-disclaimer')).toHaveCount(0);
   }
-  await expect(cards.nth(1).getByTestId('kin-reserve-table')).toHaveAttribute('aria-label', 'Reserve a table at Casa Lucio with TablePartner');
-  // No separate reservation section anywhere: the notes live inside the two eligible cards only.
-  await expect(page.getByTestId('kin-reservation-disclaimer')).toHaveCount(2);
+  await expect(cards.nth(1).getByTestId('kin-reserve-table')).toHaveAttribute('aria-label', 'Reserve a table at Casa Lucio');
+  await expect(cards.nth(2).getByTestId('kin-reserve-table')).toHaveAttribute('aria-label', 'Reserve a table at Café de Oriente');
+  // Exactly one compact disclaimer, below the day's itinerary (after the timeline, inside the day card).
+  const disclaimer = page.getByTestId('kin-reservation-disclaimer');
+  await expect(disclaimer).toHaveCount(1);
+  await expect(page.locator('[data-testid="kin-day-preview"] .kin-timeline ~ [data-testid="kin-reservation-disclaimer"]')).toHaveCount(1);
+  await expect(disclaimer).toHaveText('Reservations open on the partner’s website. The partner handles booking, payment, changes, cancellations and support.');
 });
 
 test('both flags OFF: nothing referral-related renders even when the plan payload carries referral data, and the stop cards are exactly as before', async ({ page }) => {
@@ -130,7 +139,7 @@ test('both flags OFF: nothing referral-related renders even when the plan payloa
   await expect(page.getByTestId('kin-car-rental-disclaimer')).toHaveCount(0);
   await expect(page.getByTestId('kin-reserve-table')).toHaveCount(0);
   await expect(page.getByTestId('kin-reservation-disclaimer')).toHaveCount(0);
-  await expect(page.getByText(/Rent a car|View rental cars|Need a car|Reserve a table|Reservation opens|Car rental|CarPartner|TablePartner/)).toHaveCount(0);
+  await expect(page.getByText(/Rent a car|View rental cars|Need a car|Reserve|Reservations open|Car rental|CarPartner|TablePartner/)).toHaveCount(0);
   await expect(page.locator('a[href*="partner.example"]')).toHaveCount(0);
   await expect(page.locator('a[rel~="sponsored"]')).toHaveCount(0);
   // The rest of the plan is untouched: the hero is followed directly by the plan controls, every stop keeps Directions, Save to trip and Swap.
@@ -152,7 +161,7 @@ test('flags are independent: reservations ON, car rental OFF', async ({ page }) 
   await openTravelPlan(page, 'en', { carRental: false, reservations: true });
   await expect(page.getByTestId('kin-car-rental')).toHaveCount(0);
   await expect(page.getByTestId('kin-reserve-table')).toHaveCount(2);
-  await expect(page.getByTestId('kin-reservation-disclaimer')).toHaveCount(2);
+  await expect(page.getByTestId('kin-reservation-disclaimer')).toHaveCount(1);
 });
 
 test('flags ON but the server sent no referral data (partner not configured): nothing renders', async ({ page }) => {
@@ -186,8 +195,13 @@ test('Arabic/RTL: both referrals render with Arabic copy and secure sponsored li
   await expectSecureExternalLink(page, 'kin-car-rental-link', CAR_RENTAL_URL);
   await expect(page.getByTestId('kin-car-rental-disclaimer')).toContainText('ستتابع على موقع CarPartner');
   await expect(page.getByTestId('kin-reserve-table')).toHaveCount(2);
-  await expect(page.getByTestId('kin-reserve-table').first()).toHaveText(/احجز طاولة/);
-  await expect(page.getByTestId('kin-reserve-table').first()).toHaveAttribute('rel', REFERRAL_REL);
-  await expect(page.getByTestId('kin-reservation-disclaimer').first()).toContainText('يُفتح الحجز على موقع TablePartner');
+  const reserve = page.getByTestId('kin-reserve-table').first();
+  await expect(reserve).toHaveText(/^احجز$/);
+  await expect(reserve).toHaveAttribute('aria-label', 'احجز طاولة في Casa Lucio');
+  await expect(reserve).toHaveAttribute('rel', REFERRAL_REL);
+  expect(await reserve.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true);
+  expect((await reserve.boundingBox())!.height).toBeLessThan(40);
+  await expect(page.getByTestId('kin-reservation-disclaimer')).toHaveCount(1);
+  await expect(page.getByTestId('kin-reservation-disclaimer')).toHaveText('يفتح الحجز في موقع الشريك، ويتولى الشريك الحجز والدفع والتعديلات والإلغاء والدعم.');
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });

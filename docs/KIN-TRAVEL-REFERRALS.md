@@ -11,7 +11,7 @@ takes a payment.
 | Flag | What it enables |
 | --- | --- |
 | `kin_travel_car_rental` | A burgundy "Need a car in …?" card with a "View rental cars" button, shown only after KIN has generated the plan, directly below the trip summary and before Day 1 (never in the trip setup steps). It opens the partner pre-filled with the destination and, when the member entered them, the travel dates. |
-| `kin_travel_restaurant_reservations` | A small burgundy "Reserve a table" pill beside the existing Directions / Save to trip actions of **sit-down restaurant and café** stops only, plus a one-line note under them. Derived from Google's own place types: museums, attractions, parks, shops, gyms, bakeries, takeaway-only and meal-delivery businesses, food courts and every other place never get one. With the flag off, only the pill and note disappear; the stop card is unchanged. |
+| `kin_travel_restaurant_reservations` | A compact burgundy "Reserve" / "احجز" button (aria-label "Reserve a table at {name}") right after Directions in the existing actions row of **sit-down restaurant and café** stops only, plus one compact disclaimer below the day's itinerary. Derived from Google's own place types: museums, attractions, parks, shops, gyms, bakeries, takeaway-only and meal-delivery businesses, food courts and every other place never get one. With the flag off, only the button and disclaimer disappear; the stop card is unchanged. |
 
 The flags are independent and are toggled from Settings → Admin → Feature
 flags like every other flag. While a flag is OFF the API never emits the
@@ -43,8 +43,8 @@ With a flag ON but no valid template configured, the feature stays invisible.
   template rendering; `routes/kin.ts` decorates `POST /api/kin/travel/plan`
   and `POST /api/kin/travel/swap-place` responses only when the flag is on.
 - `artifacts/tastekin/src/App.tsx` (KIN Travel overview) — the car-rental
-  card directly below the trip summary hero and the per-stop reservation
-  pill, each gated on the flag from `/api/me` and rendered only for https
+  card directly below the trip summary hero and the per-stop compact
+  "Reserve" button, each gated on the flag from `/api/me` and rendered only for https
   URLs with `target="_blank" rel="noopener noreferrer sponsored"`. EN + AR
   copy inline.
 - Tests: `scripts/src/verify-kin-search.ts` (server: defaults, flag on/off,
