@@ -19,7 +19,8 @@ import {
   type KinSearchResultCard,
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
-import { hasCachedStayPool, runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
+import { getCachedHotelPlace, hasCachedStayPool, runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
+import { getHotelOffers, hasHotelOfferProviders, validHotelOfferSearch, withHotelOffersForGroup, withHotelOffersForPlan } from "../lib/kin-hotel-offers";
 import { withReservationReferral, withTravelReferrals, type ReferralFlags } from "../lib/kin-referrals";
 import { requireUser } from "./engagement";
 
@@ -341,7 +342,14 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     res.json({ status: "unavailable", reason: "unavailable" });
     return;
   }
-  res.json({ status: "ok", plan: withTravelReferrals(result.plan, validated.value, await referralFlags()) });
+  const hotelOffersEnabled = await isFeatureEnabled("kin_travel_hotel_price_offers");
+  const plan = await withHotelOffersForPlan(result.plan, {
+    checkIn: validated.value.startDate ?? "",
+    checkOut: validated.value.endDate ?? "",
+    adults: 2,
+    rooms: 1,
+  }, hotelOffersEnabled);
+  res.json({ status: "ok", plan: withTravelReferrals(plan, validated.value, await referralFlags()) });
 });
 
 /**
@@ -476,7 +484,49 @@ router.post("/kin/travel/stays", requireUserMw, kinSearchFlagMw, async (req, res
     res.json({ status: "unavailable", reason: "unavailable" });
     return;
   }
-  res.json({ status: "ok", items: result.group.items, hasMore: result.group.hasMore });
+  const group = await withHotelOffersForGroup(result.group, {
+    checkIn: typeof body.checkIn === "string" ? body.checkIn : "",
+    checkOut: typeof body.checkOut === "string" ? body.checkOut : "",
+    adults: 2,
+    rooms: 1,
+  }, kind === "hotel" && await isFeatureEnabled("kin_travel_hotel_price_offers"));
+  res.json({ status: "ok", items: group.items, hasMore: group.hasMore });
+});
+
+/** Refresh a verified hotel's offers for the guest/room choice made in the comparison sheet. */
+router.post("/kin/travel/hotel-offers", requireUserMw, kinSearchFlagMw, async (req, res) => {
+  if (!(await isFeatureEnabled("kin_travel_hotel_price_offers"))) {
+    res.status(404).json({ error: "Hotel price offers are unavailable" });
+    return;
+  }
+  const body = req.body && typeof req.body === "object" ? req.body as Record<string, unknown> : {};
+  const destination = typeof body.destination === "string" ? body.destination.trim() : "";
+  const placeId = typeof body.placeId === "string" ? body.placeId.trim() : "";
+  const accommodation = validateAccommodation(body.accommodation);
+  const locale = body.locale;
+  const search = { checkIn: body.checkIn, checkOut: body.checkOut, adults: body.adults, rooms: body.rooms };
+  if (!destination || destination.length > MAX_TEXT_LENGTH || !placeId || placeId.length > MAX_TEXT_LENGTH
+    || !accommodation.ok || !accommodation.value.hotels
+    || (locale !== undefined && locale !== "en" && locale !== "ar")
+    || !validHotelOfferSearch(search)) {
+    res.status(400).json({ error: "Invalid hotel offer search" });
+    return;
+  }
+  const place = getCachedHotelPlace(req.user!.id, destination, accommodation.value, locale as "en" | "ar" | undefined, placeId);
+  if (!place) {
+    res.status(404).json({ error: "Hotel is no longer available in this search" });
+    return;
+  }
+  if (!hasHotelOfferProviders()) {
+    res.json({ status: "ok", offers: [] });
+    return;
+  }
+  const reservation = await reserveKinSearchAttempt(req.user!.id);
+  if ("rateLimited" in reservation) {
+    daily429(res);
+    return;
+  }
+  res.json({ status: "ok", offers: await getHotelOffers(place, search) });
 });
 
 // --- persistence: saved recommendations, trips, trip items ----------------

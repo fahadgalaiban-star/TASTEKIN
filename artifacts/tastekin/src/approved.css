@@ -964,6 +964,16 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-stay-details-media svg { color:var(--tk-wine); opacity:.5; }
 .kin-stay-details-links { display:flex; gap:8px; margin-top:6px; }
 .kin-stay-details-links a { flex:1; display:inline-flex; align-items:center; justify-content:center; min-height:44px; text-align:center; text-decoration:none; }
+.kin-offer-compare { align-self:flex-start; min-height:36px; margin-top:5px; padding:0 12px; border:1px solid var(--tk-wine); border-radius:999px; background:var(--tk-card); color:var(--tk-wine); font-size:11px; font-weight:800; cursor:pointer; }
+.kin-offer-sheet-body { display:flex; flex-direction:column; gap:12px; padding-top:4px; padding-bottom:max(16px, env(safe-area-inset-bottom)); }
+.kin-offer-occupancy { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.kin-offer-occupancy label { display:flex; flex-direction:column; gap:6px; color:var(--tk-stone); font-size:13px; font-weight:700; }
+.kin-offer-occupancy input { width:100%; min-height:44px; padding:8px 12px; border:1px solid var(--tk-border); border-radius:10px; background:var(--tk-card); color:var(--tk-ink); font:inherit; }
+.kin-offer-row { display:flex; flex-direction:column; gap:5px; padding:14px; border:1px solid var(--tk-border); border-radius:14px; color:var(--tk-ink); font-size:12px; overflow-wrap:anywhere; }
+.kin-offer-row strong { color:var(--tk-wine); font-size:14px; }
+.kin-offer-row small { color:var(--tk-stone); }
+.kin-offer-row .kin-offer-price { font-size:19px; font-weight:800; }
+.kin-offer-row .approved-button { align-self:stretch; text-align:center; text-decoration:none; }
 
 @media (max-width:390px) {
   .kin-style-heading .kin-headline { font-size:29px; }

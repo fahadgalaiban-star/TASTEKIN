@@ -88,6 +88,8 @@ export type KinTravelStay = {
   photoUrl: string | null;
   photoAttribution: string | null;
   reason: string | null;
+  /** Only present when the independent hotel-offers flag is on and a partner match and rate are verified. */
+  hotelOffers?: import("./kin-hotel-offers").HotelPriceOffer[];
 };
 
 export type KinTravelStayGroup = { items: KinTravelStay[]; hasMore: boolean };
@@ -636,6 +638,18 @@ function setStayPool(key: string, pool: StayPool): void {
 /** Whether "Show more stays" can be served without any provider call — the route reserves a quota attempt only when this is false. */
 export function hasCachedStayPool(userId: string, destination: string, kind: KinStayKind, accommodation: KinAccommodationRequest, locale: "en" | "ar" | undefined): boolean {
   return getStayPool(stayPoolKey(userId, destination, kind, accommodation, locale)) !== null;
+}
+
+/** An offer refresh may only use a Google hotel previously found in this member's cached hotel search. */
+export function getCachedHotelPlace(
+  userId: string,
+  destination: string,
+  accommodation: KinAccommodationRequest,
+  locale: "en" | "ar" | undefined,
+  googlePlaceId: string,
+): GooglePlace | null {
+  const pool = getStayPool(stayPoolKey(userId, destination, "hotel", accommodation, locale));
+  return pool?.candidates.find((place) => place.placeId === googlePlaceId) ?? null;
 }
 
 /** Test-only: forget every cached pool so a fresh process state can be simulated. */

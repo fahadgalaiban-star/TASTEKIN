@@ -14,6 +14,7 @@ import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasi
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
 import { apiUrl, isNativeApp, nativeClientFields, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
+import { KinHotelOffersSheet, safeHotelOffers, type HotelPriceOffer, type HotelOfferStay } from './kin-hotel-offers';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -3175,7 +3176,7 @@ type KinHotelStars = 3 | 4 | 5;
 type KinStayBudget = 1 | 2 | 3;
 type KinApartmentStayType = 'entire_home' | 'apartment' | 'private_room';
 type KinAccommodationRequest = { hotels?: { stars?: KinHotelStars; budget?: KinStayBudget }; apartments?: { stayType?: KinApartmentStayType; budget?: KinStayBudget } };
-type KinTravelStay = { kind: KinStayKind; placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; priceLevel: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; reason: string | null };
+type KinTravelStay = HotelOfferStay & { kind: KinStayKind; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; priceLevel: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; reason: string | null; hotelOffers?: HotelPriceOffer[] };
 type KinTravelStayGroup = { items: KinTravelStay[]; hasMore: boolean };
 type KinTravelStays = { hotels?: KinTravelStayGroup; apartments?: KinTravelStayGroup };
 type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[]; stays?: KinTravelStays; referrals?: { carRental?: KinReferralLink } };
@@ -3509,6 +3510,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   // client's own second gate so nothing referral-related can render either.
   const carRentalEnabled = session.featureFlags.kin_travel_car_rental === true;
   const reservationsEnabled = session.featureFlags.kin_travel_restaurant_reservations === true;
+  const hotelOffersEnabled = session.featureFlags.kin_travel_hotel_price_offers === true;
 
   const [mode, setMode] = useState<KinMode>('looks');
   const [query, setQuery] = useState('');
@@ -3568,6 +3570,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const [stayTab, setStayTab] = useState<KinStayKind>('hotel');
   const [selectedStayIds, setSelectedStayIds] = useState<Record<KinStayKind, string | null>>({ hotel: null, apartment: null });
   const [stayDetails, setStayDetails] = useState<KinTravelStay | null>(null);
+  const [offerStay, setOfferStay] = useState<KinTravelStay | null>(null);
   const [loadingMoreStays, setLoadingMoreStays] = useState<KinStayKind | null>(null);
   const [stayNotice, setStayNotice] = useState('');
 
@@ -3697,7 +3700,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     setState('loading'); setErrorMessage(''); setResult(null); setTravelPlan(null); setSavedNotice('');
     setTravelReasonCode('');
     setTripId(null); setAddedTripItems(new Set()); setSelectedOptionIndex(0); setSelectedDayIndex(0); setLookAddedToTrip(false);
-    setSelectedStayIds({ hotel: null, apartment: null }); setStayDetails(null); setLoadingMoreStays(null); setStayNotice(''); setSubmittedAccommodation(null);
+    setSelectedStayIds({ hotel: null, apartment: null }); setStayDetails(null); setOfferStay(null); setLoadingMoreStays(null); setStayNotice(''); setSubmittedAccommodation(null);
     setLookSaved(false); setEnlargedResult(null); setTravelActionNotice('');
     // Captured now, before anything async — the request that goes out uses
     // exactly these values, and the result is later shown against exactly
@@ -3986,7 +3989,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     try {
       const response = await fetch('/api/kin/travel/stays', {
         method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ destination: travelPlan.destination, kind, accommodation: submittedAccommodation, excludePlaceIds: group.items.map((stay) => stay.placeId), locale: ar ? 'ar' : 'en' }),
+        body: JSON.stringify({ destination: travelPlan.destination, kind, accommodation: submittedAccommodation, excludePlaceIds: group.items.map((stay) => stay.placeId), locale: ar ? 'ar' : 'en', ...(hotelOffersEnabled && startDate && endDate ? { checkIn: startDate, checkOut: endDate } : {}) }),
       });
       if (response.status === 429) { setStayNotice(t("You've reached today's KIN limit. Try again tomorrow.", 'لقد وصلت إلى الحد اليومي لكين. حاول مرة أخرى غدًا.')); return; }
       if (!response.ok) throw new Error(await describeFailedResponse(response));
@@ -4211,6 +4214,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                       {selected ? <><Check size={12} /> {t('Selected', 'تم الاختيار')}</> : t('Select', 'اختيار')}
                     </button>
                   </div>
+                  {hotelOffersEnabled && stay.kind === 'hotel' && safeHotelOffers(stay).length > 0 && <button type="button" className="kin-offer-compare" data-testid="kin-offer-compare" onClick={() => setOfferStay(stay)}>{t('Compare prices', 'قارن الأسعار')}</button>}
                 </div>
               </article>;
             })}
@@ -4278,6 +4282,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       </div>}
       <KinStayDetailsSheet stay={stayDetails} ar={ar} selected={stayDetails !== null && selectedStayIds[stayDetails.kind] === stayDetails.placeId}
         onSelect={() => { if (stayDetails) toggleStaySelection(stayDetails); }} onClose={() => setStayDetails(null)} />
+      {hotelOffersEnabled && <KinHotelOffersSheet stay={offerStay} context={submittedAccommodation && travelPlan ? { destination: travelPlan.destination, accommodation: submittedAccommodation, locale: ar ? 'ar' : 'en' } : null} onClose={() => setOfferStay(null)} />}
     </section>;
   }
 
