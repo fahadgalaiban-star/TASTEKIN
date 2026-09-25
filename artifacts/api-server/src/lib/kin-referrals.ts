@@ -30,14 +30,19 @@ export type KinReferralLink = { url: string; partnerName: string | null };
 export type KinTravelReferrals = { carRental?: KinReferralLink };
 
 const CAFE_TYPES = new Set(["cafe", "coffee_shop", "tea_house", "cat_cafe", "dog_cafe", "internet_cafe"]);
-const RESTAURANT_TYPES = new Set(["restaurant", "meal_takeaway", "meal_delivery", "food_court", "diner", "bistro", "steak_house", "pizza_restaurant", "sushi_restaurant"]);
+// Sit-down restaurants only. meal_takeaway, meal_delivery and food_court are
+// deliberately NOT here: a takeaway-only counter, a delivery kitchen or a
+// food court has no table to reserve.
+const RESTAURANT_TYPES = new Set(["restaurant", "diner", "bistro", "steak_house", "pizza_restaurant", "sushi_restaurant"]);
 
 /**
  * Classifies a Google place as somewhere a table can be reserved. Only
- * restaurants and cafés qualify — museums, parks, shops, gyms, bakeries and
- * every other place type never do. The primary type wins; the full type list
- * is consulted only when the primary type is not itself a restaurant/café
- * (Google marks many restaurants only via a `*_restaurant` subtype).
+ * sit-down restaurants and cafés qualify — museums, attractions, parks,
+ * shops, gyms, bakeries, takeaway-only and meal-delivery businesses, food
+ * courts and every other place type never do. The primary type wins; the
+ * full type list is consulted only when the primary type is not itself a
+ * restaurant/café (Google marks many restaurants only via a `*_restaurant`
+ * subtype).
  */
 export function venueKindFor(primaryType: string | null, types: readonly string[]): KinVenueKind | null {
   const classify = (type: string): KinVenueKind | null => {

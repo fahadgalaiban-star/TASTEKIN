@@ -4149,6 +4149,31 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       </div>
       {heroPhoto?.photoAttribution && <span className="kin-photo-credit">{t('Photo', 'صورة')}: <bdi dir="auto">{heroPhoto.photoAttribution}</bdi></span>}
 
+      {carRentalEnabled && travelPlan.referrals?.carRental && isSafeReferralUrl(travelPlan.referrals.carRental.url) && (() => {
+        // Only once KIN has generated the plan: directly below the trip
+        // summary (destination, dates, hero) and before Day 1 — never in the
+        // trip setup steps. Absent entirely while the flag is off.
+        const carRental = travelPlan.referrals.carRental;
+        const partner = carRental.partnerName;
+        return <section className="kin-referral-card" data-testid="kin-car-rental" aria-label={t('Car rental', 'تأجير السيارات')}>
+          <div className="kin-referral-head">
+            <span className="kin-referral-badge" aria-hidden="true">{t('CAR', 'سيارة')}</span>
+            <div>
+              <h3 className="kin-referral-title">{ar ? <>هل تحتاج سيارة في <bdi dir="auto">{displayDestination}</bdi>؟</> : <>Need a car in <bdi dir="auto">{displayDestination}</bdi>?</>}</h3>
+              <p className="kin-referral-copy">{startDate && endDate
+                ? t('Compare rental cars for your selected travel dates.', 'قارن سيارات الإيجار لتواريخ سفرك المحددة.')
+                : t('Compare rental cars for your trip. Add your travel dates on the partner’s website.', 'قارن سيارات الإيجار لرحلتك. أضف تواريخ سفرك على موقع الشريك.')}</p>
+            </div>
+          </div>
+          <a className="kin-referral-link" href={carRental.url} target="_blank" rel="noopener noreferrer sponsored" data-testid="kin-car-rental-link">
+            {t('View rental cars', 'عرض سيارات الإيجار')} <ExternalLink size={14} aria-hidden="true" />
+          </a>
+          <p className="kin-referral-disclaimer" data-testid="kin-car-rental-disclaimer">{partner
+            ? t(`You’ll continue on ${partner}’s website. Booking, payment, insurance, changes, cancellations and support are handled by ${partner}.`, `ستتابع على موقع ${partner}. يتولى ${partner} الحجز والدفع والتأمين والتعديلات والإلغاء والدعم.`)
+            : t('You’ll continue on the partner’s website. Booking, payment, insurance, changes, cancellations and support are handled by the partner.', 'ستتابع على موقع الشريك. يتولى الشريك الحجز والدفع والتأمين والتعديلات والإلغاء والدعم.')}</p>
+        </section>;
+      })()}
+
       {travelPlan.stays && (() => {
         // Rendered exactly once, above the day tabs and the first day —
         // never inside a day. Absent entirely when no accommodation card
@@ -4196,21 +4221,6 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         </section>;
       })()}
 
-      {carRentalEnabled && travelPlan.referrals?.carRental && isSafeReferralUrl(travelPlan.referrals.carRental.url) && (() => {
-        const carRental = travelPlan.referrals.carRental;
-        return <section className="kin-referral-card" data-testid="kin-car-rental" aria-label={t('Car rental', 'تأجير السيارات')}>
-          <span className="kin-day-kicker">{t('Car rental', 'تأجير السيارات')}</span>
-          <h3 className="kin-referral-title">{ar ? <>هل تحتاج سيارة في <bdi dir="auto">{displayDestination}</bdi>؟</> : <>Need a car in <bdi dir="auto">{displayDestination}</bdi>?</>}</h3>
-          <p className="kin-referral-copy">{startDate && endDate
-            ? t('Your destination and travel dates are pre-filled with our partner.', 'تم إدخال وجهتك وتواريخ سفرك مسبقاً لدى شريكنا.')
-            : t('Your destination is pre-filled with our partner. Add your travel dates on their site.', 'تم إدخال وجهتك مسبقاً لدى شريكنا. أضف تواريخ سفرك على موقعه.')}</p>
-          <a className="approved-button primary wide kin-referral-link" href={carRental.url} target="_blank" rel="noopener noreferrer" data-testid="kin-car-rental-link">
-            {carRental.partnerName ? t(`Rent a car with ${carRental.partnerName}`, `استأجر سيارة عبر ${carRental.partnerName}`) : t('Rent a car', 'استأجر سيارة')} <ExternalLink size={14} aria-hidden="true" />
-          </a>
-          <p className="kin-referral-disclaimer" data-testid="kin-car-rental-disclaimer">{t('TASTEKIN only refers you to the partner. Booking, payment, insurance, changes, cancellations and customer support are handled by the partner on its own site.', 'يقتصر دور TASTEKIN على إحالتك إلى الشريك. يتولى الشريك على موقعه الحجز والدفع والتأمين والتعديلات والإلغاء وخدمة العملاء.')}</p>
-        </section>;
-      })()}
-
       <div className="kin-segmented" data-testid="kin-plan-route-toggle">
         <button type="button" className={planView === 'plan' ? 'selected' : ''} onClick={() => setPlanView('plan')}>{t('Plan', 'الخطة')}</button>
         <button type="button" className={planView === 'route' ? 'selected' : ''} onClick={() => setPlanView('route')}>{t('Route', 'المسار')}</button>
@@ -4232,6 +4242,10 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
           {activeDay.places.map((place, index) => {
             const key = `${activeDay.dayIndex}:${place.placeId}`;
             const categoryLabel = kinPlaceCategoryLabel(place, ar);
+            // Restaurants/cafés only, and only while the flag is on: a small
+            // pill beside the stop's existing actions plus a one-line note
+            // under them. With the flag off the card is exactly as before.
+            const reservation = reservationLinkFor(place, reservationsEnabled);
             return <div key={place.placeId} className="kin-timeline-item" data-testid="kin-travel-place">
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
               <div className="kin-timeline-card">
@@ -4244,14 +4258,14 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{place.photoAttribution}</bdi></span>}
                   <div className="kin-timeline-actions">
                     {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={t(`Open ${place.name} in Google Maps`, `افتح ${place.name} في خرائط Google`)}>{t('Directions', 'الاتجاهات')}</a>}
-                    {(() => {
-                      const reservation = reservationLinkFor(place, reservationsEnabled);
-                      return reservation && <a className="kin-reserve-link" href={reservation.url} target="_blank" rel="noopener noreferrer" data-testid="kin-reserve-table" aria-label={reservation.partnerName ? t(`Reserve a table at ${place.name} with ${reservation.partnerName}`, `احجز طاولة في ${place.name} عبر ${reservation.partnerName}`) : t(`Reserve a table at ${place.name}`, `احجز طاولة في ${place.name}`)}>{t('Reserve a table', 'احجز طاولة')} <ExternalLink size={11} aria-hidden="true" /></a>;
-                    })()}
+                    {reservation && <a className="kin-reserve-link" href={reservation.url} target="_blank" rel="noopener noreferrer sponsored" data-testid="kin-reserve-table" aria-label={reservation.partnerName ? t(`Reserve a table at ${place.name} with ${reservation.partnerName}`, `احجز طاولة في ${place.name} عبر ${reservation.partnerName}`) : t(`Reserve a table at ${place.name}`, `احجز طاولة في ${place.name}`)}>{t('Reserve a table', 'احجز طاولة')} <ExternalLink size={12} aria-hidden="true" /></a>}
                     <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
                       {addedTripItems.has(key) ? t('Saved', 'تم الحفظ') : addingTripItemKey === key ? t('Saving…', 'جارٍ الحفظ…') : t('Save to trip', 'احفظ للرحلة')}
                     </button>
                   </div>
+                  {reservation && <p className="kin-reserve-note" data-testid="kin-reservation-disclaimer">{reservation.partnerName
+                    ? t(`Reservation opens on ${reservation.partnerName}’s website. Payment, changes, cancellations and support are handled by ${reservation.partnerName}.`, `يُفتح الحجز على موقع ${reservation.partnerName}. يتولى ${reservation.partnerName} الدفع والتعديلات والإلغاء والدعم.`)
+                    : t('Reservation opens on the partner’s website. Payment, changes, cancellations and support are handled by the partner.', 'يُفتح الحجز على موقع الشريك. يتولى الشريك الدفع والتعديلات والإلغاء والدعم.')}</p>}
                 </div>
                 <button className="kin-timeline-swap" data-testid="kin-swap-place" disabled={swappingPlaceKey === key} onClick={() => void swapTravelPlace(activeDay, place)}>
                   {swappingPlaceKey === key ? t('SWAPPING…', 'جارٍ التبديل…') : t('SWAP', 'تبديل')}
@@ -4260,13 +4274,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
             </div>;
           })}
         </div>}
-        {(() => {
-          const reservable = activeDay.places.map((place) => reservationLinkFor(place, reservationsEnabled)).find((link) => link !== null);
-          return reservable && <p className="kin-referral-disclaimer" data-testid="kin-reservation-disclaimer">{reservable.partnerName
-            ? t(`Table reservations open on ${reservable.partnerName}'s site. TASTEKIN only refers you; the reservation, any payment, changes, cancellations and support are handled by ${reservable.partnerName}.`, `تُفتح حجوزات الطاولات على موقع ${reservable.partnerName}. يقتصر دور TASTEKIN على إحالتك؛ ويتولى ${reservable.partnerName} الحجز وأي دفع والتعديلات والإلغاء والدعم.`)
-            : t("Table reservations open on the partner's site. TASTEKIN only refers you; the reservation, any payment, changes, cancellations and support are handled by the partner.", 'تُفتح حجوزات الطاولات على موقع الشريك. يقتصر دور TASTEKIN على إحالتك؛ ويتولى الشريك الحجز وأي دفع والتعديلات والإلغاء والدعم.')}</p>;
-        })()}
-        {travelActionNotice && <p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
+        {travelActionNotice &&<p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
       </div>}
       <KinStayDetailsSheet stay={stayDetails} ar={ar} selected={stayDetails !== null && selectedStayIds[stayDetails.kind] === stayDetails.placeId}
         onSelect={() => { if (stayDetails) toggleStaySelection(stayDetails); }} onClose={() => setStayDetails(null)} />

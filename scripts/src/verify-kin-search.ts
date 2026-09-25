@@ -283,6 +283,7 @@ type FakeGooglePlacesMode =
   | { kind: "cross_day_collision" }
   | { kind: "empty_success" }
   | { kind: "empty_type"; includedType: string }
+  | { kind: "retyped"; primaryType: string }
   | { kind: "overnight" }
   | { kind: "malformed" }
   | { kind: "http_error"; status: number }
@@ -339,8 +340,8 @@ function startFakeGooglePlaces(): Promise<{ server: http.Server; port: number }>
           location: { latitude: 48.85 + coordinateOffsets[i], longitude: 2.35 + coordinateOffsets[i] },
           rating: i % 2 === 0 ? 4.5 : undefined,
           priceLevel: ["PRICE_LEVEL_INEXPENSIVE", "PRICE_LEVEL_MODERATE", "PRICE_LEVEL_EXPENSIVE"][i % 3],
-          primaryType: parsedRequest.includedType ?? "tourist_attraction",
-          types: [parsedRequest.includedType ?? "tourist_attraction"],
+          primaryType: mode.kind === "retyped" ? mode.primaryType : parsedRequest.includedType ?? "tourist_attraction",
+          types: [mode.kind === "retyped" ? mode.primaryType : parsedRequest.includedType ?? "tourist_attraction"],
           regularOpeningHours: {
             periods: mode.kind === "overnight" ? [
               { open: { day: 3, hour: 20, minute: 0 }, close: { day: 4, hour: 9, minute: 0 } },
@@ -2283,6 +2284,26 @@ async function main() {
           const attractions = await referralUser.kinTravelPlan({ query: "plan my trip", destination: "Paris" });
           await expectStatus(attractions, 200);
           assert.ok(planPlaces((await attractions.json() as { plan: ReferralPlan }).plan).every((place) => place.reservation === undefined), "an attractions-only plan has no reservation links at all");
+        });
+        await check("takeaway-only, meal-delivery, food-court and bakery businesses are never reservable even with the flag on and a partner configured; a restaurant subtype is", async () => {
+          try {
+            for (const primaryType of ["meal_takeaway", "meal_delivery", "food_court", "bakery", "museum", "shopping_mall"]) {
+              fakeGooglePlacesMode = { kind: "retyped", primaryType };
+              const response = await referralUser.kinTravelPlan(foodRequest);
+              await expectStatus(response, 200);
+              const places = planPlaces((await response.json() as { plan: ReferralPlan }).plan);
+              assert.ok(places.length > 0, `${primaryType}: the plan still has places`);
+              assert.ok(places.every((place) => place.venueKind === null && place.reservation === undefined), `${primaryType} places must never carry a reservation link`);
+            }
+            fakeGooglePlacesMode = { kind: "retyped", primaryType: "fast_food_restaurant" };
+            const control = await referralUser.kinTravelPlan(foodRequest);
+            await expectStatus(control, 200);
+            const controlPlaces = planPlaces((await control.json() as { plan: ReferralPlan }).plan);
+            assert.ok(controlPlaces.length > 0);
+            assert.ok(controlPlaces.every((place) => place.venueKind === "restaurant" && place.reservation !== undefined), "a *_restaurant subtype is a sit-down restaurant and gets the link");
+          } finally {
+            fakeGooglePlacesMode = { kind: "ok" };
+          }
         });
         await check("swap-place decorates a restaurant replacement with a reservation link and an attraction replacement with none", async () => {
           const dinnerSwap = await referralUser.request("/api/kin/travel/swap-place", {
