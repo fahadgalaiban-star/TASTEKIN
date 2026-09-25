@@ -1,8 +1,8 @@
 import { expect, test, type Page } from '@playwright/test';
 
-type MeOptions = { authenticated?: boolean; kinSearch?: boolean; myThings?: boolean; language?: 'en' | 'ar' };
+type MeOptions = { authenticated?: boolean; kinSearch?: boolean; myThings?: boolean; hotelOffers?: boolean; language?: 'en' | 'ar' };
 
-function meBody({ authenticated = true, kinSearch = true, myThings = false, language = 'en' }: MeOptions = {}) {
+function meBody({ authenticated = true, kinSearch = true, myThings = false, hotelOffers = false, language = 'en' }: MeOptions = {}) {
   return JSON.stringify({
     user: authenticated ? { id: 'kin-e2e-user', email: 'kin-e2e@tastekin.test' } : null,
     role: 'consumer',
@@ -15,7 +15,7 @@ function meBody({ authenticated = true, kinSearch = true, myThings = false, lang
     needsOnboarding: false,
     onboardingStep: 'done',
     googleAuthConfigured: false,
-    featureFlags: { kin_search: kinSearch, my_things: myThings },
+    featureFlags: { kin_search: kinSearch, my_things: myThings, kin_travel_hotel_price_offers: hotelOffers },
   });
 }
 
@@ -1525,6 +1525,18 @@ function stayFixture(kind: 'hotel' | 'apartment', index: number) {
   };
 }
 
+function hotelOfferFixture(provider: 'booking.com' | 'expedia', placeId: string) {
+  const propertyId = `${provider}-hotel-1`;
+  return {
+    provider, propertyId, propertyName: 'Hotel 1', checkIn: '2027-11-01', checkOut: '2027-11-03',
+    adults: 2, rooms: 1, roomName: 'Standard room', totalPrice: provider === 'booking.com' ? 420 : 450,
+    currency: 'USD', taxesAndFeesIncluded: provider === 'booking.com' ? true : 'unknown',
+    cancellationSummary: 'Free cancellation', availability: 'available', bookingUrl: `https://${provider}/hotel-1`,
+    checkedAt: '2026-09-25T12:00:00.000Z',
+    propertyMatch: { status: 'verified', googlePlaceId: placeId, partnerPropertyId: propertyId, evidence: 'authoritative_id' },
+  };
+}
+
 function planWithStays(destination: string, stays: Record<string, unknown> | undefined) {
   return {
     status: 'ok',
@@ -1574,6 +1586,89 @@ test('Travel step 2 offers optional Hotels and Apartments & Homes cards first; w
   await expect(page.getByTestId('kin-stays')).toHaveCount(0);
   await expect(page.getByText('Stay options')).toHaveCount(0);
 });
+
+test('hotel offers OFF and no verified provider offers leave existing cards and actions unchanged', async ({ page }) => {
+  await mockMe(page, { kinSearch: true });
+  const hotel = { ...stayFixture('hotel', 3), hotelOffers: [hotelOfferFixture('booking.com', 'hotel-3')] };
+  await page.route('**/api/kin/travel/plan', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('Paris', { hotels: { items: [hotel], hasMore: false } })) }));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoTravelInterests(page, 'Paris');
+  await page.getByTestId('kin-interest-hotels').click();
+  await page.getByTestId('kin-stay-done').click();
+  await page.getByTestId('kin-travel-submit').click();
+  await expect(page.getByTestId('kin-stay-price')).toHaveText('Price unavailable');
+  await expect(page.getByTestId('kin-offer-compare')).toHaveCount(0);
+  await expect(page.getByTestId('kin-hotel-offers-sheet')).toHaveCount(0);
+  await expect(page.getByTestId('kin-stay-details')).toBeVisible();
+  await expect(page.getByTestId('kin-stay-select')).toBeVisible();
+});
+
+test('hotel offer flag ON without verified offers still shows no compare action', async ({ page }) => {
+  await mockMe(page, { kinSearch: true, hotelOffers: true });
+  await page.route('**/api/kin/travel/plan', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('Paris', {
+    hotels: { items: [{ ...stayFixture('hotel', 1), hotelOffers: [] }], hasMore: false },
+  })) }));
+  await page.goto('/', { waitUntil: 'domcontentloaded' });
+  await gotoTravelInterests(page, 'Paris');
+  await page.getByTestId('kin-interest-hotels').click();
+  await page.getByTestId('kin-stay-done').click();
+  await page.getByTestId('kin-travel-submit').click();
+  await expect(page.getByTestId('kin-stay-price')).toHaveText('Price level: $$');
+  await expect(page.getByTestId('kin-offer-compare')).toHaveCount(0);
+});
+
+for (const language of ['en', 'ar'] as const) {
+  test(`verified fixture hotel offers render in ${language}, while unmatched offers and apartments remain hidden`, async ({ page }) => {
+    await mockMe(page, { kinSearch: true, hotelOffers: true, language });
+    const valid = hotelOfferFixture('booking.com', 'hotel-1');
+    const other = hotelOfferFixture('expedia', 'hotel-1');
+    const unmatched = { ...other, propertyMatch: { ...other.propertyMatch, googlePlaceId: 'other-hotel' } };
+    const hotel = { ...stayFixture('hotel', 1), hotelOffers: [valid, other, unmatched] };
+    const apartment = { ...stayFixture('apartment', 1), hotelOffers: [hotelOfferFixture('booking.com', 'apartment-1')] };
+    await page.route('**/api/kin/travel/plan', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(planWithStays('Paris', {
+      hotels: { items: [hotel], hasMore: false }, apartments: { items: [apartment], hasMore: false },
+    })) }));
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.getByTestId('nav-kin').click();
+    await page.getByTestId('kin-mode-travel').click();
+    await page.getByTestId('kin-destination').fill('Paris');
+    await page.getByTestId('kin-travel-next').click();
+    await page.getByTestId('kin-interest-hotels').click();
+    await page.getByTestId('kin-stay-done').click();
+    await page.getByTestId('kin-interest-apartments').click();
+    await page.getByTestId('kin-stay-done').click();
+    await page.getByTestId('kin-travel-submit').click();
+    const compare = page.getByTestId('kin-offer-compare');
+    await expect(compare).toHaveText(language === 'ar' ? 'قارن الأسعار' : 'Compare prices');
+    await compare.click();
+    const sheet = page.getByTestId('kin-hotel-offers-sheet');
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByTestId('kin-offer-row')).toHaveCount(2);
+    await expect(sheet.getByText('Booking.com', { exact: true })).toBeVisible();
+    await expect(sheet.getByText('Expedia', { exact: true })).toBeVisible();
+    await expect(sheet.getByText(language === 'ar' ? 'يشمل الضرائب والرسوم' : 'Includes taxes and fees')).toBeVisible();
+    await expect(sheet.getByTestId('kin-offer-book')).toHaveCount(2);
+    await expect(sheet.getByTestId('kin-offer-book').first()).toHaveAttribute('rel', 'noopener noreferrer');
+    await expect(sheet.getByTestId('kin-offer-book').first()).toHaveAttribute('target', '_blank');
+    await expect(sheet.getByTestId('kin-offer-adults')).toHaveValue('2');
+    await expect(sheet.getByTestId('kin-offer-rooms')).toHaveValue('1');
+    if (language === 'en') {
+      await page.route('**/api/kin/travel/hotel-offers', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ status: 'ok', offers: [] }) }));
+      await sheet.getByTestId('kin-offer-rooms').fill('2');
+      await expect(sheet.getByTestId('kin-offer-row')).toHaveCount(0);
+      const refresh = page.waitForRequest('**/api/kin/travel/hotel-offers');
+      await sheet.getByTestId('kin-offer-refresh').click();
+      const body = (await refresh).postDataJSON();
+      expect(body).toMatchObject({ placeId: 'hotel-1', adults: 2, rooms: 2, checkIn: '2027-11-01', checkOut: '2027-11-03' });
+      await expect(sheet.getByText('No verified offers for this selection.')).toBeVisible();
+      await expect(sheet.getByTestId('kin-offer-book')).toHaveCount(0);
+      await expect(sheet.getByTestId('kin-offer-refresh')).toBeEnabled();
+    }
+    await page.keyboard.press('Escape');
+    await page.getByTestId('kin-stay-tab-apartment').click();
+    await expect(page.getByTestId('kin-offer-compare')).toHaveCount(0);
+  });
+}
 
 test('Hotels opens the Hotel preferences sheet; star and budget picks are sent as structured accommodation; Stay options render once above Day 1 with details, select, and paging', async ({ page }) => {
   await mockMe(page, { kinSearch: true });

@@ -1,9 +1,14 @@
 # SESSION STATE
-Updated: 2026-09-06
-Last verified commit: main after PR #34
-Live URL verified: PARTIAL
+Updated: 2026-09-25
+Base commit for current review branch: 6dbb5f61d27e0ffcabbc542881a7d610ad8ce709 (origin/main)
+Live URL verified for this change: NO — not merged or published
 
-## Now
+## Current work
+Branch `feature/kin-hotel-offer-foundation` prepares KIN Travel hotel-offer data validation, an independent OFF-by-default admin feature flag, and a comparison sheet that appears only for verified offers. No Booking.com or Expedia adapter or credentials are installed; there are no live hotel prices or new partner calls. Existing Hotels and Apartments & Homes controls are unchanged while the flag is OFF. Focused server checks, API/web/scripts typechecks, and accommodation browser tests passed locally.
+
+Next: review the PR; founder decides whether to merge. Do not enable the flag, configure provider credentials, or publish without approval. The preserved local `main` branch was not changed. The independently proposed discovery and publishing-safety tasks remain separate.
+
+## Historical handoff (2026-09-06)
 PR #32 (Looks), #33 (Travel), #34 (instructions file)
 all merged. #32 and #33 published live.
 
