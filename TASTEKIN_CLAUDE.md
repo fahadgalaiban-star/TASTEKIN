@@ -101,6 +101,8 @@ This is the most expensive part of the system. Treat it as such.
 
 Secrets in Replit: `ANTHROPIC_API_KEY`, `GOOGLE_MAPS_API_KEY` (Maps key restricted to Places API New + Routes API).
 
+Optional, referral-only (not secrets, no partner is hard-coded, both features stay invisible until the founder picks a partner AND turns the flag on): `KIN_CAR_RENTAL_REFERRAL_URL` / `KIN_CAR_RENTAL_PARTNER_NAME` (flag `kin_travel_car_rental`) and `KIN_RESTAURANT_RESERVATION_URL` / `KIN_RESTAURANT_RESERVATION_PARTNER_NAME` (flag `kin_travel_restaurant_reservations`). See `docs/KIN-TRAVEL-REFERRALS.md`.
+
 **Model and tool identifiers are version-pinned and must be verified against the official docs before use, not recalled from memory.**
 
 The current model string and web search tool identifier are correct as configured. Do not change them without a specific, evidenced reason. Docs: https://docs.claude.com/en/docs/agents-and-tools/tool-use/web-search-tool

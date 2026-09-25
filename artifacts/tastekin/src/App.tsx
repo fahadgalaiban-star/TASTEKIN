@@ -6,7 +6,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -3156,7 +3156,14 @@ function KinRingsMark({ size = 40 }: { size?: number }) {
 // KIN Travel — shared with api-server's lib/kin-travel.ts. Every field here
 // is either something Google's Places/Routes APIs genuinely returned or
 // null/omitted; the UI never invents a rating, address, or route.
-type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; activityInterest?: KinMainInterest | KinSportSubchoice; openingHours: string | null };
+// External referral (car rental / table reservation) — shared with
+// api-server's lib/kin-referrals.ts. The server only ever emits one when
+// its own feature flag is on and a partner is configured; the client also
+// checks the flag from /api/me and renders https links only, in a new tab.
+// TASTEKIN is a referral intermediary: booking, payment, insurance,
+// changes, cancellations and support stay with the partner.
+type KinReferralLink = { url: string; partnerName: string | null };
+type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; activityInterest?: KinMainInterest | KinSportSubchoice; openingHours: string | null; venueKind?: 'restaurant' | 'cafe' | null; reservation?: KinReferralLink };
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 // Optional accommodation — shared with api-server's lib/kin-travel.ts. Every
@@ -3171,7 +3178,7 @@ type KinAccommodationRequest = { hotels?: { stars?: KinHotelStars; budget?: KinS
 type KinTravelStay = { kind: KinStayKind; placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; priceLevel: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; reason: string | null };
 type KinTravelStayGroup = { items: KinTravelStay[]; hasMore: boolean };
 type KinTravelStays = { hotels?: KinTravelStayGroup; apartments?: KinTravelStayGroup };
-type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[]; stays?: KinTravelStays };
+type KinTravelPlan = { destination: string; narrative: string; citations: KinCitation[]; days: KinTravelDay[]; stays?: KinTravelStays; referrals?: { carRental?: KinReferralLink } };
 type KinTravelResponse = { status: 'ok'; plan: KinTravelPlan } | { status: 'unavailable'; reason: string; reasonCode?: string };
 
 /**
@@ -3414,6 +3421,18 @@ function kinPlaceCategoryLabel(place: KinTravelPlace, ar: boolean): string | nul
  * from its coordinates or, lacking those, its name. Every stop always gets
  * a working Directions action this way, never a dead link.
  */
+/** Only an absolute https URL is ever rendered as an external referral link. */
+function isSafeReferralUrl(url: string | null | undefined): url is string {
+  if (!url) return false;
+  try { return new URL(url).protocol === 'https:'; } catch { return false; }
+}
+
+/** A place's reservation referral, or null unless the flag is on, the place is a restaurant/café, and the server supplied an https partner link. */
+function reservationLinkFor(place: KinTravelPlace, enabled: boolean): KinReferralLink | null {
+  if (!enabled || !place.venueKind || !place.reservation || !isSafeReferralUrl(place.reservation.url)) return null;
+  return place.reservation;
+}
+
 function buildKinPlaceMapsUrl(place: { mapsUrl: string | null; lat: number | null; lng: number | null; name: string }): string {
   if (place.mapsUrl) return place.mapsUrl;
   const query = place.lat !== null && place.lng !== null ? `${place.lat},${place.lng}` : place.name;
@@ -3485,6 +3504,11 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   useEffect(() => {
     if (session.status !== 'loading' && !allowed) onUnavailable();
   }, [session.status, allowed, onUnavailable]);
+  // Referral features, each behind its own server flag (OFF by default).
+  // The server never emits referral data while a flag is off; this is the
+  // client's own second gate so nothing referral-related can render either.
+  const carRentalEnabled = session.featureFlags.kin_travel_car_rental === true;
+  const reservationsEnabled = session.featureFlags.kin_travel_restaurant_reservations === true;
 
   const [mode, setMode] = useState<KinMode>('looks');
   const [query, setQuery] = useState('');
@@ -4125,6 +4149,31 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       </div>
       {heroPhoto?.photoAttribution && <span className="kin-photo-credit">{t('Photo', 'صورة')}: <bdi dir="auto">{heroPhoto.photoAttribution}</bdi></span>}
 
+      {carRentalEnabled && travelPlan.referrals?.carRental && isSafeReferralUrl(travelPlan.referrals.carRental.url) && (() => {
+        // Only once KIN has generated the plan: directly below the trip
+        // summary (destination, dates, hero) and before Day 1 — never in the
+        // trip setup steps. Absent entirely while the flag is off.
+        const carRental = travelPlan.referrals.carRental;
+        const partner = carRental.partnerName;
+        return <section className="kin-referral-card" data-testid="kin-car-rental" aria-label={t('Car rental', 'تأجير السيارات')}>
+          <div className="kin-referral-head">
+            <span className="kin-referral-badge" aria-hidden="true">{t('CAR', 'سيارة')}</span>
+            <div>
+              <h3 className="kin-referral-title">{ar ? <>هل تحتاج سيارة في <bdi dir="auto">{displayDestination}</bdi>؟</> : <>Need a car in <bdi dir="auto">{displayDestination}</bdi>?</>}</h3>
+              <p className="kin-referral-copy">{startDate && endDate
+                ? t('Compare rental cars for your selected travel dates.', 'قارن سيارات الإيجار لتواريخ سفرك المحددة.')
+                : t('Compare rental cars for your trip. Add your travel dates on the partner’s website.', 'قارن سيارات الإيجار لرحلتك. أضف تواريخ سفرك على موقع الشريك.')}</p>
+            </div>
+          </div>
+          <a className="kin-referral-link" href={carRental.url} target="_blank" rel="noopener noreferrer sponsored" data-testid="kin-car-rental-link">
+            {t('View rental cars', 'عرض سيارات الإيجار')} <ExternalLink size={14} aria-hidden="true" />
+          </a>
+          <p className="kin-referral-disclaimer" data-testid="kin-car-rental-disclaimer">{partner
+            ? t(`You’ll continue on ${partner}’s website. Booking, payment, insurance, changes, cancellations and support are handled by ${partner}.`, `ستتابع على موقع ${partner}. يتولى ${partner} الحجز والدفع والتأمين والتعديلات والإلغاء والدعم.`)
+            : t('You’ll continue on the partner’s website. Booking, payment, insurance, changes, cancellations and support are handled by the partner.', 'ستتابع على موقع الشريك. يتولى الشريك الحجز والدفع والتأمين والتعديلات والإلغاء والدعم.')}</p>
+        </section>;
+      })()}
+
       {travelPlan.stays && (() => {
         // Rendered exactly once, above the day tabs and the first day —
         // never inside a day. Absent entirely when no accommodation card
@@ -4193,6 +4242,11 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
           {activeDay.places.map((place, index) => {
             const key = `${activeDay.dayIndex}:${place.placeId}`;
             const categoryLabel = kinPlaceCategoryLabel(place, ar);
+            // Restaurants/cafés only, and only while the flag is on: a compact
+            // burgundy "Reserve" button right after Directions in the stop's
+            // existing actions row. With the flag off the card is exactly as
+            // before. The single disclaimer sits below the day's itinerary.
+            const reservation = reservationLinkFor(place, reservationsEnabled);
             return <div key={place.placeId} className="kin-timeline-item" data-testid="kin-travel-place">
               <div className="kin-timeline-rail"><span className="kin-timeline-dot" /></div>
               <div className="kin-timeline-card">
@@ -4205,6 +4259,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{place.photoAttribution}</bdi></span>}
                   <div className="kin-timeline-actions">
                     {place.mapsUrl && <a href={place.mapsUrl} target="_blank" rel="noopener noreferrer" aria-label={t(`Open ${place.name} in Google Maps`, `افتح ${place.name} في خرائط Google`)}>{t('Directions', 'الاتجاهات')}</a>}
+                    {reservation && <a className="kin-reserve-link" href={reservation.url} target="_blank" rel="noopener noreferrer sponsored" data-testid="kin-reserve-table" aria-label={t(`Reserve a table at ${place.name}`, `احجز طاولة في ${place.name}`)}>{t('Reserve', 'احجز')}<ExternalLink size={11} aria-hidden="true" /></a>}
                     <button data-testid="kin-add-to-trip" disabled={addingTripItemKey === key} onClick={() => void addToTrip(activeDay, place)}>
                       {addedTripItems.has(key) ? t('Saved', 'تم الحفظ') : addingTripItemKey === key ? t('Saving…', 'جارٍ الحفظ…') : t('Save to trip', 'احفظ للرحلة')}
                     </button>
@@ -4217,7 +4272,9 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
             </div>;
           })}
         </div>}
-        {travelActionNotice && <p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
+        {activeDay.places.some((place) => reservationLinkFor(place, reservationsEnabled) !== null) &&
+          <p className="kin-reserve-note" data-testid="kin-reservation-disclaimer">{t('Reservations open on the partner’s website. The partner handles booking, payment, changes, cancellations and support.', 'يفتح الحجز في موقع الشريك، ويتولى الشريك الحجز والدفع والتعديلات والإلغاء والدعم.')}</p>}
+        {travelActionNotice &&<p className="settings-note" role="status" data-testid="kin-travel-action-notice">{travelActionNotice}</p>}
       </div>}
       <KinStayDetailsSheet stay={stayDetails} ar={ar} selected={stayDetails !== null && selectedStayIds[stayDetails.kind] === stayDetails.placeId}
         onSelect={() => { if (stayDetails) toggleStaySelection(stayDetails); }} onClose={() => setStayDetails(null)} />

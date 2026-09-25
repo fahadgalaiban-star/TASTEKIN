@@ -20,6 +20,7 @@ import {
 } from "../lib/kin-search";
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
 import { hasCachedStayPool, runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
+import { withReservationReferral, withTravelReferrals, type ReferralFlags } from "../lib/kin-referrals";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -273,6 +274,20 @@ router.post(
 );
 
 /**
+ * Both referral features are OFF by default and independently flagged; the
+ * response only ever carries a referral field when its flag is on (and a
+ * partner URL is configured — see lib/kin-referrals.ts), so a disabled
+ * feature is invisible to every client, not merely hidden by one.
+ */
+async function referralFlags(): Promise<ReferralFlags> {
+  const [carRental, restaurantReservations] = await Promise.all([
+    isFeatureEnabled("kin_travel_car_rental"),
+    isFeatureEnabled("kin_travel_restaurant_reservations"),
+  ]);
+  return { carRental, restaurantReservations };
+}
+
+/**
  * KIN Travel's day-by-day itinerary: real Google Places results and
  * real Routes distance/duration between them, combined with one Anthropic
  * web-search call for the narrative/weather-aware styling notes. Requires
@@ -326,7 +341,7 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     res.json({ status: "unavailable", reason: "unavailable" });
     return;
   }
-  res.json({ status: "ok", plan: result.plan });
+  res.json({ status: "ok", plan: withTravelReferrals(result.plan, validated.value, await referralFlags()) });
 });
 
 /**
@@ -395,7 +410,7 @@ router.post("/kin/travel/swap-place", requireUserMw, kinSearchFlagMw, async (req
     res.json({ status: "unavailable", reason: "unavailable" });
     return;
   }
-  res.json({ status: "ok", place: result.place, routes: result.routes });
+  res.json({ status: "ok", place: withReservationReferral(result.place, await referralFlags()), routes: result.routes });
 });
 
 const MAX_STAY_EXCLUDES = 60;
