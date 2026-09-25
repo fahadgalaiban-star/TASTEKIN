@@ -1,0 +1,81 @@
+Read TASTEKIN_CLAUDE.md and SESSION_STATE.md first.
+
+Task: Build the hidden foundation for hotel price offers inside the existing KIN Travel hotel experience.
+
+Start a new small branch from exact origin/main commit:
+
+6dbb5f61d27e0ffcabbc542881a7d610ad8ce709
+
+Do not modify, reset, merge, or delete the preserved local main branch.
+
+Important existing behavior:
+
+* Hotels and Apartments & Homes already exist.
+* Google Places supplies property discovery, photos, addresses, ratings and details.
+* Keep the existing cards, View Details, Select behavior, hotel preferences and apartment preferences unchanged.
+* Do not rebuild the accommodation experience.
+* Do not use Google priceLevel as a nightly price.
+* No Booking.com or Expedia credentials are currently configured.
+* Do not invent prices, partner URLs, property matches or credentials.
+
+Implement only this additive foundation:
+
+1. Add an independent server-side feature flag:
+    kin_travel_hotel_price_offers
+    It must default to OFF and appear in the existing admin feature-flags page.
+2. When the flag is OFF:
+    * API responses must remain unchanged.
+    * The existing hotel UI must remain pixel/functionally unchanged.
+    * No hotel-price code should make external requests.
+3. Create a provider-neutral server-side hotel-offer contract that can later support Booking.com and Expedia.
+
+Each verified offer must be able to carry:
+
+* provider
+* propertyId
+* propertyName
+* checkIn
+* checkOut
+* adults
+* rooms
+* roomName when supplied
+* totalPrice
+* currency
+* taxesAndFeesIncluded: true / false / unknown
+* cancellationSummary when supplied
+* availability
+* bookingUrl
+* checkedAt
+* propertyMatchConfidence or an explicit verified-match state
+
+4. Never return an offer unless the Google property has been safely matched to the same partner property. Do not use name-only matching as sufficient proof.
+5. Add no real Booking.com or Expedia network integration yet. Add a clean provider interface/adapter boundary only. All production providers should return no offers until official credentials and implementation are added.
+6. Add frontend support behind the flag:
+    * Preserve the existing hotel card layout.
+    * Do not add controls to the main KIN Travel setup flow.
+    * Only when verified offers exist, show a compact “Compare prices” / “قارن الأسعار” action on that hotel card.
+    * Opening it shows a mobile-first bottom sheet.
+    * The sheet can collect adults and rooms there, not in the main trip form.
+    * Travel check-in/check-out dates should be reused when already entered.
+    * Show provider-labelled offer rows with total price, currency, taxes/fees status, cancellation summary and last checked time.
+    * Booking buttons open the partner website externally with safe rel attributes.
+    * Include a compact disclaimer that price and availability may change on the partner website.
+    * If no verified offers exist, keep the current “Price unavailable” behavior and do not show an empty comparison sheet.
+7. English and Arabic/RTL are required.
+8. Secrets must remain server-side. Do not add credentials or expose environment values to the browser.
+9. Do not add tracking, database tables, migrations, payments, booking handling, insurance handling or customer support flows.
+10. Add tests proving:
+
+* flag OFF preserves current API and UI;
+* no configured provider means no offer UI;
+* unverified property matches are rejected;
+* malformed/non-HTTPS booking URLs are rejected;
+* valid fixture offers render correctly in English and Arabic;
+* existing Hotels and Apartments & Homes tests remain green.
+
+11. Run relevant typechecks and focused tests.
+12. Open a small PR for review and update SESSION_STATE.md.
+
+Do not merge, deploy, publish, republish, configure partner credentials, or enable the flag.
+
+In the final report, clearly state that this PR prepares the hidden UI and data contract only and does not provide live hotel prices until an approved partner API is connected.
