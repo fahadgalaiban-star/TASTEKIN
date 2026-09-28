@@ -72,7 +72,10 @@ const CircleSparkleIcon = ({ className, style }: { className?: string; style?: R
 const displayCategory = (category: string, language: Language = 'en') => tasteCategoryLabel(category, language);
 type CropAspect = 'square' | 'portrait' | 'story';
 type CropMetadata = { aspect: CropAspect; zoom: number; x: number; y: number; rotation: number; sourceWidth: number; sourceHeight: number; outputWidth: number; outputHeight: number };
-type PendingCrop = { source: File; crop: File; preview: File; cropMetadata: CropMetadata; cropUrl: string; previewUrl: string };
+// Two renditions only: the untouched source (kept private) and the creator's
+// crop (the photo everyone sees). TASTEKIN is free — no blurred "preview"
+// rendition is ever generated, uploaded, stored or shown.
+type PendingCrop = { source: File; crop: File; cropMetadata: CropMetadata; cropUrl: string };
 type OutfitItem = { type: string; brand: string; name: string; link: string };
 type CreatorProfile = {
   id?: string; displayName: string; username: string; bio: string; city: string; country: string; interests: string[];
@@ -703,7 +706,7 @@ function TastekinApp() {
   };
   const discardPendingCrop = () => {
     if (!pendingCrop) return;
-    URL.revokeObjectURL(pendingCrop.cropUrl); URL.revokeObjectURL(pendingCrop.previewUrl);
+    URL.revokeObjectURL(pendingCrop.cropUrl);
     setPendingCrop(null);
   };
   const discardPendingProfilePhoto = () => {
@@ -1033,7 +1036,7 @@ function TastekinApp() {
   const videoUpload = useVideoUpload(ar, (video) => setEditForm((prev) => ({ ...prev, video })));
   const openComposer = (item?: CreatorEdit) => {
     discardPendingCrop(); setEditingId(item?.id || null);
-    setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, previewImage: item.previewImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit());
+    setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit());
     if (item?.video) videoUpload.hydrate(item.video); else videoUpload.reset();
     go('composer');
   };
@@ -1055,8 +1058,7 @@ function TastekinApp() {
         const uploadRendition = async (file: File) => { const uploaded = await uploadCreatorImage(file); uploadedPaths.push(uploaded.objectPath); return uploaded; };
         const source = await uploadRendition(pendingCrop.source);
         const image = await uploadRendition(pendingCrop.crop);
-        const preview = await uploadRendition(pendingCrop.preview);
-        formToSave = { ...editForm, sourceImage: source.image, image: image.image, previewImage: preview.image, imageMetadata: source.metadata, crop: pendingCrop.cropMetadata };
+        formToSave = { ...editForm, sourceImage: source.image, image: image.image, previewImage: undefined, imageMetadata: source.metadata, crop: pendingCrop.cropMetadata };
         setEditForm(formToSave); setPendingMediaPaths(uploadedPaths); pendingMediaIsDiscardable.current = true;
       }
     } catch (error) {
@@ -2047,7 +2049,7 @@ function SavedListMenu({ ar, list, onRename, onDelete }: { ar: boolean; list: Sa
 
 function SavedGridCard({ edit, ar, onOpen, onUnsave }: { edit: CreatorEdit; ar: boolean; onOpen: () => void; onUnsave: () => void }) {
   const caption = publicCaptionLine(edit, ar);
-  const thumbnail = edit.video?.posterUrl || edit.image || edit.previewImage;
+  const thumbnail = edit.video?.posterUrl || edit.image;
   const canonicalCategory = travelTabs.find((tab) => tab.id !== 'All' && travelTabCategory[tab.id] === edit.category);
   return <article className="saved-grid-card" data-testid={`saved-grid-${edit.id}`}>
     <button className="saved-grid-media" onClick={onOpen} aria-label={ar ? `فتح ${caption}` : `Open ${caption}`}>
@@ -5406,14 +5408,11 @@ async function renderCrop(source: PreparedImage, crop: CropMetadata, longEdge = 
   return canvas;
 }
 
-async function createCropRenditions(source: PreparedImage, crop: CropMetadata) {
+/** The creator's crop is the only rendition ever shown; no blurred rendition is generated. */
+async function createCropRendition(source: PreparedImage, crop: CropMetadata) {
   const canvas = await renderCrop(source, crop);
   const cropBlob = await canvasBlob(canvas, .9);
-  const ratio = canvas.width / canvas.height;
-  const preview = document.createElement('canvas'); const previewWidth = Math.min(640, canvas.width); const previewHeight = Math.round(previewWidth / ratio); preview.width = previewWidth; preview.height = previewHeight;
-  const previewContext = preview.getContext('2d')!; previewContext.filter = 'blur(18px) saturate(.72)'; previewContext.drawImage(canvas, -10, -10, previewWidth + 20, previewHeight + 20); previewContext.filter = 'none';
-  const previewBlob = await canvasBlob(preview, .7);
-  return { crop: new File([cropBlob], 'tastekin-crop.jpg', { type: 'image/jpeg' }), preview: new File([previewBlob], 'tastekin-private-preview.jpg', { type: 'image/jpeg' }) };
+  return new File([cropBlob], 'tastekin-crop.jpg', { type: 'image/jpeg' });
 }
 
 function CropEditor({ ar, source, initialCrop, error, busy, onCancel, onConfirm }: { ar: boolean; source: PreparedImage; initialCrop?: CropMetadata; error: string; busy: boolean; onCancel: () => void; onConfirm: (crop: CropMetadata) => void }) {
@@ -5893,11 +5892,11 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
     if (!pendingImage) return;
     setProcessing(true); setImageError('');
     try {
-      const renditions = await createCropRenditions(pendingImage, crop);
-      const cropUrl = URL.createObjectURL(renditions.crop); const previewUrl = URL.createObjectURL(renditions.preview);
+      const cropFile = await createCropRendition(pendingImage, crop);
+      const cropUrl = URL.createObjectURL(cropFile);
       if (form.video) void videoUpload.cancel();
       onChange({ ...form, image: cropUrl, crop, video: undefined });
-      onCropPrepared({ source: pendingImage.file, crop: renditions.crop, preview: renditions.preview, cropMetadata: crop, cropUrl, previewUrl });
+      onCropPrepared({ source: pendingImage.file, crop: cropFile, cropMetadata: crop, cropUrl });
       URL.revokeObjectURL(pendingImage.url); setPendingImage(null);
     } catch (error) { setImageError(error instanceof Error ? error.message : t('Could not apply your crop.', 'تعذر تطبيق الاقتصاص.')); } finally { setProcessing(false); }
   };

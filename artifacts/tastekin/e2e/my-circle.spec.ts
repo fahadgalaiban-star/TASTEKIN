@@ -5,7 +5,7 @@ const VISITOR = {
   displayName: 'Noura Studio',
 };
 const NOURA_AVATAR = `/api/public-profile-media/${encodeURIComponent(VISITOR.username)}`;
-const LAYLA_AVATAR = '/tastekin-media/private-hotel-preview.webp';
+const LAYLA_AVATAR = '/tastekin-media/coastal-notes.webp';
 
 // Two public fixture Edits (TASTEKIN is free — every Edit is public).
 const edit = (id: string, variant: 'uniform' | 'hotel') => ({
@@ -15,7 +15,7 @@ const edit = (id: string, variant: 'uniform' | 'hotel') => ({
   titleAr: variant === 'uniform' ? 'إطلالة مدروسة' : 'عطلة فندقية خاصة',
   caption: variant === 'uniform' ? 'A quiet uniform for an everyday city.' : 'The stay, the packing list, and where I ate.',
   captionAr: variant === 'uniform' ? 'إطلالة هادئة ليوم عادي في المدينة.' : 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.',
-  image: variant === 'uniform' ? '/tastekin-media/quiet-tailoring.webp' : '/tastekin-media/private-hotel-preview.webp',
+  image: variant === 'uniform' ? '/tastekin-media/quiet-tailoring.webp' : '/tastekin-media/coastal-notes.webp',
   location: 'Kuwait City, Kuwait',
   locationAr: 'مدينة الكويت، الكويت',
   altText: variant === 'uniform' ? 'A considered outfit.' : 'Private hotel preview.',

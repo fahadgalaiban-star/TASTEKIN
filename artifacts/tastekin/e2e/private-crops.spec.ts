@@ -49,7 +49,7 @@ type CreatorProfile = {
 };
 
 const ownerSession = 'tastekin-e2e-owner';
-const imagePath = path.resolve(import.meta.dirname, '../public/tastekin-media/private-hotel-preview.webp');
+const imagePath = path.resolve(import.meta.dirname, '../public/tastekin-media/coastal-notes.webp');
 const onePixelImage = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL5JwAAAABJRU5ErkJggg==',
   'base64',
@@ -376,10 +376,14 @@ test('an authenticated creator persists each exact canonical crop format after p
     });
   }
 
-  expect(api.objectPaths).toHaveLength(9);
+  // Two renditions per photo (source + crop) — TASTEKIN is free, so no
+  // blurred "preview" rendition is ever generated or uploaded.
+  expect(api.objectPaths).toHaveLength(6);
   expect(api.objectPaths.every((path) => api.uploadedPaths.has(path))).toBe(true);
   expect(api.cleanedPaths).toEqual(new Set());
-  expect(api.workspace.edits.find((edit) => edit.title === 'portrait crop survives refresh')).toMatchObject({ sourceImage: api.objectPaths[0], image: api.objectPaths[1], previewImage: api.objectPaths[2] });
+  const portrait = api.workspace.edits.find((edit) => edit.title === 'portrait crop survives refresh');
+  expect(portrait).toMatchObject({ sourceImage: api.objectPaths[0], image: api.objectPaths[1] });
+  expect(portrait?.previewImage).toBeUndefined();
 
   await page.reload();
   await page.getByTestId('nav-you').click();
