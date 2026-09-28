@@ -3,13 +3,13 @@ name: TASTEKIN crop media lifecycle
 description: Rules for safely persisting and cleaning creator crop renditions.
 ---
 
-Fresh source, cropped, and blurred-preview renditions must be tracked as discardable only until the creator workspace save starts. Cleanup applies to canceled, failed, or conflicted saves—not an in-flight or successful save.
+Fresh source and cropped renditions (TASTEKIN is free: no blurred-preview rendition is generated any more) must be tracked as discardable only until the creator workspace save starts. Cleanup applies to canceled, failed, or conflicted saves—not an in-flight or successful save.
 
 **Why:** A navigation or page-exit cleanup racing a successful workspace commit can delete media that the newly persisted Edit references.
 
 **How to apply:** Any future change to the crop, publish, navigation, or unload flow must preserve this state transition: mark fresh paths non-discardable before a workspace PUT; clear tracking after success; clean only the freshly tracked paths after failure or explicit abandonment.
 
-Crop confirmation applies a local rendered preview first and retains the three File renditions in memory; protected uploads occur only on Save Draft or Publish.
+Crop confirmation applies a local rendered preview first and retains the two File renditions (source, crop) in memory; protected uploads occur only on Save Draft or Publish.
 
 **Why:** Authentication or network failure must not stop a creator from seeing and adjusting the crop they just made.
 

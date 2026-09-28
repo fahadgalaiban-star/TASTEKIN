@@ -4,6 +4,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 
 import { creatorByUsername, creatorForUser, requireCreator } from "../lib/creator-account";
+import { clearPhotoOf } from "../lib/edit-access";
 import { createPrivateMediaUpload, deletePrivateMedia, getPrivateMediaDownloadURL } from "../lib/private-media-storage";
 
 const router: IRouter = Router();
@@ -101,15 +102,16 @@ async function publicProfileCoverMedia(username: string, res: import("express").
 /**
  * Every published Edit is public in the free product. The legacy `/preview`
  * route is kept only so links minted before the paywall was removed keep
- * resolving; it serves the same full photo as the main route (a blurred
- * preview rendition is never served any more).
+ * resolving; it serves the same full photo as the main route. A blurred
+ * preview rendition (the legacy `previewImage`, or an `image` that is one)
+ * is never served — see lib/edit-access.ts — so an Edit whose only photo
+ * was blurred is simply 404 here.
  */
 async function publicEditMedia(username: string, editId: string, preview: boolean, res: import("express").Response) {
   const workspace = await creatorByUsername(username);
   const edit = (workspace?.edits as Array<Record<string, unknown>> | undefined)?.find((item) => item.id === editId && item.status === "published");
-  const image = typeof edit?.image === "string" && edit.image.startsWith("/objects/")
-    ? edit.image
-    : typeof edit?.previewImage === "string" && edit.previewImage.startsWith("/objects/") ? edit.previewImage : null;
+  const photo = edit ? clearPhotoOf(edit) : undefined;
+  const image = photo?.startsWith("/objects/") ? photo : null;
   if (!image) { res.status(404).json({ error: preview ? "Media preview not found" : "Media object not found" }); return; }
   res.redirect(302, await getPrivateMediaDownloadURL(image));
 }

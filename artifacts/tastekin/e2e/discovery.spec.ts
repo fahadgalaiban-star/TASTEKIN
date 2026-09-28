@@ -74,7 +74,7 @@ const privateHotelFeed = {
   titleAr: 'عطلة فندقية خاصة',
   caption: 'The stay, the packing list, and where I ate.',
   captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.',
-  image: '/tastekin-media/private-hotel-preview.webp',
+  image: '/tastekin-media/coastal-notes.webp',
   location: 'Kuwait City, Kuwait',
   locationAr: 'مدينة الكويت، الكويت',
   altText: 'Private hotel preview.',
@@ -1007,13 +1007,13 @@ test('keeps owner controls compact without a standalone preview button and persi
         revision: 1,
         edits: [
           { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: '/tastekin-media/quiet-tailoring.webp', location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Tailoring.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
-          { id: 'private-hotel', category: 'Travel', title: 'Private hotel weekend', titleAr: 'عطلة فندقية خاصة', caption: 'The stay, the packing list, and where I ate.', captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.', image: '/tastekin-media/private-hotel-preview.webp', location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'Private hotel preview.', access: 'public', status: 'published', collectionIds: ['coastal-edit'] },
+          { id: 'private-hotel', category: 'Travel', title: 'Private hotel weekend', titleAr: 'عطلة فندقية خاصة', caption: 'The stay, the packing list, and where I ate.', captionAr: 'الإقامة، قائمة الحقائب، والأماكن التي تناولت فيها الطعام.', image: '/tastekin-media/coastal-notes.webp', location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'Private hotel preview.', access: 'public', status: 'published', collectionIds: ['coastal-edit'] },
         ],
         collections: [
           { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring'] },
           // An explicit uploaded coverImage — this test exercises
           // feature/unfeature toggling, not cover resolution.
-          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'public', coverImage: '/tastekin-media/private-hotel-preview.webp', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
+          { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and private travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر خاصة.', access: 'public', coverImage: '/tastekin-media/coastal-notes.webp', coverEditId: 'private-hotel', editIds: ['private-hotel'] },
         ],
       }),
     });
@@ -1084,7 +1084,7 @@ test('opens an Edit that was "subscribers only" before the free product as an or
 
   await expect(page.getByText('Public Edit')).toBeVisible();
   await expect(page.locator('.approved-detail-art')).not.toHaveClass(/locked/);
-  await expect(page.locator('.approved-detail-art img')).toHaveAttribute('src', '/tastekin-media/private-hotel-preview.webp');
+  await expect(page.locator('.approved-detail-art img')).toHaveAttribute('src', '/tastekin-media/coastal-notes.webp');
   await expect(page.getByText('This edit is for subscribers')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Subscribe/ })).toHaveCount(0);
   await expect(page.getByText(/\$19\.99|\$1\.49|Stripe/)).toHaveCount(0);
