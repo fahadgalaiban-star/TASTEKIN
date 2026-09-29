@@ -153,6 +153,37 @@ async function main() {
       assert.deepEqual(seen?.itemOrder, ["upload-1"], "itemOrder must survive a subsequent GET");
     });
 
+    await check("deleting a collection through a workspace save drops it from Featured in the same save, keeps every Edit (photo, status) and never touches the other collection", async () => {
+      const owner = await freshOwner();
+      const edit = {
+        id: `keep-edit-${suffix}`, category: "Fashion", title: "Keep", titleAr: "Keep", caption: "Keep", captionAr: "Keep",
+        image: "/tastekin-media/quiet-tailoring.webp", location: "Kuwait City, Kuwait", locationAr: "مدينة الكويت، الكويت", altText: "Keep",
+        access: "public", status: "published", collectionIds: [`gone-${suffix}`],
+      };
+      const keep: Collection = { id: `keep-${suffix}`, title: "Keep", titleAr: "Keep", description: "", descriptionAr: "", access: "public", coverEditId: "", editIds: [] };
+      const gone: Collection = { id: `gone-${suffix}`, title: "Gone", titleAr: "Gone", description: "", descriptionAr: "", access: "public", coverEditId: edit.id, editIds: [edit.id] };
+      const first = await owner.session.saveWorkspace([edit], [keep, gone], owner.revision);
+      await expectStatus(first, 200);
+      const afterFirst = await first.json() as { revision: number };
+      const feature = await owner.session.request("/api/creator-featured-collections", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ collectionIds: [keep.id, gone.id] }) });
+      await expectStatus(feature, 200);
+      const featuredBefore = await (await owner.session.request("/api/creator-featured-collections")).json() as { collectionIds: string[] };
+      assert.deepEqual(featuredBefore.collectionIds, [keep.id, gone.id]);
+
+      // The delete: the collection is gone and the Edit is unlinked — nothing else changes.
+      const second = await owner.session.saveWorkspace([{ ...edit, collectionIds: [] }], [keep], afterFirst.revision);
+      await expectStatus(second, 200);
+      const featuredAfter = await (await owner.session.request("/api/creator-featured-collections")).json() as { collectionIds: string[] };
+      assert.deepEqual(featuredAfter.collectionIds, [keep.id], "the deleted collection must leave the Featured list in the same save");
+      const ws = await (await owner.session.workspace()).json() as { edits: Array<Record<string, unknown>>; collections: Collection[] };
+      assert.deepEqual(ws.collections.map((collection) => collection.id), [keep.id]);
+      const kept = ws.edits.find((item) => item.id === edit.id);
+      assert.ok(kept, "the Edit that was in the deleted collection still exists");
+      assert.equal(kept.status, "published");
+      assert.equal(kept.image, edit.image, "the Edit keeps its photo");
+      assert.deepEqual(kept.collectionIds, []);
+    });
+
     await check("a freshly created (non-founder) account's empty avatar does not cause GET /api/creator-profile to 500", async () => {
       const owner = await freshOwner();
       const response = await owner.session.profile();

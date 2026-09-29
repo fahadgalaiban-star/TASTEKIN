@@ -312,15 +312,9 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .profile-travel-grid .profile-grid-media { position:absolute; inset:0; width:100%; height:100%; }
 .profile-travel-grid .video-duration-badge { font-size:11px; }
 .approved-collection strong { display:block; padding:10px 11px 12px; font-size:13px; }
-/* A place-category Edit that DOES have a real uploaded photo is still
-   image-led (the tile is the photo, full-bleed) — it just gains a subtle
-   bottom gradient and a compact name/rating overlay so it reads as a place
-   recommendation rather than a plain photo. Never a fabricated/stock image. */
-.place-grid-photo { color:var(--tk-text-inverse); }
-.profile-travel-grid .place-grid-photo::after { content:""; position:absolute; inset:0; z-index:1; background:linear-gradient(to bottom,transparent 55%,rgba(23,20,22,.72) 100%); pointer-events:none; }
-.place-grid-photo-overlay { position:absolute; z-index:2; inset-inline:8px; bottom:7px; display:flex; align-items:baseline; gap:6px; overflow:hidden; }
-.place-grid-photo-overlay strong { overflow:hidden; color:var(--tk-text-inverse); font-size:12px; font-weight:800; line-height:1.2; text-overflow:ellipsis; white-space:nowrap; }
-.place-grid-photo-overlay .taste-rating-label { flex:0 0 auto; color:var(--tk-text-inverse); font-size:10px; font-weight:700; }
+/* A place-category Edit that has a real uploaded photo is image-only on the
+   profile grid, exactly like every other photo tile: no gradient, no name,
+   rating, caption or location over the photo. Never a fabricated/stock image. */
 /* Only a place-category Edit published with no photo at all (an
    intentional no-media recommendation) falls back to a text tile — kept
    compact and centered so it reads as a tile among photos, not a stray
@@ -370,6 +364,16 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .collection-grid-remove { position:absolute; z-index:1; top:5px; inset-inline-end:5px; display:grid; place-items:center; width:22px; height:22px; border:0; border-radius:50%; background:rgba(23,20,22,.65); color:var(--tk-text-inverse); }
 .approved-list { display:grid; gap:8px; margin-top:7px; }
 .approved-list button { min-height:60px; display:flex; align-items:center; justify-content:space-between; padding:8px 12px; border:1px solid var(--tk-border); border-radius:15px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:700; text-align:start; }
+/* Post detail: the full caption centered above the image (smaller on
+   phones, never clamped or cut off), then one small tappable location row,
+   then the image. */
+.edit-detail-title { margin:14px auto 6px; max-width:34ch; font-size:20px; line-height:1.25; letter-spacing:-.03em; text-align:center; overflow-wrap:anywhere; }
+@media (min-width:600px) { .edit-detail-title { font-size:24px; } }
+.edit-detail-location { display:flex; align-items:center; justify-content:center; gap:5px; width:max-content; max-width:100%; min-height:32px; margin:0 auto; padding:0 8px; border-radius:999px; color:var(--tk-stone); font-size:12px; font-weight:700; text-decoration:none; }
+.edit-detail-location span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.edit-detail-location svg { flex:0 0 auto; color:var(--tk-wine); }
+.edit-detail-location:hover, .edit-detail-location:focus-visible { color:var(--tk-wine); background:var(--tk-surface-muted); }
+.edit-detail-location + .approved-detail-art, .edit-detail-title + .approved-detail-art { margin-top:10px; }
 .approved-detail-art { position:relative; width:100%; margin:15px 0 12px; overflow:hidden; border-radius:20px; background:var(--tk-surface-muted); }
 .approved-detail-art img { width:100%; height:100%; display:block; object-fit:cover; }
 /* Phase 3B — video playback cards. .video-card-media mirrors .approved-art's
@@ -522,6 +526,18 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .collection-checks button.selected { border-color:var(--tk-wine); background:var(--tk-wine); color:var(--tk-text-inverse); }
 .collection-checks { display:flex; flex-wrap:wrap; gap:7px; margin:7px 0 15px; }
 .collection-checks button { min-height:34px; padding:6px 9px; }
+/* "Create new collection" beside the collection choices in the post composer, and the inline form it opens. */
+.collection-checks button.composer-create-collection { border:1px dashed var(--tk-wine); background:transparent; color:var(--tk-wine); }
+.composer-new-collection { margin:-6px 0 15px; padding:12px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); }
+.composer-new-collection h3 { margin:0; font-size:14px; letter-spacing:-.02em; }
+.composer-new-collection .form-field { margin:8px 0; }
+.composer-new-collection-actions, .collection-delete-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:8px; }
+.composer-new-collection-actions .approved-button, .collection-delete-actions .approved-button { min-height:40px; }
+/* "Delete collection" on the owner's collection edit screen, with its confirmation. */
+.collection-delete { margin-top:22px; padding-top:16px; border-top:1px solid var(--tk-border); }
+.collection-delete .approved-button.danger.wide { display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+.collection-delete-confirm h3 { margin:0 0 6px; font-size:15px; letter-spacing:-.02em; }
+.collection-delete-confirm p { margin:0; color:var(--tk-stone); font-size:12px; line-height:1.5; }
 .composer-actions { display:grid; grid-template-columns:1fr 1fr 1fr; gap:7px; margin:17px 0 8px; }
 .composer-actions .approved-button { min-height:43px; padding:0 8px; font-size:11px; }
 .composer-details, .nested-details { margin:12px 0; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-surface); }
