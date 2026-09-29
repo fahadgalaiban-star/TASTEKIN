@@ -350,11 +350,11 @@ async function fillRequiredFields(page: Page, title: string) {
   await page.locator('textarea.unified-caption-input').fill(title);
 }
 
-async function selectCategory(page: Page, category: 'Trips' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style' = 'Style') {
+async function selectCategory(page: Page, category: 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style' = 'Style') {
   await page.getByRole('radio', { name: category, exact: true }).click();
 }
 
-async function publish(page: Page, title: string, category: 'Trips' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style' = 'Style') {
+async function publish(page: Page, title: string, category: 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style' = 'Style') {
   await fillRequiredFields(page, title);
   await selectCategory(page, category);
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
@@ -554,11 +554,11 @@ test('the unified media picker accepts a crop and optional caption', async ({ br
   const { context, page } = await creatorPage(browser, api);
 
   await prepareCrop(page);
-  await selectCategory(page, 'Trips');
+  await selectCategory(page, 'Stays');
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
   const saved = api.workspace.edits.find((edit) => edit.crop?.aspect === 'portrait' && edit.id !== existingEdit.id);
-  expect(saved).toMatchObject({ category: 'Travel', caption: '', access: 'public', status: 'published' });
+  expect(saved).toMatchObject({ category: 'Decor', caption: '', access: 'public', status: 'published' });
   expect(saved?.image).toMatch(/^\/objects\/uploads\//);
   expect(saved?.crop).toMatchObject({ aspect: 'portrait', outputWidth: 1080, outputHeight: 1350 });
   expect(api.objectPaths).toHaveLength(3);

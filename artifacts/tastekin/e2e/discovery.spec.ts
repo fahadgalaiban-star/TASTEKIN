@@ -280,7 +280,7 @@ test('renders the default creator feed and the owner profile travel layout witho
   // hidden and Edit profile/Insights/overflow menu remain owner-only.
   await expect(page.locator('[data-testid^="profile-category-"]')).toHaveCount(0);
   await expect(page.getByTestId('profile-cover')).toBeVisible();
-  for (const tab of ['All', 'Trips', 'Stays', 'Food', 'Places', 'Tips', 'Style']) {
+  for (const tab of ['All', 'Stays', 'Food', 'Places', 'Tips', 'Style']) {
     await expect(page.getByTestId(`profile-travel-tab-${tab}`)).toBeVisible();
   }
   await expect(page.getByRole('button', { name: 'Edit profile' })).toBeVisible();
@@ -677,13 +677,14 @@ test('keeps profile media edge-to-edge and shows the default feed for another cr
   const cover = page.getByTestId('profile-cover');
   await expect(cover).toBeVisible();
   await expect(cover.locator('img')).toHaveCount(0);
-  for (const tab of ['All', 'Trips', 'Stays', 'Food', 'Places', 'Tips', 'Style']) {
+  for (const tab of ['All', 'Stays', 'Food', 'Places', 'Tips', 'Style']) {
     await expect(page.getByTestId(`profile-travel-tab-${tab}`)).toBeVisible();
   }
   await expect(page.getByTestId('profile-travel-tab-All')).toHaveClass(/active/);
-  await page.getByTestId('profile-travel-tab-Trips').click();
-  await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'Trips');
-  await expect(page.getByText('Nothing in Trips yet.')).toBeVisible();
+  await expect(page.getByTestId('profile-travel-tab-Trips')).toHaveCount(0);
+  await page.getByTestId('profile-travel-tab-Stays').click();
+  await expect(page.getByTestId('profile-edits-grid')).toHaveAttribute('data-active-category', 'Stays');
+  await expect(page.getByText('Nothing in Stays yet.')).toBeVisible();
   await expect(page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).resolves.toBe(true);
 });
 
@@ -911,10 +912,18 @@ test('keeps each public Edit mapped to its own media after travel filtering', as
     await expect(page.getByTestId(`profile-edit-${edit.id}`).locator('img')).toHaveAttribute('src', edit.image);
   }
 
-  await page.getByTestId('profile-travel-tab-Trips').click();
-  await expect(page.getByTestId('profile-edit-stable-travel-edit').locator('img')).toHaveAttribute('src', '/tastekin-media/stable-travel.webp');
-  await expect(page.getByTestId('profile-edit-stable-fashion-edit')).toHaveCount(0);
+  // "Trips" is retired: a legacy Travel post has no tab of its own, but it
+  // still shows under All, and every other tab filters it out.
+  await expect(page.getByTestId('profile-travel-tab-Trips')).toHaveCount(0);
+  await page.getByTestId('profile-travel-tab-Style').click();
+  await expect(page.getByTestId('profile-edit-stable-fashion-edit').locator('img')).toHaveAttribute('src', '/tastekin-media/stable-fashion.webp');
+  await expect(page.getByTestId('profile-edit-stable-travel-edit')).toHaveCount(0);
   await expect(page.getByTestId('profile-edit-stable-place-edit')).toHaveCount(0);
+  await page.getByTestId('profile-travel-tab-Places').click();
+  await expect(page.getByTestId('profile-edit-stable-place-edit').locator('img')).toHaveAttribute('src', '/tastekin-media/stable-place.webp');
+  await expect(page.getByTestId('profile-edit-stable-travel-edit')).toHaveCount(0);
+  await page.getByTestId('profile-travel-tab-All').click();
+  await expect(page.getByTestId('profile-edit-stable-travel-edit').locator('img')).toHaveAttribute('src', '/tastekin-media/stable-travel.webp');
 });
 
 test('persists saves and supports named Saved lists', async ({ page }) => {
@@ -987,7 +996,7 @@ test('persists saves and supports named Saved lists', async ({ page }) => {
   await expect(page.locator('.saved-grid-card')).toHaveCount(2);
   await expect(page.locator('.saved-grid')).toHaveCSS('grid-template-columns', /.+ .+/);
   await expect(page.getByTestId('saved-grid-quiet-tailoring').locator('small')).toHaveText('Style');
-  await expect(page.getByTestId('saved-grid-private-hotel').locator('small')).toHaveText('Trips');
+  await expect(page.getByTestId('saved-grid-private-hotel').locator('small')).toHaveText('Travel');
   await page.setViewportSize({ width: 390, height: 844 });
   if (process.env.CAPTURE_SAVED_SCREENSHOT) await page.screenshot({ path: '../../screenshots/tastekin-saved-lists-390x844.png' });
   await page.getByTestId('saved-grid-quiet-tailoring').getByRole('button', { name: /Open/ }).click();
