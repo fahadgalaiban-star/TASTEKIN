@@ -1032,7 +1032,9 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 }
 .unified-caption-input::placeholder { color:var(--tk-stone); }
 .unified-caption-input:focus-visible { border-color:var(--tk-focus); }
-.composer-category-chips { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:5px; margin:6px 0 16px; }
+.composer-category-chips { display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:5px; margin:6px 0 16px; }
+/* Shown only while editing a legacy post still stored under the retired "Trips" (Travel) category. */
+.composer-legacy-category { margin:-8px 0 16px; color:var(--tk-stone); font-size:11px; line-height:1.5; }
 .composer-category-chips button {
   min-width:0;
   min-height:38px;

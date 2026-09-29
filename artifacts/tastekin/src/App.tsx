@@ -133,10 +133,12 @@ const categories: { id: Category; en: string; ar: string }[] = [
 // corresponding Category in the data model (there is no lodging or
 // travel-advice category), so they intentionally map to nothing and always
 // render an honest empty state rather than fabricating content for them.
-type TravelTab = 'All' | 'Trips' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style';
+// "Trips" was retired from the user-facing app: posts stored under the
+// backend `Travel` category are kept as they are and still show under All and
+// inside their collections; they simply have no filter tab of their own.
+type TravelTab = 'All' | 'Stays' | 'Food' | 'Places' | 'Tips' | 'Style';
 const travelTabs: { id: TravelTab; en: string; ar: string }[] = [
   { id: 'All', en: 'All', ar: 'الكل' },
-  { id: 'Trips', en: 'Trips', ar: 'رحلات' },
   { id: 'Stays', en: 'Stays', ar: 'إقامات' },
   { id: 'Food', en: 'Food', ar: 'طعام' },
   { id: 'Places', en: 'Places', ar: 'أماكن' },
@@ -144,7 +146,7 @@ const travelTabs: { id: TravelTab; en: string; ar: string }[] = [
   { id: 'Style', en: 'Style', ar: 'ستايل' },
 ];
 const travelTabCategory: Partial<Record<TravelTab, Exclude<Category, 'All'>>> = {
-  Trips: 'Travel', Stays: 'Decor', Food: 'Restaurants', Places: 'Places', Tips: 'DailyRoutine', Style: 'Fashion',
+  Stays: 'Decor', Food: 'Restaurants', Places: 'Places', Tips: 'DailyRoutine', Style: 'Fashion',
 };
 const media = (name: string) => `/tastekin-media/${name}`;
 const TASTE_SEAL_IMAGE = tasteSealImage;
@@ -5993,8 +5995,9 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
   if (pendingImage) return <CropEditor ar={ar} source={pendingImage} initialCrop={form.crop} error={imageError} busy={processing} onCancel={() => { URL.revokeObjectURL(pendingImage.url); setPendingImage(null); }} onConfirm={confirmCrop} />;
   const acceptMedia = `image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif${videoUploadEnabled ? ',video/mp4,video/quicktime' : ''}`;
   const hasMedia = form.image || videoUpload.state.phase !== 'idle';
+  // No "Trips" choice any more (see TravelTab). A legacy post stored under
+  // `Travel` keeps that value until its creator picks another category.
   const composerTabs: { id: string; en: string; ar: string; backend: Exclude<Category, 'All'> }[] = [
-    { id: 'Trips', en: 'Trips', ar: 'رحلات', backend: 'Travel' },
     { id: 'Stays', en: 'Stays', ar: 'إقامات', backend: 'Decor' },
     { id: 'Food', en: 'Food', ar: 'طعام', backend: 'Restaurants' },
     { id: 'Places', en: 'Places', ar: 'أماكن', backend: 'Places' },
@@ -6046,6 +6049,7 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
           </button>
         ))}
       </div>
+      {form.category === 'Travel' && <p className="composer-legacy-category" data-testid="composer-legacy-category">{t('This post is in the retired “Trips” category. Pick a category above to move it, or publish as is to keep it.', 'هذا المنشور ضمن فئة «رحلات» المتوقفة. اختر فئة أعلاه لنقله، أو انشره كما هو للإبقاء عليه.')}</p>}
       <span className="form-label">{t('Location (optional)', 'الموقع (اختياري)')}</span>
       <div className="unified-picker-box">
         <MapPin size={20} />
