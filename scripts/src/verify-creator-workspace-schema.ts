@@ -191,6 +191,13 @@ async function main() {
       const profile = await response.json() as { avatar: string };
       assert.equal(profile.avatar, "", "a fresh account with no uploaded photo must report an empty avatar, not fail response validation");
     });
+
+    await check("a new account starts with no collections at all — no demo 'Quiet Luxury' / 'The Coastal Edit'", async () => {
+      const owner = await freshOwner();
+      const ws = await (await owner.session.workspace()).json() as { collections: Collection[]; edits: unknown[] };
+      assert.deepEqual(ws.collections, [], "no demo collections are created for a new account");
+      assert.deepEqual(ws.edits, [], "no demo Edits are created for a new account");
+    });
   } finally {
     stopServer(server);
   }
