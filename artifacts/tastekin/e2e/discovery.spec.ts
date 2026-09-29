@@ -697,7 +697,8 @@ test('the profile filter row scrolls horizontally at 390px without clipping any 
     everyTabHasWidth: Array.from(element.querySelectorAll('button')).every((button) => button.getBoundingClientRect().width > 0),
   }));
   expect(enLayout.scrollable).toBe(true);
-  expect(enLayout.tabCount).toBe(7);
+  // All, Stays, Food, Places, Tips, Style — "Trips" is retired.
+  expect(enLayout.tabCount).toBe(6);
   expect(enLayout.everyTabHasWidth).toBe(true);
   expect(await page.evaluate(() => document.documentElement.scrollWidth === document.documentElement.clientWidth)).toBe(true);
 
