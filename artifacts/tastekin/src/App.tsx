@@ -1090,6 +1090,32 @@ function TastekinApp() {
   const removeEditPhoto = (id: string) => persistWorkspace(creatorEdits.map((item) => item.id === id ? { ...item, image: '', sourceImage: '', previewImage: '' } : item), creatorCollections);
   const deleteEditRecord = (id: string) => persistWorkspace(creatorEdits.filter((item) => item.id !== id), creatorCollections);
   const openCollectionManager = (item?: CreatorCollection) => { setEditingCollectionId(item?.id || null); setCollectionForm(item ? { title: item.title, titleAr: item.titleAr, description: item.description, descriptionAr: item.descriptionAr, access: item.access, coverEditId: item.coverEditId, coverImage: item.coverImage || '', coverImageObjectPath: item.coverImageObjectPath ?? null, editIds: item.editIds, uploads: item.uploads, itemOrder: item.itemOrder } : blankCollection()); go('collectionManager'); };
+  // "Create new collection" from inside the post composer: persists the new
+  // (empty, public) collection right away through the same save queue as
+  // every other workspace change, then hands its id back so the composer can
+  // select it for the post being written. The post itself is still unsaved
+  // at this point — nothing about it is touched.
+  const createCollectionFromComposer = async (draft: { title: string; titleAr: string; description: string }) => {
+    const id = `collection-${Date.now()}`;
+    const next: CreatorCollection = { id, title: draft.title, titleAr: draft.titleAr || draft.title, description: draft.description, descriptionAr: draft.description, access: 'public', coverEditId: '', coverImage: '', coverImageObjectPath: null, editIds: [] };
+    const saved = await queueWorkspaceMutation((edits, collections) => ({ edits, collections: [next, ...collections] }));
+    return saved ? id : null;
+  };
+  // Deleting a collection removes only the collection: every Edit that was
+  // in it keeps its photo/video, status and everything else and is merely
+  // unlinked (collectionIds), and no media cleanup is ever requested. If it
+  // was Featured, the featured list is re-saved without it.
+  const deleteCollection = async (id: string) => {
+    const saved = await queueWorkspaceMutation((edits, collections) => ({
+      edits: edits.map((item) => item.collectionIds.includes(id) ? { ...item, collectionIds: item.collectionIds.filter((collectionId) => collectionId !== id) } : item),
+      collections: collections.filter((item) => item.id !== id),
+    }));
+    if (!saved) return false;
+    if (featuredCollectionIds.includes(id)) saveFeaturedCollections(featuredCollectionIds.filter((collectionId) => collectionId !== id));
+    setEditingCollectionId(null); setCollectionForm(blankCollection());
+    go('collectionManager');
+    return true;
+  };
   const saveCollection = () => {
     const id = editingCollectionId || `collection-${Date.now()}`;
     const next = { id, ...collectionForm };
@@ -1248,9 +1274,9 @@ function TastekinApp() {
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
     {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
-    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onPublish={publishEdit} />}
+    {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onPublish={publishEdit} onCreateCollection={createCollectionFromComposer} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} videoUpload={videoUpload} onBack={() => go('composer')} onPublish={publishEdit} />}
-    {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
+    {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onDelete={() => editingCollectionId ? deleteCollection(editingCollectionId) : Promise.resolve(false)} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SavedScreen ar={ar} saved={saved} lists={savedLists} activeListId={activeSavedListId} edits={publicFeedEdits} onSelectList={setActiveSavedListId} onCreateList={() => setSavedListCreatorOpen(true)} onRenameList={renameSavedList} onDeleteList={deleteSavedList} onOpen={openEdit} onUnsave={(id) => void toggleSaved(id)} />}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => openComposer()}>{t('Create an Edit', 'إنشاء منشور')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
     {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} onSignIn={() => go('auth')} />}
@@ -5862,13 +5888,31 @@ function videoPublishBlockReason(video: CreatorEditVideo | undefined, videoUploa
   return ar ? 'انتظر انتهاء معالجة الفيديو قبل النشر.' : 'Wait for the video to finish processing before publishing.';
 }
 
-function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUpload, onChange, onCropPrepared, onPublish }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; videoUpload: VideoUploadController; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onPublish: () => Promise<boolean> }) {
+type NewCollectionDraft = { title: string; titleAr: string; description: string };
+function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUpload, onChange, onCropPrepared, onPublish, onCreateCollection }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; videoUpload: VideoUploadController; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onPublish: () => Promise<boolean>; onCreateCollection: (draft: NewCollectionDraft) => Promise<string | null> }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [imageError, setImageError] = useState('');
   const [publishError, setPublishError] = useState('');
   const [processing, setProcessing] = useState(false);
   const [pendingImage, setPendingImage] = useState<PreparedImage | null>(null);
   const [showCollectionPicker, setShowCollectionPicker] = useState(false);
+  // "Create new collection" inline form, beside the existing collection
+  // choices: saves the collection immediately and selects it for this post.
+  const [creatingCollection, setCreatingCollection] = useState(false);
+  const [newCollection, setNewCollection] = useState<NewCollectionDraft>({ title: '', titleAr: '', description: '' });
+  const [newCollectionBusy, setNewCollectionBusy] = useState(false);
+  const [newCollectionError, setNewCollectionError] = useState('');
+  const cancelNewCollection = () => { setCreatingCollection(false); setNewCollectionError(''); setNewCollection({ title: '', titleAr: '', description: '' }); };
+  const submitNewCollection = async () => {
+    const title = newCollection.title.trim();
+    if (!title || newCollectionBusy) return;
+    setNewCollectionBusy(true); setNewCollectionError('');
+    const id = await onCreateCollection({ title, titleAr: newCollection.titleAr.trim(), description: newCollection.description.trim() });
+    setNewCollectionBusy(false);
+    if (!id) { setNewCollectionError(t('The collection could not be created. Try again.', 'تعذر إنشاء المجموعة. حاول مرة أخرى.')); return; }
+    update('collectionIds', form.collectionIds.includes(id) ? form.collectionIds : [...form.collectionIds, id]);
+    cancelNewCollection(); setShowCollectionPicker(false);
+  };
   const [locationInput, setLocationInput] = useState(ar ? form.locationAr || form.location : form.location || form.locationAr);
   const update = <K extends keyof EditForm>(key: K, value: EditForm[K]) => onChange({ ...form, [key]: value });
   const selectMedia = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -6018,6 +6062,22 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
           </button>
         ))}
         {collections.length === 0 && <p className="composer-empty-collections">{t('No collections yet.', 'لا توجد مجموعات بعد.')}</p>}
+        {!creatingCollection && <button type="button" className="composer-create-collection" data-testid="composer-create-collection" onClick={() => { setCreatingCollection(true); setNewCollectionError(''); }} disabled={busy}>
+          <PlusCircle size={14} /> {t('Create new collection', 'إنشاء مجموعة جديدة')}
+        </button>}
+      </div>}
+      {showCollectionPicker && creatingCollection && <div className="composer-new-collection" data-testid="composer-new-collection">
+        <h3>{t('New collection', 'مجموعة جديدة')}</h3>
+        <Field label={t('Title', 'العنوان')} value={newCollection.title} onChange={(value) => setNewCollection({ ...newCollection, title: value })} placeholder={t('Collection title', 'عنوان المجموعة')} />
+        <Field label={t('Arabic title (optional)', 'العنوان بالعربية (اختياري)')} value={newCollection.titleAr} onChange={(value) => setNewCollection({ ...newCollection, titleAr: value })} placeholder="عنوان المجموعة" />
+        <Field label={t('Description (optional)', 'الوصف (اختياري)')} value={newCollection.description} onChange={(value) => setNewCollection({ ...newCollection, description: value })} multiline placeholder={t('What holds it together?', 'ما الذي يجمعها؟')} />
+        {newCollectionError && <p className="workspace-notice" role="alert">{newCollectionError}</p>}
+        <div className="composer-new-collection-actions">
+          <button type="button" className="approved-button" onClick={cancelNewCollection} disabled={newCollectionBusy}>{t('Cancel', 'إلغاء')}</button>
+          <button type="button" className="approved-button primary" data-testid="composer-create-collection-save" onClick={() => void submitNewCollection()} disabled={!newCollection.title.trim() || newCollectionBusy || busy}>
+            {newCollectionBusy ? t('Creating…', 'جارٍ الإنشاء…') : t('Create and add', 'إنشاء وإضافة')}
+          </button>
+        </div>
       </div>}
     </div>
     {publishError && <p className="workspace-notice" role="alert">{publishError}</p>}
@@ -6043,9 +6103,21 @@ function CreatorPreview({ ar, busy, edit, videoUpload, onBack, onPublish }: { ar
   };
   return <SimpleScreen kicker={t('Consumer preview', 'معاينة للمستهلك')} title={t('This is how it will appear.', 'هكذا سيظهر.') }><p>{edit.image ? t('Your wording, access label, and image appear exactly as they will in the consumer feed.', 'ستظهر كتابتك وعلامة الوصول والصورة كما ستظهر في تغذية المستهلك.') : t('Your place recommendation appears as an intentional no-photo card.', 'ستظهر توصية المكان كبطاقة مقصودة بلا صورة.')}</p><EditCard edit={edit} ar={ar} saved={false} onSave={() => undefined} onOpen={() => undefined} />{publishError && <p className="workspace-notice" role="alert">{publishError}</p>}<div className="composer-actions"><button className="approved-button" onClick={onBack} disabled={busy}>{t('Keep editing', 'متابعة التعديل')}</button><button className="approved-button primary" onClick={() => { void tryPublish(); }} disabled={busy}>{t('Publish Edit', 'نشر التعديل')}</button></div></SimpleScreen>;
 }
-function CollectionManager({ ar, collections, edits, form, editing, featuredCollectionIds, onChange, onOpenCollection, onNew, onSave, onToggleFeatured, onMoveFeatured }: { ar: boolean; collections: CreatorCollection[]; edits: CreatorEdit[]; form: CollectionForm; editing: string | null; featuredCollectionIds: string[]; onChange: (form: CollectionForm) => void; onOpenCollection: (item: CreatorCollection) => void; onNew: () => void; onSave: () => void; onToggleFeatured: (id: string) => void; onMoveFeatured: (id: string, direction: 'up' | 'down') => void }) {
+function CollectionManager({ ar, collections, edits, form, editing, featuredCollectionIds, onChange, onOpenCollection, onNew, onSave, onDelete, onToggleFeatured, onMoveFeatured }: { ar: boolean; collections: CreatorCollection[]; edits: CreatorEdit[]; form: CollectionForm; editing: string | null; featuredCollectionIds: string[]; onChange: (form: CollectionForm) => void; onOpenCollection: (item: CreatorCollection) => void; onNew: () => void; onSave: () => void; onDelete: () => Promise<boolean>; onToggleFeatured: (id: string) => void; onMoveFeatured: (id: string, direction: 'up' | 'down') => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const update = <K extends keyof CollectionForm>(key: K, value: CollectionForm[K]) => onChange({ ...form, [key]: value });
+  // "Delete collection" (owner edit screen only) always asks first. Only the
+  // collection goes away — its posts and photos stay on the profile.
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  useEffect(() => { setConfirmingDelete(false); setDeleting(false); }, [editing]);
+  const confirmDelete = async () => {
+    if (deleting) return;
+    setDeleting(true);
+    const removed = await onDelete();
+    setDeleting(false);
+    if (!removed) setConfirmingDelete(false);
+  };
   return <section className="creator-composer">
     <span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span>
     {editing === null && <div className="workspace-head"><div><h1 className="approved-title">{t('Collections', 'المجموعات')}</h1><p>{t('Group recommendations into a complete taste world.', 'اجمع التوصيات في عالم ذوق متكامل.')}</p></div><button className="approved-button" onClick={onNew}><Plus size={15} /> {t('New', 'جديد')}</button></div>}
@@ -6067,7 +6139,19 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
       })}
       {!collections.length && <Empty text={t('No Collections yet. Create one to start grouping your Edits.', 'لا توجد مجموعات بعد. أنشئ واحدة لتبدأ بتجميع تعديلاتك.')} />}
     </div>}
-    {editing !== null && <div className="manager-form"><h2>{t('Edit details', 'تعديل التفاصيل')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave}>{t('Save changes', 'حفظ التغييرات')}</button></div>}
+    {editing !== null && <div className="manager-form"><h2>{t('Edit details', 'تعديل التفاصيل')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave} disabled={deleting}>{t('Save changes', 'حفظ التغييرات')}</button>
+      <div className="collection-delete" data-testid="collection-delete">
+        {!confirmingDelete
+          ? <button type="button" className="approved-button danger wide" data-testid="collection-delete-button" onClick={() => setConfirmingDelete(true)}><Trash2 size={15} /> {t('Delete collection', 'حذف المجموعة')}</button>
+          : <div className="approved-panel collection-delete-confirm" role="alertdialog" aria-labelledby="collection-delete-title" data-testid="collection-delete-confirm">
+            <h3 id="collection-delete-title">{ar ? <>حذف «<bdi dir="auto">{form.titleAr || form.title}</bdi>»؟</> : <>Delete “<bdi dir="auto">{form.title}</bdi>”?</>}</h3>
+            <p>{t('Only the collection is removed. Its posts and photos stay on your profile and are not deleted.', 'تُحذف المجموعة فقط. تبقى منشوراتها وصورها في ملفك الشخصي ولا تُحذف.')}</p>
+            <div className="collection-delete-actions">
+              <button type="button" className="approved-button" onClick={() => setConfirmingDelete(false)} disabled={deleting}>{t('Cancel', 'إلغاء')}</button>
+              <button type="button" className="approved-button danger" data-testid="collection-delete-confirm-button" onClick={() => void confirmDelete()} disabled={deleting}>{deleting ? t('Deleting…', 'جارٍ الحذف…') : t('Delete collection', 'حذف المجموعة')}</button>
+            </div>
+          </div>}
+      </div></div>}
     {editing === null && <div className="manager-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave} disabled={!form.title.trim()}>{t('Create collection', 'إنشاء المجموعة')}</button></div>}
   </section>;
 }

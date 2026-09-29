@@ -7,7 +7,7 @@ import {
   SaveCreatorWorkspaceBody,
   SaveCreatorWorkspaceResponse,
 } from "@workspace/api-zod";
-import { and, asc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 
 import {
@@ -720,6 +720,18 @@ router.put("/creator-workspace", async (req, res) => {
         .where(sql`${creatorWorkspaces.creatorId} = ${workspaceId} and ${creatorWorkspaces.ownerUserId} = ${ownerId} and ${creatorWorkspaces.revision} = ${parsed.data.expectedRevision}`)
         .returning();
       if (!workspace) return { kind: "conflict" as const };
+
+      // A collection the owner deleted must not linger as a Featured entry.
+      // The client also re-saves its featured list, but the workspace save
+      // is the durable source of truth, so the cleanup happens here, in the
+      // same transaction. Nothing else about a deleted collection is touched:
+      // its Edits stay exactly as submitted and no media is removed.
+      const remainingCollectionIds = (parsed.data.collections as Array<{ id?: unknown }>)
+        .map((collection) => collection.id)
+        .filter((id): id is string => typeof id === "string");
+      await tx.delete(creatorFeaturedCollections).where(remainingCollectionIds.length
+        ? and(eq(creatorFeaturedCollections.creatorId, workspaceId), notInArray(creatorFeaturedCollections.collectionId, remainingCollectionIds))
+        : eq(creatorFeaturedCollections.creatorId, workspaceId));
 
       // Only now, with the workspace save itself durable, flip attachment:
       // newly-referenced rows become uncancellable (attachVideoUploadsToEdit),
