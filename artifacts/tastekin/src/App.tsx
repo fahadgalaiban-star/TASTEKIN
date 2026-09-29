@@ -12,7 +12,8 @@ import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
-import { apiUrl, isNativeApp, nativeClientFields, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
+import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
+import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
 import './approved.css';
 
@@ -1767,15 +1768,19 @@ function TasteRating({ rating, ar, id, compact = false }: { rating?: number | nu
   if (compact) return <span className="taste-rating-wrap taste-rating-compact" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating-label" aria-label={ratingLabel}>{rating}/5</span></span>;
   return <span className="taste-rating-wrap" data-testid={id ? `taste-rating-${id}` : undefined}><span className="taste-rating" aria-hidden="true">{[1, 2, 3, 4, 5].map((value) => <Link2 key={value} size={15} className={value <= rating ? 'active' : ''} />)}</span><span className="taste-rating-label" aria-label={ratingLabel}>{ar ? `تقييم TASTEKIN · ${rating}/5` : `TASTEKIN Taste Rating · ${rating}/5`}</span></span>;
 }
-function PlaceDetails({ edit, ar, compact = false, showName = true }: { edit: CreatorEdit; ar: boolean; compact?: boolean; showName?: boolean }) {
-  if (!isPlaceCategory(edit.category) || !(edit.placeName || edit.locationLabel || edit.creatorReview || edit.tasteRating || isSafeMapsUrl(edit.mapsUrl))) return null;
+function PlaceDetails({ edit, ar, compact = false, showName = true, showLocation = true }: { edit: CreatorEdit; ar: boolean; compact?: boolean; showName?: boolean; showLocation?: boolean }) {
+  if (!isPlaceCategory(edit.category)) return null;
   const location = placeLocation(edit, ar);
+  const hasName = showName && Boolean(edit.placeName);
+  const hasLocation = showLocation && Boolean(location);
+  const hasMapsLink = showLocation && isSafeMapsUrl(edit.mapsUrl);
+  if (!hasName && !hasLocation && !hasMapsLink && !edit.creatorReview && !edit.tasteRating) return null;
   return <div className={`place-details ${compact ? 'compact' : ''}`}>
-    {showName && edit.placeName && <strong className="place-name">{edit.placeName}</strong>}
-    {location && <span className="place-location"><MapPin size={14} />{location}</span>}
+    {hasName && <strong className="place-name">{edit.placeName}</strong>}
+    {hasLocation && <span className="place-location"><MapPin size={14} />{location}</span>}
     <TasteRating rating={edit.tasteRating} ar={ar} id={edit.id} />
     {edit.creatorReview && <p>{edit.creatorReview}</p>}
-    {isSafeMapsUrl(edit.mapsUrl) && <a className="place-map-link" href={edit.mapsUrl!} target="_blank" rel="noreferrer"><MapPin size={14} />{ar ? 'فتح في الخرائط' : 'Open in Maps'}</a>}
+    {hasMapsLink && <a className="place-map-link" href={edit.mapsUrl!} target="_blank" rel="noreferrer"><MapPin size={14} />{ar ? 'فتح في الخرائط' : 'Open in Maps'}</a>}
   </div>;
 }
 function SaveButton({ edit, ar, saved, onSave }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void }) { return <button className={`approved-save ${saved ? 'saved' : ''}`} data-testid={`save-${edit.id}`} onClick={onSave} aria-label={saved ? (ar ? 'إزالة من المحفوظات' : 'Remove from saved') : (ar ? 'حفظ التعديل' : 'Save Edit')} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>; }
@@ -2111,15 +2116,25 @@ function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean
 }
 function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; saved: boolean; owner: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
   const caption = publicCaptionLine(edit, ar);
-  const detailTitle = isPlaceCategory(edit.category) ? edit.placeName || caption : caption;
   const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
-  return <SimpleScreen kicker={ar ? 'تعديل عام' : 'Public Edit'} title={detailTitle}>
+  // The location is shown exactly once, as one small tappable row above the
+  // image: "<place name> · <location>" (the name is left out when it is
+  // already the caption). It opens the saved place in the device's maps app
+  // — coordinates from the creator's maps link when it carries any, the
+  // name otherwise (see maps-link.ts). Nothing below the image repeats it.
+  const placeName = edit.placeName?.trim() || '';
+  const location = placeLocation(edit, ar)?.trim() || '';
+  const locationRow = [placeName && placeName !== caption ? placeName : '', location].filter(Boolean).join(' · ');
+  const mapsLink = locationRow
+    ? mapsHref({ name: [placeName, location].filter(Boolean).join(', '), coordinates: parseCoordinates(isSafeMapsUrl(edit.mapsUrl) ? edit.mapsUrl : null) }, nativePlatform)
+    : '';
+  return <SimpleScreen kicker={ar ? 'تعديل عام' : 'Public Edit'} title="">
+    {caption && <h1 className="approved-title edit-detail-title" data-testid="edit-detail-caption">{caption}</h1>}
+    {locationRow && <a className="edit-detail-location" data-testid="edit-detail-location" href={mapsLink} target="_blank" rel="noopener noreferrer" aria-label={ar ? `افتح ${locationRow} في الخرائط` : `Open ${locationRow} in Maps`}><MapPin size={14} aria-hidden="true" /><span>{locationRow}</span></a>}
     {edit.image && <div className="approved-detail-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} /></div>}
     {edit.video && <VideoDetailPlayer video={edit.video} ar={ar} />}
-    {isPlaceCategory(edit.category) && caption && caption !== detailTitle && <p className="edit-detail-caption">{caption}</p>}
-    {!edit.image && !edit.video && <div className="place-detail-panel"><PlaceDetails edit={edit} ar={ar} showName={false} /></div>}
-    {!edit.placeName && (edit.location || edit.locationAr) && <div className="approved-location"><MapPin size={14} />{placeLocation(edit, ar)}</div>}
-    {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} />}
+    {!edit.image && !edit.video && <div className="place-detail-panel"><PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} /></div>}
+    {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} />}
     {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
     <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} />
   </SimpleScreen>;
@@ -5332,15 +5347,13 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     </div>
     <div className="approved-grid profile-edits-grid profile-travel-grid" data-testid="profile-edits-grid" data-active-category={activeTravelTab}>
       {travelEdits.map((edit) => {
-        const placeTile = isPlaceCategory(edit.category);
+        // Image-only thumbnails: a photo tile is just the photo — no caption,
+        // location, name or rating drawn over it. That text lives on the
+        // post itself once opened.
         return <button className={`approved-grid-card ${edit.image || edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} data-testid={`profile-edit-${edit.id}`} onClick={() => onEdit(edit)}>
           {edit.image ? <>
-            <span className={`profile-grid-media${placeTile ? ' place-grid-photo' : ''}`}>
+            <span className="profile-grid-media">
               <img src={imageSrc(edit.image)} alt={edit.altText} />
-              {placeTile && <span className="place-grid-photo-overlay">
-                <strong>{edit.placeName || publicCaptionLine(edit, ar)}</strong>
-                <TasteRating rating={edit.tasteRating} ar={ar} compact />
-              </span>}
             </span>
           </> : edit.video ? <>
             <PosterVideoCard video={edit.video} ar={ar} />
