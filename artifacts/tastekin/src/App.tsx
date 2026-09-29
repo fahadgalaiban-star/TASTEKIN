@@ -160,9 +160,9 @@ const blankCreatorProfile: CreatorProfile = {
   avatar: '', avatarObjectPath: null, coverImage: '', coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
 };
 const seedEdits: CreatorEdit[] = [
-  { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: media('quiet-tailoring.webp'), location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Fheed seated outside a London café in a linen polo.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
-  { id: 'black-uniform', category: 'Fashion', title: 'The all-black uniform', titleAr: 'الإطلالة السوداء الكاملة', caption: 'Three pieces I return to when I want less noise.', captionAr: 'ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً.', image: media('black-uniform.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A black evening outfit on Fheed.', access: 'public', status: 'published', collectionIds: ['quiet-luxury'] },
-  { id: 'coastal-notes', category: 'Travel', title: 'Coastal notes', titleAr: 'ملاحظات من الساحل', caption: 'A slow itinerary for wind, coffee, and open horizons.', captionAr: 'برنامج هادئ للهواء والقهوة والأفق.', image: media('coastal-notes.webp'), location: 'The Aegean Coast', locationAr: 'ساحل إيجه', altText: 'A calm coastal landscape.', access: 'public', status: 'published', collectionIds: ['coastal-edit'] },
+  { id: 'quiet-tailoring', category: 'Fashion', title: 'Quiet tailoring', titleAr: 'أناقة هادئة', caption: 'A soft-structured look for a long city day.', captionAr: 'إطلالة مريحة ومنسّقة ليوم طويل في المدينة.', image: media('quiet-tailoring.webp'), location: 'Mayfair, London', locationAr: 'مايفير، لندن', altText: 'Fheed seated outside a London café in a linen polo.', access: 'public', status: 'published', collectionIds: [] },
+  { id: 'black-uniform', category: 'Fashion', title: 'The all-black uniform', titleAr: 'الإطلالة السوداء الكاملة', caption: 'Three pieces I return to when I want less noise.', captionAr: 'ثلاث قطع أعود إليها حين أريد إطلالة أكثر هدوءاً.', image: media('black-uniform.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A black evening outfit on Fheed.', access: 'public', status: 'published', collectionIds: [] },
+  { id: 'coastal-notes', category: 'Travel', title: 'Coastal notes', titleAr: 'ملاحظات من الساحل', caption: 'A slow itinerary for wind, coffee, and open horizons.', captionAr: 'برنامج هادئ للهواء والقهوة والأفق.', image: media('coastal-notes.webp'), location: 'The Aegean Coast', locationAr: 'ساحل إيجه', altText: 'A calm coastal landscape.', access: 'public', status: 'published', collectionIds: [] },
   { id: 'places-returning', category: 'Places', title: 'Places worth returning to', titleAr: 'أماكن تستحق العودة إليها', caption: 'A Kuwaiti table and a London room I keep thinking about.', captionAr: 'مائدة كويتية ومكان في لندن لا يفارق ذاكرتي.', image: media('places-returning.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A table set in a considered restaurant.', access: 'public', status: 'published', collectionIds: [] },
   { id: 'what-i-ordered', category: 'Restaurants', title: 'What I ordered', titleAr: 'ما طلبته', caption: 'A simple lunch worth repeating.', captionAr: 'غداء بسيط يستحق التكرار.', image: media('what-i-ordered.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A plated lunch at a restaurant.', access: 'public', status: 'published', collectionIds: [] },
   { id: 'sunday-reset', category: 'DailyRoutine', title: 'Sunday reset', titleAr: 'استعادة نشاط الأحد', caption: 'A realistic reset for movement, food, and planning.', captionAr: 'ترتيب واقعي للحركة والطعام والتخطيط.', image: media('sunday-reset.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A quiet Sunday scene.', access: 'public', status: 'published', collectionIds: [] },
@@ -173,10 +173,8 @@ const seedEdits: CreatorEdit[] = [
   { id: 'morning-library', category: 'Books', title: 'A morning at the library', titleAr: 'صباح في المكتبة', caption: 'A reading list and a room to return to.', captionAr: 'قائمة قراءة ومكان أعود إليه دائماً.', image: media('coastal-notes.webp'), location: 'London, United Kingdom', locationAr: 'لندن، المملكة المتحدة', altText: 'A peaceful interior for reading.', access: 'public', status: 'draft', collectionIds: [] },
   { id: 'archive-routine', category: 'PersonalCare', title: 'The old morning ritual', titleAr: 'الروتين الصباحي السابق', caption: 'An earlier routine kept for reference.', captionAr: 'روتين سابق محفوظ للرجوع إليه.', image: media('hotel-breakfast-source.webp'), location: 'Kuwait City, Kuwait', locationAr: 'مدينة الكويت، الكويت', altText: 'A quiet breakfast table.', access: 'public', status: 'archived', collectionIds: [] },
 ];
-const seedCollections: CreatorCollection[] = [
-  { id: 'quiet-luxury', title: 'Quiet Luxury', titleAr: 'فخامة هادئة', description: 'Tailoring, materials, and a quieter way to dress.', descriptionAr: 'تفصيل وخامات وطريقة أكثر هدوءاً في ارتداء الملابس.', access: 'public', coverEditId: 'quiet-tailoring', editIds: ['quiet-tailoring', 'black-uniform'] },
-  { id: 'coastal-edit', title: 'The Coastal Edit', titleAr: 'اختيارات الساحل', description: 'Places, packing and travel notes.', descriptionAr: 'أماكن وحقائب وملاحظات سفر.', access: 'public', coverEditId: 'coastal-notes', editIds: ['coastal-notes'] },
-];
+// No demo collections: a creator starts with none and creates their own.
+const seedCollections: CreatorCollection[] = [];
 
 const read = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(`tastekin:${key}`) || '') as T; } catch { return fallback; } };
 const write = (key: string, value: unknown) => localStorage.setItem(`tastekin:${key}`, JSON.stringify(value));
@@ -831,13 +829,15 @@ function TastekinApp() {
   // whichever profile is currently being viewed, same as the EditDetail
   // creatorUsername fallback below.
   const selectedEditOwner = owner && (selectedEdit.creatorUsername ? selectedEdit.creatorUsername === session.creator?.handle : viewingOwnProfile);
-  const selectedCollection = [...creatorCollections, ...publicCreatorCollections].find((item) => item.id === selectedCollectionId) || creatorCollections[0] || seedCollections[0];
+  // May be undefined: a creator starts with no collections at all (no demo
+  // collections are seeded), so every consumer below guards on it.
+  const selectedCollection: CreatorCollection | undefined = [...creatorCollections, ...publicCreatorCollections].find((item) => item.id === selectedCollectionId) || creatorCollections[0];
   // Ownership of the selected Collection is determined by whether it actually
   // belongs to the signed-in creator's own workspace data — not by which
   // profile page happens to be selected — so a stale `selectedCreatorUsername`
   // (left over from browsing another creator) can never make an owner's own
   // Collection render as if a stranger were viewing it.
-  const isOwnCollection = owner && creatorCollections.some((item) => item.id === selectedCollection.id);
+  const isOwnCollection = owner && selectedCollection !== undefined && creatorCollections.some((item) => item.id === selectedCollection.id);
   const isCollectionOwnerView = isOwnCollection && !profileVisitorMode;
   const collectionEditsSource = isOwnCollection ? published : viewedCreatorEdits;
   const go = (next: Screen) => {
@@ -1096,9 +1096,14 @@ function TastekinApp() {
   // every other workspace change, then hands its id back so the composer can
   // select it for the post being written. The post itself is still unsaved
   // at this point — nothing about it is touched.
-  const createCollectionFromComposer = async (draft: { title: string; titleAr: string; description: string }) => {
+  // A collection has one editable field, its name. The legacy titleAr /
+  // description / descriptionAr fields are kept in the data model only for
+  // compatibility with stored workspaces: the name is written to both title
+  // fields and the descriptions stay empty (or untouched on rename).
+  const createCollectionFromComposer = async (draft: { name: string }) => {
     const id = `collection-${Date.now()}`;
-    const next: CreatorCollection = { id, title: draft.title, titleAr: draft.titleAr || draft.title, description: draft.description, descriptionAr: draft.description, access: 'public', coverEditId: '', coverImage: '', coverImageObjectPath: null, editIds: [] };
+    const name = draft.name.trim();
+    const next: CreatorCollection = { id, title: name, titleAr: name, description: '', descriptionAr: '', access: 'public', coverEditId: '', coverImage: '', coverImageObjectPath: null, editIds: [] };
     const saved = await queueWorkspaceMutation((edits, collections) => ({ edits, collections: [next, ...collections] }));
     return saved ? id : null;
   };
@@ -1119,7 +1124,8 @@ function TastekinApp() {
   };
   const saveCollection = () => {
     const id = editingCollectionId || `collection-${Date.now()}`;
-    const next = { id, ...collectionForm };
+    const name = collectionForm.title.trim();
+    const next = { id, ...collectionForm, title: name, titleAr: name };
     const nextCollections = creatorCollections.some((item) => item.id === id) ? creatorCollections.map((item) => item.id === id ? next : item) : [next, ...creatorCollections];
     const nextEdits = creatorEdits.map((item) => ({ ...item, collectionIds: item.collectionIds.filter((collectionId) => collectionId !== id).concat(next.editIds.includes(item.id) ? [id] : []) }));
     persistWorkspace(nextEdits, nextCollections);
@@ -1289,7 +1295,7 @@ function TastekinApp() {
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><ProfileSectionTabs ar={ar} active="collections" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
-     {screen === 'collection' && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
+     {screen === 'collection' && selectedCollection && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
     {screen === 'about' && <SimpleScreen kicker={t(`About ${viewedCreatorProfile.displayName}`, `عن ${viewedCreatorProfile.displayName}`)} title={viewedCreatorProfile.displayName}><ProfileSectionTabs ar={ar} active="about" onEdits={() => go('profile')} onCollections={() => go('collections')} onAbout={() => go('about')} /><p>{viewedCreatorProfile.bio || t('This creator has not added a bio yet.', 'لم يضف هذا المبدع نبذة بعد.')}</p><div className="approved-panel"><h3>{t('Taste pillars', 'ركائز الذوق')}</h3><p>{viewedCreatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ') || t('No taste categories selected yet.', 'لم يتم اختيار فئات الذوق بعد.')}</p></div></SimpleScreen>}
     {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -5901,7 +5907,7 @@ function videoPublishBlockReason(video: CreatorEditVideo | undefined, videoUploa
   return ar ? 'انتظر انتهاء معالجة الفيديو قبل النشر.' : 'Wait for the video to finish processing before publishing.';
 }
 
-type NewCollectionDraft = { title: string; titleAr: string; description: string };
+type NewCollectionDraft = { name: string };
 function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUpload, onChange, onCropPrepared, onPublish, onCreateCollection }: { ar: boolean; form: EditForm; collections: CreatorCollection[]; busy: boolean; videoUploadEnabled: boolean; videoUpload: VideoUploadController; onChange: (form: EditForm) => void; onCropPrepared: (crop: PendingCrop) => void; onPublish: () => Promise<boolean>; onCreateCollection: (draft: NewCollectionDraft) => Promise<string | null> }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [imageError, setImageError] = useState('');
@@ -5912,15 +5918,15 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
   // "Create new collection" inline form, beside the existing collection
   // choices: saves the collection immediately and selects it for this post.
   const [creatingCollection, setCreatingCollection] = useState(false);
-  const [newCollection, setNewCollection] = useState<NewCollectionDraft>({ title: '', titleAr: '', description: '' });
+  const [newCollection, setNewCollection] = useState<NewCollectionDraft>({ name: '' });
   const [newCollectionBusy, setNewCollectionBusy] = useState(false);
   const [newCollectionError, setNewCollectionError] = useState('');
-  const cancelNewCollection = () => { setCreatingCollection(false); setNewCollectionError(''); setNewCollection({ title: '', titleAr: '', description: '' }); };
+  const cancelNewCollection = () => { setCreatingCollection(false); setNewCollectionError(''); setNewCollection({ name: '' }); };
   const submitNewCollection = async () => {
-    const title = newCollection.title.trim();
-    if (!title || newCollectionBusy) return;
+    const name = newCollection.name.trim();
+    if (!name || newCollectionBusy) return;
     setNewCollectionBusy(true); setNewCollectionError('');
-    const id = await onCreateCollection({ title, titleAr: newCollection.titleAr.trim(), description: newCollection.description.trim() });
+    const id = await onCreateCollection({ name });
     setNewCollectionBusy(false);
     if (!id) { setNewCollectionError(t('The collection could not be created. Try again.', 'تعذر إنشاء المجموعة. حاول مرة أخرى.')); return; }
     update('collectionIds', form.collectionIds.includes(id) ? form.collectionIds : [...form.collectionIds, id]);
@@ -6081,14 +6087,12 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
       </div>}
       {showCollectionPicker && creatingCollection && <div className="composer-new-collection" data-testid="composer-new-collection">
         <h3>{t('New collection', 'مجموعة جديدة')}</h3>
-        <Field label={t('Title', 'العنوان')} value={newCollection.title} onChange={(value) => setNewCollection({ ...newCollection, title: value })} placeholder={t('Collection title', 'عنوان المجموعة')} />
-        <Field label={t('Arabic title (optional)', 'العنوان بالعربية (اختياري)')} value={newCollection.titleAr} onChange={(value) => setNewCollection({ ...newCollection, titleAr: value })} placeholder="عنوان المجموعة" />
-        <Field label={t('Description (optional)', 'الوصف (اختياري)')} value={newCollection.description} onChange={(value) => setNewCollection({ ...newCollection, description: value })} multiline placeholder={t('What holds it together?', 'ما الذي يجمعها؟')} />
+        <Field label={t('Collection name', 'اسم المجموعة')} value={newCollection.name} onChange={(value) => setNewCollection({ name: value })} placeholder={t('Collection name', 'اسم المجموعة')} />
         {newCollectionError && <p className="workspace-notice" role="alert">{newCollectionError}</p>}
         <div className="composer-new-collection-actions">
           <button type="button" className="approved-button" onClick={cancelNewCollection} disabled={newCollectionBusy}>{t('Cancel', 'إلغاء')}</button>
-          <button type="button" className="approved-button primary" data-testid="composer-create-collection-save" onClick={() => void submitNewCollection()} disabled={!newCollection.title.trim() || newCollectionBusy || busy}>
-            {newCollectionBusy ? t('Creating…', 'جارٍ الإنشاء…') : t('Create and add', 'إنشاء وإضافة')}
+          <button type="button" className="approved-button primary" data-testid="composer-create-collection-save" onClick={() => void submitNewCollection()} disabled={!newCollection.name.trim() || newCollectionBusy || busy}>
+            {newCollectionBusy ? t('Creating…', 'جارٍ الإنشاء…') : t('Create', 'إنشاء')}
           </button>
         </div>
       </div>}
@@ -6152,7 +6156,7 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
       })}
       {!collections.length && <Empty text={t('No Collections yet. Create one to start grouping your Edits.', 'لا توجد مجموعات بعد. أنشئ واحدة لتبدأ بتجميع تعديلاتك.')} />}
     </div>}
-    {editing !== null && <div className="manager-form"><h2>{t('Edit details', 'تعديل التفاصيل')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave} disabled={deleting}>{t('Save changes', 'حفظ التغييرات')}</button>
+    {editing !== null && <div className="manager-form" data-testid="collection-edit-form"><h2>{t('Edit collection', 'تعديل المجموعة')}</h2><Field label={t('Collection name', 'اسم المجموعة')} value={form.title} onChange={(value) => update('title', value)} placeholder={t('Collection name', 'اسم المجموعة')} /><button className="approved-button primary wide" data-testid="collection-save" onClick={onSave} disabled={!form.title.trim() || deleting}>{t('Save', 'حفظ')}</button>
       <div className="collection-delete" data-testid="collection-delete">
         {!confirmingDelete
           ? <button type="button" className="approved-button danger wide" data-testid="collection-delete-button" onClick={() => setConfirmingDelete(true)}><Trash2 size={15} /> {t('Delete collection', 'حذف المجموعة')}</button>
@@ -6165,7 +6169,7 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
             </div>
           </div>}
       </div></div>}
-    {editing === null && <div className="manager-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Title', 'العنوان')} value={form.title} onChange={(value) => update('title', value)} placeholder="🏋️ Collection title" /><Field label={t('Arabic title', 'العنوان بالعربية')} value={form.titleAr} onChange={(value) => update('titleAr', value)} placeholder="عنوان المجموعة" /><Field label={t('Description', 'الوصف')} value={form.description} onChange={(value) => update('description', value)} multiline placeholder="What holds it together?" /><Field label={t('Arabic description', 'الوصف بالعربية')} value={form.descriptionAr} onChange={(value) => update('descriptionAr', value)} multiline placeholder="ما الذي يجمعها؟" /><button className="approved-button primary wide" onClick={onSave} disabled={!form.title.trim()}>{t('Create collection', 'إنشاء المجموعة')}</button></div>}
+    {editing === null && <div className="manager-form" data-testid="collection-new-form"><h2>{t('New collection', 'مجموعة جديدة')}</h2><Field label={t('Collection name', 'اسم المجموعة')} value={form.title} onChange={(value) => update('title', value)} placeholder={t('Collection name', 'اسم المجموعة')} /><button className="approved-button primary wide" data-testid="collection-create" onClick={onSave} disabled={!form.title.trim()}>{t('Create', 'إنشاء')}</button></div>}
   </section>;
 }
 function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, onOpen, onAddEdits, onUploadPhotos, onRemoveItem, onReorder, onEditDetails, onUploadCover, onClearCover }: { ar: boolean; collection: CreatorCollection; edits: CreatorEdit[]; allPublishedEdits: CreatorEdit[]; owner: boolean; onOpen: (edit: CreatorEdit) => void; onAddEdits: (editIds: string[]) => void; onUploadPhotos: (files: File[]) => void; onRemoveItem: (itemId: string) => void; onReorder: (order: string[]) => void; onEditDetails: () => void; onUploadCover: (file: File) => void; onClearCover: () => void }) {
@@ -6233,14 +6237,14 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, onO
     </div>
     <div className="collection-meta-row">
       <div>
-        <p>{ar ? collection.descriptionAr : collection.description}</p>
+        {/* Legacy description fields are kept in stored data for compatibility only; a collection shows just its name. */}
         <p className="profile-taste-meta">
           {t(`${totalCount} items`, `${totalCount} عنصر`)}
           {' · '}
           <span className="collection-visibility"><Globe size={12} /> {t('Public', 'عام')}</span>
         </p>
       </div>
-      {owner && <button className="approved-button" onClick={onEditDetails}><Pencil size={14} /> {t('Edit details', 'تعديل التفاصيل')}</button>}
+      {owner && <button className="approved-button" data-testid="collection-edit" onClick={onEditDetails}><Pencil size={14} /> {t('Edit', 'تعديل')}</button>}
     </div>
 
     {owner && <div className="collection-owner-actions">
