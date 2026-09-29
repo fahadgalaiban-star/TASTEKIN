@@ -49,6 +49,21 @@ function hasVideoField(edit: EditRecord): boolean {
   return Boolean(edit.video) && typeof edit.video === "object";
 }
 
+/**
+ * The fields the save-time rules below look at. An Edit the client sends
+ * back with exactly these values unchanged from what is already stored
+ * (after the same read-side normalization the client received) is not
+ * re-validated — see the PUT handler. Everything else about the Edit may
+ * differ (caption, collections, …) without affecting this.
+ */
+const VALIDATED_FIELDS = ["category", "image", "video", "status", "placeName", "locationLabel", "mapsUrl", "tasteRating", "creatorReview"] as const;
+function validationShape(edit: EditRecord): string {
+  return JSON.stringify(VALIDATED_FIELDS.map((key) => {
+    const value = edit[key];
+    return value === undefined || value === null || value === "" ? null : value;
+  }));
+}
+
 function validatePlaceFields(edit: EditRecord): string | null {
   const category = typeof edit.category === "string" ? edit.category : "";
   const hasImage = typeof edit.image === "string" && edit.image.length > 0;
@@ -586,7 +601,24 @@ router.put("/creator-workspace", async (req, res) => {
   // Validate place fields, no-media rules, and photo/video mutual exclusivity
   // for each edit. Video ownership/identity/readiness needs a DB read and is
   // checked separately inside the transaction below.
+  // Legacy pass-through. Old workspaces (the founder's in particular) still
+  // hold Edits written before today's rules existed — e.g. a published
+  // Travel Edit whose only photo was a blurred paywall rendition and is
+  // therefore photo-less now. The client always sends the whole workspace
+  // back, so re-validating those untouched Edits made EVERY save fail with
+  // 400 ("A place name is required to publish a photo-free place edit"),
+  // which surfaced as "Could not delete this Edit" / "Your latest creator
+  // change has not been saved" even when the creator only deleted a
+  // different Edit. An Edit whose validated fields are exactly what is
+  // already stored is therefore accepted as-is; only new or changed Edits
+  // go through the rules. Nothing is migrated or rewritten by this.
+  const storedShapes = new Map<string, string>();
+  for (const stored of authorization.workspace.edits as EditRecord[]) {
+    const normalized = normalizeLegacyEdit(stored);
+    if (typeof normalized.id === "string") storedShapes.set(normalized.id, validationShape(normalized));
+  }
   for (const edit of parsed.data.edits as EditRecord[]) {
+    if (typeof edit.id === "string" && storedShapes.get(edit.id) === validationShape(edit)) continue;
     const placeError = validatePlaceFields(edit);
     if (placeError) {
       res.status(400).json({ error: placeError });
@@ -664,10 +696,19 @@ router.put("/creator-workspace", async (req, res) => {
           .values(existingPrivatePaths.map((objectPath) => ({ objectPath, creatorId: workspaceId, ownerUserId: ownerId, state: "committed" })))
           .onConflictDoNothing();
       }
-      if (privatePaths.length) {
-        const uploads = await tx.select().from(creatorMediaUploads).where(inArray(creatorMediaUploads.objectPath, privatePaths));
-        if (uploads.length !== privatePaths.length || uploads.some((upload) => upload.creatorId !== workspaceId || upload.ownerUserId !== ownerId || (upload.state !== "pending" && upload.state !== "committed"))) return { kind: "media" as const };
-        await tx.update(creatorMediaUploads).set({ state: "committed", updatedAt: new Date() }).where(and(inArray(creatorMediaUploads.objectPath, privatePaths), eq(creatorMediaUploads.ownerUserId, ownerId)));
+      // Only paths this save introduces are checked against the ledger. A
+      // path the stored workspace already references was accepted when it
+      // was first saved (or predates the ledger and was just registered
+      // above); re-verifying it on every later save could only block
+      // unrelated changes — e.g. a legacy Edit's upload whose ledger row
+      // still names an earlier owner id after a re-authentication — never
+      // protect anything, since keeping it changes nothing.
+      const existingPrivateSet = new Set(existingPrivatePaths);
+      const newPrivatePaths = privatePaths.filter((path) => !existingPrivateSet.has(path));
+      if (newPrivatePaths.length) {
+        const uploads = await tx.select().from(creatorMediaUploads).where(inArray(creatorMediaUploads.objectPath, newPrivatePaths));
+        if (uploads.length !== newPrivatePaths.length || uploads.some((upload) => upload.creatorId !== workspaceId || upload.ownerUserId !== ownerId || (upload.state !== "pending" && upload.state !== "committed"))) return { kind: "media" as const };
+        await tx.update(creatorMediaUploads).set({ state: "committed", updatedAt: new Date() }).where(and(inArray(creatorMediaUploads.objectPath, newPrivatePaths), eq(creatorMediaUploads.ownerUserId, ownerId)));
       }
       // Video edits: verify the referenced video_uploads row belongs to this
       // exact creator/owner, that the client-submitted bunnyVideoId/bunnyLibraryId

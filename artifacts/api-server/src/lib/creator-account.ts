@@ -113,9 +113,14 @@ export async function ensureCreatorAccount(user: AuthenticatedUser) {
         [workspace] = await tx.update(creatorWorkspaces).set({ ownerUserId: user.id, updatedAt: new Date() })
           .where(and(eq(creatorWorkspaces.creatorId, FHEED_CREATOR_ID), oldOwner ? eq(creatorWorkspaces.ownerUserId, oldOwner) : sql`${creatorWorkspaces.ownerUserId} is null`))
           .returning();
-        if (oldOwner && workspace) {
+        if (workspace) {
+          // The founder workspace has exactly one owner: every live ledger
+          // row of its media follows the new owner id, not only the rows of
+          // the immediately previous owner (a founder who re-authenticated
+          // more than once — e.g. Replit sign-in, then email — must not be
+          // left with rows still naming an older id).
           await tx.update(creatorMediaUploads).set({ ownerUserId: user.id, updatedAt: new Date() })
-            .where(and(eq(creatorMediaUploads.creatorId, FHEED_CREATOR_ID), eq(creatorMediaUploads.ownerUserId, oldOwner), sql`${creatorMediaUploads.state} <> 'deleted'`));
+            .where(and(eq(creatorMediaUploads.creatorId, FHEED_CREATOR_ID), sql`${creatorMediaUploads.ownerUserId} <> ${user.id}`, sql`${creatorMediaUploads.state} <> 'deleted'`));
         }
       }
       await tx.update(usersTable).set({ role: "creator", isVerified: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
