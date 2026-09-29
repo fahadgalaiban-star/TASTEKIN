@@ -71,18 +71,22 @@ test('maps links: coordinates are read from Google and Apple links, and each pla
   expect(mapsHref({ name: 'Septime, Paris, France', coordinates: null }, 'web')).toBe('https://www.google.com/maps/search/?api=1&query=Septime%2C%20Paris%2C%20France');
 });
 
-test('post detail: caption centered above the image (two lines max, small on phones), one tappable location row above the image using the link\'s coordinates, nothing repeated below', async ({ page }) => {
+test('post detail: the full caption centered above the image (small on phones, never clamped), one tappable location row above the image using the link\'s coordinates, nothing repeated below', async ({ page }) => {
   await visitorFeed(page);
   await page.getByTestId('edit-title-style-1').click();
 
   const caption = page.getByTestId('edit-detail-caption');
   await expect(caption).toHaveText(LONG_CAPTION);
-  const captionStyle = await caption.evaluate((el) => { const s = getComputedStyle(el); return { textAlign: s.textAlign, clamp: s.webkitLineClamp, fontSize: parseFloat(s.fontSize), lineHeight: parseFloat(s.lineHeight) }; });
+  const captionStyle = await caption.evaluate((el) => { const s = getComputedStyle(el); return { textAlign: s.textAlign, clamp: s.webkitLineClamp, overflow: s.overflow, textOverflow: s.textOverflow, fontSize: parseFloat(s.fontSize), lineHeight: parseFloat(s.lineHeight), clipped: el.scrollHeight > el.clientHeight + 1 }; });
   expect(captionStyle.textAlign).toBe('center');
-  expect(captionStyle.clamp).toBe('2');
   expect(captionStyle.fontSize).toBeLessThanOrEqual(20);
+  // The whole caption is shown: no line clamp, no ellipsis, nothing cut off.
+  expect(captionStyle.clamp).toBe('none');
+  expect(captionStyle.overflow).toBe('visible');
+  expect(captionStyle.textOverflow).toBe('clip');
+  expect(captionStyle.clipped).toBe(false);
   const captionBox = (await caption.boundingBox())!;
-  expect(captionBox.height).toBeLessThanOrEqual(captionStyle.lineHeight * 2 + 2);
+  expect(captionBox.height).toBeGreaterThan(captionStyle.lineHeight * 3);
 
   // Exactly one location, above the image, tappable, opening the maps app with the link's coordinates.
   const location = page.getByTestId('edit-detail-location');

@@ -70,6 +70,13 @@ router.post("/storage/uploads/cleanup", async (req, res) => {
   res.status(204).end();
 });
 
+/** Legacy blurred renditions still recorded on old Edits: kept in the cleanup ledger, never served — not even to the owner. */
+function blurredRenditionPaths(workspace: typeof creatorWorkspaces.$inferSelect) {
+  const edits = workspace.edits as Array<Record<string, unknown>>;
+  return new Set(edits.map((edit) => edit.previewImage).filter((path): path is string => typeof path === "string" && path.length > 0
+    && !edits.some((other) => other.image === path || other.sourceImage === path)));
+}
+
 router.get("/storage/objects/*path", async (req, res) => {
   const rawPath = req.params.path;
   const path = Array.isArray(rawPath) ? rawPath.join("/") : rawPath;
@@ -77,7 +84,7 @@ router.get("/storage/objects/*path", async (req, res) => {
   try {
     const workspace = await creatorForUser(req.user.id);
     const objectPath = `/objects/${path}`;
-    if (!workspace || !referencedPaths(workspace).has(objectPath)) { res.status(404).json({ error: "Media object not found" }); return; }
+    if (!workspace || !referencedPaths(workspace).has(objectPath) || blurredRenditionPaths(workspace).has(objectPath)) { res.status(404).json({ error: "Media object not found" }); return; }
     res.redirect(302, await getPrivateMediaDownloadURL(objectPath));
   } catch (error) {
     req.log.warn({ err: error }, "Unable to serve private media object");

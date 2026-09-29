@@ -18,6 +18,7 @@
 //   DATABASE_URL=postgresql://... pnpm --filter scripts run verify:free-media
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -106,10 +107,10 @@ const BLURRED_STATIC = "/tastekin-media/private-hotel-preview.webp";
 const BLURRED_STATIC_2 = "/tastekin-media/training-week-preview.webp";
 const MISSING_SOURCE = "/tastekin-media/private-hotel-source.webp";
 const CLEAR_STATIC = "/tastekin-media/quiet-tailoring.webp";
-const CLEAR_OBJECT = "/objects/uploads/11111111-1111-4111-8111-111111111111";
-const CLEAR_SOURCE = "/objects/uploads/22222222-2222-4222-8222-222222222222";
-const BLURRED_OBJECT = "/objects/uploads/33333333-3333-4333-8333-333333333333";
-const BLURRED_OBJECT_2 = "/objects/uploads/44444444-4444-4444-8444-444444444444";
+const CLEAR_OBJECT = `/objects/uploads/${randomUUID()}`;
+const CLEAR_SOURCE = `/objects/uploads/${randomUUID()}`;
+const BLURRED_OBJECT = `/objects/uploads/${randomUUID()}`;
+const BLURRED_OBJECT_2 = `/objects/uploads/${randomUUID()}`;
 
 const baseEdit = {
   category: "Travel", title: "t", titleAr: "t", caption: "c", captionAr: "c",
@@ -216,14 +217,23 @@ async function main() {
       }
     });
 
+    await check("owner private media route: a legacy blurred previewImage object is 404 even for the signed-in owner, so no route anywhere can hand out a blurred rendition", async () => {
+      for (const blurred of [BLURRED_OBJECT, BLURRED_OBJECT_2]) {
+        const response = await owner.request(`/api/storage${blurred}`);
+        assert.equal(response.status, 404, `${blurred} must not be served to the owner`);
+      }
+      // Anonymous callers never reach private media at all.
+      assert.equal((await visitor.request(`/api/storage${CLEAR_OBJECT}`)).status, 404);
+    });
+
     await check("save round-trip: an old client submitting locked access and a previewImage gets public access back and no previewImage", async () => {
       const current = await (await owner.workspace()).json() as WorkspaceView;
-      const submitted = [{ ...baseEdit, id: "old-client-edit", access: "locked", image: CLEAR_OBJECT, sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT }];
+      const submitted = [{ ...baseEdit, id: `old-client-edit-${suffix}`, access: "locked", image: CLEAR_OBJECT, sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT }];
       const response = await owner.saveWorkspace(submitted, [], current.revision);
       await expectStatus(response, 200);
       const saved = await response.json() as WorkspaceView;
       assertNoBlur(saved, "save response");
-      assert.equal(saved.edits.find((edit) => edit.id === "old-client-edit")?.image, CLEAR_OBJECT);
+      assert.equal(saved.edits.find((edit) => edit.id === `old-client-edit-${suffix}`)?.image, CLEAR_OBJECT);
       const after = await (await owner.workspace()).json() as WorkspaceView;
       assertNoBlur(after, "workspace after save");
     });
