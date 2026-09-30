@@ -652,18 +652,32 @@ function TastekinApp() {
     applyWorkspaceSnapshot(edits, collections, workspaceRevisionRef.current);
     setWorkspaceState('syncing'); setWorkspaceError('');
     pendingMediaIsDiscardable.current = false;
+    let serverError: string | null = null;
     try {
       const response = await fetch('/api/creator-workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edits, collections, expectedRevision: workspaceRevisionRef.current }) });
       if (response.status === 401) throw new Error('auth');
       if (response.status === 409) throw new Error('conflict');
-      if (!response.ok) throw new Error('Could not save the shared creator workspace.');
+      if (!response.ok) {
+        if (response.headers.get('content-type')?.includes('json')) {
+          try {
+            const body: unknown = await response.json();
+            if (body && typeof body === 'object' && !Array.isArray(body) && 'error' in body && typeof body.error === 'string') {
+              const message = body.error.trim();
+              if (message && message.length <= 300 && !/[\r\n<>/\\]|bearer|token|secret|password|authorization|cookie|stack trace/i.test(message)) {
+                serverError = message;
+              }
+            }
+          } catch { /* Keep the generic message for malformed responses. */ }
+        }
+        throw new Error('Could not save the shared creator workspace.');
+      }
       const workspace = await response.json() as { edits: CreatorEdit[]; collections: CreatorCollection[]; revision: number };
       applyWorkspaceSnapshot(workspace.edits, workspace.collections, workspace.revision);
       setPendingMediaPaths([]); setWorkspaceState('ready');
       return true;
     } catch (error) {
       if (cleanupPaths.length) { void cleanupCreatorMedia(cleanupPaths); setPendingMediaPaths([]); }
-      setWorkspaceState('error'); setWorkspaceError(error instanceof Error && error.message === 'auth' ? 'Sign in to save changes to your creator workspace.' : error instanceof Error && error.message === 'conflict' ? 'This workspace changed on another device. Reload your workspace before saving again.' : 'Your latest creator change has not been saved. Try again before leaving this screen.');
+      setWorkspaceState('error'); setWorkspaceError(error instanceof Error && error.message === 'auth' ? 'Sign in to save changes to your creator workspace.' : error instanceof Error && error.message === 'conflict' ? 'This workspace changed on another device. Reload your workspace before saving again.' : serverError ? `Could not save: ${serverError}` : 'Your latest creator change has not been saved. Try again before leaving this screen.');
       return false;
     }
   };
