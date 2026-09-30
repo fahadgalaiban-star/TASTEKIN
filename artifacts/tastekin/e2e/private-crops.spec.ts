@@ -17,6 +17,7 @@ type Edit = {
   crop?: { aspect: string; zoom: number; x: number; y: number; rotation: number; sourceWidth: number; sourceHeight: number; outputWidth: number; outputHeight: number };
   location: string;
   locationAr: string;
+  locationLabel?: string | null;
   altText: string;
   access: Access;
   status: 'draft' | 'published' | 'archived';
@@ -359,6 +360,47 @@ async function publish(page: Page, title: string, category: 'Stays' | 'Food' | '
   await selectCategory(page, category);
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+}
+
+for (const { tab, category, placeDetails } of [
+  { tab: 'Stays', category: 'Decor', placeDetails: false },
+  { tab: 'Tips', category: 'DailyRoutine', placeDetails: false },
+  { tab: 'Style', category: 'Fashion', placeDetails: false },
+  { tab: 'Food', category: 'Restaurants', placeDetails: true },
+  { tab: 'Places', category: 'Places', placeDetails: true },
+] as const) {
+  test(`a new ${tab} photo Edit submits only compatible place details`, async ({ page }) => {
+    test.setTimeout(30_000);
+    const api = new PrivateCropApi();
+    await page.context().addCookies([{ name: 'sid', value: ownerSession, url: 'http://127.0.0.1:23385' }]);
+    await api.attach(page);
+    await page.goto('/');
+    await page.getByTestId('nav-you').click();
+    await page.getByTestId('open-creator-workspace').click();
+    await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+    await page.locator('input[type="file"]').setInputFiles(imagePath);
+    await expect(page.locator('[aria-label="Crop image"]')).toBeVisible();
+    await page.getByRole('button', { name: 'Post Square' }).click();
+    await page.getByRole('button', { name: 'Done' }).click();
+    // Confirm before choosing a category as well: the generic location must not
+    // leak into the place-only field for Stays, Tips, or Style.
+    await page.getByLabel('Location', { exact: true }).fill('Gallery, Paris');
+    await page.getByRole('button', { name: 'Confirm', exact: true }).click();
+    const title = `${tab} photo with location`;
+    await fillRequiredFields(page, title);
+    await selectCategory(page, tab);
+    await page.getByRole('button', { name: 'Publish', exact: true }).click();
+    await expect(page.getByTestId('open-creator-workspace')).toBeVisible();
+    const submitted = api.workspace.edits.find((edit) => edit.caption === title)!;
+    expect(submitted).toMatchObject({ category, status: 'published', location: 'Gallery, Paris', locationAr: 'Gallery, Paris' });
+    if (placeDetails) {
+      expect(submitted.locationLabel).toBe('Gallery, Paris');
+    } else {
+      for (const field of ['placeName', 'locationLabel', 'mapsUrl', 'tasteRating', 'creatorReview']) {
+        expect(submitted).not.toHaveProperty(field);
+      }
+    }
+  });
 }
 
 test('an authenticated creator persists each exact canonical crop format after publishing and refreshing', async ({ browser }) => {

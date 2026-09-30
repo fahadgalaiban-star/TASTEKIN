@@ -229,6 +229,16 @@ const homeFeedAspectRatio = (aspect?: CropAspect, crop?: CropMetadata) => {
 };
 const placeCategories = new Set<CreatorEdit['category']>(['Restaurants', 'Places', 'Travel']);
 const isPlaceCategory = (category: CreatorEdit['category'] | '') => category !== '' && placeCategories.has(category);
+const withoutPlaceDetails = (form: EditForm): EditForm => {
+  if (isPlaceCategory(form.category)) return form;
+  const clean = { ...form };
+  delete clean.placeName;
+  delete clean.locationLabel;
+  delete clean.mapsUrl;
+  delete clean.tasteRating;
+  delete clean.creatorReview;
+  return clean;
+};
 const placeLocation = (edit: CreatorEdit, ar: boolean) => edit.locationLabel || (ar ? edit.locationAr || edit.location : edit.location || edit.locationAr);
 const isSafeMapsUrl = (value?: string | null) => {
   if (!value?.trim()) return false;
@@ -1053,7 +1063,7 @@ function TastekinApp() {
   const videoUpload = useVideoUpload(ar, (video) => setEditForm((prev) => ({ ...prev, video })));
   const openComposer = (item?: CreatorEdit) => {
     discardPendingCrop(); setEditingId(item?.id || null);
-    setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit());
+    setEditForm(withoutPlaceDetails(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit()));
     if (item?.video) videoUpload.hydrate(item.video); else videoUpload.reset();
     go('composer');
   };
@@ -1084,6 +1094,7 @@ function TastekinApp() {
       setWorkspaceError(error instanceof Error ? error.message : 'Your image could not be saved. Try again before leaving this screen.');
       return false;
     }
+    formToSave = withoutPlaceDetails(formToSave);
     const id = editingId || `edit-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
     const fallbackTitle = formToSave.placeName?.trim() || formToSave.caption.trim().slice(0, 80);
     const next = { id, ...formToSave, title: formToSave.title.trim() || fallbackTitle, titleAr: formToSave.titleAr.trim() || fallbackTitle, captionAr: formToSave.captionAr || formToSave.caption, status } as CreatorEdit;
@@ -6003,8 +6014,13 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
     const saved = await onPublish();
     if (saved) videoUpload.markCommitted();
   };
-  const changeCategory = (value: Exclude<Category, 'All'>) => onChange({ ...form, category: value });
-  const updatePlaceLocation = (value: string) => onChange({ ...form, locationLabel: value || null, location: value, locationAr: value });
+  const changeCategory = (value: Exclude<Category, 'All'>) => onChange(isPlaceCategory(value)
+    ? { ...form, category: value, locationLabel: form.locationLabel ?? (form.location || null) }
+    : withoutPlaceDetails({ ...form, category: value }));
+  const updatePlaceLocation = (value: string) => onChange({
+    ...form, ...(isPlaceCategory(form.category) ? { locationLabel: value || null } : {}),
+    location: value, locationAr: value,
+  });
 
   if (pendingImage) return <CropEditor ar={ar} source={pendingImage} initialCrop={form.crop} error={imageError} busy={processing} onCancel={() => { URL.revokeObjectURL(pendingImage.url); setPendingImage(null); }} onConfirm={confirmCrop} />;
   const acceptMedia = `image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif${videoUploadEnabled ? ',video/mp4,video/quicktime' : ''}`;
