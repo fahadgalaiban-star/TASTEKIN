@@ -12,3 +12,4 @@
 - [TASTEKIN Bunny TUS authentication](tastekin-bunny-tus-authentication.md) — Bunny requires upload authorization headers on TUS HEAD and PATCH as well as creation.
 - [TASTEKIN Bunny playback validation](tastekin-bunny-playback-validation.md) — Replit’s automated Chromium cannot decode Bunny’s default H.264/AAC renditions.
 - [Account cleanup approval boundary](account-cleanup-approval-boundary.md) — cleanup verification uses disposable local data and mocked providers; live execution needs separate approval.
+- [TASTEKIN Playwright parameterization](tastekin-playwright-parameterization.md) — register parameterized cases with loops; this Playwright runner has no test.each.

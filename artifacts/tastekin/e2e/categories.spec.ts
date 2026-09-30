@@ -170,6 +170,49 @@ test('composer offers Stays, Food, Places, Tips, Style — no Trips — and edit
   expect(api.savedPayloads.at(-1)!.edits.find((edit) => edit.id === 'legacy-trip')).toMatchObject({ category: 'Travel', status: 'published', collectionIds: ['coastal-edit'] });
 });
 
+for (const { id, from, to, storedCategory } of [
+  { id: 'food-1', from: 'Restaurants', to: 'Tips', storedCategory: 'DailyRoutine' },
+  { id: 'place-1', from: 'Places', to: 'Style', storedCategory: 'Fashion' },
+  { id: 'legacy-trip', from: 'Travel', to: 'Stays', storedCategory: 'Decor' },
+] as const) {
+test(`editing a ${from} photo Edit retains its place details until it changes to ${to}`, async ({ page }) => {
+  const api = new OwnerApi();
+  const details = {
+    placeName: 'A saved place',
+    locationLabel: 'Paris, France',
+    mapsUrl: 'https://maps.google.com/?q=Paris',
+    tasteRating: 4,
+    creatorReview: 'Worth a visit',
+  };
+  api.workspace = { ...api.workspace, edits: api.workspace.edits.map((edit) => edit.id === id ? { ...edit, ...details } : edit) };
+  await ownerProfile(page, api);
+
+  const openEdit = async () => {
+    await page.getByTestId(`profile-edit-${id}`).click();
+    await page.getByRole('button', { name: 'More options' }).click();
+    await page.getByRole('button', { name: 'Edit', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
+  };
+
+  await openEdit();
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByTestId('open-creator-workspace')).toBeVisible();
+  expect(api.savedPayloads.at(-1)!.edits.find((edit) => edit.id === id)).toMatchObject(details);
+
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await openEdit();
+  await page.getByRole('radio', { name: to, exact: true }).click();
+  await page.getByRole('button', { name: 'Publish', exact: true }).click();
+  await expect(page.getByTestId('open-creator-workspace')).toBeVisible();
+  const changed = api.savedPayloads.at(-1)!.edits.find((edit) => edit.id === id)!;
+  expect(changed).toMatchObject({ category: storedCategory, image: EDITS.find((edit) => edit.id === id)!.image });
+  for (const field of Object.keys(details)) expect(changed).not.toHaveProperty(field);
+  // Other Edits and the collection are passed through without modification.
+  expect(api.savedPayloads.at(-1)!.edits).toHaveLength(EDITS.length);
+  expect(api.savedPayloads.at(-1)!.collections).toEqual(COLLECTIONS);
+});
+}
+
 test('Arabic: the filter row and composer chips are in the same order with no رحلات', async ({ page }) => {
   const api = new OwnerApi('ar');
   await ownerProfile(page, api, 'ar');
