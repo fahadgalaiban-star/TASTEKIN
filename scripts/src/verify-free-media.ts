@@ -85,6 +85,8 @@ class Session {
 }
 
 const suffix = Date.now();
+/** Edit ids are globally unique across workspaces, so every fixture id is suffixed per run (the database is reused between runs). */
+const lid = (base: string) => `${base}-${suffix}`;
 const PASSWORD = "regression-test-1234";
 const results: Array<{ name: string; ok: boolean; error?: string }> = [];
 async function check(name: string, fn: () => Promise<void>) {
@@ -118,17 +120,17 @@ const baseEdit = {
 };
 /** Every legacy paywall shape at once. `image`/`previewImage` are exactly what old stored rows look like. */
 const LEGACY_EDITS = [
-  { ...baseEdit, id: "demo-blurred-static", access: "locked", image: BLURRED_STATIC, altText: "A blurred private hotel preview." },
-  { ...baseEdit, id: "demo-blurred-static-public", access: "public", image: BLURRED_STATIC_2 },
-  { ...baseEdit, id: "demo-missing-source", access: "locked", image: MISSING_SOURCE, previewImage: BLURRED_STATIC },
-  { ...baseEdit, id: "locked-preview-only", access: "locked", image: "", sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT },
-  { ...baseEdit, id: "locked-image-is-preview", access: "locked", image: BLURRED_OBJECT_2, sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT_2 },
-  { ...baseEdit, id: "locked-clear-crop", access: "locked", image: CLEAR_OBJECT, sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT },
-  { ...baseEdit, id: "public-clear-static", access: "public", image: CLEAR_STATIC },
-  { ...baseEdit, id: "draft-blurred", access: "locked", image: BLURRED_STATIC, status: "draft" },
+  { ...baseEdit, id: lid("demo-blurred-static"), access: "locked", image: BLURRED_STATIC, altText: "A blurred private hotel preview." },
+  { ...baseEdit, id: lid("demo-blurred-static-public"), access: "public", image: BLURRED_STATIC_2 },
+  { ...baseEdit, id: lid("demo-missing-source"), access: "locked", image: MISSING_SOURCE, previewImage: BLURRED_STATIC },
+  { ...baseEdit, id: lid("locked-preview-only"), access: "locked", image: "", sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT },
+  { ...baseEdit, id: lid("locked-image-is-preview"), access: "locked", image: BLURRED_OBJECT_2, sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT_2 },
+  { ...baseEdit, id: lid("locked-clear-crop"), access: "locked", image: CLEAR_OBJECT, sourceImage: CLEAR_SOURCE, previewImage: BLURRED_OBJECT },
+  { ...baseEdit, id: lid("public-clear-static"), access: "public", image: CLEAR_STATIC },
+  { ...baseEdit, id: lid("draft-blurred"), access: "locked", image: BLURRED_STATIC, status: "draft" },
 ];
 const LEGACY_COLLECTIONS = [
-  { id: "coastal-edit", title: "The Coastal Edit", titleAr: "اختيارات الساحل", description: "", descriptionAr: "", access: "locked", coverEditId: "demo-blurred-static", editIds: ["demo-blurred-static", "locked-clear-crop"], coverImage: BLURRED_STATIC },
+  { id: "coastal-edit", title: "The Coastal Edit", titleAr: "اختيارات الساحل", description: "", descriptionAr: "", access: "locked", coverEditId: lid("demo-blurred-static"), editIds: [lid("demo-blurred-static"), lid("locked-clear-crop")], coverImage: BLURRED_STATIC },
   { id: "clear-cover", title: "Clear", titleAr: "Clear", description: "", descriptionAr: "", access: "public", coverEditId: "", editIds: [], coverImage: CLEAR_STATIC, uploads: [{ id: "u1", type: "photo", image: CLEAR_STATIC }], itemOrder: ["u1"] },
 ];
 
@@ -143,15 +145,15 @@ function assertNoBlur(payload: unknown, where: string) {
 function assertEditsClear(edits: EditView[], where: string, publicMediaPrefix: string | null) {
   const byId = new Map(edits.map((edit) => [edit.id, edit]));
   for (const edit of edits) assert.equal(edit.access, "public", `${where}: ${edit.id} is public`);
-  for (const id of ["demo-blurred-static", "demo-blurred-static-public", "demo-missing-source", "locked-preview-only", "locked-image-is-preview"]) {
+  for (const id of [lid("demo-blurred-static"), lid("demo-blurred-static-public"), lid("demo-missing-source"), lid("locked-preview-only"), lid("locked-image-is-preview")]) {
     const edit = byId.get(id);
     assert.ok(edit, `${where}: ${id} is still listed (it is a published Edit, just without a photo)`);
     assert.equal(edit.image, undefined, `${where}: ${id} has no photo rather than a blurred one`);
   }
-  assert.equal(byId.get("public-clear-static")?.image, CLEAR_STATIC, `${where}: a clear static photo is untouched`);
-  const clearCrop = byId.get("locked-clear-crop");
+  assert.equal(byId.get(lid("public-clear-static"))?.image, CLEAR_STATIC, `${where}: a clear static photo is untouched`);
+  const clearCrop = byId.get(lid("locked-clear-crop"));
   assert.ok(clearCrop, `${where}: the legacy locked Edit with a real crop is listed`);
-  assert.equal(clearCrop.image, publicMediaPrefix ? `${publicMediaPrefix}/locked-clear-crop` : CLEAR_OBJECT, `${where}: its clear crop is the photo served`);
+  assert.equal(clearCrop.image, publicMediaPrefix ? `${publicMediaPrefix}/${lid("locked-clear-crop")}` : CLEAR_OBJECT, `${where}: its clear crop is the photo served`);
 }
 
 async function main() {
@@ -183,7 +185,7 @@ async function main() {
       const workspace = await response.json() as WorkspaceView;
       assertNoBlur(workspace, "owner workspace");
       assertEditsClear(workspace.edits, "owner workspace", null);
-      assert.ok(workspace.edits.some((edit) => edit.id === "draft-blurred" && edit.image === undefined), "the owner's draft keeps its record but not the blurred photo");
+      assert.ok(workspace.edits.some((edit) => edit.id === lid("draft-blurred") && edit.image === undefined), "the owner's draft keeps its record but not the blurred photo");
       const coastal = workspace.collections.find((collection) => collection.id === "coastal-edit");
       assert.equal(coastal?.access, "public");
       assert.equal(coastal?.coverImage, undefined, "a blurred collection cover is dropped, not served");
@@ -196,7 +198,7 @@ async function main() {
       const workspace = await response.json() as WorkspaceView;
       assertNoBlur(workspace, "visitor workspace");
       assertEditsClear(workspace.edits, "visitor workspace", publicMedia);
-      assert.ok(!workspace.edits.some((edit) => edit.id === "draft-blurred"), "drafts are not public");
+      assert.ok(!workspace.edits.some((edit) => edit.id === lid("draft-blurred")), "drafts are not public");
       assert.equal(workspace.collections.find((collection) => collection.id === "coastal-edit")?.coverImage, undefined);
     });
 
@@ -211,7 +213,7 @@ async function main() {
     });
 
     await check("public media route: an Edit whose only photo was a blurred rendition is 404, never redirected to the blur; the legacy /preview route never serves a blur either", async () => {
-      for (const id of ["locked-preview-only", "locked-image-is-preview", "demo-blurred-static", "demo-missing-source"]) {
+      for (const id of [lid("locked-preview-only"), lid("locked-image-is-preview"), lid("demo-blurred-static"), lid("demo-missing-source")]) {
         await expectStatus(await visitor.request(`${publicMedia}/${id}`), 404);
         await expectStatus(await visitor.request(`${publicMedia}/${id}/preview`), 404);
       }
@@ -224,6 +226,100 @@ async function main() {
       }
       // Anonymous callers never reach private media at all.
       assert.equal((await visitor.request(`/api/storage${CLEAR_OBJECT}`)).status, 404);
+    });
+
+    await check("deleting one legacy Edit the way the app does (re-sending the normalized workspace minus that Edit) succeeds; the other legacy Edits stay stored untouched and nothing else is deleted", async () => {
+      // Production bug: every save by the founder failed with 400 because
+      // untouched legacy Edits (photo-less after blur normalization) were
+      // re-validated against today's publish rules.
+      const before = await (await owner.workspace()).json() as WorkspaceView;
+      const rawBefore = (await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.ownerUserId, account.user.id)))[0];
+      const rawEditsBefore = rawBefore.edits as Array<Record<string, unknown>>;
+      assert.ok(before.edits.some((edit) => edit.id === lid("demo-blurred-static")));
+      const remaining = before.edits.filter((edit) => edit.id !== lid("demo-blurred-static"));
+      const response = await owner.saveWorkspace(remaining, before.collections, before.revision);
+      await expectStatus(response, 200);
+      const after = await response.json() as WorkspaceView;
+      assertNoBlur(after, "save response after delete");
+      assert.equal(after.edits.some((edit) => edit.id === lid("demo-blurred-static")), false, "the deleted Edit is gone");
+      assert.deepEqual(after.edits.map((edit) => edit.id), remaining.map((edit) => edit.id), "every other Edit is still there, in order");
+      const rawAfter = (await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.ownerUserId, account.user.id)))[0];
+      const rawEditsAfter = rawAfter.edits as Array<Record<string, unknown>>;
+      assert.equal(rawEditsAfter.length, rawEditsBefore.length - 1, "exactly one Edit was removed from storage");
+      for (const kept of rawEditsAfter) {
+        const original = rawEditsBefore.find((edit) => edit.id === kept.id)!;
+        assert.equal(kept.status, original.status, `${kept.id} keeps its status`);
+        assert.equal(kept.category, original.category, `${kept.id} keeps its category`);
+        assert.equal(kept.title, original.title, `${kept.id} keeps its title`);
+      }
+      assert.deepEqual((rawAfter.collections as Array<{ id: string }>).map((collection) => collection.id), (rawBefore.collections as Array<{ id: string }>).map((collection) => collection.id), "collections untouched");
+      // A legacy Edit whose validated fields are untouched still passes when
+      // something else about it changes (a caption edit) …
+      const recaptioned = remaining.map((edit) => edit.id === lid("demo-missing-source") ? { ...edit, caption: "A new caption", captionAr: "A new caption" } : edit);
+      const captionSave = await owner.saveWorkspace(recaptioned, before.collections, after.revision);
+      await expectStatus(captionSave, 200);
+      const afterCaption = await captionSave.json() as WorkspaceView;
+      // … but changing a validated field in a way today's rules refuse is
+      // still refused: publishing the photo-less Travel draft without place details.
+      const published = afterCaption.edits.map((edit) => edit.id === lid("draft-blurred") ? { ...edit, status: "published" } : edit);
+      const rejected = await owner.saveWorkspace(published, afterCaption.collections, afterCaption.revision);
+      assert.equal(rejected.status, 400, "a changed legacy Edit is validated like any other");
+      const message = (await rejected.json() as { error: string }).error;
+      assert.match(message, /place name is required/i);
+    });
+
+    await check("Replit-authenticated founder: the founder workspace is bound to whichever user row matches the founder mapping, and that owner can delete a legacy Edit", async () => {
+      const founderEmail = `founder-${suffix}@example.com`;
+      const founderServer = await startServer({ FOUNDER_EMAIL: founderEmail, FOUNDER_AUTH_USER_ID: "" });
+      try {
+        const founder = new Session(founderServer.baseUrl);
+        const founderAccount = await founder.signup(founderEmail, PASSWORD);
+        const first = await (await founder.workspace()).json() as WorkspaceView & { creatorId: string };
+        assert.equal(first.creatorId, "fheed", "the founder mapping binds the fheed workspace, not a fresh one");
+        const [row] = await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.creatorId, "fheed"));
+        assert.equal(row.ownerUserId, founderAccount.user.id, "ownerUserId is the founder's app user id");
+        // Inject the same legacy shapes the production founder workspace still carries.
+        // Own ids AND own private object paths: a path may belong to one workspace only in the media ledger.
+        const founderPaths = new Map([[CLEAR_OBJECT, `/objects/uploads/${randomUUID()}`], [CLEAR_SOURCE, `/objects/uploads/${randomUUID()}`], [BLURRED_OBJECT, `/objects/uploads/${randomUUID()}`], [BLURRED_OBJECT_2, `/objects/uploads/${randomUUID()}`]]);
+        const remap = (value: unknown) => typeof value === "string" && founderPaths.has(value) ? founderPaths.get(value) : value;
+        const injected = LEGACY_EDITS.map((edit) => ({ ...edit, id: `${edit.id}-founder`, image: remap(edit.image), sourceImage: remap((edit as { sourceImage?: string }).sourceImage), previewImage: remap((edit as { previewImage?: string }).previewImage) }));
+        await db.update(creatorWorkspaces)
+          .set({ edits: [...(row.edits as unknown[]), ...injected], revision: row.revision + 1, updatedAt: new Date() })
+          .where(eq(creatorWorkspaces.creatorId, "fheed"));
+        const view = await (await founder.workspace()).json() as WorkspaceView;
+        assertNoBlur(view, "founder workspace");
+        const target = `${lid("demo-blurred-static")}-founder`;
+        assert.ok(view.edits.some((edit) => edit.id === target));
+        const remaining = view.edits.filter((edit) => edit.id !== target);
+        const deleted = await founder.saveWorkspace(remaining, view.collections, view.revision);
+        await expectStatus(deleted, 200);
+        const afterDelete = await deleted.json() as WorkspaceView;
+        assert.equal(afterDelete.edits.some((edit) => edit.id === target), false);
+        assert.deepEqual(afterDelete.edits.map((edit) => edit.id), remaining.map((edit) => edit.id));
+
+        // The same founder signing in as a DIFFERENT user row (a new auth
+        // identity mapped by the founder setting) takes the workspace over
+        // and can delete too — user id, creator id and owner id are rebound.
+        const secondEmail = `founder2-${suffix}@example.com`;
+        const secondServer = await startServer({ FOUNDER_EMAIL: secondEmail, FOUNDER_AUTH_USER_ID: "" });
+        try {
+          const second = new Session(secondServer.baseUrl);
+          const secondAccount = await second.signup(secondEmail, PASSWORD);
+          const rebound = await (await second.workspace()).json() as WorkspaceView & { creatorId: string };
+          assert.equal(rebound.creatorId, "fheed");
+          const [rowAfter] = await db.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.creatorId, "fheed"));
+          assert.equal(rowAfter.ownerUserId, secondAccount.user.id, "ownership follows the founder mapping");
+          const target2 = `${lid("locked-preview-only")}-founder`;
+          const remaining2 = rebound.edits.filter((edit) => edit.id !== target2);
+          const deleted2 = await second.saveWorkspace(remaining2, rebound.collections, rebound.revision);
+          await expectStatus(deleted2, 200);
+          assert.equal(((await deleted2.json()) as WorkspaceView).edits.some((edit) => edit.id === target2), false);
+        } finally {
+          stopServer(secondServer);
+        }
+      } finally {
+        stopServer(founderServer);
+      }
     });
 
     await check("save round-trip: an old client submitting locked access and a previewImage gets public access back and no previewImage", async () => {
