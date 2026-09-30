@@ -291,6 +291,12 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .approved-tabs button { position:relative; padding:13px 5px 11px; border:0; background:transparent; color:var(--tk-text-secondary); font-size:12px; font-weight:700; }
 .approved-tabs button.active { color:var(--tk-wine); }
 .approved-tabs button.active::after { content:""; position:absolute; inset-inline:8px; bottom:-1px; height:3px; border-radius:3px; background:var(--tk-wine); }
+/* Profile section row: exactly two equal-width tabs (Edits, Collections),
+   each label centered in its half, the active underline inset within that
+   same half so it sits under its own label. The Home feed row keeps the
+   three-column base rule above. */
+.profile-section-tabs { grid-template-columns:repeat(2,1fr); }
+.profile-section-tabs button { text-align:center; }
 .approved-feed-tabs { margin-top:10px; margin-bottom:8px; }
 .circle-rail { display:flex; gap:16px; overflow-x:auto; margin:0 -16px 16px; padding:0 16px 4px; scrollbar-width:none; }
 .circle-rail::-webkit-scrollbar { display:none; }
