@@ -1,0 +1,41 @@
+Fix the confirmed Unicode truncation bug and separate the creator Edit caption from the old 80-character rule.
+
+Production failure:
+
+The Grand Central Edit failed with HTTP 500 because the client generated title and titleAr by cutting the caption at 80 UTF-16 code units. The cut occurred inside the 🇺🇸 flag emoji, leaving a lone \ud83c surrogate. PostgreSQL rejected the Edits JSON with:
+
+invalid input syntax for type json
+
+Product requirement:
+
+The creator Edit caption must remain open and flexible. Users must be able to write long captions containing Arabic, English, line breaks, emoji, flags, symbols, and mixed languages. The old 80-character rule must not truncate, modify, or reject the visible caption.
+
+The 80-character rule may have originated from an account or verification field. Audit its origin and do not apply that unrelated limit to creator Edit captions.
+
+Implement:
+
+1. Preserve the complete user caption exactly as entered, including all text, line breaks, emoji, flags, combining marks, and symbols.
+2. Remove any 80-character truncation, maxLength, validation rule, or shared account/verification constraint that is incorrectly applied to the creator Edit caption.
+3. Do not add a new arbitrary product-level character limit to the caption. Existing infrastructure-level request-size protection may remain.
+4. If the API still requires internal title and titleAr fields, generate them as hidden summaries from the caption without changing the caption itself.
+5. Internal title shortening must be Unicode- and grapheme-safe. Never split flags, skin-tone modifiers, family emoji, combining marks, Arabic characters, or surrogate pairs.
+6. Use Intl.Segmenter when available, with a safe code-point fallback that can never create an unpaired surrogate.
+7. Search every create-Edit and edit-Edit path for code-unit truncation such as .slice(0, 80), .substring(0, 80), or shared 80-character validators and correct only the inappropriate creator-caption usage.
+8. Do not remove legitimate limits from unrelated verification, handle, account, or profile fields unless evidence shows they were incorrectly shared with the Edit caption.
+9. Add a server-side guard so malformed unpaired surrogates can never reach PostgreSQL and cause a 500. Return a safe 400 validation response instead, without altering valid Unicode.
+10. Add focused regression tests covering:
+
+* a long caption containing 🇺🇸 across the old 80-character boundary
+* skin-tone emoji
+* a family emoji sequence
+* Arabic and English mixed with emoji
+* multiline captions
+* a very long normal caption
+* editing and re-saving an existing long caption
+
+11. Verify that the saved visible caption remains complete and unchanged while any internal title is shortened safely.
+12. Keep all existing creator data, collections, Edits, media, and ledger rows unchanged.
+13. Do not run verify:free-media or any persistent-database-writing test.
+14. Run typecheck and safe focused non-database tests only.
+15. Commit the fix on local main and report the commit hash, files changed, and test results.
+16. Do not push, restart, or deploy.
