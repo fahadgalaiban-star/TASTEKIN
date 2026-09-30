@@ -1218,8 +1218,8 @@ components:
         category: { type: string, enum: [Fashion, Travel, Places, Restaurants, DailyRoutine, PersonalCare, HealthFitness, Decor, Books, Vlogs] }
         title: { type: string, maxLength: 160 }
         titleAr: { type: string, maxLength: 160 }
-        caption: { type: string, maxLength: 2000 }
-        captionAr: { type: string, maxLength: 2000 }
+        caption: { type: string }
+        captionAr: { type: string }
         image: { type: string, minLength: 1, maxLength: 1024 }
         sourceImage: { type: string, maxLength: 1024 }
         previewImage: { type: string, maxLength: 1024 }

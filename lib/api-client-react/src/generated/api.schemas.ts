@@ -694,9 +694,7 @@ export interface CreatorEdit {
   title: string;
   /** @maxLength 160 */
   titleAr: string;
-  /** @maxLength 2000 */
   caption: string;
-  /** @maxLength 2000 */
   captionAr: string;
   /**
      * @minLength 1

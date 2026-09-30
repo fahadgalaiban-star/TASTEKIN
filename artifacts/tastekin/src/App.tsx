@@ -15,6 +15,7 @@ import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playb
 import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
 import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
+import { editTextForSave, fullEditCaption } from './lib/edit-text';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -1096,8 +1097,7 @@ function TastekinApp() {
     }
     formToSave = withoutPlaceDetails(formToSave);
     const id = editingId || `edit-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-    const fallbackTitle = formToSave.placeName?.trim() || formToSave.caption.trim().slice(0, 80);
-    const next = { id, ...formToSave, title: formToSave.title.trim() || fallbackTitle, titleAr: formToSave.titleAr.trim() || fallbackTitle, captionAr: formToSave.captionAr || formToSave.caption, status } as CreatorEdit;
+    const next = { id, ...formToSave, ...editTextForSave(formToSave), status } as CreatorEdit;
     const nextEdits = creatorEdits.some((item) => item.id === id) ? creatorEdits.map((item) => item.id === id ? next : item) : [next, ...creatorEdits];
     const nextCollections = creatorCollections.map((collection) => ({
       ...collection,
@@ -1794,7 +1794,7 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 
 function SimpleScreen({ kicker, title, titleClassName, children }: { kicker: string; title: string; titleClassName?: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className={titleClassName ? `approved-title ${titleClassName}` : 'approved-title'}>{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
-function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption || edit.placeName || edit.title || '' : edit.caption || edit.captionAr || edit.placeName || edit.title || '').split(/\r?\n/, 1)[0].trim(); }
+function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return fullEditCaption(edit, ar).split(/\r?\n/, 1)[0].trim(); }
 function TasteRating({ rating, ar, id, compact = false }: { rating?: number | null; ar: boolean; id?: string; compact?: boolean }) {
   if (!rating) return null;
   const ratingLabel = ar ? `تقييم TASTEKIN ${rating} من 5` : `TASTEKIN Taste Rating ${rating} out of 5`;
@@ -2148,7 +2148,7 @@ function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean
   </Drawer.Root>;
 }
 function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; saved: boolean; owner: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
-  const caption = publicCaptionLine(edit, ar);
+  const caption = fullEditCaption(edit, ar);
   const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
   // The location is shown exactly once, as one small tappable row above the
   // image: "<place name> · <location>" (the name is left out when it is

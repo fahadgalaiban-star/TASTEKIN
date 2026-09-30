@@ -367,7 +367,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 /* Post detail: the full caption centered above the image (smaller on
    phones, never clamped or cut off), then one small tappable location row,
    then the image. */
-.edit-detail-title { margin:14px auto 6px; max-width:34ch; font-size:20px; line-height:1.25; letter-spacing:-.03em; text-align:center; overflow-wrap:anywhere; }
+.edit-detail-title { margin:14px auto 6px; max-width:34ch; font-size:20px; line-height:1.25; letter-spacing:-.03em; text-align:center; overflow-wrap:anywhere; white-space:pre-wrap; }
 @media (min-width:600px) { .edit-detail-title { font-size:24px; } }
 .edit-detail-location { display:flex; align-items:center; justify-content:center; gap:5px; width:max-content; max-width:100%; min-height:32px; margin:0 auto; padding:0 8px; border-radius:999px; color:var(--tk-stone); font-size:12px; font-weight:700; text-decoration:none; }
 .edit-detail-location span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
