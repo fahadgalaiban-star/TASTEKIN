@@ -27,6 +27,7 @@ import {
 } from "../lib/video-upload-lifecycle";
 import { attachResolvedPlayback, batchResolveVideoRows, collectVideoUploadIds } from "../lib/video-playback";
 import { coerceAccessToPublic, normalizeLegacyCollection, normalizeLegacyEdit } from "../lib/edit-access";
+import { containsUnpairedSurrogate } from "../lib/unicode-validation";
 
 const router: IRouter = Router();
 function noStoreAccountResponse(res: import("express").Response) {
@@ -576,6 +577,10 @@ router.put("/creator-workspace", async (req, res) => {
   const parsed = SaveCreatorWorkspaceBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Invalid creator workspace" });
+    return;
+  }
+  if (containsUnpairedSurrogate(parsed.data)) {
+    res.status(400).json({ error: "Creator workspace contains invalid Unicode text" });
     return;
   }
   if (parsed.data.expectedRevision === undefined) {
