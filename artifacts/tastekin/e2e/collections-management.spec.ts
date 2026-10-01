@@ -144,7 +144,9 @@ async function addPhotoAndCaption(page: Page, caption: string) {
 
 async function openOwnCollectionEditor(page: Page, title: string) {
   await page.getByRole('button', { name: 'View profile' }).click();
-  await page.getByRole('button', { name: 'Collections', exact: true }).click();
+  // The profile has no section tab row; the full Collections screen opens
+  // from "View all" in the Featured collections strip (two are featured).
+  await page.getByTestId('profile-featured-viewall').click();
   await expect(page.getByRole('heading', { name: 'Collections' })).toBeVisible();
   await page.locator('button.approved-collection', { hasText: title }).click();
   await expect(page.getByRole('heading', { name: title })).toBeVisible();
@@ -367,7 +369,9 @@ test('Arabic: the name-only create and edit forms read correctly in RTL at 390px
 
   await page.getByRole('button', { name: 'رجوع' }).click();
   await page.getByRole('button', { name: 'عرض الملف' }).click();
-  await page.getByRole('button', { name: 'المجموعات', exact: true }).click();
+  await expect(page.getByTestId('profile-featured-viewall')).toHaveText('عرض الكل');
+  await page.getByTestId('profile-featured-viewall').click();
+  await expect(page.getByRole('heading', { name: 'المجموعات' })).toBeVisible();
   await page.locator('button.approved-collection', { hasText: 'اختيارات الساحل' }).click();
   await page.getByTestId('collection-edit').click();
   const editForm = page.getByTestId('collection-edit-form');
