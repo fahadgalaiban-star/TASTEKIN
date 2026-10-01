@@ -67,7 +67,7 @@ class OwnerApi {
       await route.fulfill({ json: { displayName: 'Fheed Alaiban', username: 'fheed', bio: '', city: 'Kuwait City', country: 'Kuwait', interests: ['Fashion', 'Travel', 'Places'], avatar: '/tastekin-media/fheed-profile.webp', avatarObjectPath: null, coverImage: '', coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: this.workspace.revision } });
       return;
     }
-    if (url.pathname === '/api/creator-featured-collections' || url.pathname === '/api/creators/fheed/featured-collections') { await route.fulfill({ json: { collectionIds: [] } }); return; }
+    if (url.pathname === '/api/creator-featured-collections' || url.pathname === '/api/creators/fheed/featured-collections') { await route.fulfill({ json: { collectionIds: ['coastal-edit'] } }); return; }
     if (url.pathname.match(/^\/api\/edits\/[^/]+\/engagement$/)) { await route.fulfill({ json: { editId: 'x', likeCount: 0, commentCount: 0, liked: false, saved: false } }); return; }
     if (url.pathname.match(/^\/api\/edits\/[^/]+\/comments$/)) { await route.fulfill({ json: [] }); return; }
     if (url.pathname.startsWith('/api/storage/objects/') || url.pathname.startsWith('/api/public-media/') || url.pathname.startsWith('/api/public-profile-media')) { await route.fulfill({ status: 200, contentType: 'image/png', body: onePixelImage }); return; }
@@ -128,9 +128,9 @@ test('profile filter row is exactly All, Stays, Food, Places, Tips, Style; a leg
   await page.getByTestId('profile-travel-tab-All').click();
   await expect(page.getByTestId('profile-edit-legacy-trip')).toBeVisible();
 
-  // Inside its collection, untouched.
-  await page.getByRole('button', { name: 'Collections', exact: true }).click();
-  await page.locator('button.approved-collection', { hasText: 'The Coastal Edit' }).click();
+  // Inside its collection, untouched. The profile has no section tab row,
+  // so the collection is opened from its Featured card.
+  await page.getByTestId('featured-collection-coastal-edit').click();
   await expect(page.getByRole('heading', { name: 'The Coastal Edit' })).toBeVisible();
   await expect(page.locator('[data-edit-id="legacy-trip"]')).toHaveCount(1);
   expect(api.savedPayloads).toHaveLength(0);
