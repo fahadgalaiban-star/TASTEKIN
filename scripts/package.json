@@ -23,6 +23,7 @@
     "verify:my-things": "tsx ./src/verify-my-things.ts",
     "verify:closet-analysis": "tsx ./src/verify-closet-analysis.ts",
     "verify:kin-search": "tsx ./src/verify-kin-search.ts",
+    "verify:kin-hotel-offers": "tsx ./src/verify-kin-hotel-offers.ts",
     "verify:circle": "tsx ./src/verify-circle.ts",
     "verify:video-upload-lifecycle": "tsx ./src/verify-video-upload-lifecycle.ts",
     "verify:video-upload-webhook-recovery": "tsx ./src/verify-video-upload-webhook-recovery.ts",

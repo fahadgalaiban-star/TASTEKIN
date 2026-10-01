@@ -11,3 +11,4 @@
 - [TASTEKIN session coherence](tastekin-session-coherence.md) — all account-aware UI derives from the server session; revalidate safely across Safari navigation and refreshes.
 - [TASTEKIN Bunny TUS authentication](tastekin-bunny-tus-authentication.md) — Bunny requires upload authorization headers on TUS HEAD and PATCH as well as creation.
 - [TASTEKIN Bunny playback validation](tastekin-bunny-playback-validation.md) — Replit’s automated Chromium cannot decode Bunny’s default H.264/AAC renditions.
+- [GitHub PR publishing in this workspace](github-pr-publishing.md) — shell Git push may reject credentials despite a working GitHub connector; verify the remote tree and parent when using the API.

@@ -63,6 +63,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     description: "KIN Travel restaurant reservations referral: adds a 'Reserve a table' link, only on restaurant and café stops (never museums, parks, shops or other places), that opens the configured external partner (KIN_RESTAURANT_RESERVATION_URL) in a new tab. TASTEKIN is a referral intermediary only — the reservation, any payment, changes, cancellations and support stay with the partner. Nothing is emitted or shown while disabled, or while no partner URL is configured.",
     defaultEnabled: false,
   },
+  {
+    key: "kin_travel_hotel_price_offers",
+    description: "KIN Travel hotel price comparison foundation. Only verified, available offers for the same Google hotel may appear in the existing hotel cards. No providers are connected yet; enabling this flag alone makes no partner requests and shows no offers.",
+    defaultEnabled: false,
+  },
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_DEFINITIONS)[number]["key"];
