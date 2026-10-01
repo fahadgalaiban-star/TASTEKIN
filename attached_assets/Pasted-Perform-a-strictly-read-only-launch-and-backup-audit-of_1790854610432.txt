@@ -1,0 +1,81 @@
+Perform a strictly read-only launch and backup audit of the current TASTEKIN project.
+
+Do not modify any file, install or update packages, change Git branches or refs, commit, push, pull, merge, reset, rebase, restart, publish, deploy, or run any database-writing command or test.
+
+Inspect the current project and report the following clearly:
+
+1. Git safety
+
+* Current branch and exact HEAD commit.
+* Working-tree status.
+* Local and remote branch status and whether they have diverged.
+* Confirm which remote repository is the primary source of truth.
+
+2. Application structure
+
+* Exact frontend and backend directories.
+* Build, typecheck, test, and start commands.
+* Current production deployment source and domain configuration.
+
+3. Database
+
+* Database provider and where its connection is configured.
+* Main schema and migration locations.
+* Whether automatic backups currently exist.
+* How the database could be restored if production data were lost.
+* Do not display credentials or connection-string values.
+
+4. Uploaded images and videos
+
+* Storage provider and relevant code/configuration.
+* Whether media is stored inside Replit, in object storage, or elsewhere.
+* Whether an independent media backup exists.
+* Explain how deleted, temporary, committed, and abandoned media are handled.
+* Do not display any secret values.
+
+5. Secrets
+
+* List secret and API-key variable names only.
+* State whether each belongs in Replit Secrets, deployment secrets, or GitHub Actions Secrets.
+* Never print secret values and never recommend committing them to Git.
+
+6. Mobile readiness
+
+* Check whether Capacitor, iOS, Android, Fastlane, and GitHub Actions mobile-build files currently exist.
+* Report what is complete and what is still missing for TestFlight and Google Play testing.
+* Verify native authentication, API base URL, CORS, camera/photo permissions, uploads, and deep-link readiness.
+
+7. Store and safety requirements
+
+* Check whether users can delete their account and associated data.
+* Check Privacy Policy, Terms of Use, support contact, reporting, blocking, and moderation.
+* Check whether the public support email is configured and working.
+* Identify gaps only; make no changes.
+
+8. My Closet
+
+* Inspect the current upload and display pipeline.
+* Confirm whether it can isolate a garment from a person or background.
+* Identify what is missing to produce a consistent two-column catalog grid with the garment centered on the same light-ivory background.
+* The original image must remain private and unchanged.
+* Do not implement anything yet.
+
+9. KIN
+
+* Trace the full Style flow from selecting a My Closet item or uploading a photo through Create My Look, results, saving, retrying, and Arabic/English handling.
+* Report which parts use real backend functionality and which are mocked, disabled, incomplete, or controlled by feature flags.
+
+10. Travel partnerships
+
+* Report the current state of hotel, Booking.com, restaurant reservation, OpenTable, and car-rental links.
+* List relevant feature flags and configuration variable names without exposing their values.
+* Do not enable any flag.
+
+Finish with:
+
+* A short list of confirmed launch blockers.
+* A safe backup plan for code, database, media, documents, and secrets.
+* The recommended implementation order.
+* Any expected external cost, but do not purchase or activate anything.
+
+This task is investigation only. Make absolutely no changes.
