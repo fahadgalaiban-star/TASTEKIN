@@ -27,6 +27,7 @@ import {
   putClosetMediaBuffer,
 } from "../lib/private-media-storage";
 import { requireUser } from "./engagement";
+import { streamPrivateImage } from "../lib/private-image-response";
 
 const router: IRouter = Router();
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -325,9 +326,12 @@ router.get("/closet-items/:id/image", requireUserMw, myThingsFlagMw, async (req,
   if (!item) { res.status(404).json({ error: "Item not found" }); return; }
   try {
     const url = await getClosetMediaDownloadURL(item.imageObjectKey);
-    res.redirect(302, url);
+    res.vary("X-Tastekin-Private-Image");
+    if (req.get("X-Tastekin-Private-Image") === "1") await streamPrivateImage(res, url);
+    else res.redirect(302, url);
   } catch (error) {
     req.log.warn({ err: error, userId: user.id }, "Unable to serve closet media");
+    if (res.headersSent) { res.destroy(); return; }
     res.status(404).json({ error: "Item not found" });
   }
 });

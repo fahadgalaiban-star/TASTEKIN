@@ -5,6 +5,7 @@ import { Router, type IRouter } from "express";
 
 import { creatorByUsername, creatorForUser, requireCreator } from "../lib/creator-account";
 import { clearPhotoOf } from "../lib/edit-access";
+import { streamPrivateImage } from "../lib/private-image-response";
 import { createPrivateMediaUpload, deletePrivateMedia, getPrivateMediaDownloadURL } from "../lib/private-media-storage";
 
 const router: IRouter = Router();
@@ -85,9 +86,13 @@ router.get("/storage/objects/*path", async (req, res) => {
     const workspace = await creatorForUser(req.user.id);
     const objectPath = `/objects/${path}`;
     if (!workspace || !referencedPaths(workspace).has(objectPath) || blurredRenditionPaths(workspace).has(objectPath)) { res.status(404).json({ error: "Media object not found" }); return; }
-    res.redirect(302, await getPrivateMediaDownloadURL(objectPath));
+    const url = await getPrivateMediaDownloadURL(objectPath);
+    res.vary("X-Tastekin-Private-Image");
+    if (req.get("X-Tastekin-Private-Image") === "1") await streamPrivateImage(res, url);
+    else res.redirect(302, url);
   } catch (error) {
     req.log.warn({ err: error }, "Unable to serve private media object");
+    if (res.headersSent) { res.destroy(); return; }
     res.status(404).json({ error: "Media object not found" });
   }
 });
