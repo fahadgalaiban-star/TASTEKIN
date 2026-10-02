@@ -11,4 +11,3 @@
 - [TASTEKIN session coherence](tastekin-session-coherence.md) — all account-aware UI derives from the server session; revalidate safely across Safari navigation and refreshes.
 - [TASTEKIN Bunny TUS authentication](tastekin-bunny-tus-authentication.md) — Bunny requires upload authorization headers on TUS HEAD and PATCH as well as creation.
 - [TASTEKIN Bunny playback validation](tastekin-bunny-playback-validation.md) — Replit’s automated Chromium cannot decode Bunny’s default H.264/AAC renditions.
-- [TASTEKIN browser test runtime](tastekin-browser-test-runtime.md) — use the provided Chromium; a missing Playwright browser revision is not an app failure.

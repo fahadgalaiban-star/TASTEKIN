@@ -49,6 +49,7 @@ test('loader uses the relative authenticated-fetch path, never copies bearer cre
   await nextTick();
   assert.equal(h.calls[0][0], PATH);
   assert.equal(h.calls[0][1].cache, 'no-store');
+  assert.equal(h.calls[0][1].redirect, 'error');
   assert.deepEqual(h.calls[0][1].headers, { 'X-Tastekin-Private-Image': '1' });
   assert.equal(h.states.at(-1).status, 'ready');
   assert.ok(h.created[0].blob instanceof Blob);
@@ -145,6 +146,17 @@ test('provider HTTP and network failures are sanitized before route logging/resp
   }
 });
 
+test('provider body-stream errors are sanitized on both the response stream and the rejected promise', async () => {
+  const output = new PassThrough(), errors = [];
+  output.setHeader = () => {};
+  output.on('error', (error) => errors.push(error.message));
+  await assert.rejects(streamPrivateImage(output, 'https://provider.test/?signature=private', async () =>
+    new Response(new ReadableStream({
+      start(controller) { controller.error(new Error('https://provider.test/?signature=provider-secret')); },
+    }))), { message: 'Private image unavailable' });
+  assert.deepEqual(errors, ['Private image unavailable']);
+});
+
 test('all authenticated image call sites use MediaImage; local crop sources stay local', async () => {
   const source = await readFile(resolve('artifacts/tastekin/src/App.tsx'), 'utf8');
   assert.equal(/<img\b[^>]*src=\{(?:apiUrl|imageSrc)\(/.test(source), false);
@@ -159,9 +171,29 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
   const frontendRequire = createRequire(resolve('artifacts/tastekin/package.json'));
   const { chromium } = frontendRequire('@playwright/test');
   const { build } = createRequire(frontendRequire.resolve('vite/package.json'))('esbuild');
-  const bundles = {}, requests = [];
+  const bundles = {}, requests = [], preflights = [];
+  let nativeFixtureOrigin;
+  const redirectedRequests = [];
+  const redirectTarget = createServer((req, res) => {
+    redirectedRequests.push({ url: req.url, authorization: req.headers.authorization });
+    res.writeHead(200, { 'Content-Type': 'image/png', 'Access-Control-Allow-Origin': '*' });
+    res.end(PNG);
+  });
+  await new Promise((resolve) => redirectTarget.listen(0, '127.0.0.1', resolve));
+  const differentOrigin = `http://127.0.0.1:${redirectTarget.address().port}`;
+  t.after(() => { redirectTarget.closeAllConnections(); redirectTarget.close(); });
   const server = createServer(async (req, res) => {
     const url = new URL(req.url, 'http://fixture.test');
+    if (nativeFixtureOrigin) res.setHeader('Access-Control-Allow-Origin', nativeFixtureOrigin);
+    if (req.method === 'OPTIONS') {
+      preflights.push({ path: url.pathname, headers: req.headers['access-control-request-headers'] });
+      res.writeHead(204, {
+        'Access-Control-Allow-Methods': 'GET',
+        'Access-Control-Allow-Headers': 'Authorization, X-Tastekin-Private-Image',
+      });
+      res.end();
+      return;
+    }
     if (url.pathname.endsWith('.js')) {
       res.setHeader('Content-Type', 'text/javascript');
       res.end(bundles[url.pathname]);
@@ -173,9 +205,15 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
       res.end(`<div id="root"></div><script src="${url.pathname}.js"></script>`);
       return;
     }
-    requests.push({ path: url.pathname, authorization: req.headers.authorization, inline: req.headers['x-tastekin-private-image'], cookie: req.headers.cookie });
-    if (url.pathname.includes('/denied/')) {
-      res.writeHead(403, { 'Content-Type': 'application/json' });
+    requests.push({ path: url.pathname, url: req.url, authorization: req.headers.authorization, inline: req.headers['x-tastekin-private-image'], cookie: req.headers.cookie });
+    if (url.pathname.includes('/redirect/')) {
+      res.writeHead(302, { Location: `${differentOrigin}/provider-image` });
+      res.end();
+    } else if (url.pathname.includes('/same-origin-redirect/')) {
+      res.writeHead(302, { Location: '/api/closet-items/redirect-followed/image' });
+      res.end();
+    } else if (url.pathname.includes('/denied/') || url.pathname.includes('/unauthenticated/')) {
+      res.writeHead(url.pathname.includes('/unauthenticated/') ? 401 : 403, { 'Content-Type': 'application/json' });
       res.end('{"error":"Bearer fixture-bearer-secret"}');
     } else if (url.pathname.includes('/bad-image/')) {
       res.writeHead(200, { 'Content-Type': 'image/png' });
@@ -188,6 +226,7 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
   const base = `http://127.0.0.1:${server.address().port}`;
+  nativeFixtureOrigin = `http://localhost:${server.address().port}`;
   t.after(() => { server.closeAllConnections(); server.close(); });
   for (const native of [true, false]) {
     const bundle = await build({
@@ -243,14 +282,19 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
   t.after(() => browser.close());
   const page = await browser.newPage();
   const errors = [];
-  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()); });
-  await page.goto(base + '/native');
+  page.on('console', (message) => errors.push(message.text()));
+  // Seed the API origin's cookie jar, then exercise native fetch from a
+  // different origin. Native authenticated requests must still omit cookies.
+  await page.goto(base + '/web');
+  await page.goto(nativeFixtureOrigin + '/native');
   await page.evaluate((src) => window.setImage(src), base + PATH);
   await page.waitForFunction(() => document.querySelector('#image')?.getAttribute('src')?.startsWith('blob:') && document.querySelector('#image').naturalWidth > 0);
   const original = await page.locator('#image').getAttribute('src');
   assert.equal(requests.find((r) => r.path === PATH).authorization, 'Bearer fixture-bearer-secret');
   assert.equal(requests.find((r) => r.path === PATH).inline, '1');
   assert.equal(requests.find((r) => r.path === PATH).cookie, undefined);
+  assert.ok(preflights.some((r) => r.path === PATH
+    && r.headers.includes('authorization') && r.headers.includes('x-tastekin-private-image')));
   assert.equal(await page.locator('#image').getAttribute('class'), 'preserved-class');
 
   await page.evaluate(() => { window.setImage('/api/closet-items/slow/image'); });
@@ -266,10 +310,22 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
   await page.waitForFunction(() => window.revoked.length === 2);
   assert.ok((await page.evaluate(() => window.revoked)).includes(newest));
 
-  await page.evaluate(() => window.setImage('/api/closet-items/denied/image'));
-  await page.waitForFunction(() => document.querySelector('#image')?.dataset.privateImageState === 'unauthorized');
-  assert.equal(await page.locator('#image').getAttribute('src'), null);
-  assert.equal((await page.content()).includes('fixture-bearer-secret'), false);
+  for (const name of ['denied', 'unauthenticated']) {
+    await page.evaluate((src) => window.setImage(src), `/api/closet-items/${name}/image`);
+    await page.waitForFunction(() => document.querySelector('#image')?.dataset.privateImageState === 'unauthorized');
+    assert.equal(await page.locator('#image').getAttribute('src'), null);
+    assert.equal((await page.content()).includes('fixture-bearer-secret'), false);
+  }
+  for (const name of ['redirect', 'same-origin-redirect']) {
+    await page.evaluate((src) => window.setImage(src), `/api/closet-items/${name}/image`);
+    await page.waitForFunction(() => document.querySelector('#image')?.dataset.privateImageState === 'error');
+    assert.equal(await page.locator('#image').getAttribute('src'), null);
+  }
+  assert.equal(redirectedRequests.length, 0);
+  assert.equal(requests.some((r) => r.path === '/api/closet-items/redirect-followed/image'), false);
+  assert.equal(requests.filter((r) => r.authorization).every((r) =>
+    /^\/api\/(?:closet-items\/[^/]+\/image|storage\/objects\/)/.test(r.path)
+    && !r.url.includes('fixture-bearer-secret')), true);
   await page.evaluate(() => window.setImage('/api/closet-items/bad-image/image'));
   await page.waitForFunction(() => document.querySelector('#image')?.dataset.privateImageState === 'error');
   assert.equal(await page.locator('#image').getAttribute('src'), null);

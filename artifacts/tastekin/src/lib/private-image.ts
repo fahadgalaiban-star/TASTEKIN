@@ -49,6 +49,9 @@ export function loadPrivateImage(
       const response = await transport.fetch(path, {
         signal: controller.signal,
         cache: 'no-store',
+        // Private native loads must receive bytes from the authenticated API,
+        // never follow a redirect with credentials to a provider or CDN.
+        redirect: 'error',
         headers: { 'X-Tastekin-Private-Image': '1' },
       });
       if (!active) return;

@@ -1,4 +1,4 @@
-import { Readable } from 'node:stream';
+import { PassThrough, Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import type { Response } from 'express';
 
@@ -20,7 +20,14 @@ export async function streamPrivateImage(
     if (!response.ok || !response.body) throw new Error('Private image unavailable');
     res.setHeader('Cache-Control', 'private, no-store');
     res.setHeader('Content-Type', response.headers.get('content-type') || 'application/octet-stream');
-    await pipeline(Readable.fromWeb(response.body as import('node:stream/web').ReadableStream), res);
+    const source = Readable.fromWeb(response.body as import('node:stream/web').ReadableStream);
+    // Sanitize body-stream errors before pipeline can emit them on res, where
+    // HTTP logging might otherwise observe a provider URL or signature.
+    const safeBody = new PassThrough();
+    source.on('error', () => safeBody.destroy(new Error('Private image unavailable')));
+    safeBody.on('close', () => source.destroy());
+    source.pipe(safeBody);
+    await pipeline(safeBody, res);
   } catch {
     // Provider exceptions can contain a signed URL: never forward or log them.
     throw new Error('Private image unavailable');
