@@ -15,6 +15,7 @@ import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playb
 import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
 import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
+import { MediaImage } from './components/MediaImage';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -1309,7 +1310,7 @@ function TastekinApp() {
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
-     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><img src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
+     {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><MediaImage src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && selectedCollection && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
     {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} />}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -1353,7 +1354,7 @@ function Avatar({ profile = defaultCreatorProfile, src }: { profile?: CreatorPro
   const initials = (profile.displayName || '?').trim().slice(0, 1).toUpperCase();
   const [imageFailed, setImageFailed] = useState(false);
   useEffect(() => setImageFailed(false), [image]);
-  return <div className="approved-avatar">{image && !imageFailed ? <img src={apiUrl(image)} alt={profile.displayName} onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{initials}</span>}</div>;
+  return <div className="approved-avatar">{image && !imageFailed ? <MediaImage src={apiUrl(image)} alt={profile.displayName} onError={() => setImageFailed(true)} /> : <span aria-hidden="true">{initials}</span>}</div>;
 }
 function ExploreScreen({ ar, saved, toggleSaved, edits, allEdits, onOpenProfile, onOpenEdit, onSignIn }: { ar: boolean; saved: string[]; toggleSaved: (id: string) => void; edits: CreatorEdit[]; allEdits: CreatorEdit[]; onOpenProfile: (username: string) => void; onOpenEdit: (edit: CreatorEdit) => void; onSignIn: () => void }) {
   const [sort, setSort] = useState<'best' | 'new'>('best');
@@ -1444,7 +1445,7 @@ function ExploreScreen({ ar, saved, toggleSaved, edits, allEdits, onOpenProfile,
                   </div>
                   <ChevronRight className="explore-creator-chevron" aria-hidden="true" />
                 </div>
-                {thumbs.length > 0 && <div className={`explore-creator-thumbs${thumbs.length === 1 ? ' single' : ''}`}>{thumbs.map((src, index) => <img key={index} src={imageSrc(src)} alt="" />)}</div>}
+                {thumbs.length > 0 && <div className={`explore-creator-thumbs${thumbs.length === 1 ? ' single' : ''}`}>{thumbs.map((src, index) => <MediaImage key={index} src={imageSrc(src)} alt="" />)}</div>}
               </button>
             );
          })}
@@ -1806,7 +1807,7 @@ function PlaceDetails({ edit, ar, compact = false, showName = true, showLocation
 function SaveButton({ edit, ar, saved, onSave }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void }) { return <button className={`approved-save ${saved ? 'saved' : ''}`} data-testid={`save-${edit.id}`} onClick={onSave} aria-label={saved ? (ar ? 'إزالة من المحفوظات' : 'Remove from saved') : (ar ? 'حفظ التعديل' : 'Save Edit')} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>; }
 function CreatorAttribution({ edit, ar, onOpenProfile }: { edit: CreatorEdit; ar: boolean; onOpenProfile?: () => void }) {
   if (!edit.creatorUsername) return null;
-  const content = <><span className="feed-creator-avatar">{edit.creatorAvatar ? <img src={imageSrc(edit.creatorAvatar)} alt="" /> : edit.creatorName?.slice(0, 1)}</span><span><strong>{edit.creatorName || edit.creatorUsername}</strong><small>@{edit.creatorUsername}</small></span>{edit.creatorVerified && <img className="feed-taste-seal" src={TASTE_SEAL_IMAGE} alt="Verified by TASTEKIN" />}</>;
+  const content = <><span className="feed-creator-avatar">{edit.creatorAvatar ? <MediaImage src={imageSrc(edit.creatorAvatar)} alt="" /> : edit.creatorName?.slice(0, 1)}</span><span><strong>{edit.creatorName || edit.creatorUsername}</strong><small>@{edit.creatorUsername}</small></span>{edit.creatorVerified && <img className="feed-taste-seal" src={TASTE_SEAL_IMAGE} alt="Verified by TASTEKIN" />}</>;
   return onOpenProfile ? <button type="button" className="feed-creator feed-creator-button" data-testid={`creator-link-${edit.creatorUsername}`} onClick={onOpenProfile} aria-label={ar ? `عرض ملف ${edit.creatorName || edit.creatorUsername}` : `View ${edit.creatorName || edit.creatorUsername}'s profile`}>{content}</button> : <div className="feed-creator">{content}</div>;
 }
 const REPORT_REASONS: { id: string; en: string; ar: string }[] = [
@@ -2048,7 +2049,7 @@ function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutopla
   }
   const noPhoto = !edit.image;
   if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
-  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><img src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
+  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
 
 function SavedScreen({ ar, saved, lists, activeListId, edits, onSelectList, onCreateList, onRenameList, onDeleteList, onOpen, onUnsave }: { ar: boolean; saved: string[]; lists: SavedList[]; activeListId: string | null; edits: CreatorEdit[]; onSelectList: (id: string | null) => void; onCreateList: () => void; onRenameList: (id: string, name: string) => Promise<void>; onDeleteList: (id: string) => Promise<void>; onOpen: (edit: CreatorEdit) => void; onUnsave: (id: string) => void }) {
@@ -2104,7 +2105,7 @@ function SavedGridCard({ edit, ar, onOpen, onUnsave }: { edit: CreatorEdit; ar: 
   const canonicalCategory = travelTabs.find((tab) => tab.id !== 'All' && travelTabCategory[tab.id] === edit.category);
   return <article className="saved-grid-card" data-testid={`saved-grid-${edit.id}`}>
     <button className="saved-grid-media" onClick={onOpen} aria-label={ar ? `فتح ${caption}` : `Open ${caption}`}>
-      {thumbnail ? <img src={imageSrc(thumbnail)} alt={edit.altText || ''} /> : <span><VideoIcon size={24} /></span>}
+      {thumbnail ? <MediaImage src={imageSrc(thumbnail)} alt={edit.altText || ''} /> : <span><VideoIcon size={24} /></span>}
       <small>{canonicalCategory ? (ar ? canonicalCategory.ar : canonicalCategory.en) : displayCategory(edit.category, ar ? 'ar' : 'en')}</small>
     </button>
     <div className="saved-grid-copy">
@@ -2151,7 +2152,7 @@ function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn,
   return <SimpleScreen kicker={ar ? 'تعديل عام' : 'Public Edit'} title="">
     {caption && <h1 className="approved-title edit-detail-title" data-testid="edit-detail-caption">{caption}</h1>}
     {locationRow && <a className="edit-detail-location" data-testid="edit-detail-location" href={mapsLink} target="_blank" rel="noopener noreferrer" aria-label={ar ? `افتح ${locationRow} في الخرائط` : `Open ${locationRow} in Maps`}><MapPin size={14} aria-hidden="true" /><span>{locationRow}</span></a>}
-    {edit.image && <div className="approved-detail-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><img src={imageSrc(edit.image)} alt={edit.altText} /></div>}
+    {edit.image && <div className="approved-detail-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></div>}
     {edit.video && <VideoDetailPlayer video={edit.video} ar={ar} />}
     {!edit.image && !edit.video && <div className="place-detail-panel"><PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} /></div>}
     {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} />}
@@ -2281,7 +2282,7 @@ function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boole
     {state === 'error' && <div className="workspace-notice">{ar ? 'تعذر تحميل الرسائل.' : 'Could not load your messages.'}<button onClick={() => void load()}>{ar ? 'حاول مجدداً' : 'Try again'}</button></div>}
     {state === 'ready' && !conversations.length && <Empty text={ar ? 'لا توجد محادثات بعد. ابدأ من ملف المبدع.' : 'No conversations yet. Start from a creator profile.'} />}
     <div className="inbox-list">{conversations.map((item) => <button key={item.id} className="inbox-row" onClick={() => onOpen(item.id)}>
-      <span className="inbox-avatar">{item.participantAvatar ? <img src={apiUrl(item.participantAvatar)} alt="" /> : <Inbox size={19} />}</span>
+      <span className="inbox-avatar">{item.participantAvatar ? <MediaImage src={apiUrl(item.participantAvatar)} alt="" /> : <Inbox size={19} />}</span>
       <span><strong>{item.participantName}</strong><small>{item.lastMessage || (ar ? 'ابدأ المحادثة' : 'Start the conversation')}</small></span>
       {item.unreadCount > 0 && <b>{item.unreadCount}</b>}
     </button>)}</div>
@@ -2702,7 +2703,7 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
     const needsNote = confirmAction === 'rejected' || confirmAction === 'needs_improvement';
     return <SimpleScreen kicker={ar ? 'إدارة تيستكن' : 'TASTEKIN admin'} title={selected.profile.displayName || selected.profile.username}>
       <div className="admin-app-detail">
-        <span className="feed-creator-avatar">{selected.profile.avatar ? <img src={imageSrc(selected.profile.avatar)} alt="" /> : (selected.profile.displayName || '?').slice(0, 1)}</span>
+        <span className="feed-creator-avatar">{selected.profile.avatar ? <MediaImage src={imageSrc(selected.profile.avatar)} alt="" /> : (selected.profile.displayName || '?').slice(0, 1)}</span>
         <div><strong>{selected.profile.displayName}</strong><small>@{selected.profile.username}</small></div>
       </div>
       {tags.length > 0 && <div className="admin-tags">{tags.map((label) => <span key={label} className="admin-tag">{label}</span>)}</div>}
@@ -2735,7 +2736,7 @@ function AdminVerificationScreen({ ar }: { ar: boolean }) {
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
     {state === 'ready' && !applications.length && <Empty text={ar ? 'لا توجد طلبات معلّقة حالياً.' : 'No pending applications right now.'} />}
     {state === 'ready' && applications.length > 0 && <div className="admin-app-list">{applications.map((row) => <button key={row.creatorId} className="admin-app-row" onClick={() => setSelectedId(row.creatorId)}>
-      <span className="feed-creator-avatar">{row.profile.avatar ? <img src={imageSrc(row.profile.avatar)} alt="" /> : (row.profile.displayName || '?').slice(0, 1)}</span>
+      <span className="feed-creator-avatar">{row.profile.avatar ? <MediaImage src={imageSrc(row.profile.avatar)} alt="" /> : (row.profile.displayName || '?').slice(0, 1)}</span>
       <span className="admin-app-row-copy">
         <strong>{row.profile.displayName || row.profile.username}</strong>
         <small>@{row.profile.username} · {appliedAs(row).slice(0, 2).join(', ') || (ar ? 'بدون فئة' : 'No category')}</small>
@@ -3099,7 +3100,7 @@ function BlockedAccountsScreen({ ar, onSignIn }: { ar: boolean; onSignIn: () => 
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
     {state === 'ready' && !rows.length && <Empty text={ar ? 'لا توجد حسابات محظورة.' : 'You haven’t blocked anyone.'} />}
     {state === 'ready' && rows.length > 0 && <div className="admin-app-list">{rows.map((row) => <div key={row.id} className="admin-app-row">
-      <span className="feed-creator-avatar">{row.avatar ? <img src={imageSrc(row.avatar)} alt="" /> : (row.displayName || row.username || '?').slice(0, 1)}</span>
+      <span className="feed-creator-avatar">{row.avatar ? <MediaImage src={imageSrc(row.avatar)} alt="" /> : (row.displayName || row.username || '?').slice(0, 1)}</span>
       <span className="admin-app-row-copy">
         <strong>{row.displayName || row.username || (ar ? 'حساب' : 'Account')}</strong>
         <small>{row.username ? <bdi dir="ltr">@{row.username}</bdi> : ''}</small>
@@ -3163,7 +3164,7 @@ function MutedAccountsScreen({ ar, onSignIn }: { ar: boolean; onSignIn: () => vo
     {state === 'error' && <div className="workspace-notice" role="alert">{error}<button onClick={() => void load()}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
     {state === 'ready' && !rows.length && <Empty text={ar ? 'لا توجد حسابات مكتومة.' : 'You haven’t muted anyone.'} />}
     {state === 'ready' && rows.length > 0 && <div className="admin-app-list">{rows.map((row) => <div key={row.id} className="admin-app-row">
-      <span className="feed-creator-avatar">{row.avatar ? <img src={imageSrc(row.avatar)} alt="" /> : (row.displayName || row.username || '?').slice(0, 1)}</span>
+      <span className="feed-creator-avatar">{row.avatar ? <MediaImage src={imageSrc(row.avatar)} alt="" /> : (row.displayName || row.username || '?').slice(0, 1)}</span>
       <span className="admin-app-row-copy">
         <strong>{row.displayName || row.username || (ar ? 'حساب' : 'Account')}</strong>
         <small>{row.username ? <bdi dir="ltr">@{row.username}</bdi> : ''}</small>
@@ -3969,7 +3970,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const pieceCard = (firstStylingItemId || resultReference) && <div className="kin-piece-card" data-testid="kin-piece-card">
     {resultReference
       ? <div className="kin-piece-media" data-testid="kin-look-reference"><img src={resultReference.url} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>
-      : <div className="kin-piece-media" data-testid="kin-look-reference"><img src={apiUrl(`/api/closet-items/${encodeURIComponent(firstStylingItemId!)}/image`)} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>}
+      : <div className="kin-piece-media" data-testid="kin-look-reference"><MediaImage src={apiUrl(`/api/closet-items/${encodeURIComponent(firstStylingItemId!)}/image`)} alt={t('Your styling reference', 'مرجع أسلوبك')} /></div>}
     <div className="kin-piece-info">
       <span className="kin-piece-kicker">{t('Your piece', 'قطعتك')}</span>
       <span className="kin-piece-desc">
@@ -4365,7 +4366,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
               {[...stylingItemIds, ...(selectedItemId ? [selectedItemId] : [])].map((id) => {
                 const item = myThingsItems.find(i => i.id === id);
                 return <div className="kin-piece-preview-item" key={id}>
-                  <img src={apiUrl(`/api/closet-items/${encodeURIComponent(id)}/image`)} alt="" />
+                  <MediaImage src={apiUrl(`/api/closet-items/${encodeURIComponent(id)}/image`)} alt="" />
                   {item && <span>{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)}</span>}
                 </div>;
               })}
@@ -4729,7 +4730,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { 
       {visibleItems.map((item) => <div key={item.id} className="approved-grid-card" data-testid="my-things-item">
         <button type="button" data-testid="my-things-open" aria-label={t('Item options', 'خيارات الغرض')} onClick={() => setOpenItemId(item.id)} style={{ display: 'flex', flexDirection: 'column', flex: '1 1 auto', minWidth: 0, minHeight: 0, width: '100%', padding: 0, border: 0, background: 'transparent', cursor: 'pointer' }}>
           <div className="profile-grid-media">
-            <img src={apiUrl(`/api/closet-items/${item.id}/image`)} alt="" />
+            <MediaImage src={apiUrl(`/api/closet-items/${item.id}/image`)} alt="" />
             {item.confirmationStatus === 'pending_review' && <span className="profile-grid-access">{t('Pending', 'قيد المراجعة')}</span>}
           </div>
           <span className="profile-grid-caption">{closetTaxonomyLabel(CLOSET_ITEM_TYPES, item.itemType)} · {closetTaxonomyLabel(CLOSET_PRIMARY_COLORS, item.primaryColor)}</span>
@@ -5149,7 +5150,7 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
 
   return <SimpleScreen kicker={t('My Things', 'أغراضي')} title={t('Edit item', 'تعديل الغرض')}>
     <div className="image-uploader" style={{ aspectRatio: 1, cursor: 'default' }}>
-      <img src={apiUrl(`/api/closet-items/${item.id}/image`)} alt="" />
+      <MediaImage src={apiUrl(`/api/closet-items/${item.id}/image`)} alt="" />
     </div>
 
     <ClosetChoiceField label={t('Item type', 'نوع الغرض')} options={CLOSET_ITEM_TYPES} value={itemType} onSelect={setItemType} disabled={saving} />
@@ -5230,7 +5231,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
 
   return <section className="creator-profile creator-profile-travel">
     <div className="profile-cover" data-testid="profile-cover">
-      {profile.coverImage ? <img src={apiUrl(profile.coverImage)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
+      {profile.coverImage ? <MediaImage src={apiUrl(profile.coverImage)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
       {ownerView && <label className="profile-cover-edit" aria-label={t('Change cover photo', 'تغيير صورة الغلاف')} data-testid="profile-cover-edit">
         <Camera size={15} />
         <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" disabled={coverUploadBusy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadCover(file); event.target.value = ''; }} />
@@ -5343,7 +5344,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
           const cover = collectionCoverImage(collection, publishedEdits);
           return <button key={collection.id} className="profile-featured-card" data-testid={`featured-collection-${collection.id}`} onClick={() => onOpenCollection(collection)}>
             <span className="profile-featured-cover">
-              <img src={imageSrc(cover)} alt="" />
+              <MediaImage src={imageSrc(cover)} alt="" />
               <span className="profile-featured-title">{ar ? collection.titleAr : collection.title}</span>
               <span className="profile-featured-chevron" aria-hidden="true"><ChevronRight size={16} /></span>
             </span>
@@ -5362,7 +5363,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
         return <button className={`approved-grid-card ${edit.image || edit.video ? 'photo-grid-card' : 'place-grid-card'}`} key={edit.id} data-testid={`profile-edit-${edit.id}`} onClick={() => onEdit(edit)}>
           {edit.image ? <>
             <span className="profile-grid-media">
-              <img src={imageSrc(edit.image)} alt={edit.altText} />
+              <MediaImage src={imageSrc(edit.image)} alt={edit.altText} />
             </span>
           </> : edit.video ? <>
             <PosterVideoCard video={edit.video} ar={ar} />
@@ -5391,7 +5392,7 @@ function CreatorDashboard({ ar, displayName, edits, collections, busy, onNew, on
     <div className="workspace-head"><div><h1 className="approved-title">{ar ? `مساء الخير، ${displayName}.` : `Good afternoon, ${displayName}.`}</h1><p>{t('Shape the next thing people save.', 'اصنع ما سيحفظه الناس لاحقاً.')}</p></div><button className="approved-button primary" onClick={onNew} disabled={busy}><Plus size={16} /> {t('New Edit', 'تعديل جديد')}</button></div>
     <div className="creator-stats"><Stat value={edits.filter((item) => item.status === 'published').length} label={t('Published', 'منشور')} /><Stat value={edits.filter((item) => item.status === 'draft').length} label={t('Drafts', 'مسودات')} /><Stat value={collections.length} label={t('Collections', 'مجموعات')} /></div>
     <button className="workspace-collection-link" onClick={onCollections} disabled={busy}><span><FileText size={17} /><strong>{t('Manage collections', 'إدارة المجموعات')}</strong></span><ChevronRight size={17} /></button>
-    {groups.map(([status, en, arabic]) => <div className="workspace-section" key={status}><div className="workspace-section-head"><h2>{ar ? arabic : en}</h2><span>{edits.filter((item) => item.status === status).length}</span></div>{edits.filter((item) => item.status === status).map((item) => <div className="workspace-edit" key={item.id}>{item.image ? <img src={imageSrc(item.image)} alt={item.altText} /> : <div className="workspace-place-thumb"><MapPin size={17} /></div>}<div><strong>{internalLabel(item)}</strong><span>{internalMeta(item)}</span></div><div className="workspace-edit-actions">{status === 'archived' ? <button onClick={() => onUnarchive(item.id)} disabled={busy}>{t('Restore', 'استعادة')}</button> : <><button onClick={() => onEdit(item)} aria-label={t('Edit', 'تعديل')} disabled={busy}><Pencil size={15} /></button><button onClick={() => onArchive(item.id)} aria-label={t('Archive', 'أرشفة')} disabled={busy}><Archive size={15} /></button></>}</div></div>)}{!edits.some((item) => item.status === status) && <Empty text={t('Nothing here yet.', 'لا يوجد شيء هنا بعد.')} />}</div>)}
+    {groups.map(([status, en, arabic]) => <div className="workspace-section" key={status}><div className="workspace-section-head"><h2>{ar ? arabic : en}</h2><span>{edits.filter((item) => item.status === status).length}</span></div>{edits.filter((item) => item.status === status).map((item) => <div className="workspace-edit" key={item.id}>{item.image ? <MediaImage src={imageSrc(item.image)} alt={item.altText} /> : <div className="workspace-place-thumb"><MapPin size={17} /></div>}<div><strong>{internalLabel(item)}</strong><span>{internalMeta(item)}</span></div><div className="workspace-edit-actions">{status === 'archived' ? <button onClick={() => onUnarchive(item.id)} disabled={busy}>{t('Restore', 'استعادة')}</button> : <><button onClick={() => onEdit(item)} aria-label={t('Edit', 'تعديل')} disabled={busy}><Pencil size={15} /></button><button onClick={() => onArchive(item.id)} aria-label={t('Archive', 'أرشفة')} disabled={busy}><Archive size={15} /></button></>}</div></div>)}{!edits.some((item) => item.status === status) && <Empty text={t('Nothing here yet.', 'لا يوجد شيء هنا بعد.')} />}</div>)}
   </section>;
 }
 function Stat({ value, label }: { value: number; label: string }) { return <div><strong>{value}</strong><span>{label}</span></div>; }
@@ -6016,12 +6017,12 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
         <input aria-label={t('Add media', 'أضف وسائط')} type="file" accept={acceptMedia} onChange={selectMedia} disabled={processing || busy} />
       </label>}
       {form.image && <label className="image-uploader" style={{ aspectRatio: cropAspectRatio(form.crop?.aspect, form.crop) }}>
-        <img src={imageSrc(form.image)} alt={form.altText || ''} />
+        <MediaImage src={imageSrc(form.image)} alt={form.altText || ''} />
         <span><ImagePlus size={18} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Edit crop', 'تعديل الاقتصاص')}</span>
         <input aria-label={t('Change photo', 'تغيير الصورة')} type="file" accept={acceptMedia} onChange={selectMedia} disabled={processing || busy} />
       </label>}
       {videoUploadEnabled && videoUpload.state.phase !== 'idle' && <div className="image-uploader video-uploader-status" style={{ aspectRatio: '9 / 16' }}>
-        {videoUpload.state.posterUrl ? <img src={imageSrc(videoUpload.state.posterUrl)} alt="" /> : <div className="video-uploader-placeholder"><VideoIcon size={28} /></div>}
+        {videoUpload.state.posterUrl ? <MediaImage src={imageSrc(videoUpload.state.posterUrl)} alt="" /> : <div className="video-uploader-placeholder"><VideoIcon size={28} /></div>}
         <span className={`video-status-badge video-status-${videoUpload.state.phase}`}>{videoUpload.state.phase === 'uploading' && <span className="video-progress-bar"><span style={{ width: `${videoUpload.state.progressPercent}%` }} /></span>}{videoStatusLabel}</span>
       </div>}
       {videoUploadEnabled && videoUpload.state.phase !== 'idle' && <div className="video-uploader-actions">
@@ -6149,7 +6150,7 @@ function CollectionManager({ ar, collections, edits, form, editing, featuredColl
         const isFeatured = featuredIndex >= 0;
         const featureLimitReached = !isFeatured && featuredCollectionIds.length >= 3;
         return <div className="manager-collection-row" key={item.id}>
-          <button className="workspace-collection-link" onClick={() => onOpenCollection(item)}><span><img src={imageSrc(collectionCoverImage(item, edits))} alt="" /><span className="manager-collection-copy"><strong>{ar ? item.titleAr : item.title}</strong><small>{t(`${item.editIds.length + (item.uploads?.length || 0)} items`, `${item.editIds.length + (item.uploads?.length || 0)} عنصر`)}</small></span></span><ChevronRight size={16} /></button>
+          <button className="workspace-collection-link" onClick={() => onOpenCollection(item)}><span><MediaImage src={imageSrc(collectionCoverImage(item, edits))} alt="" /><span className="manager-collection-copy"><strong>{ar ? item.titleAr : item.title}</strong><small>{t(`${item.editIds.length + (item.uploads?.length || 0)} items`, `${item.editIds.length + (item.uploads?.length || 0)} عنصر`)}</small></span></span><ChevronRight size={16} /></button>
           <div className="manager-feature-actions">
             <button type="button" className={isFeatured ? 'selected' : ''} onClick={() => onToggleFeatured(item.id)} disabled={featureLimitReached}>{isFeatured ? t('Unfeature', 'إلغاء التمييز') : t('Feature', 'تمييز')}</button>
             {isFeatured && <div className="manager-feature-order">
@@ -6233,7 +6234,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, onO
 
   return <SimpleScreen kicker={ar ? 'مجموعة' : 'Collection'} title={ar ? collection.titleAr : collection.title}>
     <div className="collection-cover-wrap">
-      <img className="approved-collection-hero" src={imageSrc(cover)} alt="" />
+      <MediaImage className="approved-collection-hero" src={imageSrc(cover)} alt="" />
       {owner && <label className="collection-cover-edit">
         <ImagePlus size={15} /> {t('Change cover', 'تغيير الغلاف')}
         <input type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={(event) => { const file = event.target.files?.[0]; if (file) onUploadCover(file); event.target.value = ''; }} />
@@ -6272,7 +6273,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, onO
         {pickableEdits.map((item) => {
           const picked = pickedIds.includes(item.id);
           return <button key={item.id} type="button" className={`collection-picker-row ${picked ? 'selected' : ''}`} onClick={() => setPickedIds(picked ? pickedIds.filter((id) => id !== item.id) : [...pickedIds, item.id])}>
-            <img src={imageSrc(item.image || media('quiet-tailoring.webp'))} alt="" />
+            <MediaImage src={imageSrc(item.image || media('quiet-tailoring.webp'))} alt="" />
             <span>{ar ? item.titleAr : item.title}</span>
             {picked && <Check size={16} />}
           </button>;
@@ -6287,7 +6288,7 @@ function CollectionDetail({ ar, collection, edits, allPublishedEdits, owner, onO
     {orderedItems.length > 0 ? <div className={`collection-grid ${manageMode ? 'collection-grid-manage' : ''}`} onPointerMove={moveDrag} onPointerUp={endDrag}>
       {orderedItems.map((item) => <div key={item.id} data-edit-id={item.id} className={`collection-grid-item ${dragId === item.id ? 'dragging' : ''} ${overId === item.id && dragId && dragId !== item.id ? 'drag-over' : ''}`}>
         <button type="button" className="collection-grid-tap" onClick={() => { if (!manageMode && item.kind === 'edit' && item.edit) onOpen(item.edit); }} onPointerDown={beginDrag(item.id)} aria-label={item.label}>
-          <img src={imageSrc(item.image)} alt="" />
+          <MediaImage src={imageSrc(item.image)} alt="" />
         </button>
         {owner && manageMode && <button type="button" className="collection-grid-remove" onClick={() => onRemoveItem(item.id)} aria-label={t('Remove from collection', 'إزالة من المجموعة')}><X size={14} /></button>}
       </div>)}
