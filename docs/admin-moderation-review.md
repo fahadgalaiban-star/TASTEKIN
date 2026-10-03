@@ -39,6 +39,8 @@ Review only: retain Draft; no merge, publish, deployment or existing-database mi
   creator slug grants protection. Self-suspension and suspension of every
   protected owner/admin are prohibited. Client target/owner fields never select
   the account to moderate or delete.
+  Ordinary workspace provisioning preserves protected owner/admin roles rather
+  than silently replacing them with `creator`; this protection is regression-tested.
 
 ## Exact suspended-account allowlist
 

@@ -78,7 +78,7 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
         export {authMiddleware} from './artifacts/api-server/src/middlewares/auth-middleware';
         export {default as authRouter} from './artifacts/api-server/src/routes/auth';
         export {default as accountRouter} from './artifacts/api-server/src/routes/account';
-        export {configuredFounderMatches} from './artifacts/api-server/src/lib/creator-account';
+        export {configuredFounderMatches,ensureCreatorAccount} from './artifacts/api-server/src/lib/creator-account';
         export {default as moderationActionsRouter} from './artifacts/api-server/src/routes/moderation-actions';
         export {suspensionMiddleware,moderationVisibilityMiddleware,staticModerationMiddleware,loadModerationVisibility} from './artifacts/api-server/src/middlewares/moderation-middleware';`,
       resolveDir: resolve('.'),
@@ -149,6 +149,8 @@ test('non-admin, missing confirmation and blank reasons are rejected without sta
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM moderation_content_states')).rows[0].count, 0);
 });
 test('self, administrator and owner suspension/unsuspension are prohibited', async () => {
+  assert.equal((await api.ensureCreatorAccount({ id: 'protected' })).ok, true);
+  assert.equal((await pool.query("SELECT role FROM users WHERE id='protected'")).rows[0].role, 'owner');
   await assert.rejects(action(SELF_REPORT, 'suspend_user'), { status: 403 });
   await assert.rejects(action(ADMIN_REPORT, 'suspend_user'), { status: 403 });
   await assert.rejects(action(PROFILE_REPORT, 'suspend_user'), { status: 403 });

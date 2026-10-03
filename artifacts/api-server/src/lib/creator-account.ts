@@ -89,11 +89,13 @@ export async function creatorByUsername(username: string) {
 export async function ensureCreatorAccount(user: AuthenticatedUser) {
   const [account] = await db.select().from(usersTable).where(eq(usersTable.id, user.id)).limit(1);
   if (!account) return { ok: false as const, status: 403, error: "Authenticated account is not available" };
+  // Workspace provisioning must not silently erase protected server roles.
+  const creatorRole = ["owner", "admin"].includes(account.role) ? account.role : "creator";
 
   const existing = await creatorForUser(user.id);
   if (existing) {
-    if (account.role !== "creator") {
-      await db.update(usersTable).set({ role: "creator", updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    if (account.role !== creatorRole) {
+      await db.update(usersTable).set({ role: creatorRole, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     }
     return { ok: true as const, workspace: existing, userId: user.id, verified: account.isVerified };
   }
@@ -125,7 +127,7 @@ export async function ensureCreatorAccount(user: AuthenticatedUser) {
             .where(and(eq(creatorMediaUploads.creatorId, FHEED_CREATOR_ID), sql`${creatorMediaUploads.ownerUserId} <> ${user.id}`, sql`${creatorMediaUploads.state} <> 'deleted'`));
         }
       }
-      await tx.update(usersTable).set({ role: "creator", isVerified: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+      await tx.update(usersTable).set({ role: creatorRole, isVerified: true, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
       return workspace;
     });
     if (!result) return { ok: false as const, status: 409, error: "Founder workspace ownership changed. Reload and retry." };
@@ -169,7 +171,7 @@ export async function ensureCreatorAccount(user: AuthenticatedUser) {
       }
     }
     if (!created) throw new Error("Unable to create creator workspace after retrying the username assignment");
-    await tx.update(usersTable).set({ role: "creator", updatedAt: new Date() }).where(eq(usersTable.id, user.id));
+    await tx.update(usersTable).set({ role: creatorRole, updatedAt: new Date() }).where(eq(usersTable.id, user.id));
     return created;
   });
 
