@@ -1722,3 +1722,83 @@ export const GetCircleFeedResponseItem = zod.object({
 export const GetCircleFeedResponse = zod.array(GetCircleFeedResponseItem)
 
 
+export const getModerationInspectionPathIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+
+export const GetModerationInspectionParams = zod.object({
+  "id": zod.coerce.string().regex(getModerationInspectionPathIdRegExp)
+})
+
+export const GetModerationInspectionResponse = zod.object({
+  "target": zod.object({
+  "targetType": zod.enum(['edit', 'comment', 'profile']),
+  "targetId": zod.string(),
+  "creatorId": zod.string(),
+  "ownerUserId": zod.string(),
+  "hidden": zod.boolean(),
+  "suspended": zod.boolean(),
+  "protectedAccount": zod.boolean(),
+  "data": zod.record(zod.string(), zod.unknown()),
+  "mediaUrl": zod.string().optional()
+}),
+  "history": zod.array(zod.object({
+  "id": zod.string(),
+  "reportId": zod.string(),
+  "adminUserId": zod.string(),
+  "createdAt": zod.string(),
+  "action": zod.string().nullish(),
+  "note": zod.string().nullish(),
+  "targetType": zod.string().nullish(),
+  "targetId": zod.string().nullish(),
+  "previousState": zod.record(zod.string(), zod.unknown()).nullish(),
+  "newState": zod.record(zod.string(), zod.unknown()).nullish()
+}))
+})
+
+
+export const applyModerationActionPathIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+
+export const ApplyModerationActionParams = zod.object({
+  "id": zod.coerce.string().regex(applyModerationActionPathIdRegExp)
+})
+
+export const applyModerationActionBodyReasonMax = 1000;
+
+
+
+export const ApplyModerationActionBody = zod.object({
+  "action": zod.enum(['hide_edit', 'restore_edit', 'hide_comment', 'restore_comment', 'suspend_user', 'unsuspend_user']),
+  "reason": zod.string().min(1).max(applyModerationActionBodyReasonMax),
+  "confirmed": zod.literal(true)
+})
+
+export const ApplyModerationActionResponse = zod.object({
+  "action": zod.string(),
+  "hidden": zod.boolean(),
+  "suspended": zod.boolean(),
+  "audit": zod.object({
+  "id": zod.string(),
+  "reportId": zod.string(),
+  "adminUserId": zod.string(),
+  "createdAt": zod.string(),
+  "action": zod.string().nullish(),
+  "note": zod.string().nullish(),
+  "targetType": zod.string().nullish(),
+  "targetId": zod.string().nullish(),
+  "previousState": zod.record(zod.string(), zod.unknown()).nullish(),
+  "newState": zod.record(zod.string(), zod.unknown()).nullish()
+})
+})
+
+
+export const getModerationInspectionMediaPathIdRegExp = new RegExp('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+
+export const GetModerationInspectionMediaParams = zod.object({
+  "id": zod.coerce.string().regex(getModerationInspectionMediaPathIdRegExp)
+})
+
+export const GetModerationInspectionMediaResponse = zod.unknown()
+
+

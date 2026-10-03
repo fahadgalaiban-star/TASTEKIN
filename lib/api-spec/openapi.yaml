@@ -672,6 +672,52 @@ paths:
                 type: array
                 items: { $ref: "#/components/schemas/CircleFeedItem" }
         "401": { description: Authentication required }
+  /admin/reports/{id}/inspection:
+    get:
+      operationId: getModerationInspection
+      tags: [moderation]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' } }
+      responses:
+        "200":
+          description: Admin-only raw target and preserved audit history
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModerationInspection" }
+        "403": { description: Administrator required }
+        "404": { description: Target unavailable }
+  /admin/reports/{id}/actions:
+    post:
+      operationId: applyModerationAction
+      tags: [moderation]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ModerationActionInput" }
+      responses:
+        "200":
+          description: Atomic reversible action and audit record
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModerationActionResult" }
+        "400": { description: Reason and explicit confirmation required }
+        "403": { description: Administrator required or account protected }
+        "404": { description: Target unavailable }
+        "409": { description: Target ownership changed }
+  /admin/reports/{id}/inspection/media:
+    get:
+      operationId: getModerationInspectionMedia
+      tags: [moderation]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string, pattern: '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' } }
+      responses:
+        "200": { description: "Private admin-authorized image bytes, never a provider redirect" }
+        "403": { description: Administrator required }
+        "404": { description: Image unavailable }
+
 components:
   securitySchemes:
     SessionCookie:
@@ -700,6 +746,58 @@ components:
       required: true
       schema: { type: string, minLength: 1, maxLength: 100 }
   schemas:
+    ModerationActionInput:
+      type: object
+      required: [action, reason, confirmed]
+      properties:
+        action:
+          type: string
+          enum: [hide_edit, restore_edit, hide_comment, restore_comment, suspend_user, unsuspend_user]
+        reason: { type: string, minLength: 1, maxLength: 1000 }
+        confirmed: { type: boolean, enum: [true] }
+    ModerationTarget:
+      type: object
+      required: [targetType, targetId, creatorId, ownerUserId, hidden, suspended, protectedAccount, data]
+      properties:
+        targetType: { type: string, enum: [edit, comment, profile] }
+        targetId: { type: string }
+        creatorId: { type: string }
+        ownerUserId: { type: string }
+        hidden: { type: boolean }
+        suspended: { type: boolean }
+        protectedAccount: { type: boolean }
+        data: { type: object, additionalProperties: true }
+        mediaUrl: { type: string }
+    ModerationAuditEntry:
+      type: object
+      required: [id, reportId, adminUserId, createdAt]
+      properties:
+        id: { type: string }
+        reportId: { type: string }
+        adminUserId: { type: string }
+        createdAt: { type: string }
+        action: { type: [string, "null"] }
+        note: { type: [string, "null"] }
+        targetType: { type: [string, "null"] }
+        targetId: { type: [string, "null"] }
+        previousState: { type: [object, "null"], additionalProperties: true }
+        newState: { type: [object, "null"], additionalProperties: true }
+    ModerationInspection:
+      type: object
+      required: [target, history]
+      properties:
+        target: { $ref: "#/components/schemas/ModerationTarget" }
+        history:
+          type: array
+          items: { $ref: "#/components/schemas/ModerationAuditEntry" }
+    ModerationActionResult:
+      type: object
+      required: [action, hidden, suspended, audit]
+      properties:
+        action: { type: string }
+        hidden: { type: boolean }
+        suspended: { type: boolean }
+        audit: { $ref: "#/components/schemas/ModerationAuditEntry" }
     EditEngagementInput:
       type: object
       required: [active]

@@ -5,6 +5,7 @@ import {
   creatorWorkspaces,
   db,
   editComments,
+  moderationContentStates,
   editLikes,
   editSaves,
   savedListItems,
@@ -102,9 +103,17 @@ async function engagementFor(editId: string, userId?: string) {
     userId ? mutedUserIds(userId) : Promise.resolve(new Set<string>()),
   ]);
   const excludedIds = new Set([...blockedIds, ...mutedIds]);
-  const commentCountCondition = excludedIds.size
+  const commentCountCondition = and(sql`NOT EXISTS (
+    SELECT 1 FROM ${moderationContentStates}
+    WHERE ${moderationContentStates.targetType} = 'comment'
+      AND ${moderationContentStates.isHidden} = true
+      AND ${moderationContentStates.targetId} = ${editComments.id}
+  ) AND NOT EXISTS (
+    SELECT 1 FROM ${usersTable}
+    WHERE ${usersTable.id} = ${editComments.userId} AND ${usersTable.isSuspended} = true
+  )`, excludedIds.size
     ? and(eq(editComments.editId, editId), notInArray(editComments.userId, [...excludedIds]))
-    : eq(editComments.editId, editId);
+    : eq(editComments.editId, editId));
   const [[likes], [comments], likedRows, savedRows] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(editLikes).where(eq(editLikes.editId, editId)),
     db.select({ count: sql<number>`count(*)::int` }).from(editComments).where(commentCountCondition),

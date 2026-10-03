@@ -5,6 +5,92 @@
  * API specification
  * OpenAPI spec version: 0.1.0
  */
+export type ModerationActionInputAction = typeof ModerationActionInputAction[keyof typeof ModerationActionInputAction];
+
+
+export const ModerationActionInputAction = {
+  hide_edit: 'hide_edit',
+  restore_edit: 'restore_edit',
+  hide_comment: 'hide_comment',
+  restore_comment: 'restore_comment',
+  suspend_user: 'suspend_user',
+  unsuspend_user: 'unsuspend_user',
+} as const;
+
+export interface ModerationActionInput {
+  action: ModerationActionInputAction;
+  /**
+     * @minLength 1
+     * @maxLength 1000
+     */
+  reason: string;
+  confirmed: true;
+}
+
+export type ModerationTargetTargetType = typeof ModerationTargetTargetType[keyof typeof ModerationTargetTargetType];
+
+
+export const ModerationTargetTargetType = {
+  edit: 'edit',
+  comment: 'comment',
+  profile: 'profile',
+} as const;
+
+export type ModerationTargetData = { [key: string]: unknown };
+
+export interface ModerationTarget {
+  targetType: ModerationTargetTargetType;
+  targetId: string;
+  creatorId: string;
+  ownerUserId: string;
+  hidden: boolean;
+  suspended: boolean;
+  protectedAccount: boolean;
+  data: ModerationTargetData;
+  mediaUrl?: string;
+}
+
+/**
+ * @nullable
+ */
+export type ModerationAuditEntryPreviousState = { [key: string]: unknown } | null;
+
+/**
+ * @nullable
+ */
+export type ModerationAuditEntryNewState = { [key: string]: unknown } | null;
+
+export interface ModerationAuditEntry {
+  id: string;
+  reportId: string;
+  adminUserId: string;
+  createdAt: string;
+  /** @nullable */
+  action?: string | null;
+  /** @nullable */
+  note?: string | null;
+  /** @nullable */
+  targetType?: string | null;
+  /** @nullable */
+  targetId?: string | null;
+  /** @nullable */
+  previousState?: ModerationAuditEntryPreviousState;
+  /** @nullable */
+  newState?: ModerationAuditEntryNewState;
+}
+
+export interface ModerationInspection {
+  target: ModerationTarget;
+  history: ModerationAuditEntry[];
+}
+
+export interface ModerationActionResult {
+  action: string;
+  hidden: boolean;
+  suspended: boolean;
+  audit: ModerationAuditEntry;
+}
+
 export interface EditEngagementInput {
   active: boolean;
 }

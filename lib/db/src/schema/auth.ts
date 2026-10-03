@@ -16,6 +16,7 @@ export const usersTable = pgTable("users", {
   role: text("role").notNull().default("consumer"),
   isVerified: boolean("is_verified").notNull().default(false),
   isAdmin: boolean("is_admin").notNull().default(false),
+  isSuspended: boolean("is_suspended").notNull().default(false),
   language: text("language").notNull().default("en"),
   notifyPush: boolean("notify_push").notNull().default(true),
   notifyEmail: boolean("notify_email").notNull().default(true),

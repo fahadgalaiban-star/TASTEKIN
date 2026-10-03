@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { db, sessionsTable, usersTable, passwordResetTokensTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import type { Request, Response } from "express";
+import { withActiveAccount } from "./active-account";
 
 export const SESSION_COOKIE = "sid";
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -13,17 +14,19 @@ type Session = { user: AuthUser; accessToken: string; expiresAt: number };
 
 export async function createSession(session: Session) {
   const sid = crypto.randomBytes(32).toString("hex");
-  await db.insert(sessionsTable).values({ sid, sess: session, expire: new Date(Date.now() + SESSION_TTL) });
+  await withActiveAccount(session.user.id, async (tx) => {
+    await tx.insert(sessionsTable).values({ sid, sess: session, expire: new Date(Date.now() + SESSION_TTL) });
+  });
   return sid;
 }
 export async function getSession(sid: string) {
   const [row] = await db.select().from(sessionsTable).where(eq(sessionsTable.sid, sid));
-  if (!row || row.expire < new Date()) return null;
+  if (!row || row.expire <= new Date()) return null;
   return row.sess as unknown as Session;
 }
 export function getSessionId(req: Request) { return req.cookies?.[SESSION_COOKIE] as string | undefined; }
 export async function clearSession(res: Response, sid?: string) {
-  if (sid) await db.delete(sessionsTable).where(eq(sessionsTable.sid, sid));
+  if (sid) await db.update(sessionsTable).set({ expire: new Date() }).where(eq(sessionsTable.sid, sid));
   res.clearCookie(SESSION_COOKIE, { path: "/" });
 }
 export function setSessionCookie(res: Response, sid: string) {

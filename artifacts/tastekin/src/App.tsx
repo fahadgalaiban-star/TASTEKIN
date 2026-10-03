@@ -448,6 +448,7 @@ function TastekinApp() {
   const [creatorEdits, setCreatorEdits] = useState<CreatorEdit[]>(seedEdits);
   const [creatorCollections, setCreatorCollections] = useState<CreatorCollection[]>(seedCollections);
   const [publicFeedEdits, setPublicFeedEdits] = useState<CreatorEdit[]>([]);
+  const [publicFeedError, setPublicFeedError] = useState(false);
   const [featuredCollectionIds, setFeaturedCollectionIds] = useState<string[]>([]);
   const [workspaceRevision, setWorkspaceRevision] = useState(1);
   const [workspaceState, setWorkspaceState] = useState<'loading' | 'ready' | 'syncing' | 'error'>('loading');
@@ -562,10 +563,11 @@ function TastekinApp() {
   const loadPublicFeed = useCallback(async () => {
     try {
       const response = await fetch('/api/public-feed', { credentials: 'include', cache: 'no-store' });
-      if (!response.ok) return;
+      if (!response.ok) { setPublicFeedError(true); setPublicFeedEdits([]); return; }
       const payload = await response.json() as { items?: Array<{ creatorUsername: string; creatorName: string; creatorVerified: boolean; creatorAvatar: string; following: boolean; edit: CreatorEdit }> };
       setPublicFeedEdits((payload.items || []).map((item) => ({ ...item.edit, creatorUsername: item.creatorUsername, creatorName: item.creatorName, creatorVerified: item.creatorVerified, creatorAvatar: item.creatorAvatar, following: item.following })));
-    } catch { /* Keep the current feed while the network reconnects. */ }
+      setPublicFeedError(false);
+    } catch { setPublicFeedError(true); setPublicFeedEdits([]); }
   }, []);
   useEffect(() => { void loadPublicFeed(); }, [loadPublicFeed, session.revision, workspaceRevision]);
   useEffect(() => {
@@ -802,7 +804,9 @@ function TastekinApp() {
     },
     [publicCreatorCollections, publicFeaturedCollectionIds],
   );
-  const exploreEdits = useMemo(() => publicFeedEdits.length ? publicFeedEdits : published, [publicFeedEdits, published]);
+  // An authoritative empty public feed must not repopulate from private
+  // creator JSON: moderation deliberately leaves those originals intact.
+  const exploreEdits = publicFeedEdits;
   const { data: circleMembers = [], isLoading: circleMembersLoading, error: circleMembersError, refetch: refetchCircleMembers } = useListCircleMembers({
     query: {
       enabled: myCircleEnabled && session.status === 'authenticated' && homeFeedTab === 'my-circle',
@@ -833,8 +837,8 @@ function TastekinApp() {
   const homeFeed = useMemo(() => {
     if (homeFeedTab === 'following') return publicFeedEdits.filter((item) => item.following);
     if (myCircleEnabled && homeFeedTab === 'my-circle') return circleFeedEdits;
-    return publicFeedEdits.length ? publicFeedEdits : published;
-  }, [homeFeedTab, publicFeedEdits, published, circleFeedEdits, myCircleEnabled]);
+    return publicFeedEdits;
+  }, [homeFeedTab, publicFeedEdits, circleFeedEdits, myCircleEnabled]);
   const selectedEdit = [...circleFeedEdits, ...creatorEdits, ...publicCreatorEdits, ...publicFeedEdits]
     .find((item) => item.id === selectedEditId && (!item.creatorUsername || item.creatorUsername === selectedCreatorUsername))
     || published[0]
@@ -1318,7 +1322,11 @@ function TastekinApp() {
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
     {screen === 'adminVerification' && <AdminVerificationScreen ar={ar} />}
-    {screen === 'adminReports' && <AdminReportsScreen ar={ar} />}
+    {(screen === 'home' || screen === 'explore') && publicFeedError && <div className="approved-panel" role="alert">
+      <p>{ar ? 'المحتوى غير متاح مؤقتاً. أعد المحاولة.' : 'Content temporarily unavailable. Try again.'}</p>
+      <button className="approved-button" onClick={() => void loadPublicFeed()}>{ar ? 'إعادة المحاولة' : 'Retry'}</button>
+    </div>}
+    {screen === 'adminReports' && session.isAdmin && <AdminReportsScreen ar={ar} onModerated={() => setWorkspaceRevision((value) => value + 1)} />}
     {screen === 'adminFeatureFlags' && <AdminFeatureFlagsScreen ar={ar} />}
     {screen === 'adminAnalytics' && <AdminAnalyticsScreen ar={ar} />}
     {screen === 'blockedAccounts' && <BlockedAccountsScreen ar={ar} onSignIn={() => go('auth')} />}
@@ -2777,6 +2785,8 @@ type AdminReportContext = {
   displayName?: string;
 };
 
+import { AdminModerationActions } from './components/AdminModerationActions';
+
 type AdminReportRow = {
   id: string;
   targetType: 'edit' | 'comment' | 'profile';
@@ -2796,10 +2806,10 @@ type AdminReportRow = {
 
 /**
  * Admin-only report review queue. Marking a report reviewed never touches
- * the reported content itself — hiding, restoring, or removing content is
- * explicitly out of scope here and handled (if ever) by a separate feature.
+ * the reported content itself. Reversible moderation actions have their own
+ * server-authorized, audited workflow below.
  */
-function AdminReportsScreen({ ar }: { ar: boolean }) {
+function AdminReportsScreen({ ar, onModerated }: { ar: boolean; onModerated?: () => void }) {
   const [reportsList, setReportsList] = useState<AdminReportRow[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
   const [error, setError] = useState('');
@@ -2863,6 +2873,7 @@ function AdminReportsScreen({ ar }: { ar: boolean }) {
       <p className="profile-taste-meta">{ar ? 'المُبلّغ' : 'Reporter'}: {selected.reporterEmail || selected.reporterUserId}</p>
       <p className="profile-taste-meta">{ar ? 'تاريخ الإبلاغ' : 'Reported'}: {new Date(selected.createdAt).toLocaleString()}</p>
       {selected.adminNote && <div className="approved-panel"><h3>{ar ? 'ملاحظة الإدارة' : 'Admin note'}</h3><p>{selected.adminNote}</p></div>}
+      <AdminModerationActions reportId={selected.id} ar={ar} isAdmin={true} onChanged={async () => { await load(); onModerated?.(); }} />
       {actionError && <div className="engagement-error" role="alert">{actionError}</div>}
       {confirmStatus ? <div className="approved-panel admin-confirm">
         {needsNote ? <>

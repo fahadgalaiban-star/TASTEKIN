@@ -16,6 +16,7 @@ import crypto from "crypto";
 import { db, nativeSessionsTable, sessionsTable, usersTable } from "@workspace/db";
 import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Request } from "express";
+import { withActiveAccount } from "./active-account";
 
 export const NATIVE_SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 export const NATIVE_SESSION_ABSOLUTE_MS = 180 * 24 * 60 * 60 * 1000;
@@ -49,15 +50,16 @@ export function getBearerToken(req: Request): string | null {
 export async function createNativeSession(input: { userId: string; platform: NativePlatform; appVersion?: string | null }): Promise<{ token: string; expiresAt: Date }> {
   const token = crypto.randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + NATIVE_SESSION_ABSOLUTE_MS);
-  await db.insert(nativeSessionsTable).values({
+  await withActiveAccount(input.userId, async (tx) => { await tx.insert(nativeSessionsTable).values({
     userId: input.userId,
     tokenHash: hashNativeToken(token),
     platform: input.platform,
     appVersion: input.appVersion ?? null,
     expiresAt,
-  });
+  }); });
   return { token, expiresAt };
 }
+
 
 export type ResolvedNativeSession = { session: { id: string; userId: string; platform: string }; user: NativeSessionUser };
 
@@ -92,11 +94,11 @@ export async function revokeAllNativeSessions(userId: string, reason: string): P
 
 /**
  * Web (cookie) sessions store the user inside the `sess` JSON, so revoking
- * them for one user is a JSON-path delete on the existing table — no schema
+ * them for one user expires the matching rows, preserving history — no schema
  * change. Used by password reset and "sign out everywhere".
  */
 export async function revokeAllWebSessions(userId: string): Promise<void> {
-  await db.delete(sessionsTable).where(sql`${sessionsTable.sess}->'user'->>'id' = ${userId}`);
+  await db.update(sessionsTable).set({ expire: new Date() }).where(sql`${sessionsTable.sess}->'user'->>'id' = ${userId}`);
 }
 
 export async function revokeEverySession(userId: string, reason: string): Promise<void> {

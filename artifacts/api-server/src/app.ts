@@ -7,6 +7,7 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 import { authMiddleware } from "./middlewares/auth-middleware";
 import { readinessMiddleware } from "./middlewares/readiness-middleware";
+import { moderationVisibilityMiddleware, staticModerationMiddleware, suspensionMiddleware } from "./middlewares/moderation-middleware";
 
 declare const __dirname: string;
 
@@ -113,6 +114,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api", readinessMiddleware);
 
 app.use(authMiddleware);
+app.use("/api", suspensionMiddleware, moderationVisibilityMiddleware);
 
 app.use("/api", router);
 
@@ -128,6 +130,7 @@ app.use("/api", (_req, res) => {
 // its index.html for any non-API route, so this single process serves the
 // whole app in production (Replit Autoscale expects one process per deployment).
 const publicDir = path.resolve(__dirname, "../../tastekin/dist/public");
+app.use("/tastekin-media", staticModerationMiddleware);
 app.use(express.static(publicDir));
 app.get(/^(?!\/api(?:\/|$)).*/, (_req, res) => {
   res.sendFile(path.join(publicDir, "index.html"));

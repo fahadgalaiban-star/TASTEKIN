@@ -48,6 +48,9 @@ import type {
   ExploreResults,
   HealthStatus,
   ListCreatorsParams,
+  ModerationActionInput,
+  ModerationActionResult,
+  ModerationInspection,
   RecordedView,
   Relationship,
   RelationshipInput,
@@ -2900,6 +2903,214 @@ export function useGetCircleFeed<TData = Awaited<ReturnType<typeof getCircleFeed
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCircleFeedQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetModerationInspectionUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/reports/${id}/inspection`
+}
+
+export const getModerationInspection = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<ModerationInspection> => {
+
+  return customFetch<ModerationInspection>(getGetModerationInspectionUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetModerationInspectionQueryKey = (id: string,) => {
+    return [
+    `/api/admin/reports/${id}/inspection`
+    ] as const;
+    }
+
+
+export const getGetModerationInspectionQueryOptions = <TData = Awaited<ReturnType<typeof getModerationInspection>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getModerationInspection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetModerationInspectionQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getModerationInspection>>> = ({ signal }) => getModerationInspection(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getModerationInspection>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetModerationInspectionQueryResult = NonNullable<Awaited<ReturnType<typeof getModerationInspection>>>
+export type GetModerationInspectionQueryError = ErrorType<void>
+
+
+
+export function useGetModerationInspection<TData = Awaited<ReturnType<typeof getModerationInspection>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getModerationInspection>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetModerationInspectionQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getApplyModerationActionUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/reports/${id}/actions`
+}
+
+export const applyModerationAction = async (id: string,
+    moderationActionInput: ModerationActionInput, options?: Parameters<typeof customFetch>[1]): Promise<ModerationActionResult> => {
+
+  return customFetch<ModerationActionResult>(getApplyModerationActionUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(moderationActionInput)
+  }
+);}
+
+
+
+
+
+export const getApplyModerationActionMutationOptions = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyModerationAction>>, TError,{id: string;data: BodyType<ModerationActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof applyModerationAction>>, TError,{id: string;data: BodyType<ModerationActionInput>}, TContext> => {
+
+const mutationKey = ['applyModerationAction'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof applyModerationAction>>, {id: string;data: BodyType<ModerationActionInput>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  applyModerationAction(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ApplyModerationActionMutationResult = NonNullable<Awaited<ReturnType<typeof applyModerationAction>>>
+    export type ApplyModerationActionMutationBody = BodyType<ModerationActionInput>
+    export type ApplyModerationActionMutationError = ErrorType<void>
+
+    export const useApplyModerationAction = <TError = ErrorType<void>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof applyModerationAction>>, TError,{id: string;data: BodyType<ModerationActionInput>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof applyModerationAction>>,
+        TError,
+        {id: string;data: BodyType<ModerationActionInput>},
+        TContext
+      > => {
+      return useMutation(getApplyModerationActionMutationOptions(options));
+    }
+
+export const getGetModerationInspectionMediaUrl = (id: string,) => {
+
+
+
+
+  return `/api/admin/reports/${id}/inspection/media`
+}
+
+export const getModerationInspectionMedia = async (id: string, options?: Parameters<typeof customFetch>[1]): Promise<void> => {
+
+  return customFetch<void>(getGetModerationInspectionMediaUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetModerationInspectionMediaQueryKey = (id: string,) => {
+    return [
+    `/api/admin/reports/${id}/inspection/media`
+    ] as const;
+    }
+
+
+export const getGetModerationInspectionMediaQueryOptions = <TData = Awaited<ReturnType<typeof getModerationInspectionMedia>>, TError = ErrorType<void>>(id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getModerationInspectionMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetModerationInspectionMediaQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getModerationInspectionMedia>>> = ({ signal }) => getModerationInspectionMedia(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getModerationInspectionMedia>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetModerationInspectionMediaQueryResult = NonNullable<Awaited<ReturnType<typeof getModerationInspectionMedia>>>
+export type GetModerationInspectionMediaQueryError = ErrorType<void>
+
+
+
+export function useGetModerationInspectionMedia<TData = Awaited<ReturnType<typeof getModerationInspectionMedia>>, TError = ErrorType<void>>(
+ id: string, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getModerationInspectionMedia>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetModerationInspectionMediaQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
