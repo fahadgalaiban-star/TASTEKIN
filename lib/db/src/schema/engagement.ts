@@ -52,7 +52,10 @@ export const editComments = pgTable("edit_comments", {
   body: text("body").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [index("edit_comments_edit_created_idx").on(table.editId, table.createdAt)]);
+}, (table) => [
+  index("edit_comments_edit_created_idx").on(table.editId, table.createdAt),
+  index("edit_comments_user_idx").on(table.userId),
+]);
 
 export const conversations = pgTable("conversations", {
   id: uuid("id").primaryKey().defaultRandom(),

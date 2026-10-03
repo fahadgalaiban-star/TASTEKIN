@@ -48,3 +48,13 @@ ALTER TABLE "moderation_audit_log" ADD CONSTRAINT "moderation_action_complete_ch
     )
   )
 );
+--> statement-breakpoint
+CREATE INDEX "moderation_content_hidden_idx" ON "moderation_content_states" ("creator_id", "target_type", "target_id") WHERE "is_hidden" = true;
+--> statement-breakpoint
+CREATE INDEX "users_suspended_idx" ON "users" ("id") WHERE "is_suspended" = true;
+--> statement-breakpoint
+CREATE INDEX "moderation_audit_target_time_idx" ON "moderation_audit_log" ("target_type", "target_id", "created_at" DESC NULLS LAST) WHERE "action" IS NOT NULL;
+--> statement-breakpoint
+CREATE INDEX "creator_workspaces_edits_gin_idx" ON "creator_workspaces" USING gin ("edits" jsonb_path_ops);
+--> statement-breakpoint
+CREATE INDEX "edit_comments_user_idx" ON "edit_comments" ("user_id");

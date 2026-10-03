@@ -1,5 +1,5 @@
 import { db, moderationAuditLog } from "@workspace/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq, isNotNull, or } from "drizzle-orm";
 import { Router } from "express";
 import { isCurrentUserAdmin } from "../lib/creator-account";
 import { applyModeration, ModerationError } from "../lib/moderation-policy";
@@ -21,7 +21,13 @@ router.use("/admin/reports/:id", async (req, res, next) => {
 router.get("/admin/reports/:id/inspection", async (req, res) => {
   const target = await resolveModerationTarget(db, req.params.id);
   if (!target) { res.status(404).json({ error: "Report target unavailable." }); return; }
-  const history = await db.select().from(moderationAuditLog).where(eq(moderationAuditLog.reportId, req.params.id)).orderBy(desc(moderationAuditLog.createdAt));
+  const history = await db.select().from(moderationAuditLog).where(or(
+    eq(moderationAuditLog.reportId, req.params.id),
+    and(isNotNull(moderationAuditLog.action), or(
+      and(eq(moderationAuditLog.targetType, target.targetType), eq(moderationAuditLog.targetId, target.targetId)),
+      and(eq(moderationAuditLog.targetType, "user"), eq(moderationAuditLog.targetId, target.ownerUserId)),
+    )),
+  )).orderBy(desc(moderationAuditLog.createdAt));
   const mediaUrl = target.targetType === "edit" && clearPhotoOf(target.data)
     ? `/api/admin/reports/${encodeURIComponent(req.params.id)}/inspection/media` : undefined;
   res.json({ target: { ...target, mediaUrl }, history });

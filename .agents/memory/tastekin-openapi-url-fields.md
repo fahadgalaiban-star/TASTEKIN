@@ -8,13 +8,3 @@ Private media is represented by app-relative object paths such as `/objects/uplo
 **Why:** The current Zod generation stack validates URI-formatted fields as absolute URLs, which rejects valid private storage paths and prevents the generated contract from matching the app’s protected-media routing.
 
 **How to apply:** Keep object-path fields as plain bounded strings in the OpenAPI schema. Resolve them to the API storage route only in the web client.
-
-UUID path parameters should use explicit string patterns while the workspace
-retains its current Zod version.
-
-**Why:** The current Orval generator emits `zod.uuid()` for `format: uuid`, but
-the workspace uses Zod 3, where that top-level function is unavailable. Avoid a
-major validation-library upgrade just to add a UUID parameter.
-
-**How to apply:** Declare the UUID regex in OpenAPI and regenerate normally;
-do not hand-edit generated validators.

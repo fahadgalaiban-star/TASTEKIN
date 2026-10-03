@@ -13,9 +13,11 @@ export type AuthenticatedUser = {
   profileImageUrl?: string | null;
 };
 
-function configuredFounderMatches(user: AuthenticatedUser) {
-  const founderId = process.env.FOUNDER_AUTH_USER_ID?.trim();
-  const founderEmail = process.env.FOUNDER_EMAIL?.trim().toLowerCase();
+export function configuredFounderMatches(user: AuthenticatedUser, config = {
+  userId: process.env.FOUNDER_AUTH_USER_ID, email: process.env.FOUNDER_EMAIL,
+}) {
+  const founderId = config.userId?.trim();
+  const founderEmail = config.email?.trim().toLowerCase();
   if (founderId) return user.id === founderId;
   return Boolean(founderEmail && user.email?.trim().toLowerCase() === founderEmail);
 }

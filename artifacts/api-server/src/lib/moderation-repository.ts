@@ -1,6 +1,7 @@
 import { creatorWorkspaces, db, editComments, moderationAuditLog, moderationContentStates, nativeSessionsTable, reports, sessionsTable, usersTable } from "@workspace/db";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
 import { ModerationError, type ModerationRepository, type ModerationTarget, type ModerationTransaction } from "./moderation-policy";
+import { configuredFounderMatches } from "./creator-account";
 type Executor = Pick<typeof db, "select" | "insert" | "update" | "execute">;
 
 export async function resolveModerationTarget(tx: Executor, reportId: string): Promise<ModerationTarget | null> {
@@ -18,16 +19,17 @@ export async function resolveModerationTarget(tx: Executor, reportId: string): P
       if (!comment) return null;
     }
     const editId = comment?.editId ?? report.targetId;
-    const rows = await tx.select().from(creatorWorkspaces);
-    workspace = rows.find((row) => row.edits.some((edit: unknown) => !!edit && typeof edit === "object" && (edit as { id?: unknown }).id === editId));
+    const rows = await tx.select().from(creatorWorkspaces)
+      .where(sql`${creatorWorkspaces.edits} @> ${JSON.stringify([{ id: editId }])}::jsonb`).limit(2);
+    // Ambiguous legacy IDs must never choose an arbitrary owner.
+    if (rows.length !== 1) return null;
+    workspace = rows[0];
     data = comment ? { ...comment } : workspace?.edits.find((edit: unknown) => !!edit && typeof edit === "object" && (edit as { id?: unknown }).id === editId) as Record<string, unknown> | undefined;
   }
   const ownerUserId = comment?.userId ?? workspace?.ownerUserId;
   if (!workspace || !ownerUserId || !data) return null;
   const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, ownerUserId));
   if (!user) return null;
-  const [founderWorkspace] = await tx.select({ creatorId: creatorWorkspaces.creatorId }).from(creatorWorkspaces)
-    .where(and(eq(creatorWorkspaces.creatorId, "fheed"), eq(creatorWorkspaces.ownerUserId, ownerUserId)));
   const [state] = await tx.select().from(moderationContentStates).where(and(
     eq(moderationContentStates.targetType, report.targetType), eq(moderationContentStates.creatorId, workspace.creatorId), eq(moderationContentStates.targetId, report.targetId),
   ));
@@ -35,9 +37,8 @@ export async function resolveModerationTarget(tx: Executor, reportId: string): P
     targetType: report.targetType as ModerationTarget["targetType"], targetId: report.targetId,
     creatorId: workspace.creatorId, ownerUserId, data, hidden: Boolean(state?.isHidden),
     suspended: user.isSuspended,
-    protectedAccount: user.isAdmin || Boolean(founderWorkspace) || user.role === "owner" || user.role === "admin"
-      || Boolean(process.env.FOUNDER_AUTH_USER_ID && user.id === process.env.FOUNDER_AUTH_USER_ID)
-      || Boolean(process.env.FOUNDER_EMAIL && user.email?.toLowerCase() === process.env.FOUNDER_EMAIL.trim().toLowerCase()),
+    protectedAccount: user.isAdmin || user.role === "owner" || user.role === "admin"
+      || configuredFounderMatches(user),
   };
 }
 
@@ -62,7 +63,10 @@ function bindings(tx: Executor): ModerationTransaction {
       const now = new Date();
       await tx.update(nativeSessionsTable).set({ revokedAt: now, revokedReason: "moderation_suspension" })
         .where(and(eq(nativeSessionsTable.userId, id), isNull(nativeSessionsTable.revokedAt)));
-      await tx.update(sessionsTable).set({ expire: now }).where(sql`${sessionsTable.sess}->'user'->>'id' = ${id}`);
+      await tx.update(sessionsTable).set({
+        expire: now,
+        sess: sql`${sessionsTable.sess} || jsonb_build_object('moderationRecoveryExpiresAt', to_char(${sessionsTable.expire} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`,
+      }).where(and(sql`${sessionsTable.sess}->'user'->>'id' = ${id}`, gt(sessionsTable.expire, now)));
     },
     audit: async (reportId, entry) => {
       const [report] = await tx.select().from(reports).where(eq(reports.id, reportId));

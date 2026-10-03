@@ -32,7 +32,7 @@ export const usersTable = pgTable("users", {
   googleId: varchar("google_id").unique(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => [index("users_suspended_idx").on(table.id).where(sql`${table.isSuspended} = true`)]);
 
 // Native (iOS/Android) app sessions. Entirely separate from the cookie
 // `sessions` table above: the app never sees or reuses a web `sid`. Only the

@@ -11,6 +11,7 @@ export const moderationContentStates = pgTable("moderation_content_states", {
   primaryKey({ name: "moderation_content_states_pk", columns: [table.targetType, table.creatorId, table.targetId] }),
   check("moderation_content_states_type_check", sql`${table.targetType} in ('edit', 'comment')`),
   check("moderation_content_states_identity_check", sql`length(btrim(${table.creatorId})) > 0 and length(btrim(${table.targetId})) > 0`),
+  index("moderation_content_hidden_idx").on(table.creatorId, table.targetType, table.targetId).where(sql`${table.isHidden} = true`),
 ]);
 
 export const REPORT_TARGET_TYPES = ["edit", "comment", "profile"] as const;
@@ -77,6 +78,7 @@ export const moderationAuditLog = pgTable("moderation_audit_log", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index("moderation_audit_log_report_id_idx").on(table.reportId),
+  index("moderation_audit_target_time_idx").on(table.targetType, table.targetId, table.createdAt.desc()).where(sql`${table.action} IS NOT NULL`),
   check("moderation_action_complete_check", sql.raw(`"action" IS NULL OR (
     "target_type" IS NOT NULL AND "target_id" IS NOT NULL AND length(btrim("target_id")) > 0
     AND "note" IS NOT NULL AND length(btrim("note")) BETWEEN 1 AND 1000

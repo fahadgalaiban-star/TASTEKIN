@@ -1,14 +1,27 @@
 import { creatorWorkspaces, db, editComments, moderationContentStates, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray, or } from "drizzle-orm";
 import type { Request, Response, NextFunction } from "express";
 import { isAccountSuspended } from "../lib/active-account";
-import { blockedReference, emptyVisibility, isConsumerContentPath, redactPublic } from "../lib/moderation-visibility";
+import { blockedReference, blockedConsumerRequest, emptyVisibility, isConsumerContentPath, projectConsumerResponse } from "../lib/moderation-visibility";
+import { suspendedAccountAccess } from "../lib/suspended-account-access";
 
 /** Mounted after identity, before every API router. Database failures fail closed. */
 export async function suspensionMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
-    if (req.user && await isAccountSuspended(req.user.id)) {
+    const suspended = req.user && await isAccountSuspended(req.user.id);
+    if (req.suspendedAccountOnly && (!suspended || !suspendedAccountAccess(req.method, req.path))) {
+      res.status(403).json({ error: "Account unavailable." }); return;
+    }
+    if (suspended && req.user) {
       res.setHeader("Cache-Control", "no-store");
+      if (suspendedAccountAccess(req.method, req.path)) {
+        if (req.method === "GET" && ["/me", "/auth/user"].includes(req.path)) {
+          res.json({ user: { id: req.user.id, email: req.user.email ?? null }, accountSuspended: true, role: "consumer",
+            creator: null, isAdmin: false, featureFlags: {}, needsOnboarding: false, onboardingStep: "done",
+            nativeAuth: req.nativeAuth ?? null, supportEmail: process.env.SUPPORT_EMAIL?.trim() || null }); return;
+        }
+        next(); return;
+      }
       res.status(403).json({ error: "Account unavailable." }); return;
     }
     next();
@@ -23,8 +36,18 @@ export async function loadModerationVisibility() {
     for (const state of states) (state.targetType === "edit" ? v.editIds : v.commentIds).add(state.targetId);
     suspended.forEach((user) => v.userIds.add(user.id));
     if (states.length || suspended.length) {
-      const workspaces = await db.select().from(creatorWorkspaces);
+       const creatorIds = [...new Set(states.map((state) => state.creatorId))];
+       const userIds = [...v.userIds];
+       const workspaces = await db.select().from(creatorWorkspaces).where(or(
+         creatorIds.length ? inArray(creatorWorkspaces.creatorId, creatorIds) : undefined,
+         userIds.length ? inArray(creatorWorkspaces.ownerUserId, userIds) : undefined,
+       ));
+       for (const state of states.filter((s) => s.targetType === "edit")) {
+         const targets = v.editTargets.get(state.creatorId) ?? new Set<string>();
+         targets.add(state.targetId); v.editTargets.set(state.creatorId, targets);
+       }
       for (const workspace of workspaces) {
+         v.creatorByUsername.set(workspace.profile.username, workspace.creatorId);
         const ownerSuspended = !!workspace.ownerUserId && v.userIds.has(workspace.ownerUserId);
         if (ownerSuspended) {
           v.creatorIds.add(workspace.creatorId); v.usernames.add(workspace.profile.username);
@@ -34,7 +57,7 @@ export async function loadModerationVisibility() {
           if (!raw || typeof raw !== "object") continue;
           const edit = raw as Record<string, unknown>;
           if (ownerSuspended && typeof edit.id === "string") v.editIds.add(edit.id);
-          if (typeof edit.id === "string" && v.editIds.has(edit.id)) {
+          if (ownerSuspended || typeof edit.id === "string" && v.editTargets.get(workspace.creatorId)?.has(edit.id)) {
             const media = (value: unknown): void => {
               if (typeof value === "string" && /^(https?:\/\/|\/objects\/|\/tastekin-media\/)/.test(value)) v.media.add(value);
               else if (value && typeof value === "object") Object.values(value).forEach(media);
@@ -46,33 +69,39 @@ export async function loadModerationVisibility() {
         }
       }
       if (suspended.length) {
-        const comments = await db.select({ id: editComments.id, userId: editComments.userId }).from(editComments);
-        comments.filter((row) => v.userIds.has(row.userId)).forEach((row) => v.commentIds.add(row.id));
+         const comments = await db.select({ id: editComments.id }).from(editComments).where(inArray(editComments.userId, [...v.userIds]));
+         comments.forEach((row) => v.commentIds.add(row.id));
       }
     }
     return v;
 }
 export async function moderationVisibilityMiddleware(req: Request, res: Response, next: NextFunction) {
+  // These legacy routes have a public default for guests and private originals
+  // for authenticated owners. Only the guest response is projected.
   if (!isConsumerContentPath(req.path)) { next(); return; }
   try {
+    if (req.user && ["/creator-workspace", "/creator-profile", "/creator-featured-collections"].includes(req.path)) {
+      const [owned] = await db.select({ id: creatorWorkspaces.creatorId }).from(creatorWorkspaces)
+        .where(eq(creatorWorkspaces.ownerUserId, req.user.id)).limit(1);
+      if (owned) { next(); return; }
+    }
     const v = await loadModerationVisibility();
-    if (req.path.split("/").some((id) => v.editIds.has(id) || v.commentIds.has(id) || v.usernames.has(id))
-        || redactPublic(req.body, v) === undefined && req.body !== undefined
-        || (req.body && JSON.stringify(redactPublic(req.body, v)) !== JSON.stringify(req.body))) {
+    v.trustedOrigins.add(`${req.protocol}://${req.get("host")}`);
+    if (blockedConsumerRequest(req.path, req.body, v)) {
       res.status(404).json({ error: "Content unavailable." }); return;
     }
     const json = res.json.bind(res);
     res.setHeader("Cache-Control", "no-store");
     res.json = ((body: unknown) => {
       if (res.statusCode >= 400) return json(body);
-      const projected = redactPublic(body, v);
+       const projected = projectConsumerResponse(req.path, body, v);
       if (projected === undefined) return res.status(404).json({ error: "Content unavailable." });
       return json(projected);
     }) as Response["json"];
     next();
   } catch { res.status(503).json({ error: "Content visibility temporarily unavailable." }); }
 }
-/** Production serves packaged demo images here; hidden originals must not bypass API media checks. */
+/** Single-process Express fallback only; the platform static handler bypasses this guard. */
 export async function staticModerationMiddleware(req: Request, res: Response, next: NextFunction) {
   try {
     const v = await loadModerationVisibility();

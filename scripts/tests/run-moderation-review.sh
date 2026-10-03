@@ -26,5 +26,5 @@ pg_isready -q
 test "$(psql -X -At -v ON_ERROR_STOP=1 -c "SELECT inet_server_addr() IS NULL AND current_setting('listen_addresses') = '' AND current_setting('data_directory') = '$root/cluster'")" = t
 createdb moderation_review_fixture
 PGDATABASE=moderation_review_fixture psql -X -v ON_ERROR_STOP=1 -f "$root/legacy.sql" > "$root/baseline.log"
-MODERATION_TEST_SOCKET_DIR="$root/socket" MODERATION_TEST_DB_NAME=moderation_review_fixture \
-  node --experimental-strip-types --test scripts/tests/moderation.test.mjs
+env -i PATH="$PATH" HOME="$HOME" MODERATION_TEST_SOCKET_DIR="$root/socket" MODERATION_TEST_DB_NAME=moderation_review_fixture \
+    node --experimental-strip-types --test scripts/tests/moderation.test.mjs scripts/tests/moderation-projections.test.mjs

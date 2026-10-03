@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
+import { SuspendedAccountPanel } from './components/SuspendedAccountPanel';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, useListCircleMembers, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
@@ -297,6 +298,7 @@ type TasteSessionSnapshot = {
   role: 'creator' | 'consumer';
   creator: { id?: string; handle: string; displayName: string; verified: boolean; ownsWorkspace: boolean } | null;
   isAdmin: boolean;
+  accountSuspended: boolean;
   // Server-authorized account preferences — the database is the source of
   // truth for all of these; there is no localStorage fallback once signed in.
   language: Language | null;
@@ -326,7 +328,7 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
-    status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false,
+    status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false, accountSuspended: false,
     language: null, notifyPush: true, notifyEmail: true, supportEmail: null,
     needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: {}, revision: 0,
   });
@@ -339,7 +341,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'> & { nativeAuth?: unknown }
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
       // Native shell only: drops the stored token when the server itself
       // reports it invalid/revoked/expired (never on other failures).
       await reconcileNativeSession(payload);
@@ -350,6 +352,7 @@ function useTasteSessionController(): TasteSession {
           role: payload.role === 'creator' ? 'creator' as const : 'consumer' as const,
           creator: payload.creator ?? null,
           isAdmin: Boolean(payload.isAdmin),
+          accountSuspended: Boolean('accountSuspended' in payload && payload.accountSuspended),
           language: (payload.language === 'ar' || payload.language === 'en') ? payload.language : null,
           notifyPush: payload.notifyPush ?? true,
           notifyEmail: payload.notifyEmail ?? true,
@@ -366,6 +369,7 @@ function useTasteSessionController(): TasteSession {
           && current.creator?.ownsWorkspace === next.creator?.ownsWorkspace
           && current.creator?.handle === next.creator?.handle
           && current.isAdmin === next.isAdmin
+          && current.accountSuspended === next.accountSuspended
           && current.language === next.language
           && current.notifyPush === next.notifyPush
           && current.googleAuthConfigured === next.googleAuthConfigured
@@ -575,7 +579,7 @@ function TastekinApp() {
   }, [session.creator?.handle]);
   useEffect(() => {
     const ownHandle = session.creator?.handle;
-    if (selectedCreatorUsername === ownHandle) {
+    if (selectedCreatorUsername === ownHandle && !profileVisitorMode) {
       setPublicCreatorProfile(null); setPublicCreatorEdits([]); setPublicCreatorCollections([]); setPublicFeaturedCollectionIds([]);
       return;
     }
@@ -602,7 +606,7 @@ function TastekinApp() {
       } else setPublicFeaturedCollectionIds([]);
     }).catch(() => undefined);
     return () => { active = false; };
-  }, [selectedCreatorUsername, session.creator?.handle]);
+  }, [selectedCreatorUsername, session.creator?.handle, profileVisitorMode, workspaceRevision]);
   useEffect(() => {
     if (session.status !== 'authenticated' || selectedCreatorUsername === session.creator?.handle) { setFollowing(false); return; }
     void fetch(`/api/relationships/follow/${encodeURIComponent(selectedCreatorUsername)}`, { credentials: 'include', cache: 'no-store' })
@@ -788,15 +792,17 @@ function TastekinApp() {
   // a creator who doesn't exist. blankCreatorProfile (empty username) is
   // the honest "not found" value; Profile() below refuses to render
   // interactive actions when it sees one.
-  const viewedCreatorProfile = viewingOwnProfile ? creatorProfile : publicCreatorProfile ?? blankCreatorProfile;
-  const viewedCreatorEdits = viewingOwnProfile ? published : publicCreatorEdits;
-  const viewedCreatorCollections = viewingOwnProfile ? creatorCollections : publicCreatorCollections;
+  const viewedCreatorProfile = viewingOwnProfile && !profileVisitorMode ? creatorProfile : publicCreatorProfile ?? blankCreatorProfile;
+  const viewedCreatorEdits = viewingOwnProfile && !profileVisitorMode ? published : publicCreatorEdits;
+  const viewedCreatorCollections = viewingOwnProfile && !profileVisitorMode ? creatorCollections : publicCreatorCollections;
   const featuredCollections = useMemo(() => {
-    const configured = featuredCollectionIds
-      .map((id) => creatorCollections.find((collection) => collection.id === id))
+    const source = profileVisitorMode ? publicCreatorCollections : creatorCollections;
+    const ids = profileVisitorMode ? publicFeaturedCollectionIds : featuredCollectionIds;
+    const configured = ids
+      .map((id) => source.find((collection) => collection.id === id))
       .filter((collection): collection is CreatorCollection => Boolean(collection));
-    return (configured.length ? configured : creatorCollections).slice(0, 3);
-  }, [creatorCollections, featuredCollectionIds]);
+    return (configured.length ? configured : source).slice(0, 3);
+  }, [creatorCollections, featuredCollectionIds, profileVisitorMode, publicCreatorCollections, publicFeaturedCollectionIds]);
   const publicFeaturedCollections = useMemo(
     () => {
       const configured = publicFeaturedCollectionIds.map((id) => publicCreatorCollections.find((collection) => collection.id === id)).filter((collection): collection is CreatorCollection => Boolean(collection));
@@ -839,16 +845,14 @@ function TastekinApp() {
     if (myCircleEnabled && homeFeedTab === 'my-circle') return circleFeedEdits;
     return publicFeedEdits;
   }, [homeFeedTab, publicFeedEdits, circleFeedEdits, myCircleEnabled]);
-  const selectedEdit = [...circleFeedEdits, ...creatorEdits, ...publicCreatorEdits, ...publicFeedEdits]
-    .find((item) => item.id === selectedEditId && (!item.creatorUsername || item.creatorUsername === selectedCreatorUsername))
-    || published[0]
-    || seedEdits[0];
+  const selectedEdit = [...circleFeedEdits, ...(viewingOwnProfile && !profileVisitorMode ? creatorEdits : []), ...publicCreatorEdits, ...publicFeedEdits]
+    .find((item) => item.id === selectedEditId && (!item.creatorUsername || item.creatorUsername === selectedCreatorUsername));
   // Whether the signed-in creator owns THIS specific Edit — an Edit carrying
   // its own creatorUsername (Home/Circle/public feeds) is compared directly;
   // one without it (the signed-in owner's own workspace Edits) falls back to
   // whichever profile is currently being viewed, same as the EditDetail
   // creatorUsername fallback below.
-  const selectedEditOwner = owner && (selectedEdit.creatorUsername ? selectedEdit.creatorUsername === session.creator?.handle : viewingOwnProfile);
+  const selectedEditOwner = owner && Boolean(selectedEdit && (selectedEdit.creatorUsername ? selectedEdit.creatorUsername === session.creator?.handle : viewingOwnProfile));
   // May be undefined: a creator starts with no collections at all (no demo
   // collections are seeded), so every consumer below guards on it.
   const selectedCollection: CreatorCollection | undefined = [...creatorCollections, ...publicCreatorCollections].find((item) => item.id === selectedCollectionId) || creatorCollections[0];
@@ -888,7 +892,7 @@ function TastekinApp() {
     if (screen === 'home') track('home_viewed', { tab: homeFeedTab });
     else if (screen === 'explore') track('explore_viewed');
     else if (screen === 'profile') { if (viewedCreatorProfile.username) track('creator_profile_viewed', { creatorId: viewedCreatorProfile.username }); }
-    else if (screen === 'edit') { const creatorId = selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername); track('edit_viewed', creatorId ? { editId: selectedEdit.id, creatorId } : { editId: selectedEdit.id }); }
+    else if (screen === 'edit' && selectedEdit) { const creatorId = selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername); track('edit_viewed', creatorId ? { editId: selectedEdit.id, creatorId } : { editId: selectedEdit.id }); }
     else if (screen === 'onboarding') track('onboarding_started');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
@@ -1272,6 +1276,13 @@ function TastekinApp() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [go]);
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'kin' as const, icon: Link2, en: 'KIN', ar: 'كين' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
+  if (session.accountSuspended) return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
+    <SuspendedAccountPanel ar={ar} supportEmail={session.supportEmail} onLogout={() => void signOut(session.refresh)}
+      onDelete={() => go('deleteAccount')} onPrivacy={() => go('privacy')} onTerms={() => go('terms')} />
+    {screen === 'deleteAccount' && <DeleteAccountScreen ar={ar} onSignIn={() => void session.refresh()} onDeleted={() => go('home')} onOpenPrivacy={() => go('privacy')} />}
+    {screen === 'privacy' && <LegalScreen ar={ar} kind="privacy" />}
+    {screen === 'terms' && <LegalScreen ar={ar} kind="terms" />}
+  </main></div></TasteSessionContext.Provider>;
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
     <header className="approved-topbar">{!ROOT_SCREENS.includes(screen) && screen !== 'onboarding' ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}{screen !== 'profile' && <img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" />}<div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
@@ -1316,7 +1327,7 @@ function TastekinApp() {
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><MediaImage src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && selectedCollection && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
-    {screen === 'edit' && <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} />}
+     {screen === 'edit' && (selectedEdit ? <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} /> : <Empty text={t('Edit unavailable.', 'المنشور غير متاح.')} />)}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}

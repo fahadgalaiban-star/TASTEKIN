@@ -5,7 +5,7 @@ import { readFile, writeFile, realpath } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { userInfo } from 'node:os';
-import { emptyVisibility, redactPublic, isConsumerContentPath } from '../../artifacts/api-server/src/lib/moderation-visibility.ts';
+import { emptyVisibility, projectConsumerResponse, isConsumerContentPath } from '../../artifacts/api-server/src/lib/moderation-visibility.ts';
 
 // Fail before importing ANY DB-backed application code. Never accept a database URL.
 assert.equal(process.env.DATABASE_URL, undefined);
@@ -23,6 +23,18 @@ assert.equal(verified.rows[0].local, true);
 assert.equal(verified.rows[0].listen, '');
 assert.equal(verified.rows[0].dir, dirname(socket) + '/cluster');
 globalThis.__moderationIsolatedPool = pool;
+const queryLog = [];
+const instrumented = new WeakSet();
+pool.on('acquire', (client) => {
+  if (instrumented.has(client)) return;
+  instrumented.add(client);
+  const original = client.query.bind(client);
+  client.query = (...args) => {
+    const text = typeof args[0] === 'string' ? args[0] : args[0]?.text;
+    if (text) queryLog.push(text);
+    return original(...args);
+  };
+});
 const frontendRequire = createRequire(resolve('artifacts/tastekin/package.json'));
 const { build } = createRequire(frontendRequire.resolve('vite/package.json'))('esbuild');
 let api;
@@ -49,6 +61,7 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
       ('${ADMIN_REPORT}','author','profile','admin-creator','spam');
     INSERT INTO moderation_audit_log(report_id,admin_user_id,from_status,to_status)
       VALUES ('${REPORT}','moderator','pending','under_review');`);
+  await pool.query("UPDATE users SET role='owner' WHERE id='protected'");
   const sql = await readFile('lib/db/migrations/0023_moderation_actions.sql', 'utf8');
   assert.doesNotMatch(sql, /\b(DROP|DELETE|TRUNCATE|UPDATE)\b/i);
   await pool.query(sql);
@@ -60,10 +73,14 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
     stdin: {
       contents: `export {applyModeration} from './artifacts/api-server/src/lib/moderation-policy';
         export {moderationRepository,resolveModerationTarget} from './artifacts/api-server/src/lib/moderation-repository';
-        export {createSession,getSession} from './artifacts/api-server/src/lib/auth';
-        export {createNativeSession,resolveNativeSession} from './artifacts/api-server/src/lib/native-auth';
+        export {createSession,getSession,getSuspendedAccountSession} from './artifacts/api-server/src/lib/auth';
+        export {createNativeSession,resolveNativeSession,resolveSuspendedNativeAccount} from './artifacts/api-server/src/lib/native-auth';
+        export {authMiddleware} from './artifacts/api-server/src/middlewares/auth-middleware';
+        export {default as authRouter} from './artifacts/api-server/src/routes/auth';
+        export {default as accountRouter} from './artifacts/api-server/src/routes/account';
+        export {configuredFounderMatches} from './artifacts/api-server/src/lib/creator-account';
         export {default as moderationActionsRouter} from './artifacts/api-server/src/routes/moderation-actions';
-        export {suspensionMiddleware,moderationVisibilityMiddleware,staticModerationMiddleware} from './artifacts/api-server/src/middlewares/moderation-middleware';`,
+        export {suspensionMiddleware,moderationVisibilityMiddleware,staticModerationMiddleware,loadModerationVisibility} from './artifacts/api-server/src/middlewares/moderation-middleware';`,
       resolveDir: resolve('.'),
     },
     bundle: true, write: false, platform: 'node', format: 'esm',
@@ -71,6 +88,16 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
     plugins: [{
       name: 'only-isolated-db',
       setup(builder) {
+        builder.onResolve({ filter: /\/logger$/ }, () => ({ path: 'fixture-logger', namespace: 'fixture-logger' }));
+        builder.onLoad({ filter: /.*/, namespace: 'fixture-logger' }, () => ({
+          contents: `export const logger={error(){},warn(){},info(){},debug(){},child(){return this;}};`, loader: 'js',
+        }));
+        builder.onResolve({ filter: /\/account-deletion$/ }, () => ({ path: 'mock-deletion-only', namespace: 'account-safety' }));
+        builder.onLoad({ filter: /.*/, namespace: 'account-safety' }, () => ({
+          contents: `export const ACCOUNT_DELETION_CONFIRMATION='DELETE';
+            export async function deleteAccount(id){globalThis.__fixtureDeletionUser=id;return {ok:true,mediaCleanup:'complete'};}`,
+          loader: 'js',
+        }));
         builder.onResolve({ filter: /private-media-storage$/ }, () => ({ path: 'no-provider-access', namespace: 'provider' }));
         builder.onLoad({ filter: /.*/, namespace: 'provider' }, () => ({
           contents: `export async function getPrivateMediaDownloadURL(){throw new Error('Provider access forbidden in isolated tests');}
@@ -103,12 +130,12 @@ test('migration, journal and current Drizzle schema have matching columns, defau
   await pool.query('CREATE DATABASE moderation_review_current');
   const expected = new Pool({ host: socket, port: 55439, database: 'moderation_review_current', user: userInfo().username, max: 1 });
   const columns = `SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns
-    WHERE table_schema='public' AND table_name IN ('users','moderation_content_states','moderation_audit_log') ORDER BY table_name,column_name`;
+    WHERE table_schema='public' AND table_name IN ('users','moderation_content_states','moderation_audit_log','creator_workspaces','edit_comments') ORDER BY table_name,column_name`;
   const constraints = `SELECT c.relname,p.conname,pg_get_constraintdef(p.oid) AS definition
     FROM pg_constraint p JOIN pg_class c ON c.oid=p.conrelid
-    WHERE c.relname IN ('users','moderation_content_states','moderation_audit_log') ORDER BY c.relname,p.conname`;
+    WHERE c.relname IN ('users','moderation_content_states','moderation_audit_log','creator_workspaces','edit_comments') ORDER BY c.relname,p.conname`;
   const indexes = `SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public'
-    AND tablename IN ('users','moderation_content_states','moderation_audit_log') ORDER BY tablename,indexname`;
+    AND tablename IN ('users','moderation_content_states','moderation_audit_log','creator_workspaces','edit_comments') ORDER BY tablename,indexname`;
   try {
     await expected.query(await readFile(dirname(socket) + '/current.sql', 'utf8'));
     for (const query of [columns, constraints, indexes]) assert.deepEqual((await pool.query(query)).rows, (await expected.query(query)).rows);
@@ -126,6 +153,11 @@ test('self, administrator and owner suspension/unsuspension are prohibited', asy
   await assert.rejects(action(ADMIN_REPORT, 'suspend_user'), { status: 403 });
   await assert.rejects(action(PROFILE_REPORT, 'suspend_user'), { status: 403 });
   await assert.rejects(action(PROFILE_REPORT, 'unsuspend_user'), { status: 403 });
+  await assert.rejects(action(SELF_REPORT, 'unsuspend_user'), { status: 403 });
+  await assert.rejects(action(ADMIN_REPORT, 'unsuspend_user'), { status: 403 });
+  assert.equal(api.configuredFounderMatches({ id: 'server-owner', email: null }, { userId: 'server-owner' }), true);
+  assert.equal(api.configuredFounderMatches({ id: 'spoofed', email: 'owner@example.invalid' }, { userId: 'server-owner', email: 'owner@example.invalid' }), false);
+  assert.equal(api.configuredFounderMatches({ id: 'email-owner', email: 'OWNER@example.invalid' }, { email: 'owner@example.invalid' }), true);
 });
 test('hide/restore Edits and comments are reversible overlays with complete audits, preserving originals', async () => {
   for (const [report, hide, restore] of [[REPORT, 'hide_edit', 'restore_edit'], [COMMENT_REPORT, 'hide_comment', 'restore_comment']]) {
@@ -196,7 +228,7 @@ test('suspension expires web sessions, soft-revokes native sessions, blocks new 
   await assert.rejects(api.createNativeSession({ userId: 'author', platform: 'ios' }), { status: 403 });
   const res = response();
   let continued = false;
-  await api.suspensionMiddleware({ user: { id: 'author' }, method: 'POST' }, res, () => { continued = true; });
+  await api.suspensionMiddleware({ user: { id: 'author' }, method: 'POST', path: '/ordinary-write' }, res, () => { continued = true; });
   assert.equal(continued, false); assert.equal(res.statusCode, 403);
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM sessions')).rows[0].count, 1);
   assert.equal((await pool.query('SELECT count(*)::int AS count FROM native_sessions')).rows[0].count, 1);
@@ -204,6 +236,82 @@ test('suspension expires web sessions, soft-revokes native sessions, blocks new 
   assert.equal(await api.getSession(sid), null);
   assert.equal(await api.resolveNativeSession(native.token), null);
   assert.ok(await api.createNativeSession({ userId: 'author', platform: 'android' }));
+});
+test('suspension-expired credentials allow only real account-safety routes, with deletion service mocked and no provider access', async () => {
+  const express = createRequire(resolve('artifacts/api-server/package.json'))('express');
+  const sid = await api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: Date.now() + 10000 });
+  const logoutSid = await api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: Date.now() + 10000 });
+  const native = await api.createNativeSession({ userId: 'author', platform: 'ios' });
+  await action(REPORT, 'suspend_user');
+  assert.equal(await api.getSession(sid), null);
+  assert.equal(await api.resolveNativeSession(native.token), null);
+  const app = express();
+  app.use(express.json(), (req, _res, next) => { req.cookies = { sid: req.get('x-fixture-cookie') }; req.log = { error() {} }; next(); });
+  app.use(api.authMiddleware, api.suspensionMiddleware, api.authRouter, api.accountRouter);
+  app.post('/ordinary-write', (req, res) => res.status(req.user ? 200 : 401).end());
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((ready) => server.once('listening', ready));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const call = (path, headers, body) => fetch(base + path, { headers: { ...headers, 'content-type': 'application/json' },
+    method: body === undefined ? 'GET' : 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  try {
+    for (const credential of [{ 'x-fixture-cookie': sid }, { authorization: `Bearer ${native.token}` }]) {
+      const state = await call('/me', credential);
+      assert.equal(state.status, 200);
+      const payload = await state.json();
+      assert.equal(payload.accountSuspended, true); assert.equal(payload.user.id, 'author');
+      assert.equal(payload.creator, null); assert.deepEqual(payload.featureFlags, {});
+      assert.equal((await call('/ordinary-write', credential, {})).status, 401);
+      const missing = await call('/me/delete-account', credential, {});
+      assert.equal(missing.status, 400);
+      const deleted = await call('/me/delete-account', credential, { confirm: 'DELETE', userId: 'moderator' });
+      assert.equal(deleted.status, 200); assert.equal((await deleted.json()).deleted, true);
+      assert.equal(globalThis.__fixtureDeletionUser, 'author');
+    }
+    // Deletion's cookie clearing is real even though physical deletion is mocked.
+    assert.equal(await api.getSuspendedAccountSession(sid), null);
+    const logout = await call('/auth/native/logout', { authorization: `Bearer ${native.token}` }, {});
+    assert.equal(logout.status, 204);
+    assert.equal(await api.resolveSuspendedNativeAccount(native.token), null);
+    assert.ok(await api.getSuspendedAccountSession(logoutSid));
+    const webLogout = await fetch(base + '/logout', { headers: { 'x-fixture-cookie': logoutSid }, redirect: 'manual' });
+    assert.equal(webLogout.status, 302);
+    assert.ok(webLogout.headers.get('set-cookie')?.includes('sid='));
+    assert.equal(await api.getSuspendedAccountSession(logoutSid), null);
+    await assert.rejects(api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: 0 }), { status: 403 });
+    await assert.rejects(api.createNativeSession({ userId: 'author', platform: 'ios' }), { status: 403 });
+    await action(REPORT, 'unsuspend_user');
+    assert.equal(await api.getSession(sid), null); assert.equal(await api.resolveNativeSession(native.token), null);
+    assert.equal(await api.resolveSuspendedNativeAccount(native.token), null);
+  } finally { await new Promise((done) => server.close(done)); }
+});
+test('visibility/admin target queries are bounded; partial/B-tree/JSONB indexes are eligible', async () => {
+  await action(REPORT, 'suspend_user');
+  queryLog.length = 0;
+  await api.loadModerationVisibility();
+  await api.resolveModerationTarget(apiIsolatedDb(), REPORT);
+  await api.resolveModerationTarget(apiIsolatedDb(), COMMENT_REPORT);
+  const contentQueries = queryLog.filter((q) => /from "(creator_workspaces|edit_comments)"/i.test(q));
+  assert.ok(contentQueries.length >= 3);
+  for (const q of contentQueries) assert.match(q, /\bwhere\b/i);
+  assert.ok(contentQueries.some((q) => /"edits" @> .*::jsonb.*limit/i.test(q)));
+  assert.ok(contentQueries.some((q) => /from "edit_comments".*where "edit_comments"."user_id" in/i.test(q)));
+  await action(REPORT, 'unsuspend_user');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL enable_seqscan=off');
+    for (const [query, index] of [
+      [`SELECT id FROM users WHERE is_suspended = true`, 'users_suspended_idx'],
+      [`SELECT creator_id,target_type,target_id FROM moderation_content_states WHERE is_hidden = true`, 'moderation_content_hidden_idx'],
+      [`SELECT creator_id FROM creator_workspaces WHERE edits @> '[{"id":"reported-edit"}]'::jsonb LIMIT 2`, 'creator_workspaces_edits_gin_idx'],
+      [`SELECT id FROM edit_comments WHERE user_id='author'`, 'edit_comments_user_idx'],
+      [`SELECT * FROM moderation_audit_log WHERE action IS NOT NULL AND target_type='edit' AND target_id='reported-edit' ORDER BY created_at DESC`, 'moderation_audit_target_time_idx'],
+    ]) {
+      const plan = (await client.query('EXPLAIN ' + query)).rows.map((r) => r['QUERY PLAN']).join('\n');
+      assert.ok(plan.includes(index), plan);
+    }
+  } finally { await client.query('ROLLBACK'); client.release(); }
 });
 test('conflicting actions serialize, every committed change is audited, failed audit rolls back state', async () => {
   const before = (await pool.query('SELECT count(*)::int AS count FROM moderation_audit_log')).rows[0].count;
@@ -229,29 +337,26 @@ function response() {
     json(body) { this.body = body; return this; }, end() { this.body = ''; return this; },
   };
 }
-test('every consumer read family uses the visibility boundary, including static catalog, saved IDs, KIN and media', async () => {
+test('consumer routing/guest defaults are projected; private ownership and inspection remain separate', async () => {
   for (const path of ['/feed', '/public-feed', '/creators/author/workspace', '/creators/author/profile', '/creators', '/explore', '/taste-match/author', '/edits/visible/comments', '/edits/visible/engagement', '/circle/feed', '/me/saved-edits', '/me/saved-lists', '/kin/saved', '/kin/trips', '/public-media/author/reported-edit', '/public-profile-media/author']) {
     assert.equal(isConsumerContentPath(path), true, path);
-    const req = { path, body: undefined };
+    const req = { path, body: undefined, get: () => 'fixture.invalid', protocol: 'https' };
     const res = response();
     let next = false;
     await api.moderationVisibilityMiddleware(req, res, () => { next = true; });
     if (path.includes('reported-edit')) { assert.equal(res.statusCode, 404); continue; }
     assert.equal(next, true);
-    res.json({ edits: [{ id: 'reported-edit', caption: 'Original' }, { id: 'visible' }], editIds: ['reported-edit', 'visible'] });
-    assert.deepEqual(res.body.edits, [{ id: 'visible' }]);
-    assert.deepEqual(res.body.editIds, ['visible']);
-    res.json({ items: [{ creatorUsername: 'author', edit: { id: 'reported-edit' } }, { creatorUsername: 'author', edit: { id: 'visible' } }] });
-    assert.deepEqual(res.body.items, [{ creatorUsername: 'author', edit: { id: 'visible' } }]);
   }
   assert.equal(isConsumerContentPath('/admin/reports'), false);
-  assert.equal(isConsumerContentPath('/creator-workspace'), false);
+  let privateNext = false;
+  await api.moderationVisibilityMiddleware({ path: '/creator-workspace', user: { id: 'author' } }, response(), () => { privateNext = true; });
+  assert.equal(privateNext, true);
   const staticRes = response();
   await api.staticModerationMiddleware({ path: '/review-fixture-photo.jpg' }, staticRes, () => { throw new Error('Hidden asset forwarded'); });
   assert.equal(staticRes.statusCode, 404);
   const v = emptyVisibility(); v.editIds.add('reported-edit'); v.commentIds.add(COMMENT);
-  assert.deepEqual(redactPublic([{ id: COMMENT, body: 'Hidden' }, { id: 'visible' }], v), [{ id: 'visible' }]);
-  assert.deepEqual(redactPublic([{ id: 'snapshot', answer: 'Copied hidden caption', citations: ['/api/public-media/author/reported-edit'] }], v), []);
+  assert.deepEqual(projectConsumerResponse('/edits/visible/comments', [{ id: COMMENT, body: 'Hidden' }, { id: 'visible' }], v), [{ id: 'visible' }]);
+  assert.deepEqual(projectConsumerResponse('/kin/saved', { items: [{ id: 'snapshot', answer: 'Copied hidden caption', citations: [{ url: '/api/public-media/author/reported-edit' }] }] }, v), { items: [] });
   const routes = await readFile('artifacts/api-server/src/routes/moderation-actions.ts', 'utf8');
   assert.match(routes, /router\.use\("\/admin\/reports\/:id"/);
   assert.match(routes, /isCurrentUserAdmin\(req\.user\)/);

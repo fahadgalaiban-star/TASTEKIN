@@ -153,9 +153,11 @@ export async function nativeSignOut(): Promise<void> {
  * 401 from some other action, a network failure, or a server-side lookup
  * error ("error") never does.
  */
-export async function reconcileNativeSession(payload: { nativeAuth?: unknown } | null | undefined): Promise<void> {
+export async function reconcileNativeSession(payload: { nativeAuth?: unknown; accountSuspended?: unknown } | null | undefined): Promise<void> {
   if (!isNativeApp || !memoryToken) return;
-  if (payload && payload.nativeAuth === 'invalid') await clearNativeToken();
+  // Keep a suspension-revoked token solely for the server's narrow account
+  // safety routes. It never becomes an active session or ordinary credential.
+  if (payload && payload.nativeAuth === 'invalid' && payload.accountSuspended !== true) await clearNativeToken();
 }
 
 /** Body fields the native auth routes require alongside email/password. */

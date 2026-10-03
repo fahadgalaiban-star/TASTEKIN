@@ -13,11 +13,12 @@ const result = await build({
       import React from 'react';
       import {createRoot} from 'react-dom/client';
       import {AdminModerationActions} from './src/components/AdminModerationActions';
+      import {SuspendedAccountPanel} from './src/components/SuspendedAccountPanel';
       const params=new URLSearchParams(location.search);
       const target={targetType:params.get('type')||'edit',targetId:'review-fixture-edit',creatorId:'fixture-creator',
         ownerUserId:'fixture-author',hidden:false,suspended:false,protectedAccount:params.has('protected'),
         data:{title:'Reported Edit',caption:'Original content remains intact.'}};
-      const fixture={calls:[],queueRefreshes:0,target,history:[],failNext:false};
+      const fixture={calls:[],queueRefreshes:0,target,history:[],failNext:false,safetyEvents:[]};
       window.__moderationFixture=fixture;
       window.fetch=async(url,options={})=>{
         const path=String(url);
@@ -40,6 +41,11 @@ const result = await build({
         return Response.json({target,history:fixture.history});
       };
       function Harness(){
+        if(params.has('suspended')) return <main style={{maxWidth:700,margin:'30px auto',padding:20}}>
+          <SuspendedAccountPanel ar={params.has('ar')} supportEmail="support@example.invalid"
+            onLogout={()=>fixture.safetyEvents.push('logout')} onDelete={()=>fixture.safetyEvents.push('delete')}
+            onPrivacy={()=>fixture.safetyEvents.push('privacy')} onTerms={()=>fixture.safetyEvents.push('terms')}/>
+        </main>;
         return <main style={{maxWidth:700,margin:'30px auto',padding:20}}>
           <h1>TASTEKIN · Moderation review</h1><p>Database-free isolated UI fixture</p>
           <button data-testid="fixture-fail-next" onClick={()=>fixture.failNext=true}>Fail next action</button>
