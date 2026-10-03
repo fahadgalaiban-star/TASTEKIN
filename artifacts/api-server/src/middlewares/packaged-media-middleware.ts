@@ -1,5 +1,5 @@
 import express, { type Request, type Response, type NextFunction } from "express";
-import { packagedMediaDirectory, packagedMediaReference } from "../lib/packaged-media";
+import { mediaRequestOriginAllowed, packagedMediaDirectory, packagedMediaReference } from "../lib/packaged-media";
 import { staticModerationMiddleware } from "./moderation-middleware";
 
 const files = express.static(packagedMediaDirectory, {
@@ -11,6 +11,8 @@ const files = express.static(packagedMediaDirectory, {
 export function packagedMediaMiddleware(req: Request, res: Response, next: NextFunction) {
   res.setHeader("Cache-Control", "private, no-store");
   res.setHeader("X-Content-Type-Options", "nosniff");
+  res.vary("Origin");
+  if (!mediaRequestOriginAllowed(req)) { res.status(403).end(); return; }
   if (!["GET", "HEAD"].includes(req.method)) { res.status(405).end(); return; }
   // Decode before checking moderation, but leave Express to handle file serving.
   const reference = packagedMediaReference(`/tastekin-media${req.path}`);

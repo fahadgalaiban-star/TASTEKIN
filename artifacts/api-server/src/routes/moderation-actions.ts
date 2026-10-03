@@ -9,11 +9,13 @@ import { streamPrivateImage } from "../lib/private-image-response";
 import { clearPhotoOf } from "../lib/edit-access";
 import { ApplyModerationActionBody } from "@workspace/api-zod";
 import path from "node:path";
-import { packagedMediaDirectory } from "../lib/packaged-media";
+import { mediaRequestOriginAllowed, packagedMediaDirectory } from "../lib/packaged-media";
 const router = Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 router.use("/admin/reports/:id", async (req, res, next) => {
   res.setHeader("Cache-Control", "private, no-store");
+  res.vary("Origin");
+  if (!mediaRequestOriginAllowed(req)) { res.status(403).json({ error: "Request origin unavailable." }); return; }
   if (!await isCurrentUserAdmin(req.user)) { res.status(403).json({ error: "Administrator access required." }); return; }
   if (!UUID.test(req.params.id)) { res.status(404).json({ error: "Report unavailable." }); return; }
   next();

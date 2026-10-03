@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { Request } from "express";
 
 declare const __dirname: string;
 export const packagedMediaDirectory = typeof __dirname === "string"
@@ -10,13 +11,31 @@ export function trustedMediaOrigins(requestOrigin?: string): Set<string> {
   const origins = new Set<string>();
   const configured = process.env.ALLOWED_ORIGINS ||
     "http://localhost:23385,http://127.0.0.1:23385,http://localhost:8080,http://127.0.0.1:8080";
-  for (const candidate of [...configured.split(","), ...(requestOrigin ? [requestOrigin] : [])]) {
+  const platformOrigins = (process.env.REPLIT_DOMAINS || "").split(",").filter(Boolean).map((host) => `https://${host.trim()}`);
+  for (const candidate of [...configured.split(","), ...platformOrigins, ...(requestOrigin ? [requestOrigin] : [])].filter((s) => s.trim())) {
+    // Native shell origins can be CORS clients, but never identities for a
+    // server-packaged asset. Do not turn opaque custom-scheme origins into "null".
+    if (["capacitor://localhost", "ionic://localhost"].includes(candidate.trim())) continue;
     const url = new URL(candidate.trim());
-    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password
+      || url.pathname !== "/" || url.search || url.hash)
       throw new Error("Invalid configured media origin");
     origins.add(url.origin);
   }
   return origins;
+}
+
+/** No Origin is a normal anonymous media GET. Explicit foreign/opaque origins deny. */
+export function mediaRequestOriginAllowed(req: Pick<Request, "get" | "protocol">): boolean {
+  const origin = req.get("Origin");
+  if (!origin) return true;
+  if (origin === "null") return false;
+  const configured = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim());
+  if (["capacitor://localhost", "ionic://localhost"].includes(origin)) return configured.includes(origin);
+  try {
+    const url = new URL(origin);
+    return url.origin === origin && trustedMediaOrigins(`${req.protocol}://${req.get("host")}`).has(origin);
+  } catch { return false; }
 }
 
 /** Canonical identity for our flat packaged-media namespace; reject aliases/traversal. */

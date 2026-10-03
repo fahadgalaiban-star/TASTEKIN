@@ -389,12 +389,10 @@ test('real direct media HTTP: hide/restore, comments, aliases, caches, suspensio
   await action(REPORT, 'restore_edit'); await action(COMMENT_REPORT, 'restore_comment');
   await action(REPORT, 'unsuspend_user');
   const app = express();
-  app.use((req, _res, next) => {
-    // Only synthetic test identities; actual inspection still resolves admin from DB.
-    const user = req.get('x-fixture-user');
-    if (user) req.user = { id: user };
-    next();
-  });
+  const adminSession = await api.createSession({ user: { id: 'moderator' }, accessToken: 'synthetic', expiresAt: Date.now() + 600_000 });
+  const ownerSession = await api.createSession({ user: { id: 'author' }, accessToken: 'synthetic', expiresAt: Date.now() + 600_000 });
+  const cookieParser = createRequire(resolve('artifacts/api-server/package.json'))('cookie-parser');
+  app.use(cookieParser(), api.authMiddleware);
   app.use('/tastekin-media', api.packagedMediaMiddleware);
   app.use('/api', api.suspensionMiddleware, api.moderationActionsRouter);
   app.use((_req, res) => res.status(404).end());
@@ -404,13 +402,26 @@ test('real direct media HTTP: hide/restore, comments, aliases, caches, suspensio
   const base = `http://127.0.0.1:${server.address().port}`;
   const direct = '/tastekin-media/review-fixture-photo.jpg';
   process.env.ALLOWED_ORIGINS = `${base},https://frontend.example.invalid,https://alias.example.invalid`;
-  const call = (path, options = {}) => fetch(base + path, options);
+  const call = (path, options = {}) => {
+    const headers = new Headers(options.headers);
+    const user = headers.get('x-fixture-user');
+    headers.delete('x-fixture-user');
+    if (user === 'moderator' || user === 'author') headers.set('cookie', `sid=${user === 'moderator' ? adminSession : ownerSession}`);
+    return fetch(base + path, { ...options, headers });
+  };
   try {
     const before = await call(direct);
     assert.equal(before.status, 200); assert.deepEqual(Buffer.from(await before.arrayBuffer()), image);
     assert.match(before.headers.get('cache-control'), /no-store/);
     assert.equal(before.headers.get('etag'), null); assert.equal(before.headers.get('last-modified'), null);
     assert.equal((await call('/tastekin-media/review%2Dfixture%2Dphoto.jpg')).status, 200);
+    for (const origin of ['https://foreign.example.invalid', 'null', 'https://frontend.example.invalid.evil.invalid']) {
+      assert.equal((await call(direct, { headers: { Origin: origin } })).status, 403);
+      assert.equal((await call(`/api/admin/reports/${REPORT}/inspection/media`, {
+        headers: { Origin: origin, 'x-fixture-user': 'moderator' },
+      })).status, 403);
+    }
+    assert.equal((await call(direct, { headers: { Origin: 'https://frontend.example.invalid' } })).status, 200);
     await action(REPORT, 'hide_edit');
     for (const url of [direct, direct + '?known=1', '/tastekin-media/review%2Dfixture%2Dphoto.jpg',
       '/TaStEkIn-MeDiA/review-fixture-photo.jpg']) {
@@ -430,6 +441,7 @@ test('real direct media HTTP: hide/restore, comments, aliases, caches, suspensio
     const inspected = await call(inspection, { headers: { 'x-fixture-user': 'moderator' } });
     assert.equal(inspected.status, 200); assert.deepEqual(Buffer.from(await inspected.arrayBuffer()), image);
     assert.match(inspected.headers.get('cache-control'), /no-store/);
+    assert.equal((await call(inspection, { headers: { cookie: 'sid=forged' } })).status, 403);
     await action(REPORT, 'restore_edit');
     assert.equal((await call(direct)).status, 200);
     assert.equal((await call(direct, { headers: { range: 'bytes=0-3' } })).status, 206);
@@ -483,6 +495,9 @@ test('real direct media HTTP: hide/restore, comments, aliases, caches, suspensio
       const unavailable = await call('/tastekin-media/unrelated.webp');
       assert.equal(unavailable.status, 503); assert.match(unavailable.headers.get('cache-control'), /no-store/);
     } finally { globalThis.__fixtureVisibilityUnavailable = false; }
+    const { verifyViteMediaRouting } = await import('./vite-media-routing.mjs');
+    await verifyViteMediaRouting({ apiPort: server.address().port, direct, image, reportId: REPORT, adminSession,
+      hide: () => action(REPORT, 'hide_edit'), restore: () => action(REPORT, 'restore_edit') });
     assert.deepEqual(await readFile(media + '/review-fixture-photo.jpg'), image);
   } finally {
     delete process.env.ALLOWED_ORIGINS;

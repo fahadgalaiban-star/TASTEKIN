@@ -75,6 +75,11 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # Same-major security patches. Orval pins js-yaml exactly; retain its API
+  # and all other tooling versions instead of upgrading codegen/native majors.
+  "brace-expansion@5.0.8": "5.0.12"
+  "fast-uri@3.1.4": "3.1.8"
+  "js-yaml@4.3.0": "4.3.2"
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"

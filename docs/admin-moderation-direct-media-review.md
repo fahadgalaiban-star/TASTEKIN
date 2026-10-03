@@ -73,7 +73,12 @@ and transactional audit writing remain unchanged.
 - 0023 remains SHA-256
   `9d95a96f67c00d79c4bc767e9e31fa491d1dd321f7bc99cda88fbd5fa60ef9a1`.
 
-## Security scan findings — not a clean bill of health
+## Prior correction scan findings — historical, not a clean bill of health
+
+The subsequent finding-by-finding remediation and current scan/check results
+are in [the security remediation review](admin-moderation-security-remediation.md).
+The counts and unchanged-file statements below describe the earlier correction,
+not the current security follow-up.
 
 All three scanners completed. No scanner finding names the changed media code.
 The unchanged lockfile/dependencies and unchanged files still produce:

@@ -3,8 +3,45 @@ import { test } from 'node:test';
 import { mkdtemp, mkdir, writeFile, readFile, readdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { prepareStaticPublic } from '../../artifacts/tastekin/static-public.ts';
-import { packagedMediaLinks, packagedMediaReference, trustedMediaOrigins } from '../../artifacts/api-server/src/lib/packaged-media.ts';
+import { mediaRequestOriginAllowed, packagedMediaLinks, packagedMediaReference, trustedMediaOrigins } from '../../artifacts/api-server/src/lib/packaged-media.ts';
+import { safeLocalRedirect } from '../../artifacts/api-server/src/lib/safe-local-redirect.ts';
 import { packagedMediaUrl } from '../../artifacts/tastekin/src/lib/packaged-media-url.ts';
+
+test('return destinations cannot escape the app through browser URL normalization', () => {
+  for (const value of [undefined, [], {}, 'https://foreign.invalid', '//foreign.invalid',
+    '/\\foreign.invalid', '/\\\\foreign.invalid', '/\n/foreign.invalid', '/\t/foreign.invalid',
+    'javascript:alert(1)', '/path\r\nLocation: https://foreign.invalid', '/folder/..//foreign.invalid',
+    '/folder/%2e%2e//foreign.invalid']) assert.equal(safeLocalRedirect(value), '/');
+  assert.equal(safeLocalRedirect('/folder/../profile'), '/profile');
+  for (const value of ['/profile', '/tastekin/profile?tab=saved#edits', '/path?next=https%3A%2F%2Fforeign.invalid',
+    '/%2f%2fforeign.invalid']) {
+    const target = safeLocalRedirect(value);
+    assert.equal(target, value);
+    assert.equal(new URL(target, 'https://local.invalid').origin, 'https://local.invalid');
+  }
+});
+
+test('media identities include platform aliases but never opaque native client origins', () => {
+  const original = process.env.ALLOWED_ORIGINS, platforms = process.env.REPLIT_DOMAINS;
+  try {
+    process.env.ALLOWED_ORIGINS = 'https://frontend.example.invalid,capacitor://localhost,ionic://localhost,';
+    process.env.REPLIT_DOMAINS = 'api.example.invalid,alias.example.invalid';
+    const origins = trustedMediaOrigins('https://request.example.invalid');
+    assert.deepEqual([...origins].sort(), ['https://frontend.example.invalid', 'https://api.example.invalid',
+      'https://alias.example.invalid', 'https://request.example.invalid'].sort());
+    for (const origin of [undefined, 'https://api.example.invalid', 'https://alias.example.invalid',
+      'https://request.example.invalid', 'capacitor://localhost', 'ionic://localhost']) {
+      assert.equal(mediaRequestOriginAllowed({ protocol: 'https', get: (key) => key === 'host' ? 'request.example.invalid' : origin }), true);
+    }
+    for (const origin of ['null', 'https://foreign.invalid', 'https://alias.example.invalid.evil.invalid',
+      'https://alias.example.invalid/another-path']) {
+      assert.equal(mediaRequestOriginAllowed({ protocol: 'https', get: (key) => key === 'host' ? 'request.example.invalid' : origin }), false);
+    }
+  } finally {
+    if (original === undefined) delete process.env.ALLOWED_ORIGINS; else process.env.ALLOWED_ORIGINS = original;
+    if (platforms === undefined) delete process.env.REPLIT_DOMAINS; else process.env.REPLIT_DOMAINS = platforms;
+  }
+});
 
 test('static public staging excludes all content media and retains unrelated UI assets without changing sources', async () => {
   const root = await mkdtemp('/tmp/tastekin-static-test.');

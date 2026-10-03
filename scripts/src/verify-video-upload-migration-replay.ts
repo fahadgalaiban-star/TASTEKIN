@@ -27,7 +27,7 @@
 //
 // Usage:
 //   createdb tastekin_video_upload_migration_replay   # once, must start empty
-//   DATABASE_URL=postgresql://user:pass@host/tastekin_video_upload_migration_replay \
+//   DATABASE_URL='<fresh-disposable-database-url>' \
 //     pnpm --filter scripts run verify:video-upload-migration-replay
 //
 // Refuses to run against a database that already has any tables — this
