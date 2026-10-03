@@ -1,0 +1,148 @@
+Continue work on the existing draft PR only:
+
+https://github.com/fahadgalaiban-star/TASTEKIN/pull/96
+
+Branch: feature/admin-moderation-actions
+Current reviewed head: bcf75251cf0863a9b90195debcf197fbc434c23b
+
+Do not create another PR. Do not merge, deploy, publish, restart production, apply a migration to any configured/existing database, access Backblaze, or change credentials/secrets.
+
+Before declaring PR #96 ready, perform a careful corrective review and address the following issues if confirmed:
+
+1. Remove unrelated memory files from the PR
+
+The final PR diff must not contain changes under .agents/memory/.
+
+Restore/remove these changes from the PR diff without deleting any pre-existing repository content:
+
+* .agents/memory/MEMORY.md
+* .agents/memory/tastekin-openapi-url-fields.md
+* .agents/memory/tastekin-static-media-boundaries.md
+
+The final PR should contain only moderation implementation, migration, focused tests, and relevant project documentation.
+
+2. Suspended users must retain safe account-access routes
+
+The global suspension middleware must not prevent a suspended user from:
+
+* Logging out.
+* Viewing the minimum session/account state needed to display the suspension.
+* Accessing account deletion and completing deletion.
+* Accessing legal and public support information.
+
+Suspended users must remain blocked from:
+
+* Creating a new authenticated session.
+* Publishing or editing content.
+* Uploading media.
+* Commenting, messaging, following, liking, saving, or performing other social mutations.
+* Accessing ordinary authenticated application features that should be disabled during suspension.
+
+Implement a narrow server-side route-and-method allowlist. Do not create a general bypass.
+
+Add tests proving:
+
+* Suspended account deletion works.
+* Suspended logout works.
+* Existing sessions cannot perform ordinary authenticated mutations.
+* New web and native sessions cannot be issued while suspended.
+* Unsuspension does not reactivate expired or revoked sessions.
+
+3. Remove full-table scans from request-time visibility enforcement
+
+Do not load every creator workspace or every comment during normal consumer API requests.
+
+Use targeted database queries based on:
+
+* Hidden moderation rows.
+* Affected creator IDs.
+* Suspended user IDs.
+* Exact requested targets.
+
+When hidden edits must be resolved from workspace JSON, use a targeted PostgreSQL JSONB query and an appropriate index if required. Do not select every workspace and search the JSON in application memory.
+
+For suspended-user comments, query only comments owned by the relevant suspended IDs. Do not load all comments.
+
+Review resolveModerationTarget() as well: it must not select all creator workspaces for each admin action or inspection request.
+
+Add query-focused tests or instrumentation proving that ordinary requests and individual moderation actions do not perform unbounded full-table workspace/comment scans.
+
+4. Add appropriate indexes to migration 0023
+
+Review lib/db/migrations/0023_moderation_actions.sql and add only the indexes justified by the actual query patterns, including where appropriate:
+
+* Efficient lookup of currently hidden moderation states.
+* Efficient lookup of suspended users.
+* Efficient moderation audit lookup by target/action/time.
+* Efficient targeted lookup of Edit IDs stored in workspace JSON.
+
+Keep the migration additive and reversible. Do not rewrite or delete existing content.
+
+Test the migration only against a newly created disposable local PostgreSQL database with no configured production/database URL.
+
+5. Restrict generic recursive response redaction
+
+Review the recursive moderation redaction middleware carefully.
+
+Do not remove arbitrary nested response objects merely because they contain a common property name or coincidentally matching ID.
+
+Prefer explicit filtering for known response structures or tightly scoped route-specific projections. Enumerate every consumer endpoint affected and add focused tests for its real response shape.
+
+Tests must prove both:
+
+* Hidden/suspended targets are removed from every intended surface.
+* Unrelated objects with similar IDs or common fields are not accidentally removed.
+
+Cover feeds, profiles, collections, discovery/search, Circle, comments, engagement, Saved/lists, KIN references/snapshots, public media, and admin inspection paths where applicable.
+
+6. Founder and administrator protection
+
+Do not rely only on a hard-coded creator ID such as "fheed" for founder protection.
+
+Use authoritative server-resolved user identity, administrator status, or documented protected-owner configuration. Keep protection against:
+
+* Self-suspension.
+* Suspending the final protected owner/admin.
+* Client-supplied identity spoofing.
+
+Add focused authorization tests.
+
+7. Preserve documented media limitations
+
+Do not claim complete revocation of:
+
+* Previously issued provider URLs.
+* Cached or offline copies.
+* Direct platform-served /tastekin-media/* assets.
+* Unattributed copied KIN text.
+
+Keep these limitations explicit in the review and deployment documents. Do not expand this PR into a storage-provider redesign.
+
+8. Final validation
+
+After the corrections:
+
+* Run shared, API, and frontend TypeScript checks.
+* Run the frontend production build.
+* Run all focused moderation/schema tests.
+* Run the 19 existing database-free private-image regression tests.
+* Run mocked browser tests for English, Arabic, and mobile layouts.
+* Run git diff --check.
+* Confirm the final exact changed-file manifest.
+* Confirm .agents/memory/ is absent from the PR diff.
+* Confirm no configured database, production service, Backblaze resource, credential, or secret was accessed or changed.
+
+Commit and push the corrections to the same branch and update draft PR #96.
+
+Keep the PR as Draft. Do not merge it.
+
+Return:
+
+1. New head commit.
+2. Exact changed-file list.
+3. Explanation of each correction.
+4. Migration/index details.
+5. Exact suspended-user allowlist.
+6. Evidence that full-table scans were removed.
+7. Test results and remaining limitations.
+8. Explicit confirmation that nothing was merged, deployed, published, or applied to production.
