@@ -1,8 +1,9 @@
 import crypto from "crypto";
 import bcrypt from "bcryptjs";
 import { db, sessionsTable, usersTable, passwordResetTokensTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Request, Response } from "express";
+import { withActiveAccount } from "./active-account";
 
 export const SESSION_COOKIE = "sid";
 const SESSION_TTL = 7 * 24 * 60 * 60 * 1000;
@@ -13,17 +14,30 @@ type Session = { user: AuthUser; accessToken: string; expiresAt: number };
 
 export async function createSession(session: Session) {
   const sid = crypto.randomBytes(32).toString("hex");
-  await db.insert(sessionsTable).values({ sid, sess: session, expire: new Date(Date.now() + SESSION_TTL) });
+  await withActiveAccount(session.user.id, async (tx) => {
+    await tx.insert(sessionsTable).values({ sid, sess: session, expire: new Date(Date.now() + SESSION_TTL) });
+  });
   return sid;
 }
 export async function getSession(sid: string) {
   const [row] = await db.select().from(sessionsTable).where(eq(sessionsTable.sid, sid));
-  if (!row || row.expire < new Date()) return null;
+  if (!row || row.expire <= new Date()) return null;
   return row.sess as unknown as Session;
+}
+/** A suspension-expired cookie is proof only for the narrow account routes.
+ * Do not accept naturally expired/logged-out cookies or extend the old lifetime. */
+export async function getSuspendedAccountSession(sid: string) {
+  const [row] = await db.select({ sess: sessionsTable.sess }).from(sessionsTable)
+    .innerJoin(usersTable, sql`${usersTable.id} = ${sessionsTable.sess}->'user'->>'id'`)
+    .where(and(eq(sessionsTable.sid, sid), eq(usersTable.isSuspended, true),
+      sql`${sessionsTable.sess}->>'moderationRecoveryExpiresAt' > ${new Date().toISOString()}`));
+  return row ? row.sess as unknown as Session : null;
 }
 export function getSessionId(req: Request) { return req.cookies?.[SESSION_COOKIE] as string | undefined; }
 export async function clearSession(res: Response, sid?: string) {
-  if (sid) await db.delete(sessionsTable).where(eq(sessionsTable.sid, sid));
+  if (sid) await db.update(sessionsTable).set({
+    expire: new Date(), sess: sql`${sessionsTable.sess} - 'moderationRecoveryExpiresAt'`,
+  }).where(eq(sessionsTable.sid, sid));
   res.clearCookie(SESSION_COOKIE, { path: "/" });
 }
 export function setSessionCookie(res: Response, sid: string) {

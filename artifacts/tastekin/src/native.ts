@@ -20,6 +20,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { packagedMediaUrl } from './lib/packaged-media-url';
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 
@@ -38,11 +39,13 @@ export const API_BASE_URL: string = configuredBaseUrl.replace(/\/+$/, '');
 const isApiPath = (path: string): boolean => path === '/api' || path.startsWith('/api/');
 
 /**
- * Absolute URL for an app-relative `/api/...` path when running inside the
- * native shell; anything else (absolute URLs, non-API paths, empty values)
+ * Absolute URL for app-relative API/packaged-media paths in the native shell;
+ * anything else (absolute URLs, unrelated asset paths, empty values)
  * is returned untouched. Identity function on the web.
  */
 export function apiUrl<T extends string | null | undefined>(path: T): T {
+  const media = packagedMediaUrl(path, isNativeApp, API_BASE_URL);
+  if (media !== path) return media;
   if (!isNativeApp || !API_BASE_URL || typeof path !== 'string' || !isApiPath(path)) return path;
   return `${API_BASE_URL}${path}` as T;
 }
@@ -153,9 +156,11 @@ export async function nativeSignOut(): Promise<void> {
  * 401 from some other action, a network failure, or a server-side lookup
  * error ("error") never does.
  */
-export async function reconcileNativeSession(payload: { nativeAuth?: unknown } | null | undefined): Promise<void> {
+export async function reconcileNativeSession(payload: { nativeAuth?: unknown; accountSuspended?: unknown } | null | undefined): Promise<void> {
   if (!isNativeApp || !memoryToken) return;
-  if (payload && payload.nativeAuth === 'invalid') await clearNativeToken();
+  // Keep a suspension-revoked token solely for the server's narrow account
+  // safety routes. It never becomes an active session or ordinary credential.
+  if (payload && payload.nativeAuth === 'invalid' && payload.accountSuspended !== true) await clearNativeToken();
 }
 
 /** Body fields the native auth routes require alongside email/password. */

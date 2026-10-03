@@ -4,7 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as esbuild } from "esbuild";
 import esbuildPluginPino from "esbuild-plugin-pino";
-import { rm } from "node:fs/promises";
+import { cp, rm } from "node:fs/promises";
 
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = createRequire(import.meta.url);
@@ -22,6 +22,10 @@ function commitHash() {
 async function buildAll() {
   const distDir = path.resolve(artifactDir, "dist");
   await rm(distDir, { recursive: true, force: true });
+  // Packaged demo media belongs to the server, never the public static artifact.
+  // Source files and customer/private object storage are untouched.
+  await cp(path.resolve(artifactDir, "../tastekin/public/tastekin-media"),
+    path.join(distDir, "media"), { recursive: true });
 
   await esbuild({
     entryPoints: [

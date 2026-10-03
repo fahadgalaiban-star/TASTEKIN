@@ -1,17 +1,18 @@
 import { useEffect, useState, type ImgHTMLAttributes } from 'react';
 import { API_BASE_URL, isNativeApp } from '../native';
 import { loadPrivateImage, privateImagePath, type PrivateImageState } from '../lib/private-image';
+import { packagedMediaUrl } from '../lib/packaged-media-url';
 
 type Props = ImgHTMLAttributes<HTMLImageElement>;
 
-/** Public images and all ordinary-browser images keep their original element/URL. */
+/** Public media remains a plain image; native packaged media uses the gated API origin. */
 export function MediaImage(props: Props) {
   const path = isNativeApp ? privateImagePath(props.src, API_BASE_URL) : null;
   // Remount immediately on a source change: the previous URL can never be
   // rendered with the new source's props, even before effect cleanup runs.
   return path
     ? <NativePrivateImage key={props.src} {...props} path={path} />
-    : <img {...props} />;
+    : <img {...props} src={packagedMediaUrl(props.src, isNativeApp, API_BASE_URL)} />;
 }
 
 function NativePrivateImage({ path, src: _src, srcSet: _srcSet, onError, ...props }: Props & { path: string }) {

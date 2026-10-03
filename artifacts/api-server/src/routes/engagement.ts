@@ -5,6 +5,7 @@ import {
   creatorWorkspaces,
   db,
   editComments,
+  moderationContentStates,
   editLikes,
   editSaves,
   savedListItems,
@@ -72,9 +73,10 @@ export function requireUser(req: Request, res: Response) {
 }
 
 export async function getEditContext(editId: string, userId?: string) {
-  const workspaces = await db.select().from(creatorWorkspaces);
-  const workspace = workspaces.find((candidate) => (candidate.edits as WorkspaceEdit[]).some((item) => item && item.id === editId));
-  if (!workspace) return null;
+  const workspaces = await db.select().from(creatorWorkspaces)
+    .where(sql`${creatorWorkspaces.edits} @> ${JSON.stringify([{ id: editId }])}::jsonb`).limit(2);
+  if (workspaces.length !== 1) return null;
+  const workspace = workspaces[0];
   const edit = (workspace.edits as WorkspaceEdit[]).find((item) => item && item.id === editId)!;
   const owner = Boolean(userId && workspace.ownerUserId === userId);
   // Every published Edit is public in the free product (a legacy
@@ -102,9 +104,17 @@ async function engagementFor(editId: string, userId?: string) {
     userId ? mutedUserIds(userId) : Promise.resolve(new Set<string>()),
   ]);
   const excludedIds = new Set([...blockedIds, ...mutedIds]);
-  const commentCountCondition = excludedIds.size
+  const commentCountCondition = and(sql`NOT EXISTS (
+    SELECT 1 FROM ${moderationContentStates}
+    WHERE ${moderationContentStates.targetType} = 'comment'
+      AND ${moderationContentStates.isHidden} = true
+      AND ${moderationContentStates.targetId} = ${editComments.id}
+  ) AND NOT EXISTS (
+    SELECT 1 FROM ${usersTable}
+    WHERE ${usersTable.id} = ${editComments.userId} AND ${usersTable.isSuspended} = true
+  )`, excludedIds.size
     ? and(eq(editComments.editId, editId), notInArray(editComments.userId, [...excludedIds]))
-    : eq(editComments.editId, editId);
+    : eq(editComments.editId, editId));
   const [[likes], [comments], likedRows, savedRows] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(editLikes).where(eq(editLikes.editId, editId)),
     db.select({ count: sql<number>`count(*)::int` }).from(editComments).where(commentCountCondition),

@@ -2,6 +2,7 @@ import path from 'path';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import { prepareStaticPublic } from './static-public';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
@@ -39,9 +40,14 @@ if (!basePath) {
 // server artifact's declared development port; override with
 // API_DEV_PORT if the API is running somewhere else.
 const apiDevPort = Number(process.env.API_DEV_PORT ?? 8080);
+const staticPublic = await prepareStaticPublic(
+  path.resolve(import.meta.dirname, 'public'),
+  path.resolve(import.meta.dirname, 'node_modules/.cache/tastekin-public'),
+);
 
 export default defineConfig({
   base: basePath,
+  publicDir: staticPublic,
   plugins: [
     react(),
     tailwindcss(),
@@ -83,6 +89,10 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     proxy: {
+      '/tastekin-media': {
+        target: `http://127.0.0.1:${apiDevPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://127.0.0.1:${apiDevPort}`,
         changeOrigin: true,
@@ -90,6 +100,7 @@ export default defineConfig({
     },
     fs: {
       strict: true,
+      deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/tastekin-media/**'],
     },
   },
   preview: {
@@ -97,6 +108,10 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     proxy: {
+      '/tastekin-media': {
+        target: `http://127.0.0.1:${apiDevPort}`,
+        changeOrigin: false,
+      },
       '/api': {
         target: `http://127.0.0.1:${apiDevPort}`,
         changeOrigin: true,

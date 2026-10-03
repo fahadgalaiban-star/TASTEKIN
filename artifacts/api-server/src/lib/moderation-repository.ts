@@ -1,0 +1,83 @@
+import { creatorWorkspaces, db, editComments, moderationAuditLog, moderationContentStates, nativeSessionsTable, reports, sessionsTable, usersTable } from "@workspace/db";
+import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { ModerationError, type ModerationRepository, type ModerationTarget, type ModerationTransaction } from "./moderation-policy";
+import { configuredFounderMatches } from "./creator-account";
+type Executor = Pick<typeof db, "select" | "insert" | "update" | "execute">;
+
+export async function resolveModerationTarget(tx: Executor, reportId: string): Promise<ModerationTarget | null> {
+  const [report] = await tx.select().from(reports).where(eq(reports.id, reportId));
+  if (!report || !["edit", "comment", "profile"].includes(report.targetType)) return null;
+  let comment: typeof editComments.$inferSelect | undefined;
+  let workspace: typeof creatorWorkspaces.$inferSelect | undefined;
+  let data: Record<string, unknown> | undefined;
+  if (report.targetType === "profile") {
+    [workspace] = await tx.select().from(creatorWorkspaces).where(eq(creatorWorkspaces.creatorId, report.targetId));
+    data = workspace ? { username: workspace.profile.username, displayName: workspace.profile.displayName, bio: workspace.profile.bio } : undefined;
+  } else {
+    if (report.targetType === "comment") {
+      [comment] = await tx.select().from(editComments).where(eq(editComments.id, report.targetId));
+      if (!comment) return null;
+    }
+    const editId = comment?.editId ?? report.targetId;
+    const rows = await tx.select().from(creatorWorkspaces)
+      .where(sql`${creatorWorkspaces.edits} @> ${JSON.stringify([{ id: editId }])}::jsonb`).limit(2);
+    // Ambiguous legacy IDs must never choose an arbitrary owner.
+    if (rows.length !== 1) return null;
+    workspace = rows[0];
+    data = comment ? { ...comment } : workspace?.edits.find((edit: unknown) => !!edit && typeof edit === "object" && (edit as { id?: unknown }).id === editId) as Record<string, unknown> | undefined;
+  }
+  const ownerUserId = comment?.userId ?? workspace?.ownerUserId;
+  if (!workspace || !ownerUserId || !data) return null;
+  const [user] = await tx.select().from(usersTable).where(eq(usersTable.id, ownerUserId));
+  if (!user) return null;
+  const [state] = await tx.select().from(moderationContentStates).where(and(
+    eq(moderationContentStates.targetType, report.targetType), eq(moderationContentStates.creatorId, workspace.creatorId), eq(moderationContentStates.targetId, report.targetId),
+  ));
+  return {
+    targetType: report.targetType as ModerationTarget["targetType"], targetId: report.targetId,
+    creatorId: workspace.creatorId, ownerUserId, data, hidden: Boolean(state?.isHidden),
+    suspended: user.isSuspended,
+    protectedAccount: user.isAdmin || user.role === "owner" || user.role === "admin"
+      || configuredFounderMatches(user),
+  };
+}
+
+function bindings(tx: Executor): ModerationTransaction {
+  return {
+    isAdmin: async (id) => {
+      const [user] = await tx.select({ admin: usersTable.isAdmin, suspended: usersTable.isSuspended }).from(usersTable).where(eq(usersTable.id, id));
+      return Boolean(user?.admin && !user.suspended);
+    },
+    target: (id) => resolveModerationTarget(tx, id),
+    lock: async (key) => { await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${key}))`); },
+    changeContent: async (target, hidden) => {
+      await tx.insert(moderationContentStates).values({
+        targetType: target.targetType, creatorId: target.creatorId, targetId: target.targetId, isHidden: hidden,
+      }).onConflictDoUpdate({
+        target: [moderationContentStates.targetType, moderationContentStates.creatorId, moderationContentStates.targetId],
+        set: { isHidden: hidden, updatedAt: new Date() },
+      });
+    },
+    changeAccount: async (id, suspended) => { await tx.update(usersTable).set({ isSuspended: suspended }).where(eq(usersTable.id, id)); },
+    expireSessions: async (id) => {
+      const now = new Date();
+      await tx.update(nativeSessionsTable).set({ revokedAt: now, revokedReason: "moderation_suspension" })
+        .where(and(eq(nativeSessionsTable.userId, id), isNull(nativeSessionsTable.revokedAt)));
+      await tx.update(sessionsTable).set({
+        expire: now,
+        sess: sql`${sessionsTable.sess} || jsonb_build_object('moderationRecoveryExpiresAt', to_char(${sessionsTable.expire} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))`,
+      }).where(and(sql`${sessionsTable.sess}->'user'->>'id' = ${id}`, gt(sessionsTable.expire, now)));
+    },
+    audit: async (reportId, entry) => {
+      const [report] = await tx.select().from(reports).where(eq(reports.id, reportId));
+      if (!report) throw new ModerationError(404, "Report unavailable.");
+      const [row] = await tx.insert(moderationAuditLog).values({
+        ...entry, reportId, fromStatus: report.status, toStatus: report.status, createdAt: sql`clock_timestamp()`,
+      }).returning();
+      return { ...entry, id: row.id, reportId, createdAt: row.createdAt.toISOString() };
+    },
+  };
+}
+export const moderationRepository: ModerationRepository = {
+  transaction: (callback) => db.transaction((tx) => callback(bindings(tx))),
+};

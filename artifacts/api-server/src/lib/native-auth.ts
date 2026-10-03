@@ -14,8 +14,9 @@
 // request.
 import crypto from "crypto";
 import { db, nativeSessionsTable, sessionsTable, usersTable } from "@workspace/db";
-import { and, eq, gt, isNull, sql } from "drizzle-orm";
+import { and, eq, gt, isNull, or, sql } from "drizzle-orm";
 import type { Request } from "express";
+import { withActiveAccount } from "./active-account";
 
 export const NATIVE_SESSION_IDLE_MS = 30 * 24 * 60 * 60 * 1000;
 export const NATIVE_SESSION_ABSOLUTE_MS = 180 * 24 * 60 * 60 * 1000;
@@ -49,15 +50,16 @@ export function getBearerToken(req: Request): string | null {
 export async function createNativeSession(input: { userId: string; platform: NativePlatform; appVersion?: string | null }): Promise<{ token: string; expiresAt: Date }> {
   const token = crypto.randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + NATIVE_SESSION_ABSOLUTE_MS);
-  await db.insert(nativeSessionsTable).values({
+  await withActiveAccount(input.userId, async (tx) => { await tx.insert(nativeSessionsTable).values({
     userId: input.userId,
     tokenHash: hashNativeToken(token),
     platform: input.platform,
     appVersion: input.appVersion ?? null,
     expiresAt,
-  });
+  }); });
   return { token, expiresAt };
 }
+
 
 export type ResolvedNativeSession = { session: { id: string; userId: string; platform: string }; user: NativeSessionUser };
 
@@ -83,23 +85,38 @@ export async function resolveNativeSession(token: string): Promise<ResolvedNativ
 }
 
 export async function revokeNativeSession(id: string, reason: string): Promise<void> {
-  await db.update(nativeSessionsTable).set({ revokedAt: new Date(), revokedReason: reason }).where(and(eq(nativeSessionsTable.id, id), isNull(nativeSessionsTable.revokedAt)));
+  await db.update(nativeSessionsTable).set({ revokedAt: new Date(), revokedReason: reason }).where(and(eq(nativeSessionsTable.id, id),
+    or(isNull(nativeSessionsTable.revokedAt), eq(nativeSessionsTable.revokedReason, "moderation_suspension"))));
 }
 
 export async function revokeAllNativeSessions(userId: string, reason: string): Promise<void> {
-  await db.update(nativeSessionsTable).set({ revokedAt: new Date(), revokedReason: reason }).where(and(eq(nativeSessionsTable.userId, userId), isNull(nativeSessionsTable.revokedAt)));
+  await db.update(nativeSessionsTable).set({ revokedAt: new Date(), revokedReason: reason }).where(and(eq(nativeSessionsTable.userId, userId),
+    or(isNull(nativeSessionsTable.revokedAt), eq(nativeSessionsTable.revokedReason, "moderation_suspension"))));
 }
 
 /**
  * Web (cookie) sessions store the user inside the `sess` JSON, so revoking
- * them for one user is a JSON-path delete on the existing table — no schema
+ * them for one user expires the matching rows, preserving history — no schema
  * change. Used by password reset and "sign out everywhere".
  */
 export async function revokeAllWebSessions(userId: string): Promise<void> {
-  await db.delete(sessionsTable).where(sql`${sessionsTable.sess}->'user'->>'id' = ${userId}`);
+  await db.update(sessionsTable).set({ expire: new Date(), sess: sql`${sessionsTable.sess} - 'moderationRecoveryExpiresAt'` }).where(sql`${sessionsTable.sess}->'user'->>'id' = ${userId}`);
 }
 
 export async function revokeEverySession(userId: string, reason: string): Promise<void> {
   await revokeAllNativeSessions(userId, reason);
   await revokeAllWebSessions(userId);
+}
+
+/** Read-only proof for account safety, never an active native session. */
+export async function resolveSuspendedNativeAccount(token: string): Promise<ResolvedNativeSession | null> {
+  if (!TOKEN_PATTERN.test(token)) return null;
+  const now = new Date();
+  const [row] = await db.select({ session: nativeSessionsTable,
+    user: { id: usersTable.id, email: usersTable.email, firstName: usersTable.firstName, lastName: usersTable.lastName, profileImageUrl: usersTable.profileImageUrl } })
+    .from(nativeSessionsTable).innerJoin(usersTable, eq(usersTable.id, nativeSessionsTable.userId))
+    .where(and(eq(nativeSessionsTable.tokenHash, hashNativeToken(token)), eq(usersTable.isSuspended, true),
+      eq(nativeSessionsTable.revokedReason, "moderation_suspension"), gt(nativeSessionsTable.expiresAt, now)));
+  if (!row || row.session.lastUsedAt.getTime() + NATIVE_SESSION_IDLE_MS <= now.getTime()) return null;
+  return { session: { id: row.session.id, userId: row.session.userId, platform: row.session.platform }, user: row.user };
 }

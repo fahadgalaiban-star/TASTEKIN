@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
-import { getSession, getSessionId } from "../lib/auth";
-import { getBearerToken, resolveNativeSession } from "../lib/native-auth";
+import { getSession, getSessionId, getSuspendedAccountSession } from "../lib/auth";
+import { getBearerToken, resolveNativeSession, resolveSuspendedNativeAccount } from "../lib/native-auth";
+import { suspendedAccountAccess } from "../lib/suspended-account-access";
 import { logger } from "../lib/logger";
 
 declare global {
@@ -17,22 +18,28 @@ declare global {
        * token, try again). Absent when no bearer token was presented.
        */
       nativeAuth?: "valid" | "invalid" | "error";
+      /** Restricted credential proof, not a restored authenticated session. */
+      suspendedAccountOnly?: boolean;
     }
   }
 }
 
 export async function authMiddleware(req: Request, _res: Response, next: NextFunction) {
-  req.isAuthenticated = () => Boolean(req.user);
+  req.isAuthenticated = () => Boolean(req.user) && !req.suspendedAccountOnly;
   const bearer = getBearerToken(req);
   if (bearer) {
     // Native app path. A bearer token, when present, is the credential for
     // this request; the cookie is not consulted (the shell never has one).
     try {
-      const resolved = await resolveNativeSession(bearer);
+      let resolved = await resolveNativeSession(bearer);
+      if (!resolved && suspendedAccountAccess(req.method, req.path)) {
+        resolved = await resolveSuspendedNativeAccount(bearer);
+        if (resolved) req.suspendedAccountOnly = true;
+      }
       if (resolved) {
         req.user = resolved.user;
         req.nativeSession = resolved.session;
-        req.nativeAuth = "valid";
+        req.nativeAuth = req.suspendedAccountOnly ? "invalid" : "valid";
       } else {
         req.nativeAuth = "invalid";
       }
@@ -55,7 +62,11 @@ export async function authMiddleware(req: Request, _res: Response, next: NextFun
     // rather than failing the whole request; the underlying error is still
     // logged so it's diagnosable, never silently swallowed.
     try {
-      const session = await getSession(sid);
+      let session = await getSession(sid);
+      if (!session && suspendedAccountAccess(req.method, req.path)) {
+        session = await getSuspendedAccountSession(sid);
+        if (session) req.suspendedAccountOnly = true;
+      }
       if (session) req.user = session.user;
     } catch (error) {
       (req.log ?? logger).error({ err: error }, "Session lookup failed; continuing as signed-out");

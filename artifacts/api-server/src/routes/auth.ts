@@ -13,6 +13,7 @@ import { logger } from "../lib/logger";
 import { ensureCreatorAccount, founderMappingConfigured, isCurrentUserAdmin } from "../lib/creator-account";
 import { resolveOnboardingStatus } from "../lib/onboarding";
 import { currentFlagStates, isFeatureEnabled } from "../lib/feature-flags";
+import { safeLocalRedirect } from "../lib/safe-local-redirect";
 
 const router: IRouter = Router();
 const issuer = "https://replit.com/oidc";
@@ -26,7 +27,7 @@ const googleIssuer = "https://accounts.google.com";
 // production domain, or — see the /callback comment below — a preview
 // deployment's own domain) rather than any hardcoded value.
 function origin(req: import("express").Request) { return `${req.protocol}://${req.get("host")}`; }
-function safeReturnTo(value: unknown) { return typeof value === "string" && value.startsWith("/") && !value.startsWith("//") ? value : "/"; }
+function safeReturnTo(value: unknown) { return safeLocalRedirect(value); }
 function hash(value: string) { return crypto.createHash("sha256").update(value).digest("base64url"); }
 function cookie(res: import("express").Response, name: string, value: string) { res.cookie(name, value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 600_000 }); }
 function noStoreSessionResponse(res: import("express").Response) { res.set("Cache-Control", "private, no-store, max-age=0"); res.vary("Cookie"); }

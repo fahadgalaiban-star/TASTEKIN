@@ -1,7 +1,7 @@
 // Explicit, operator-run admin grant. This is the ONLY supported way to make
 // an account an admin — request-time code never grants or restores this flag
 // on its own. Safe to re-run: it always prints which database it's about to
-// use and the exact row it resolved to before touching anything, and makes
+// use and the resolved administrator status (without personal data), and makes
 // no change unless --yes is passed.
 //
 // Usage:
@@ -40,7 +40,7 @@ async function main() {
       return;
     }
 
-    console.log(`Resolved target: id=${target.id} email=${target.email ?? "(none)"} isAdmin(current)=${target.isAdmin}`);
+    console.log(`Target account resolved; isAdmin(current)=${target.isAdmin}`);
 
     if (target.isAdmin) {
       console.log("This account is already an admin. Nothing to do.");
@@ -55,9 +55,9 @@ async function main() {
     const [updated] = await db.update(usersTable)
       .set({ isAdmin: true, updatedAt: new Date() })
       .where(eq(usersTable.id, target.id))
-      .returning({ id: usersTable.id, email: usersTable.email, isAdmin: usersTable.isAdmin });
+      .returning({ isAdmin: usersTable.isAdmin });
 
-    console.log(`Granted admin: id=${updated.id} email=${updated.email ?? "(none)"} isAdmin=${updated.isAdmin}`);
+    console.log(`Administrator access granted; isAdmin=${updated.isAdmin}`);
   } finally {
     await pool.end();
   }

@@ -337,6 +337,13 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
   assert.equal(await page.locator('#image').getAttribute('src'), publicPath);
   assert.equal(requests.find((r) => r.path === publicPath).authorization, undefined);
   assert.equal(requests.find((r) => r.path === publicPath).inline, undefined);
+  const packagedPath = '/tastekin-media/photo.webp';
+  await page.evaluate((src) => window.setImage(src), packagedPath);
+  await page.waitForFunction((src) => document.querySelector('#image')?.getAttribute('src') === src
+    && document.querySelector('#image')?.naturalWidth > 0, base + packagedPath);
+  assert.equal(await page.locator('#image').getAttribute('src'), base + packagedPath);
+  assert.equal(requests.find((r) => r.path === packagedPath).authorization, undefined);
+  assert.equal(requests.find((r) => r.path === packagedPath).inline, undefined);
 
   const creatorPath = '/api/storage/objects/uploads/native-fixture';
   await page.evaluate((src) => window.setImage(src), base + creatorPath);
@@ -358,4 +365,8 @@ test('browser integration: native bearer/blob lifecycle, web cookies/direct URLs
   assert.equal(requests.find((r) => r.path === webPath).inline, undefined);
   assert.equal(requests.find((r) => r.path === webPath).cookie, 'fixture-session=web-cookie');
   assert.deepEqual(await page.evaluate(() => window.revoked), []);
+  await page.evaluate((src) => window.setImage(src), packagedPath);
+  await page.waitForFunction((src) => document.querySelector('#image')?.getAttribute('src') === src
+    && document.querySelector('#image')?.naturalWidth > 0, packagedPath);
+  assert.equal(await page.locator('#image').getAttribute('src'), packagedPath);
 });

@@ -35,7 +35,7 @@ async function main() {
       return;
     }
 
-    console.log(`Resolved target: id=${target.id} email=${target.email ?? "(none)"} isAdmin(current)=${target.isAdmin}`);
+    console.log(`Target account resolved; isAdmin(current)=${target.isAdmin}`);
 
     if (!target.isAdmin) {
       console.log("This account is already not an admin. Nothing to do.");
@@ -50,9 +50,9 @@ async function main() {
     const [updated] = await db.update(usersTable)
       .set({ isAdmin: false, updatedAt: new Date() })
       .where(eq(usersTable.id, target.id))
-      .returning({ id: usersTable.id, email: usersTable.email, isAdmin: usersTable.isAdmin });
+      .returning({ isAdmin: usersTable.isAdmin });
 
-    console.log(`Revoked admin: id=${updated.id} email=${updated.email ?? "(none)"} isAdmin=${updated.isAdmin}`);
+    console.log(`Administrator access revoked; isAdmin=${updated.isAdmin}`);
   } finally {
     await pool.end();
   }
