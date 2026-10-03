@@ -1,6 +1,9 @@
 # PR #96 security remediation
 
-Status: **open Draft / HOLD**. This is not approval to merge or publish.
+Status at this earlier remediation snapshot: **open Draft / HOLD**.
+The completed existing-Development gate and separate GitHub/release verdicts
+are in [admin-moderation-premerge-gate.md](admin-moderation-premerge-gate.md).
+Ready for Review is not approval to merge or publish; Production remains HOLD.
 Review date: 2026-10-03. Approved comparison base:
 `59c73f43fc4e51861d5f1388ca1808ba7a637d01`.
 
@@ -154,7 +157,7 @@ high-finding remediation. Include them in the separately reviewed work below.
 | esbuild 0.27.3, GHSA-g7r4-m6w7-qqqr (low) | Direct API build tool and transitive Vite/tsx tool; absent from API runtime bundle | 0.28.1 crosses a 0.x minor; toolchain compatibility review |
 | markdown-it 14.3.0, GHSA-253c-mchw-3w2r (moderate) | Transitive Orval/typedoc documentation tooling, absent from API runtime bundle | 14.3.1 patch; separate low-risk tooling update |
 | nanoid 3.3.16, GHSA-2v37-7h3g-55p8 (moderate) | Transitive PostCSS/Vite development tooling, absent from API runtime bundle | 3.3.18 patch; separate low-risk tooling update |
-| qs 6.15.3, GHSA-4mjr-xmp4-gh2g (moderate), GHSA-x5fp-wj9c-mxmx (low) | **Production/transitive** Express 5.2.1 and body-parser 2.3.0; eight source files in API bundle. URL-encoded parsing is potentially request-reachable; not dismissed as dev-only | 6.16.0 same-major minor; verify parser/body/query limits and auth/request compatibility separately |
+| qs 6.15.3, GHSA-4mjr-xmp4-gh2g (moderate), GHSA-x5fp-wj9c-mxmx (low) | **Production/transitive** Express 5.2.1 and body-parser 2.3.0; npm parser and separate SDK-vendored serializer are in the API bundle. Parsing is request-reachable; advisory-specific stringify/comma conditions are assessed in the completed pre-merge gate, not dismissed as dev-only | 6.16.0 same-major minor; verify parser/body/query limits, constructor/comma regressions, SDK serializer and auth/request compatibility separately |
 
 ## Precisely proposed separate remediation PRs — not created or approved
 
@@ -180,9 +183,10 @@ high-finding remediation. Include them in the separately reviewed work below.
 The stale Phase 1 assertion also needs separate reconciliation with the approved
 free-product behavior, not deletion to manufacture a passing result.
 
-## Remaining HOLD gates
+## Remaining Production release HOLD gates
 
-The two high dependency findings, visible static-review warnings, the baseline
+The completed pre-merge gate distinguishes these residual risks from PR code
+blockers; it does not waive or suppress them. The two high dependency findings, visible static-review warnings, the baseline
 Phase 1 failure and the unfinished release checks are not waived. Published
 namespace/origin checks, exact binary/recovery identity, maintenance/drain,
 approved schema-application route, retained backup and production budget remain
