@@ -20,6 +20,7 @@ import { App as CapacitorApp } from '@capacitor/app';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { packagedMediaUrl } from './lib/packaged-media-url';
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
 
@@ -38,11 +39,13 @@ export const API_BASE_URL: string = configuredBaseUrl.replace(/\/+$/, '');
 const isApiPath = (path: string): boolean => path === '/api' || path.startsWith('/api/');
 
 /**
- * Absolute URL for an app-relative `/api/...` path when running inside the
- * native shell; anything else (absolute URLs, non-API paths, empty values)
+ * Absolute URL for app-relative API/packaged-media paths in the native shell;
+ * anything else (absolute URLs, unrelated asset paths, empty values)
  * is returned untouched. Identity function on the web.
  */
 export function apiUrl<T extends string | null | undefined>(path: T): T {
+  const media = packagedMediaUrl(path, isNativeApp, API_BASE_URL);
+  if (media !== path) return media;
   if (!isNativeApp || !API_BASE_URL || typeof path !== 'string' || !isApiPath(path)) return path;
   return `${API_BASE_URL}${path}` as T;
 }

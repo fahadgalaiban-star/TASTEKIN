@@ -169,9 +169,11 @@ envelopes, media paths and unrelated-ID collisions. URI-encoded targets are chec
 ## Remaining limitations and operational boundary
 
 No complete revocation is claimed for previously issued provider URLs, cached or
-offline copies, platform-served `/tastekin-media/*` assets, or unattributed copied
-KIN text. Express's static guard applies only when Express serves the request;
-the platform static handler can bypass it. No storage-provider redesign is included.
+offline copies, or unattributed copied KIN text. The later direct-media correction
+removes content media from the static build and routes `/tastekin-media/*` through
+the gated API; see [focused review](admin-moderation-direct-media-review.md).
+This is locally verified source/package enforcement, not a production rollout or
+historical cache purge. No storage-provider redesign is included.
 
 No configured/existing database migration or provider resource operation was
 performed. No raw credentials/secrets were inspected or changed. GitHub updates
@@ -179,7 +181,11 @@ use the existing managed connection. Nothing was merged, deployed, published,
 or applied to production; the development API was not started against new schema.
 See `docs/admin-moderation-deployment.md` for the separately approved release order.
 
-## Exact changed files (45; relative to approved main)
+## Prior corrective-review manifest (45; before the direct-media correction)
+
+This historical list predates the focused package/routing correction. See
+`docs/admin-moderation-direct-media-review.md` and the PR's current Files changed
+tab for that correction; database/schema/contracts are unchanged by it.
 
 - `artifacts/api-server/src/app.ts`
 - `artifacts/api-server/src/lib/active-account.ts`

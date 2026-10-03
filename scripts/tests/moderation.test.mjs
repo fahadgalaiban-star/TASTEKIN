@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { readFile, writeFile, realpath } from 'node:fs/promises';
+import { readFile, writeFile, realpath, mkdir } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { userInfo } from 'node:os';
@@ -32,6 +32,8 @@ pool.on('acquire', (client) => {
   client.query = (...args) => {
     const text = typeof args[0] === 'string' ? args[0] : args[0]?.text;
     if (text) queryLog.push(text);
+    if (globalThis.__fixtureVisibilityUnavailable && text?.includes('"moderation_content_states"'))
+      throw new Error('Synthetic visibility failure');
     return original(...args);
   };
 });
@@ -81,10 +83,12 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
         export {getEditContext} from './artifacts/api-server/src/routes/engagement';
         export {configuredFounderMatches,ensureCreatorAccount} from './artifacts/api-server/src/lib/creator-account';
         export {default as moderationActionsRouter} from './artifacts/api-server/src/routes/moderation-actions';
+        export {packagedMediaMiddleware} from './artifacts/api-server/src/middlewares/packaged-media-middleware';
         export {suspensionMiddleware,moderationVisibilityMiddleware,staticModerationMiddleware,loadModerationVisibility} from './artifacts/api-server/src/middlewares/moderation-middleware';`,
       resolveDir: resolve('.'),
     },
     bundle: true, write: false, platform: 'node', format: 'esm',
+    define: { __dirname: JSON.stringify(dirname(socket)) },
     banner: { js: `import {createRequire as __makeRequire} from 'node:module'; const require=__makeRequire(${JSON.stringify(resolve('lib/db/package.json'))});` },
     plugins: [{
       name: 'only-isolated-db',
@@ -334,6 +338,7 @@ test('conflicting actions serialize, every committed change is audited, failed a
   assert.equal((await pool.query("SELECT is_suspended FROM users WHERE id='author'")).rows[0].is_suspended, false);
   assert.equal((await pool.query("SELECT count(*)::int AS count FROM native_sessions WHERE revoked_at IS NULL")).rows[0].count, activeBefore);
   assert.ok(await api.getSession(sid), 'Failed audit must roll back web-session expiration too');
+  await pool.query('DROP TRIGGER fail_audit ON moderation_audit_log; DROP FUNCTION reject_review_audit()');
 });
 function response() {
   return { statusCode: 200, headers: {}, body: undefined,
@@ -356,7 +361,7 @@ test('consumer routing/guest defaults are projected; private ownership and inspe
   await api.moderationVisibilityMiddleware({ path: '/creator-workspace', user: { id: 'author' } }, response(), () => { privateNext = true; });
   assert.equal(privateNext, true);
   const staticRes = response();
-  await api.staticModerationMiddleware({ path: '/review-fixture-photo.jpg' }, staticRes, () => { throw new Error('Hidden asset forwarded'); });
+  await api.staticModerationMiddleware({ path: '/review-fixture-photo.jpg', protocol: 'https', get: () => 'fixture.invalid' }, staticRes, () => { throw new Error('Hidden asset forwarded'); });
   assert.equal(staticRes.statusCode, 404);
   const v = emptyVisibility(); v.editIds.add('reported-edit'); v.commentIds.add(COMMENT);
   assert.deepEqual(projectConsumerResponse('/edits/visible/comments', [{ id: COMMENT, body: 'Hidden' }, { id: 'visible' }], v), [{ id: 'visible' }]);
@@ -369,6 +374,122 @@ test('consumer routing/guest defaults are projected; private ownership and inspe
   const frontend = await readFile('artifacts/tastekin/src/App.tsx', 'utf8');
   assert.doesNotMatch(frontend, /publicFeedEdits\.length\s*\?\s*publicFeedEdits\s*:\s*published/);
   assert.match(frontend, /screen === 'adminReports' && session\.isAdmin/);
+});
+test('real direct media HTTP: hide/restore, comments, aliases, caches, suspension and admin-only inspection', async () => {
+  const express = createRequire(resolve('artifacts/api-server/package.json'))('express');
+  const media = dirname(socket) + '/media';
+  await mkdir(media);
+  const image = Buffer.from('synthetic packaged image bytes');
+  for (const name of ['review-fixture-photo.jpg', 'comment-fixture.webp', 'unrelated.webp'])
+    await writeFile(media + '/' + name, image);
+  const originalWorkspace = (await pool.query("SELECT edits FROM creator_workspaces WHERE creator_id='author-creator'")).rows[0].edits;
+  const directWorkspace = originalWorkspace.map((edit) => ({ ...edit, image: '/tastekin-media/review-fixture-photo.jpg' }));
+  await pool.query("UPDATE creator_workspaces SET edits=$1 WHERE creator_id='author-creator'", [JSON.stringify(directWorkspace)]);
+  const originalComment = (await pool.query('SELECT body FROM edit_comments WHERE id=$1', [COMMENT])).rows[0].body;
+  await action(REPORT, 'restore_edit'); await action(COMMENT_REPORT, 'restore_comment');
+  await action(REPORT, 'unsuspend_user');
+  const app = express();
+  app.use((req, _res, next) => {
+    // Only synthetic test identities; actual inspection still resolves admin from DB.
+    const user = req.get('x-fixture-user');
+    if (user) req.user = { id: user };
+    next();
+  });
+  app.use('/tastekin-media', api.packagedMediaMiddleware);
+  app.use('/api', api.suspensionMiddleware, api.moderationActionsRouter);
+  app.use((_req, res) => res.status(404).end());
+  app.use((_err, _req, res, _next) => res.status(500).end());
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((ready) => server.once('listening', ready));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const direct = '/tastekin-media/review-fixture-photo.jpg';
+  process.env.ALLOWED_ORIGINS = `${base},https://frontend.example.invalid,https://alias.example.invalid`;
+  const call = (path, options = {}) => fetch(base + path, options);
+  try {
+    const before = await call(direct);
+    assert.equal(before.status, 200); assert.deepEqual(Buffer.from(await before.arrayBuffer()), image);
+    assert.match(before.headers.get('cache-control'), /no-store/);
+    assert.equal(before.headers.get('etag'), null); assert.equal(before.headers.get('last-modified'), null);
+    assert.equal((await call('/tastekin-media/review%2Dfixture%2Dphoto.jpg')).status, 200);
+    await action(REPORT, 'hide_edit');
+    for (const url of [direct, direct + '?known=1', '/tastekin-media/review%2Dfixture%2Dphoto.jpg',
+      '/TaStEkIn-MeDiA/review-fixture-photo.jpg']) {
+      for (const method of ['GET', 'HEAD']) {
+        const denied = await call(url, { method, headers: { range: 'bytes=0-3', 'if-none-match': '*', 'if-modified-since': new Date().toUTCString() } });
+        assert.equal(denied.status, 404); assert.equal((await denied.arrayBuffer()).byteLength, 0);
+        assert.match(denied.headers.get('cache-control'), /no-store/);
+      }
+    }
+    // Being the owner or an administrator never bypasses the public URL.
+    for (const user of ['author', 'moderator'])
+      assert.equal((await call(direct, { headers: { 'x-fixture-user': user } })).status, 404);
+    assert.equal((await call('/tastekin-media/unrelated.webp')).status, 200);
+    const inspection = `/api/admin/reports/${REPORT}/inspection/media`;
+    for (const user of [undefined, 'author'])
+      assert.equal((await call(inspection, { headers: user ? { 'x-fixture-user': user } : {} })).status, 403);
+    const inspected = await call(inspection, { headers: { 'x-fixture-user': 'moderator' } });
+    assert.equal(inspected.status, 200); assert.deepEqual(Buffer.from(await inspected.arrayBuffer()), image);
+    assert.match(inspected.headers.get('cache-control'), /no-store/);
+    await action(REPORT, 'restore_edit');
+    assert.equal((await call(direct)).status, 200);
+    assert.equal((await call(direct, { headers: { range: 'bytes=0-3' } })).status, 206);
+    // Comment media is an explicit text link; hiding it must not hide the parent Edit.
+    const linkedBody = `Local /tastekin-media/comment-fixture.webp; remote https://external.invalid/tastekin-media/unrelated.webp`;
+    await pool.query('UPDATE edit_comments SET body=$1 WHERE id=$2', [linkedBody, COMMENT]);
+    await action(COMMENT_REPORT, 'hide_comment');
+    assert.equal((await call('/tastekin-media/comment-fixture.webp?known=1')).status, 404);
+    assert.equal((await call(direct)).status, 200);
+    assert.equal((await call('/tastekin-media/unrelated.webp')).status, 200);
+    assert.equal((await pool.query('SELECT body FROM edit_comments WHERE id=$1', [COMMENT])).rows[0].body, linkedBody);
+    await action(COMMENT_REPORT, 'restore_comment');
+    assert.equal((await call('/tastekin-media/comment-fixture.webp')).status, 200);
+    await pool.query('UPDATE edit_comments SET body=$1 WHERE id=$2', [base + '/tastekin-media/comment-fixture.webp', COMMENT]);
+    await action(COMMENT_REPORT, 'hide_comment');
+    assert.equal((await call('/tastekin-media/comment-fixture.webp')).status, 404);
+    await action(COMMENT_REPORT, 'restore_comment');
+    for (const body of ['/tastekin-media/comment-fixture%2Ewebp', '/TASTEKIN-MEDIA/comment-fixture.webp',
+      'See /tastekin-media/comment-fixture.webp.',
+      'https://frontend.example.invalid/tastekin-media/comment-fixture.webp.']) {
+      await pool.query('UPDATE edit_comments SET body=$1 WHERE id=$2', [body, COMMENT]);
+      await action(COMMENT_REPORT, 'hide_comment');
+      assert.equal((await call('/tastekin-media/comment-fixture.webp')).status, 404, body);
+      assert.equal((await call('/tastekin-media/comment-fixture.webp', { headers: { host: 'alias.example.invalid' } })).status, 404, body);
+      await action(COMMENT_REPORT, 'restore_comment');
+      assert.equal((await call('/tastekin-media/comment-fixture.webp')).status, 200);
+    }
+    const absoluteWorkspace = directWorkspace.map((edit) => ({ ...edit, image: 'https://frontend.example.invalid' + direct }));
+    await pool.query("UPDATE creator_workspaces SET edits=$1 WHERE creator_id='author-creator'", [JSON.stringify(absoluteWorkspace)]);
+    await action(REPORT, 'hide_edit');
+    assert.equal((await call(direct)).status, 404, 'backend/proxy origin differs from stored frontend origin');
+    assert.equal((await call(direct, { headers: { host: 'alias.example.invalid' } })).status, 404);
+    await action(REPORT, 'restore_edit');
+    assert.equal((await call(direct)).status, 200);
+    await pool.query("UPDATE creator_workspaces SET edits=$1 WHERE creator_id='author-creator'", [JSON.stringify(directWorkspace)]);
+    await action(REPORT, 'suspend_user');
+    assert.equal((await call(direct)).status, 404);
+    assert.equal((await call('/tastekin-media/comment-fixture.webp')).status, 404);
+    assert.equal((await call('/tastekin-media/unrelated.webp', { headers: { 'x-fixture-user': 'author' } })).status, 200);
+    assert.equal((await call(inspection, { headers: { 'x-fixture-user': 'moderator' } })).status, 200);
+    await action(REPORT, 'unsuspend_user');
+    assert.equal((await call(direct)).status, 200);
+    assert.equal((await call('/tastekin-media/comment-fixture.webp')).status, 200);
+    for (const path of ['/tastekin-media/missing.webp', '/tastekin-media/%2e%2e%2ffavicon.svg', '/tastekin-media/%ZZ.webp'])
+      assert.equal((await call(path)).status, 404);
+    assert.equal((await call(direct, { method: 'POST' })).status, 405);
+    assert.deepEqual((await pool.query("SELECT edits FROM creator_workspaces WHERE creator_id='author-creator'")).rows[0].edits, directWorkspace);
+    // Database visibility failures fail closed even for otherwise-public assets.
+    globalThis.__fixtureVisibilityUnavailable = true;
+    try {
+      const unavailable = await call('/tastekin-media/unrelated.webp');
+      assert.equal(unavailable.status, 503); assert.match(unavailable.headers.get('cache-control'), /no-store/);
+    } finally { globalThis.__fixtureVisibilityUnavailable = false; }
+    assert.deepEqual(await readFile(media + '/review-fixture-photo.jpg'), image);
+  } finally {
+    delete process.env.ALLOWED_ORIGINS;
+    await pool.query("UPDATE creator_workspaces SET edits=$1 WHERE creator_id='author-creator'", [JSON.stringify(originalWorkspace)]);
+    await pool.query('UPDATE edit_comments SET body=$1 WHERE id=$2', [originalComment, COMMENT]);
+    await new Promise((done) => server.close(done));
+  }
 });
 test('finish: original content, accounts, reports, audits and session rows still exist', async () => {
   for (const table of ['users','creator_workspaces','edit_comments','reports','moderation_audit_log','sessions','native_sessions']) {

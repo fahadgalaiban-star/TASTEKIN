@@ -5,15 +5,112 @@
 This review authorizes **no operational action**. Commands below are instructions
 for a separately approved release, not commands executed during this review.
 
+### Separately authorized isolated rehearsal completed
+
+The owner subsequently authorized a production **pg_dump-only** export and a
+new disposable, network-isolated restore/migration rehearsal. That rehearsal
+passed and its dump/database were deleted. Neither production nor the existing
+Development Database was modified, and no merge or publish was performed.
+See [measured results and remaining blockers](admin-moderation-production-copy-rehearsal.md).
+This closes only the isolated export/restore/0023 rehearsal gate; Draft / HOLD
+and the separate production release approvals remain in effect. The planning
+text below describes the earlier, unexecuted plan, not current permission to
+repeat the export or perform release operations.
+
+## Updated recovery rehearsal plan — planning only
+
+PR #96 remains **Draft / HOLD**. No PITR, production reads/export, destination
+creation, restore, migration, merge or publish is authorized by this plan.
+
+### Confirmed evidence
+
+- The owner reports production PITR ON for the last 7 days; scheduled daily
+  backups OFF, no scheduled backups, and an available 7-day retention option.
+- Replit Support confirmed to the owner that PITR restores production **in
+  place** and cannot restore to a separate isolated database. Do not use PITR
+  for this rehearsal. Enabled PITR is not evidence of a successful restore.
+- Publishing history records successful release `0a353bcf` at
+  `2026-09-30T23:23:56Z`. Its source commit and recovery capability are unverified.
+
+### Proposed sequence — separate approvals before execution
+
+1. **Approve the export and destination first.** The owner must separately
+   authorize production preflight reads and `pg_dump`, creation of a disposable
+   database, transfer/restore of production data, and isolated rehearsal writes.
+   Agree on the operator, secured location, access, retention/deletion policy,
+   compatible PostgreSQL tools/version, storage budget and acceptable recovery
+   time/data-loss limits. No destination or backup is created during planning.
+2. **Create and verify isolation after approval.** Use an operator-controlled
+   disposable environment outside this review workspace, distinct from both
+   production and the existing shared development database. Verify its target
+   identity before any restore or test. Deny outbound access except the isolated
+   database connection; disable workers, schedules, email, auth-provider, AI,
+   media/storage and other external calls. Use mocks and new synthetic test
+   identities, never copied customer credentials or sessions.
+3. **Take a logical backup after approval.** Through the existing approved
+   operator credential mechanism, use `pg_dump --format=custom` against the
+   verified production source. Record source/schema/ledger metadata, UTC start
+   and finish, tool version, archive size and checksum. Protect the dump and
+   its transfer as sensitive production data; do not upload it here or print
+   credentials/row contents. A dump is a consistent logical snapshot, not PITR,
+   and does not include external media/provider resources or all cluster-level
+   configuration. Confirm required extensions/permissions separately.
+4. **Prove restoration.** Use `pg_restore` into the approved empty disposable
+   database, with errors fatal, no `--clean`, no restore over production, and
+   explicitly reviewed ownership/privilege handling. Verify schema, migration
+   ledger, record counts and original-column data digests. Record restore time
+   and storage use. An archive listing/checksum alone does not pass this gate.
+5. **Rehearse 0023 only on that copy.** Pin the reviewed PR head and unchanged
+   migration checksum; require the expected 0022 ledger/schema baseline. Test
+   the reviewed 0023 transaction and ledger handling, success and intentional
+   contention/timeout rollback, and old/new application compatibility. Measure
+   total elapsed time, lock acquisition/hold time, rollback and disk/WAL growth.
+   Initially retain the reviewed 3-second lock and 60-second statement limits;
+   stop rather than silently increasing them. Check expected column/default,
+   constraint, five valid indexes and ledger entry, plus unchanged original
+   account, session, report and content records. Perform moderation mutations
+   only on synthetic fixtures in the copy.
+6. **Prove application recovery and report results.** The previously observed
+   production commit label resolves to
+   `9d2876cae32c16acf45f23bfddc9540cc237a505`; use this as a source-pinned
+   candidate, not an attested copy of the live binary or of release `0a353bcf`.
+   Build from a clean checkout with the committed lockfile, pinned toolchain
+   and recorded build/run settings. Retain artifact checksums and demonstrate
+   recovery against the isolated post-0023 schema without startup DDL or schema
+   down-migrations. Keep access restricted if moderation state has been used:
+   the old application does not enforce it. Record failures, recovery times,
+   cleanup disposition and owner sign-off before reassessing HOLD.
+
+### Remaining release gates
+
+- Export permissions, a safe disposable destination and a measured
+  `pg_dump`/`pg_restore`/0023 rehearsal were subsequently verified under separate
+  owner authorization; see the results linked above. No retained final-release
+  backup or live recovery capability is established by the deleted copy.
+- Representative storage/throughput and contention must be justified; an idle
+  copy's timing is not a production downtime guarantee.
+- A proven maintenance procedure must block all web/native/API/direct-static
+  ingress, pause all writers/other deployments, let in-flight work finish, and
+  confirm no remaining writes/long transactions through separately approved
+  checks. No existing maintenance/drain control has been demonstrated.
+- Confirm the supported production schema-application route before any release.
+  The manual wrapper later in this document is not approval for direct DDL
+  against Replit-managed production; its SQL may be evaluated on the isolated
+  copy only after rehearsal approval.
+- A rehearsal dump taken while live writes continue is not the final release
+  recovery point. A final backup after approved maintenance/drain requires its
+  own approval and verification. Do not enable scheduled backups or change PITR
+  settings as part of this plan.
+
 Reviewed implementation: `471b67c77f132eb28a4309bd074d799a498b0c70`.
 Approved main baseline: `59c73f43fc4e51861d5f1388ca1808ba7a637d01`.
 
 | Gate | Finding |
 | --- | --- |
 | Backward compatibility | Additive SQL is compatible with the reviewed main schema/old report-writing code. Exact currently deployed source revision is not exposed by the available deployment metadata, so compatibility with that exact binary is not attested. |
-| Release order | Backup/restore verification → approved GitHub merge → drain writers/maintenance → explicit 0023-only migration → manual publish → restricted smoke tests → reopen traffic. |
+| Release order | Approved isolated backup/restore/0023 rehearsal → resolve supported production schema-application route and recovery controls → separately approved merge/maintenance/final backup/release → restricted smoke tests → reopen traffic. |
 | Rollback | Atomic migration rollback before commit; retain additive schema/history on application rollback after commit. Old binaries do not enforce moderation and must remain access-restricted if moderation state has been used. |
-| Lock duration | Not measured on the current database. A representative restored-copy rehearsal and approved outage budget are required. Do not claim a subsecond or zero-downtime migration. |
+| Lock duration | Restored-copy measurement: 83 ms DDL/ledger and 113 ms transaction/lock upper bound, with controlled timeout/rollback tests passed. No live-production timing or zero-downtime guarantee; an approved outage/I/O budget remains required. |
 | Data retention | No DELETE, UPDATE, DROP or TRUNCATE in 0023; no session/report/content/media rewrite or provider operation. Physical no-rewrite default addition requires PostgreSQL 11+. |
 | Merge versus publish | Replit documentation says publishing/republishing is manual. GitHub inventory showed one build-only workflow and zero repository webhooks; no publish/deploy step was found. Merge is not a Publish action. |
 
@@ -24,9 +121,11 @@ records were empty; that is **not** proof of the live application's source SHA.
 
 **Before this gate can pass**, an operator must supply the non-secret deployed
 build/source identity, confirm its compatibility against this change, provide a
-timed representative restore/rehearsal with a verified backup, and demonstrate
-the maintenance/drain and previous-release rollback controls. No production
-data access is authorized to fill these gaps. Do not mark Ready for Review yet.
+retained final-release backup, and demonstrate the maintenance/drain and
+previous-release rollback controls. The separately approved isolated
+restore/migration rehearsal has passed; it does not satisfy those remaining
+gates. No further production data access is authorized by this document to fill
+these gaps. Do not mark Ready for Review yet.
 
 ## Compatibility and lock assessment
 
@@ -58,9 +157,9 @@ indexes and rollback work. Backups also consume I/O and disk.
   not merely for the fast ADD COLUMN statements.
 - Large tables, contention, slow storage, WAL pressure or long transactions can
   make this take seconds, minutes or longer. Current sizes, contention and
-  throughput were deliberately not queried; no current-database duration is
-  asserted. Record measured lock-hold/elapsed/rollback times on an approved
-  representative restored copy and add operational headroom before scheduling.
+  throughput were not directly queried on production. The separately approved
+  restored-copy measurements are recorded in the rehearsal report; they do not
+  assert live-production duration. Add operational headroom before scheduling.
 
 The wrapper below enforces a **3-second lock-acquisition limit** and a
 **60-second server-side limit on the entire migration DO statement**, not
@@ -72,9 +171,10 @@ a concurrent-index migration design; do not edit 0023 or raise limits ad hoc.
 ## Operator prerequisites — STOP if any are missing
 
 1. Separate approval for backup, maintenance, merge, migration and publishing.
-2. Identify the deployed build and retain its previous working deployment in
-   Publishing History; verify that it can actually be restored. Record its build
-   ID/source SHA, current run/build settings and the candidate merge SHA.
+2. Identify the deployed build and retain a reproducible, tested application
+   recovery target with its source SHA, lockfile/toolchain, artifact checksum and
+   run/build settings. Do not assume Publishing History supports rollback.
+   Record the candidate merge SHA; historical release `0a353bcf` remains unverified.
 3. Use an operator-controlled terminal with an **existing securely configured
    PostgreSQL service** for the approved production destination. Do not paste a
    database URL/password into commands, chat or logs; do not change credentials.
@@ -116,7 +216,10 @@ and approval to proceed. Do not use this runbook while the gate remains HOLD.
 
 ### B. Destination/version/ledger checks and backup, before merge
 
-These are future operator database reads, **not reads performed by this review**.
+These are future operator database reads/export/restore, **not operations
+performed by this review**. Follow the updated recovery rehearsal plan above:
+export, data transfer and destination creation each need separate approval.
+This is a logical `pg_dump`/`pg_restore` rehearsal, not an in-place PITR restore.
 
 ```bash
 : "${PGSERVICE:?Existing approved production service required}"
@@ -321,8 +424,8 @@ they are not migration side effects or permission to rewrite customer records.
 | Backup/restore/preflight | Stop before merge/migration/publish; leave current release intact. |
 | Migration error/timeout before commit | ON_ERROR_STOP closes the connection and PostgreSQL rolls back the transaction, including ledger/indexes/DDL. Wait for rollback/lock release; verify 0023 ledger and objects are absent, then reopen the unchanged old release if safe. No schema-down SQL. |
 | Unknown COMMIT outcome | Keep maintenance. Reconnect through the approved operator channel and inspect the 0023 hash/ledger and complete schema. Never rerun based solely on a client error. |
-| Publish/build/startup failure after commit | Keep 0023 and its ledger. Do not drop columns/table/indexes or restore the pre-migration dump over live data. Preserve the previous healthy deployment if still serving; otherwise restore its recorded working deployment using Publishing History. Keep ingress restricted until safe. |
-| Smoke failure | Re-enable/retain maintenance immediately. Record build/failed check/audit IDs; stop fixture actions. Restore the recorded previous deployment in Publishing History, retaining all moderation/audit/session history. Diagnose/fix forward; retest before reopening. |
+| Publish/build/startup failure after commit | Keep 0023 and its ledger. Do not drop columns/table/indexes or restore the pre-migration dump over live data. Preserve the previous healthy deployment if still serving; otherwise use only the separately approved, rehearsed application recovery procedure. If none is available, remain in maintenance and stop. Do not assume Publishing History rollback. |
+| Smoke failure | Re-enable/retain maintenance immediately. Record build/failed check/audit IDs; stop fixture actions. Use only the separately approved, rehearsed application recovery target, retaining all moderation/audit/session history. Diagnose/fix forward; retest before reopening. Do not assume Publishing History rollback. |
 
 An old pre-moderation application ignores hidden/suspended state. **Application
 rollback is not enforcement rollback:** if moderation has occurred, reopening that
@@ -337,6 +440,11 @@ sessions and new content. It requires a separate incident plan, explicit data-lo
 approval and preservation/reconciliation of newer writes. Restore first to a new
 secured database; no DROP, TRUNCATE, --clean or overwrite-live command is approved
 by this document. Storage/provider rollback is outside this release.
+
+That separate-destination recovery proposal uses an approved logical dump,
+**not PITR**. Support confirmed PITR changes production in place; any future PITR
+operation requires its own incident authorization and data-loss assessment and
+cannot serve as an isolated rehearsal.
 
 Sources for manual publishing/rollback:
 https://docs.replit.com/features/publishing/overview and
@@ -376,21 +484,48 @@ inspection bypasses public projection for moderation.
 Previously delivered files, third-party cached copies and unattributed free text
 cannot be recalled by this application. Provider resources are not modified.
 
-## Read-path limitations requiring a separate review
+## Direct packaged-media enforcement — Draft / HOLD
 
-- Replit's static artifact handler can serve packaged `/tastekin-media/*` files
-  directly, before the API/Express middleware. The new direct-asset guard covers
-  single-process Express serving only; it cannot revoke the platform's direct
-  static URLs. API public-media endpoints and consumer JSON are moderated.
-  Moving content images out of the publicly served artifact directory and behind
-  the gated API requires a separately reviewed media-routing/package change.
+- The API artifact now owns `/tastekin-media` as well as `/api`. The frontend
+  stages only unrelated UI assets into its static public directory; content
+  media is copied into the API's non-public build directory. Source demo files
+  and private/customer storage objects are not deleted, moved or rewritten.
+- Direct GET/HEAD requests check fresh moderation state before file serving.
+  Hidden Edit media, explicit packaged-media links in hidden text comments and
+  suspended-author media return empty 404 responses, including known URLs,
+  encoded filenames, query strings, range and conditional requests. A visibility
+  failure returns 503, never a static or SPA fallback. Restore/unsuspension
+  restores access without touching media bytes.
+- Ordinary public access remains unauthenticated, including unrelated media
+  viewed by a suspended account. The direct public route has no owner/admin
+  exception. Existing separately authorized admin inspection reads originals
+  from the server package and retains its existing authorization/audit behavior.
+- All newly served direct responses use `private, no-store`; ETag/Last-Modified
+  validators are disabled so a new hidden request cannot return 304. Normal
+  image content types, HEAD and visible-media range support are retained.
+- A file referenced by multiple targets is denied while **any** referencing
+  target is hidden/suspended. Restoration of one target cannot override another
+  target's restriction. Comments have no attachment column: only explicit local
+  or same-origin packaged-media links in their text are media references; hiding
+  a plain-text comment does not hide its parent Edit's image.
+- This closes the source/package routing bypass, not a live-production
+  attestation. Release checks must verify `/tastekin-media` reaches the gated API,
+  the final static package has no media files, and provider/cache boundaries are
+  understood. Draft / HOLD and all remaining release approvals still apply.
+- Absolute media links use the existing configured `ALLOWED_ORIGINS` app-origin
+  inventory rather than the current request Host alone. Confirm every serving
+  alias/historical app origin used in stored media links is listed before
+  release. No configured origin value was accessed or changed for this review.
+
+## Remaining read-path limitations
 - Previously issued third-party playback/media links, cached/offline responses
   and copied KIN text without a retained source identity cannot be recalled.
   New KIN references with retained identifiers are filtered/rejected.
 
-Do not treat this draft as approval to release moderation with complete
-direct-static/third-party asset revocation. No provider access or deployment
-configuration change was made to work around that limitation.
+Previously delivered/cached/offline copies and already admitted in-flight
+downloads cannot be revoked. There is no provider purge or historical CDN-cache
+purge in this change. No production access, deployment or provider operation was
+performed to implement or verify this correction.
 
 ## Local review verification
 

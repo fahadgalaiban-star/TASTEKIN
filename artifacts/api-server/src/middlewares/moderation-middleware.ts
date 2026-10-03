@@ -4,6 +4,7 @@ import type { Request, Response, NextFunction } from "express";
 import { isAccountSuspended } from "../lib/active-account";
 import { blockedReference, blockedConsumerRequest, emptyVisibility, isConsumerContentPath, projectConsumerResponse } from "../lib/moderation-visibility";
 import { suspendedAccountAccess } from "../lib/suspended-account-access";
+import { packagedMediaLinks, packagedMediaReference, trustedMediaOrigins } from "../lib/packaged-media";
 
 /** Mounted after identity, before every API router. Database failures fail closed. */
 export async function suspensionMiddleware(req: Request, res: Response, next: NextFunction) {
@@ -27,8 +28,9 @@ export async function suspensionMiddleware(req: Request, res: Response, next: Ne
     next();
   } catch { res.status(503).json({ error: "Account status temporarily unavailable." }); }
 }
-export async function loadModerationVisibility() {
+export async function loadModerationVisibility(trustedOrigin?: string) {
     const v = emptyVisibility();
+    for (const origin of trustedMediaOrigins(trustedOrigin)) v.trustedOrigins.add(origin);
     const [states, suspended] = await Promise.all([
       db.select().from(moderationContentStates).where(eq(moderationContentStates.isHidden, true)),
       db.select({ id: usersTable.id }).from(usersTable).where(eq(usersTable.isSuspended, true)),
@@ -59,7 +61,8 @@ export async function loadModerationVisibility() {
           if (ownerSuspended && typeof edit.id === "string") v.editIds.add(edit.id);
           if (ownerSuspended || typeof edit.id === "string" && v.editTargets.get(workspace.creatorId)?.has(edit.id)) {
             const media = (value: unknown): void => {
-              if (typeof value === "string" && /^(https?:\/\/|\/objects\/|\/tastekin-media\/)/.test(value)) v.media.add(value);
+              if (typeof value === "string" && (/^(https?:\/\/|\/objects\/|\/tastekin-media\/)/i.test(value)
+                || packagedMediaReference(value, v.trustedOrigins))) v.media.add(value);
               else if (value && typeof value === "object") Object.values(value).forEach(media);
             };
             for (const key of ["image", "sourceImage", "previewImage", "videoUrl", "embedUrl", "posterUrl", "video"]) {
@@ -68,9 +71,17 @@ export async function loadModerationVisibility() {
           }
         }
       }
-      if (suspended.length) {
-         const comments = await db.select({ id: editComments.id }).from(editComments).where(inArray(editComments.userId, [...v.userIds]));
-         comments.forEach((row) => v.commentIds.add(row.id));
+      if (v.commentIds.size || suspended.length) {
+         const comments = await db.select({ id: editComments.id, body: editComments.body }).from(editComments).where(or(
+           v.commentIds.size ? inArray(editComments.id, [...v.commentIds]) : undefined,
+           suspended.length ? inArray(editComments.userId, [...v.userIds]) : undefined,
+         ));
+         comments.forEach((row) => {
+           v.commentIds.add(row.id);
+           // Comments are text-only. Gate explicit packaged-media links, not parent
+           // Edit images or arbitrary external/free-text URLs.
+           for (const reference of packagedMediaLinks(row.body, v.trustedOrigins)) v.media.add(reference);
+         });
       }
     }
     return v;
@@ -85,8 +96,7 @@ export async function moderationVisibilityMiddleware(req: Request, res: Response
         .where(eq(creatorWorkspaces.ownerUserId, req.user.id)).limit(1);
       if (owned) { next(); return; }
     }
-    const v = await loadModerationVisibility();
-    v.trustedOrigins.add(`${req.protocol}://${req.get("host")}`);
+    const v = await loadModerationVisibility(`${req.protocol}://${req.get("host")}`);
     if (blockedConsumerRequest(req.path, req.body, v)) {
       res.status(404).json({ error: "Content unavailable." }); return;
     }
@@ -101,12 +111,15 @@ export async function moderationVisibilityMiddleware(req: Request, res: Response
     next();
   } catch { res.status(503).json({ error: "Content visibility temporarily unavailable." }); }
 }
-/** Single-process Express fallback only; the platform static handler bypasses this guard. */
+/** Fresh public-media checks; no admin/owner bypass on the direct public route. */
 export async function staticModerationMiddleware(req: Request, res: Response, next: NextFunction) {
+  res.setHeader("Cache-Control", "private, no-store");
   try {
-    const v = await loadModerationVisibility();
-    res.setHeader("Cache-Control", "no-store");
-    if (blockedReference(`/tastekin-media${req.path}`, v)) { res.status(404).end(); return; }
+    const v = await loadModerationVisibility(`${req.protocol}://${req.get("host")}`);
+    const reference = packagedMediaReference(`/tastekin-media${req.path}`);
+    if (!reference || [...v.media].some((url) => packagedMediaReference(url, v.trustedOrigins) === reference)) {
+      res.status(404).end(); return;
+    }
     next();
   } catch { res.status(503).end(); }
 }

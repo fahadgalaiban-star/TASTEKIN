@@ -9,7 +9,7 @@ import { streamPrivateImage } from "../lib/private-image-response";
 import { clearPhotoOf } from "../lib/edit-access";
 import { ApplyModerationActionBody } from "@workspace/api-zod";
 import path from "node:path";
-declare const __dirname: string;
+import { packagedMediaDirectory } from "../lib/packaged-media";
 const router = Router();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 router.use("/admin/reports/:id", async (req, res, next) => {
@@ -38,7 +38,9 @@ router.get("/admin/reports/:id/inspection/media", async (req, res) => {
   if (!photo) { res.status(404).json({ error: "Media unavailable." }); return; }
   // Only server-owned private objects or packaged demo images; never fetch an arbitrary user URL.
   if (photo.startsWith("/tastekin-media/") && !photo.includes("..") && /^\/tastekin-media\/[\w.-]+\.(webp|png|jpg|jpeg)$/i.test(photo)) {
-    res.sendFile(path.resolve(__dirname, "../../tastekin/dist/public", photo.slice(1))); return;
+    res.sendFile(path.join(packagedMediaDirectory, path.basename(photo)), {
+      cacheControl: false, lastModified: false,
+    }); return;
   }
   if (!/^\/objects\/uploads\/[0-9a-f-]{36}$/i.test(photo)) { res.status(404).json({ error: "Media unavailable." }); return; }
   try { await streamPrivateImage(res, await getPrivateMediaDownloadURL(photo)); }

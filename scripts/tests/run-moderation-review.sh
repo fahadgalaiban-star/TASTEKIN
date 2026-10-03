@@ -16,7 +16,7 @@ initdb -D "$root/cluster" --auth=trust --no-sync > "$root/init.log"
 # may be reclaimed when a managed shell exits. Do not start a real app workflow.
 postgres -D "$root/cluster" -c listen_addresses='' -k "$root/socket" -p 55439 > "$root/postgres.log" 2>&1 &
 pid=$!
-trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true' EXIT
+trap 'kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; rm -rf "$root"' EXIT
 export PGHOST="$root/socket" PGPORT=55439 PGUSER="$(id -un)" PGDATABASE=postgres
 for attempt in {1..30}; do
   if pg_isready -q; then break; fi
