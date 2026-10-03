@@ -73,9 +73,10 @@ export function requireUser(req: Request, res: Response) {
 }
 
 export async function getEditContext(editId: string, userId?: string) {
-  const workspaces = await db.select().from(creatorWorkspaces);
-  const workspace = workspaces.find((candidate) => (candidate.edits as WorkspaceEdit[]).some((item) => item && item.id === editId));
-  if (!workspace) return null;
+  const workspaces = await db.select().from(creatorWorkspaces)
+    .where(sql`${creatorWorkspaces.edits} @> ${JSON.stringify([{ id: editId }])}::jsonb`).limit(2);
+  if (workspaces.length !== 1) return null;
+  const workspace = workspaces[0];
   const edit = (workspace.edits as WorkspaceEdit[]).find((item) => item && item.id === editId)!;
   const owner = Boolean(userId && workspace.ownerUserId === userId);
   // Every published Edit is public in the free product (a legacy

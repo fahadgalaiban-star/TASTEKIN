@@ -76,6 +76,8 @@ Individual admin targets use exact report/comment/creator keys; Edit resolution
 uses `WHERE edits @> '[{"id":"..."}]'::jsonb LIMIT 2`. Duplicate legacy IDs are
 rejected rather than choosing an arbitrary owner. Private-owner checks use the
 existing unique owner index and `LIMIT 1`.
+The shared engagement/comment/Saved Edit resolver also uses indexed JSONB
+containment and `LIMIT 2`, rather than reading every workspace.
 
 Migration `0023` adds five indexes justified by these real queries:
 
@@ -96,6 +98,10 @@ resolution, assert every workspace/comment read has a WHERE predicate, verify
 containment with LIMIT 2 and suspended-author IN queries, and run EXPLAIN for all
 five new indexes with sequential scans disabled. This proves index eligibility,
 not production execution plans or performance. No production database was queried.
+This instrumentation covers moderation enforcement and exact-target resolution,
+not unrelated global catalog enumeration. Existing creator-directory aggregation
+still enumerates the global catalog; this PR does not introduce pagination or
+redesign that pre-existing discovery operation.
 Migration and current schema are compared for columns/defaults/constraints/indexes,
 including descending-index null ordering.
 

@@ -78,6 +78,7 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
         export {authMiddleware} from './artifacts/api-server/src/middlewares/auth-middleware';
         export {default as authRouter} from './artifacts/api-server/src/routes/auth';
         export {default as accountRouter} from './artifacts/api-server/src/routes/account';
+        export {getEditContext} from './artifacts/api-server/src/routes/engagement';
         export {configuredFounderMatches,ensureCreatorAccount} from './artifacts/api-server/src/lib/creator-account';
         export {default as moderationActionsRouter} from './artifacts/api-server/src/routes/moderation-actions';
         export {suspensionMiddleware,moderationVisibilityMiddleware,staticModerationMiddleware,loadModerationVisibility} from './artifacts/api-server/src/middlewares/moderation-middleware';`,
@@ -293,6 +294,7 @@ test('visibility/admin target queries are bounded; partial/B-tree/JSONB indexes 
   await api.loadModerationVisibility();
   await api.resolveModerationTarget(apiIsolatedDb(), REPORT);
   await api.resolveModerationTarget(apiIsolatedDb(), COMMENT_REPORT);
+  await api.getEditContext('reported-edit');
   const contentQueries = queryLog.filter((q) => /from "(creator_workspaces|edit_comments)"/i.test(q));
   assert.ok(contentQueries.length >= 3);
   for (const q of contentQueries) assert.match(q, /\bwhere\b/i);
