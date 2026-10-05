@@ -15,8 +15,8 @@
  *    photos and My Things photos, Bunny Stream for videos) is deleted AFTER
  *    the commit, best-effort, using the same durable ledger states the rest of
  *    the app already relies on: a failed delete leaves the row in
- *    `delete_failed` for the existing sweeps (reconcile:closet-media, the
- *    video recovery sweep) — the account itself is already gone either way.
+ *    retryable ledger states for reconcile:account-media. The one-shot
+ *    runner is explicit and unscheduled; no automatic retry is promised.
  *
  * What is deliberately retained: moderation and safety records (reports,
  * moderation_audit_log) and the feature-flag audit log keep their opaque
@@ -56,8 +56,7 @@ import {
 } from "@workspace/db";
 import { and, eq, inArray, isNotNull, isNull, notInArray, or, sql } from "drizzle-orm";
 
-import { deleteBunnyVideo } from "./bunny-stream";
-import { deleteClosetMedia, deletePrivateMedia } from "./private-media-storage";
+import { accountMediaProviders, type AccountMediaProviders } from "./account-media-providers";
 import { finalizeCancelDeleted, finalizeCancelFailed } from "./video-upload-lifecycle";
 
 /** The exact confirmation token the client must send — a typed acknowledgement, never a bare boolean. */
@@ -74,6 +73,8 @@ export type AccountDeletionRefusal =
 export type AccountDeletionPlan = {
   userId: string;
   creatorId: string | null;
+  trackedClosetIds: string[];
+  trackedVideoIds: string[];
   /** Private creator photos (object paths) to delete from storage after commit. */
   creatorObjectPaths: string[];
   /** My Things ledger rows claimed for deletion, with their object keys. */
@@ -137,6 +138,15 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
   if (workspace) {
     creatorId = workspace.creatorId;
     for (const path of objectPathsReferencedByWorkspace(workspace)) creatorObjectPaths.add(path);
+    // Legacy workspace paths may predate the ledger. Register them BEFORE
+    // removing the workspace, so commit-to-provider crashes lose no targets.
+    if (creatorObjectPaths.size) {
+      await tx.insert(creatorMediaUploads).values(Array.from(creatorObjectPaths, objectPath => ({
+        objectPath, creatorId: workspace.creatorId, ownerUserId: userId, state: "deleting",
+      }))).onConflictDoUpdate({ target: creatorMediaUploads.objectPath, set: {
+        creatorId: workspace.creatorId, ownerUserId: userId, state: "deleting", updatedAt: new Date(),
+      } });
+    }
     const editIds = editIdsOf(workspace);
     if (editIds.length) {
       await tx.delete(editLikes).where(inArray(editLikes.editId, editIds));
@@ -181,6 +191,8 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
   }
 
   // ---- My Things photos: claim every ledger row that still has an object ----
+  const trackedCloset = await tx.select({ id: closetMediaUploads.id }).from(closetMediaUploads)
+    .where(and(eq(closetMediaUploads.ownerUserId, userId), isNotNull(closetMediaUploads.imageObjectKey), notInArray(closetMediaUploads.state, ["deleted"])));
   const closetRows = await tx.update(closetMediaUploads)
     .set({ state: "deletion_pending", updatedAt: new Date() })
     .where(and(
@@ -193,6 +205,9 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
   // keep the row (owner set null by its FK) as the durable cleanup record.
 
   // ---- Bunny videos: claim every row with a confirmed provider id ----
+  const trackedVideos = await tx.select({ id: videoUploads.id }).from(videoUploads)
+    .where(and(eq(videoUploads.ownerUserId, userId), notInArray(videoUploads.state, ["deleted"]),
+      or(isNotNull(videoUploads.bunnyVideoId), inArray(videoUploads.state, ["creating", "create_ambiguous", "orphan_cleanup_pending"]))));
   const videoRows = await tx.update(videoUploads)
     .set({ state: "deletion_pending", attachedEditId: null, declaredFileName: null, updatedAt: new Date() })
     .where(and(
@@ -201,10 +216,10 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
       notInArray(videoUploads.state, ["deleted", "deletion_pending", "orphan_cleanup_pending"]),
     ))
     .returning({ id: videoUploads.id, bunnyVideoId: videoUploads.bunnyVideoId, bunnyLibraryId: videoUploads.bunnyLibraryId });
-  // A create that never confirmed a provider id has nothing to delete; an
-  // ambiguous one is handed to the existing orphan-recovery sweep.
+  // An in-flight create may have reached Bunny even without a confirmed id.
+  // Both it and ambiguous creates must be recovered for DELETE, not adoption.
   await tx.update(videoUploads).set({ state: "orphan_cleanup_pending", attachedEditId: null, declaredFileName: null, updatedAt: new Date() })
-    .where(and(eq(videoUploads.ownerUserId, userId), eq(videoUploads.state, "create_ambiguous")));
+    .where(and(eq(videoUploads.ownerUserId, userId), inArray(videoUploads.state, ["creating", "create_ambiguous"])));
 
   // ---- the two feature-flag references (FKs without ON DELETE) ----
   await tx.update(featureFlags).set({ updatedByUserId: null }).where(eq(featureFlags.updatedByUserId, userId));
@@ -217,6 +232,8 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
     plan: {
       userId,
       creatorId,
+      trackedClosetIds: trackedCloset.map(row => row.id),
+      trackedVideoIds: trackedVideos.map(row => row.id),
       creatorObjectPaths: Array.from(creatorObjectPaths),
       closetMedia: closetRows.filter((row): row is { id: string; imageObjectKey: string } => typeof row.imageObjectKey === "string" && CLOSET_OBJECT_PATH.test(row.imageObjectKey)),
       videos: videoRows.filter((row): row is { id: string; bunnyVideoId: string; bunnyLibraryId: string } => typeof row.bunnyVideoId === "string"),
@@ -225,26 +242,28 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
 }
 
 /** Post-commit, best-effort physical cleanup. Never throws; reports whether everything completed. */
-async function cleanupMedia(plan: AccountDeletionPlan, log: { error: (obj: object, msg: string) => void }): Promise<"completed" | "pending" | "none"> {
+async function cleanupMedia(plan: AccountDeletionPlan, log: { error: (obj: object, msg: string) => void }, providers: AccountMediaProviders): Promise<"completed" | "pending" | "none"> {
   let pending = false;
   let attempted = 0;
 
   for (const objectPath of plan.creatorObjectPaths) {
     attempted += 1;
     try {
-      await deletePrivateMedia(objectPath);
-      await db.update(creatorMediaUploads).set({ state: "deleted", updatedAt: new Date() }).where(eq(creatorMediaUploads.objectPath, objectPath));
+      await providers.deleteCreatorPhoto(objectPath);
+      await db.update(creatorMediaUploads).set({ state: "deleted", updatedAt: new Date() })
+        .where(and(eq(creatorMediaUploads.objectPath, objectPath), eq(creatorMediaUploads.state, "deleting")));
     } catch (error) {
       pending = true;
       log.error({ err: error, objectPath }, "Account deletion: private creator media could not be deleted");
-      await db.update(creatorMediaUploads).set({ state: "delete_failed", updatedAt: new Date() }).where(eq(creatorMediaUploads.objectPath, objectPath)).catch(() => undefined);
+      await db.update(creatorMediaUploads).set({ state: "delete_failed", updatedAt: new Date() })
+        .where(and(eq(creatorMediaUploads.objectPath, objectPath), eq(creatorMediaUploads.state, "deleting"))).catch(() => undefined);
     }
   }
 
   for (const row of plan.closetMedia) {
     attempted += 1;
     try {
-      await deleteClosetMedia(row.imageObjectKey);
+      await providers.deleteClosetPhoto(row.imageObjectKey);
       await db.update(closetMediaUploads).set({ state: "deleted", deletedAt: new Date(), updatedAt: new Date() })
         .where(and(eq(closetMediaUploads.id, row.id), eq(closetMediaUploads.state, "deletion_pending")));
     } catch (error) {
@@ -260,7 +279,7 @@ async function cleanupMedia(plan: AccountDeletionPlan, log: { error: (obj: objec
   for (const video of plan.videos) {
     attempted += 1;
     try {
-      const deleted = await deleteBunnyVideo(video.bunnyVideoId, { libraryId: video.bunnyLibraryId });
+      const deleted = await providers.deleteVideo(video.bunnyVideoId, { libraryId: video.bunnyLibraryId });
       if (deleted.status === "ok") await finalizeCancelDeleted(video.id, plan.userId);
       else { pending = true; await finalizeCancelFailed(video.id, plan.userId, deleted.reason); }
     } catch (error) {
@@ -270,13 +289,31 @@ async function cleanupMedia(plan: AccountDeletionPlan, log: { error: (obj: objec
     }
   }
 
+  // Include work already pending before this request, and ambiguous creates.
+  // A zero-attempt plan does not mean physical cleanup has finished.
+  try {
+    const conditions = [
+      plan.creatorObjectPaths.length ? db.select({ id: creatorMediaUploads.objectPath }).from(creatorMediaUploads)
+        .where(and(inArray(creatorMediaUploads.objectPath, plan.creatorObjectPaths), notInArray(creatorMediaUploads.state, ["deleted"]))).limit(1) : Promise.resolve([]),
+      plan.trackedClosetIds.length ? db.select({ id: closetMediaUploads.id }).from(closetMediaUploads)
+        .where(and(inArray(closetMediaUploads.id, plan.trackedClosetIds), notInArray(closetMediaUploads.state, ["deleted"]))).limit(1) : Promise.resolve([]),
+      plan.trackedVideoIds.length ? db.select({ id: videoUploads.id }).from(videoUploads)
+        .where(and(inArray(videoUploads.id, plan.trackedVideoIds), notInArray(videoUploads.state, ["deleted"]))).limit(1) : Promise.resolve([]),
+    ];
+    pending ||= (await Promise.all(conditions)).some(rows => rows.length > 0);
+  } catch { pending = true; }
+  if (pending) return "pending";
   if (attempted === 0) return "none";
   return pending ? "pending" : "completed";
 }
 
-export async function deleteAccount(userId: string, log: { error: (obj: object, msg: string) => void }): Promise<AccountDeletionResult> {
-  const outcome = await db.transaction(async (tx) => deleteAccountRows(tx, userId));
+export async function commitAccountDeletion(userId: string) {
+  return db.transaction(async tx => deleteAccountRows(tx, userId));
+}
+
+export async function deleteAccount(userId: string, log: { error: (obj: object, msg: string) => void }, providers: AccountMediaProviders = accountMediaProviders): Promise<AccountDeletionResult> {
+  const outcome = await commitAccountDeletion(userId);
   if (!outcome.ok) return outcome;
-  const mediaCleanup = await cleanupMedia(outcome.plan, log);
+  const mediaCleanup = await cleanupMedia(outcome.plan, log, providers);
   return { ok: true, plan: outcome.plan, mediaCleanup };
 }

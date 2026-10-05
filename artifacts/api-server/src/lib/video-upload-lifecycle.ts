@@ -477,7 +477,7 @@ export async function claimCancellation(id: string, ownerUserId: string): Promis
 export async function finalizeCancelDeleted(id: string, ownerUserId: string): Promise<VideoUpload> {
   const [row] = await db.update(videoUploads)
     .set({ state: "deleted", deletedAt: new Date(), updatedAt: new Date() })
-    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.state, "deletion_pending")))
+    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.state, "deletion_pending"), isNull(videoUploads.recoveryLeaseToken)))
     .returning();
   if (row) return row;
   const [current] = await db.select().from(videoUploads).where(eq(videoUploads.id, id));
@@ -495,7 +495,7 @@ export async function finalizeCancelFailed(id: string, ownerUserId: string, reas
       retryCount: sql`${videoUploads.retryCount} + 1`,
       updatedAt: new Date(),
     })
-    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.state, "deletion_pending")))
+    .where(and(eq(videoUploads.id, id), eq(videoUploads.ownerUserId, ownerUserId), eq(videoUploads.state, "deletion_pending"), isNull(videoUploads.recoveryLeaseToken)))
     .returning();
   if (row) return row;
   const [current] = await db.select().from(videoUploads).where(eq(videoUploads.id, id));

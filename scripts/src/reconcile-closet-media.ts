@@ -108,7 +108,9 @@ const ELIGIBILITY = sql`
   (cleanup_lease_until IS NULL OR cleanup_lease_until < now())
   AND (
     (state = 'attached' AND closet_item_id IS NULL)
-    OR (owner_user_id IS NULL AND state IN ('uploading', 'upload_failed', 'uploaded', 'attached', 'deletion_pending', 'delete_failed'))
+    OR (owner_user_id IS NULL AND state IN ('uploading', 'upload_failed', 'uploaded', 'attached', 'deletion_pending'))
+    OR (owner_user_id IS NULL AND state = 'delete_failed'
+        AND updated_at < now() - (interval '${sql.raw(String(BACKOFF_BASE_MINUTES))} minutes' * power(2, least(retry_count, ${MAX_BACKOFF_EXPONENT}))))
     OR (state = 'uploading' AND updated_at < now() - interval '${sql.raw(String(STALE_UPLOADING_HOURS))} hours')
     OR (state = 'upload_failed')
     OR (state = 'uploaded' AND closet_item_id IS NULL AND updated_at < now() - interval '${sql.raw(String(ABANDONED_UPLOADED_HOURS))} hours')
