@@ -12,7 +12,9 @@
     "test:owner-discovery": "node ./scripts/test-owner-discovery.mjs",
     "test:circle": "node ./scripts/test-circle.mjs",
     "test:bunny-stream": "node ./scripts/test-bunny-stream.mjs",
-    "reconcile:video-uploads": "node --enable-source-maps ./dist/cli/reconcile-video-uploads.mjs"
+    "reconcile:video-uploads": "node --enable-source-maps ./dist/cli/reconcile-video-uploads.mjs",
+    "reconcile:account-media": "node --enable-source-maps ./dist/cli/reconcile-account-media.mjs",
+    "test:account-media": "bash ./scripts/test-account-media.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",

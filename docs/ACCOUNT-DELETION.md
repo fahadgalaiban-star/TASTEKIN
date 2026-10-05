@@ -57,20 +57,58 @@ log.
 ## Media outside Postgres
 
 After the transaction commits, the server deletes media best-effort and
-records the outcome in the existing ledgers, so an unreachable provider never
-blocks the account deletion and never leaves an untracked file:
+records targets and outcomes in the existing ledgers. All referenced creator
+photos, including legacy paths without upload rows, are registered before
+the workspace is removed. An unreachable provider does not roll back account
+deletion:
 
 | Media | Provider | Ledger state on failure | Retried by |
 | --- | --- | --- | --- |
-| Creator photos (`/objects/uploads/...`) | private object storage | `creator_media_uploads.state = delete_failed` | *no sweep exists yet* — see below |
-| My Things photos (`/objects/closet/...`) | private object storage | `closet_media_uploads.state = delete_failed` (owner already null) | `pnpm --filter scripts run reconcile:closet-media` |
-| Videos | Bunny Stream | `video_uploads.state = delete_failed` | the video recovery sweep (`retryFailedDeletions`) |
+| Creator photos (`/objects/uploads/...`) | private object storage | `delete_failed`, or `deleting` after interruption | Account-media runner |
+| My Things photos (`/objects/closet/...`) | private object storage | `delete_failed`, `deletion_pending`, or expired cleanup claim (owner already null) | Account-media runner |
+| Videos | Bunny Stream | `delete_failed`, `deletion_pending`, or orphan cleanup pending | Account-media runner |
 
 The response reports `mediaCleanup: "completed" | "pending" | "none"`.
-`creator_media_uploads` rows left in `delete_failed` are the one gap without
-an automatic retry today; they are queryable (`select object_path from
-creator_media_uploads where state = 'delete_failed'`) and can be removed with
-the storage tooling.
+It includes previously pending work and ambiguous/in-flight video creation,
+not just deletes attempted by this request. The English/Arabic UI distinguishes
+deleted account/content records from physical files still pending, and promises
+no cleanup deadline. Lost responses are not described as "nothing changed".
+
+### Prepared runner — not scheduled
+
+After building the API artifact with its usual API-only build command:
+
+```
+pnpm --filter @workspace/api-server run reconcile:account-media
+pnpm --filter @workspace/api-server run reconcile:account-media --yes
+```
+
+The first command is read-only dry-run; `--yes` applies bounded batches (up to
+50 per media type). It only claims media belonging to deleted accounts, and
+protects creator photos whose workspace still exists. Claims expire after
+five minutes and use fences so older workers cannot overwrite newer results.
+Failures stay durable, with five-minute photo retries and capped exponential
+backoff for closet/video retries; deleted-account work is not abandoned after
+an arbitrary attempt limit. Provider 404 is success; an inconclusive video
+lookup is not. No database transaction spans a provider call.
+
+No timer, startup job, schedule, or deployment was added. Pending files will
+remain pending until an operator explicitly runs this command or a separately
+approved schedule invokes it. Existing closet/video reconciliation commands
+remain available, but this runner covers all three account-deletion media
+types, including interrupted confirmed-video deletions.
+
+The focused regression command is:
+
+```
+pnpm --filter @workspace/api-server run test:account-media
+```
+
+It discards inherited application credentials, creates a Unix-socket-only
+PostgreSQL cluster under `/tmp`, exports the schema offline, uses in-memory
+provider mocks with all network access rejected, and removes its cluster
+and temporary files on exit. It never reads a managed database or rebuilds
+the running API.
 
 ## Refusals (nothing is changed)
 

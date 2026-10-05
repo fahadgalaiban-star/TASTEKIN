@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 
 import { ACCOUNT_DELETION_CONFIRMATION, deleteAccount } from "../lib/account-deletion";
-import { clearSession, getSessionId } from "../lib/auth";
+import { SESSION_COOKIE } from "../lib/auth";
 
 const router: IRouter = Router();
 
@@ -38,11 +38,13 @@ router.post("/me/delete-account", async (req, res): Promise<void> => {
     // Web: the cookie session row is already gone; clear the cookie too.
     // Native: the bearer token is already revoked; the app clears its own
     // secure-storage copy after this response.
-    if (!req.nativeSession) await clearSession(res, getSessionId(req));
+    // Sessions were deleted transactionally; do not add a fallible database
+    // operation after commit that could turn successful deletion into a 500.
+    if (!req.nativeSession) res.clearCookie(SESSION_COOKIE, { path: "/" });
     res.json({ deleted: true, mediaCleanup: result.mediaCleanup });
   } catch (error) {
     req.log.error({ err: error, userId: req.user.id }, "Account deletion failed");
-    res.status(500).json({ error: "Your account could not be deleted right now. Nothing was changed. Please try again." });
+    res.status(500).json({ error: "We could not confirm account deletion. Check whether you are still signed in before trying again." });
   }
 });
 

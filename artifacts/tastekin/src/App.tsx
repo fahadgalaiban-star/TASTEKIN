@@ -2483,6 +2483,7 @@ function DeleteAccountScreen({ ar, onSignIn, onDeleted, onOpenPrivacy }: { ar: b
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [step, setStep] = useState<'explain' | 'confirm' | 'done'>('explain');
+  const [mediaCleanup, setMediaCleanup] = useState<'completed' | 'pending' | 'none'>('pending');
   const [acknowledged, setAcknowledged] = useState(false);
   const [typed, setTyped] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2493,27 +2494,35 @@ function DeleteAccountScreen({ ar, onSignIn, onDeleted, onOpenPrivacy }: { ar: b
     setBusy(true); setError('');
     try {
       const response = await fetch('/api/me/delete-account', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirm: 'DELETE' }) });
-      const data = await response.json().catch(() => ({})) as { error?: string; code?: string };
+      const data = await response.json().catch(() => ({})) as { error?: string; code?: string; mediaCleanup?: 'completed' | 'pending' | 'none' };
       if (!response.ok) {
         if (data.code === 'admin_account') setError(t('Administrator accounts cannot delete themselves. Ask another administrator to remove the admin role first.', 'لا يمكن لحسابات المسؤولين حذف نفسها. اطلب من مسؤول آخر إزالة صلاحية الإدارة أولاً.'));
         else if (data.code === 'audit_trail') setError(t('This account holds administrative records and must be handed over by an operator before it can be deleted. Contact support.', 'يحتوي هذا الحساب على سجلات إدارية ويجب تسليمه عبر مشغّل قبل حذفه. تواصل مع الدعم.'));
-        else setError(data.error || t('Your account could not be deleted right now. Nothing was changed. Please try again.', 'تعذر حذف حسابك الآن. لم يتغير شيء. حاول مرة أخرى.'));
+        else setError(t('We could not confirm account deletion. Check whether you are still signed in before trying again.', 'تعذر تأكيد حذف الحساب. تحقق مما إذا كنت لا تزال مسجل الدخول قبل المحاولة مجدداً.'));
         return;
       }
       // Sessions are already revoked server-side; finish the local sign-out
       // (native: forget the secure-storage token) and re-read /api/me.
-      if (isNativeApp) await nativeSignOut();
-      await session.refresh();
+      setMediaCleanup(data.mediaCleanup === 'completed' || data.mediaCleanup === 'none' ? data.mediaCleanup : 'pending');
       setStep('done');
+      // A confirmed server deletion stays confirmed if local sign-out or
+      // session refresh fails. Never tell a deleted member "nothing changed".
+      if (isNativeApp) await nativeSignOut().catch(() => {});
+      await session.refresh().catch(() => {});
     } catch {
-      setError(t('Network error. Nothing was changed. Please try again.', 'خطأ في الشبكة. لم يتغير شيء. حاول مرة أخرى.'));
+      setError(t('The connection was interrupted, so we could not confirm account deletion. Check whether you are still signed in before trying again.', 'انقطع الاتصال، لذا تعذر تأكيد حذف الحساب. تحقق مما إذا كنت لا تزال مسجل الدخول قبل المحاولة مجدداً.'));
     } finally {
       setBusy(false);
     }
   };
   if (step === 'done') {
     return <SimpleScreen kicker={t('Account', 'الحساب')} title={t('Your account has been deleted', 'تم حذف حسابك')}>
-      <p data-testid="delete-account-done">{t('Your TASTEKIN account and the content you created have been permanently deleted. Any remaining photo or video files are removed shortly after.', 'تم حذف حساب TASTEKIN الخاص بك والمحتوى الذي أنشأته نهائياً. تُزال أي ملفات صور أو فيديو متبقية بعد ذلك بوقت قصير.')}</p>
+      <p data-testid="delete-account-done">{t('Your TASTEKIN account and content records have been permanently deleted.', 'تم حذف حساب TASTEKIN الخاص بك وسجلات المحتوى نهائياً.')}</p>
+      <p data-testid="delete-account-media-status">{mediaCleanup === 'pending'
+        ? t('Photo or video cleanup is still pending. Remaining files are tracked for retry; cleanup is not yet complete.', 'لا يزال حذف ملفات الصور أو الفيديو معلقاً. الملفات المتبقية مسجلة لإعادة محاولة حذفها؛ ولم يكتمل حذفها بعد.')
+        : mediaCleanup === 'completed'
+          ? t('Photo and video cleanup is complete.', 'اكتمل حذف ملفات الصور والفيديو.')
+          : t('No photo or video files required cleanup.', 'لم تكن هناك ملفات صور أو فيديو تتطلب الحذف.')}</p>
       <button className="approved-button primary wide" onClick={onDeleted}>{t('Done', 'تم')}</button>
     </SimpleScreen>;
   }
