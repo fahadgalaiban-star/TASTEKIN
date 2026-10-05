@@ -108,7 +108,7 @@ async function engagementFor(editId: string, userId?: string) {
     SELECT 1 FROM ${moderationContentStates}
     WHERE ${moderationContentStates.targetType} = 'comment'
       AND ${moderationContentStates.isHidden} = true
-      AND ${moderationContentStates.targetId} = ${editComments.id}
+      AND ${moderationContentStates.targetId} = ${editComments.id}::text
   ) AND NOT EXISTS (
     SELECT 1 FROM ${usersTable}
     WHERE ${usersTable.id} = ${editComments.userId} AND ${usersTable.isSuspended} = true
