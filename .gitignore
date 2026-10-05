@@ -2,6 +2,7 @@
 
 # compiled output
 dist
+/artifacts/api-server/.api-build.lock
 tmp
 out-tsc
 *.tsbuildinfo
