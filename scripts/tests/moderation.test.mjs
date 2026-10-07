@@ -100,7 +100,30 @@ test('approved migration is additive, preserves legacy rows and defaults old/new
         builder.onResolve({ filter: /\/account-deletion$/ }, () => ({ path: 'mock-deletion-only', namespace: 'account-safety' }));
         builder.onLoad({ filter: /.*/, namespace: 'account-safety' }, () => ({
           contents: `export const ACCOUNT_DELETION_CONFIRMATION='DELETE';
-            export async function deleteAccount(id){globalThis.__fixtureDeletionUser=id;return {ok:true,mediaCleanup:'complete'};}`,
+            // Mirrors the credential step of the production deletion transaction
+            // (lib/account-deletion.ts, deleteAccountRows): in one transaction every
+            // live native bearer session is revoked with reason "account_deleted" and
+            // every web cookie session row for the account is deleted. Production
+            // then deletes the users row, whose FK cascade removes the remaining
+            // native_sessions rows (including ones already soft-revoked for
+            // suspension); that cascade effect is applied explicitly here because
+            // the fixture keeps its users row for the tests that follow. Physical
+            // row and media deletion stays mocked — no provider is reached — and
+            // mediaCleanup reports "none", production's value when the account had
+            // no media to delete.
+            export async function deleteAccount(id){
+              globalThis.__fixtureDeletionUser=id;
+              const client=await globalThis.__moderationIsolatedPool.connect();
+              try{
+                await client.query('BEGIN');
+                await client.query("UPDATE native_sessions SET revoked_at=now(), revoked_reason='account_deleted' WHERE user_id=$1 AND revoked_at IS NULL",[id]);
+                await client.query("DELETE FROM sessions WHERE sess->'user'->>'id'=$1",[id]);
+                await client.query('DELETE FROM native_sessions WHERE user_id=$1',[id]);
+                await client.query('COMMIT');
+              }catch(error){await client.query('ROLLBACK');throw error;}
+              finally{client.release();}
+              return {ok:true,mediaCleanup:'none'};
+            }`,
           loader: 'js',
         }));
         builder.onResolve({ filter: /private-media-storage$/ }, () => ({ path: 'no-provider-access', namespace: 'provider' }));
@@ -244,14 +267,8 @@ test('suspension expires web sessions, soft-revokes native sessions, blocks new 
   assert.equal(await api.resolveNativeSession(native.token), null);
   assert.ok(await api.createNativeSession({ userId: 'author', platform: 'android' }));
 });
-test('suspension-expired credentials allow only real account-safety routes, with deletion service mocked and no provider access', async () => {
+test('suspension-expired credentials allow only real account-safety routes; deletion revokes every credential as production does, with physical deletion mocked and no provider access', async () => {
   const express = createRequire(resolve('artifacts/api-server/package.json'))('express');
-  const sid = await api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: Date.now() + 10000 });
-  const logoutSid = await api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: Date.now() + 10000 });
-  const native = await api.createNativeSession({ userId: 'author', platform: 'ios' });
-  await action(REPORT, 'suspend_user');
-  assert.equal(await api.getSession(sid), null);
-  assert.equal(await api.resolveNativeSession(native.token), null);
   const app = express();
   app.use(express.json(), (req, _res, next) => { req.cookies = { sid: req.get('x-fixture-cookie') }; req.log = { error() {} }; next(); });
   app.use(api.authMiddleware, api.suspensionMiddleware, api.authRouter, api.accountRouter);
@@ -261,35 +278,82 @@ test('suspension-expired credentials allow only real account-safety routes, with
   const base = `http://127.0.0.1:${server.address().port}`;
   const call = (path, headers, body) => fetch(base + path, { headers: { ...headers, 'content-type': 'application/json' },
     method: body === undefined ? 'GET' : 'POST', ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
+  const authorRows = async () => ({
+    web: (await pool.query("SELECT count(*)::int AS count FROM sessions WHERE sess->'user'->>'id'='author'")).rows[0].count,
+    native: (await pool.query("SELECT count(*)::int AS count FROM native_sessions WHERE user_id='author'")).rows[0].count,
+  });
+  // Suspension only soft-revokes credentials and no new ones can be issued
+  // while suspended, so each scenario issues a fresh set on the active
+  // account and suspends it again.
+  const issueSuspendedCredentials = async () => {
+    await action(REPORT, 'unsuspend_user');
+    const sid = await api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: Date.now() + 10000 });
+    const otherSid = await api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: Date.now() + 10000 });
+    const native = await api.createNativeSession({ userId: 'author', platform: 'ios' });
+    await action(REPORT, 'suspend_user');
+    assert.equal(await api.getSession(sid), null);
+    assert.equal(await api.resolveNativeSession(native.token), null);
+    assert.ok(await api.getSuspendedAccountSession(sid)); assert.ok(await api.getSuspendedAccountSession(otherSid));
+    assert.ok(await api.resolveSuspendedNativeAccount(native.token));
+    return { sid, otherSid, native };
+  };
   try {
-    for (const credential of [{ 'x-fixture-cookie': sid }, { authorization: `Bearer ${native.token}` }]) {
+    // Account-safety reads and sign-out with suspension-expired credentials.
+    const before = await authorRows();
+    const first = await issueSuspendedCredentials();
+    for (const credential of [{ 'x-fixture-cookie': first.sid }, { authorization: `Bearer ${first.native.token}` }]) {
       const state = await call('/me', credential);
       assert.equal(state.status, 200);
       const payload = await state.json();
       assert.equal(payload.accountSuspended, true); assert.equal(payload.user.id, 'author');
       assert.equal(payload.creator, null); assert.deepEqual(payload.featureFlags, {});
       assert.equal((await call('/ordinary-write', credential, {})).status, 401);
-      const missing = await call('/me/delete-account', credential, {});
-      assert.equal(missing.status, 400);
-      const deleted = await call('/me/delete-account', credential, { confirm: 'DELETE', userId: 'moderator' });
-      assert.equal(deleted.status, 200); assert.equal((await deleted.json()).deleted, true);
-      assert.equal(globalThis.__fixtureDeletionUser, 'author');
+      // A bare request is refused before anything runs and revokes nothing.
+      assert.equal((await call('/me/delete-account', credential, {})).status, 400);
     }
-    // Deletion's cookie clearing is real even though physical deletion is mocked.
-    assert.equal(await api.getSuspendedAccountSession(sid), null);
-    const logout = await call('/auth/native/logout', { authorization: `Bearer ${native.token}` }, {});
+    assert.equal(globalThis.__fixtureDeletionUser, undefined);
+    assert.deepEqual(await authorRows(), { web: before.web + 2, native: before.native + 1 });
+    const logout = await call('/auth/native/logout', { authorization: `Bearer ${first.native.token}` }, {});
     assert.equal(logout.status, 204);
-    assert.equal(await api.resolveSuspendedNativeAccount(native.token), null);
-    assert.ok(await api.getSuspendedAccountSession(logoutSid));
-    const webLogout = await fetch(base + '/logout', { headers: { 'x-fixture-cookie': logoutSid }, redirect: 'manual' });
+    assert.equal(await api.resolveSuspendedNativeAccount(first.native.token), null);
+    assert.ok(await api.getSuspendedAccountSession(first.otherSid));
+    const webLogout = await fetch(base + '/logout', { headers: { 'x-fixture-cookie': first.otherSid }, redirect: 'manual' });
     assert.equal(webLogout.status, 302);
     assert.ok(webLogout.headers.get('set-cookie')?.includes('sid='));
-    assert.equal(await api.getSuspendedAccountSession(logoutSid), null);
+    assert.equal(await api.getSuspendedAccountSession(first.otherSid), null);
+    // Signing out one credential never touches another.
+    assert.ok(await api.getSuspendedAccountSession(first.sid));
+
+    // Deletion by web cookie, then by native bearer. As in production's
+    // deletion transaction, every web session row for the account is removed
+    // and every native session is gone — not only the credential that made
+    // the request — so nothing can act as the account afterwards.
+    for (const via of ['cookie', 'bearer']) {
+      const creds = await issueSuspendedCredentials();
+      const credential = via === 'cookie' ? { 'x-fixture-cookie': creds.sid } : { authorization: `Bearer ${creds.native.token}` };
+      delete globalThis.__fixtureDeletionUser;
+      const deleted = await call('/me/delete-account', credential, { confirm: 'DELETE', userId: 'moderator' });
+      assert.equal(deleted.status, 200);
+      const body = await deleted.json();
+      assert.equal(body.deleted, true); assert.equal(body.mediaCleanup, 'none');
+      assert.equal(globalThis.__fixtureDeletionUser, 'author');
+      // The web route also clears the caller's cookie; the native route leaves that to the app.
+      assert.equal(Boolean(deleted.headers.get('set-cookie')?.includes('sid=')), via === 'cookie');
+      assert.deepEqual(await authorRows(), { web: 0, native: 0 });
+      for (const stale of [creds.sid, creds.otherSid, first.sid]) assert.equal(await api.getSuspendedAccountSession(stale), null);
+      assert.equal(await api.resolveSuspendedNativeAccount(creds.native.token), null);
+      const after = await call('/me', credential);
+      assert.equal(after.status, 200); assert.equal((await after.json()).user, null);
+      assert.equal((await call('/me/delete-account', credential, { confirm: 'DELETE' })).status, 401);
+    }
     await assert.rejects(api.createSession({ user: { id: 'author' }, accessToken: '', expiresAt: 0 }), { status: 403 });
     await assert.rejects(api.createNativeSession({ userId: 'author', platform: 'ios' }), { status: 403 });
     await action(REPORT, 'unsuspend_user');
-    assert.equal(await api.getSession(sid), null); assert.equal(await api.resolveNativeSession(native.token), null);
-    assert.equal(await api.resolveSuspendedNativeAccount(native.token), null);
+    // Unsuspending never revives revoked or deleted credentials; new ones can be issued again.
+    for (const stale of [first.sid, first.otherSid]) assert.equal(await api.getSession(stale), null);
+    assert.equal(await api.resolveNativeSession(first.native.token), null);
+    assert.equal(await api.resolveSuspendedNativeAccount(first.native.token), null);
+    assert.ok(await api.createNativeSession({ userId: 'author', platform: 'android' }));
   } finally { await new Promise((done) => server.close(done)); }
 });
 test('visibility/admin target queries are bounded; partial/B-tree/JSONB indexes are eligible', async () => {
