@@ -160,13 +160,13 @@ async function main() {
     await check("non-admin PUT /api/admin/feature-flags/:key is rejected with 403", async () => {
       assert.equal((await user.setFlag("notification_preferences", false)).status, 403);
     });
-    await check("admin GET /api/admin/feature-flags succeeds and lists the known flags, enabled by default", async () => {
+    await check("admin GET /api/admin/feature-flags succeeds and lists the known flags with their registry defaults", async () => {
       const response = await admin.listFlags();
       await expectStatus(response, 200);
       const payload = (await response.json()) as { flags: Array<{ key: string; enabled: boolean }> };
       const byKey = new Map(payload.flags.map((flag) => [flag.key, flag.enabled]));
       assert.equal(byKey.get("google_sign_in"), true, "google_sign_in must default to enabled — existing production behavior stays on");
-      assert.equal(byKey.get("notification_preferences"), true, "notification_preferences must default to enabled — existing production behavior stays on");
+      assert.equal(byKey.get("notification_preferences"), false, "notification_preferences defaults to disabled: no push/email delivery exists yet, so the Settings controls stay hidden until an admin enables them");
     });
 
     // --- 2. unknown flags are rejected ---
@@ -222,6 +222,15 @@ async function main() {
     });
 
     // --- 4. enable/disable behavior + server-side enforcement (notification_preferences) ---
+    await check("with the default (disabled) flag, changing notifyPush is rejected server-side and /api/me reports the flag off", async () => {
+      assert.equal((await user.putSettings({ notifyPush: false })).status, 403);
+      assert.equal((await anon.me()).featureFlags.notification_preferences, false);
+    });
+    await check("admin can enable the notification_preferences flag", async () => {
+      const response = await admin.setFlag("notification_preferences", true);
+      await expectStatus(response, 200);
+      assert.equal(((await response.json()) as { enabled: boolean }).enabled, true);
+    });
     await check("a signed-in user can change notification preferences while the flag is enabled", async () => {
       const response = await user.putSettings({ notifyPush: false });
       await expectStatus(response, 200);

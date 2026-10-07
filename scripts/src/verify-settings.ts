@@ -13,7 +13,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { db, usersTable } from "@workspace/db";
+import { db, featureFlags, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -137,6 +137,13 @@ async function check(name: string, fn: () => Promise<void>) {
 
 async function main() {
   console.log("Settings regression: persistence, isolation, authorization, and admin-access non-regression.");
+  // The notification_preferences flag defaults to OFF (no delivery exists
+  // yet). These checks are about the preference persistence itself, so turn
+  // the flag on for this disposable database the way an admin would; the
+  // flag's own default and enforcement are covered by verify:feature-flags.
+  await db.insert(featureFlags)
+    .values({ key: "notification_preferences", description: "enabled for verify:settings", enabled: true })
+    .onConflictDoUpdate({ target: featureFlags.key, set: { enabled: true, updatedAt: new Date() } });
   const server = await startServer();
   try {
     const emailA = `settings-a-${suffix}@example.com`;

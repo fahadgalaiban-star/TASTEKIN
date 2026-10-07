@@ -25,8 +25,8 @@ export const FEATURE_FLAG_DEFINITIONS = [
   },
   {
     key: "notification_preferences",
-    description: "Allow members to change their push/email notification preferences in Settings. When disabled, existing stored preferences are left untouched and further changes to them are rejected server-side.",
-    defaultEnabled: true,
+    description: "Show and allow the push/email notification preference controls in Settings. Disabled by default while no push or email delivery exists, so members are not offered switches that do nothing; stored preferences are left untouched and changes to them are rejected server-side until an admin enables the flag.",
+    defaultEnabled: false,
   },
   {
     key: "my_things",

@@ -9,6 +9,7 @@
     "admin:revoke": "tsx ./src/admin-revoke.ts",
     "verify:admin-auth": "tsx ./src/verify-admin-auth.ts",
     "verify:settings": "tsx ./src/verify-settings.ts",
+    "verify:app-readiness": "tsx ./src/verify-app-readiness.ts",
     "verify:deployment-health": "tsx ./src/verify-deployment-health.ts",
     "verify:onboarding": "tsx ./src/verify-onboarding.ts",
     "verify:reports": "tsx ./src/verify-reports.ts",

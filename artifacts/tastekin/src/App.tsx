@@ -7,7 +7,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink, LifeBuoy,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -33,7 +33,7 @@ type Language = 'en' | 'ar';
 const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
 type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
-const SCREENS = ['home', 'explore', 'add', 'kin', 'saved', 'you', 'profile', 'profileEdit', 'verificationApply', 'collections', 'collection', 'match', 'edit', 'composer', 'creatorPreview', 'collectionManager', 'tune-taste', 'inbox', 'conversation', 'insights', 'adminVerification', 'adminReports', 'adminFeatureFlags', 'adminAnalytics', 'blockedAccounts', 'mutedAccounts', 'settings', 'auth', 'onboarding', 'myThings', 'myThingsAdd', 'myThingsEdit', 'privacy', 'terms', 'deleteAccount'] as const;
+const SCREENS = ['home', 'explore', 'add', 'kin', 'saved', 'you', 'profile', 'profileEdit', 'verificationApply', 'collections', 'collection', 'match', 'edit', 'composer', 'creatorPreview', 'collectionManager', 'tune-taste', 'inbox', 'conversation', 'insights', 'adminVerification', 'adminReports', 'adminFeatureFlags', 'adminAnalytics', 'blockedAccounts', 'mutedAccounts', 'settings', 'auth', 'onboarding', 'myThings', 'myThingsAdd', 'myThingsEdit', 'privacy', 'terms', 'deleteAccount', 'support'] as const;
 type Screen = (typeof SCREENS)[number];
 // Screens that no longer exist, mapped to where they now live. A browser
 // history entry (or any other saved UI state) recorded before a screen was
@@ -55,12 +55,14 @@ function screenFromHistoryState(value: unknown): Screen {
 const ROOT_SCREENS: Screen[] = ['home', 'explore', 'kin', 'saved', 'you'];
 // Public, store-facing pages served by plain URL (the API server falls back
 // to index.html for every non-API path): the Privacy Policy, the Terms of
-// Use, and the account-deletion page linked from Google Play.
+// Use, the account-deletion page linked from Google Play, and the support
+// page the store listings link to.
 function publicPageForPath(pathname: string): Screen | null {
   const path = pathname.replace(/\/+$/, '') || '/';
   if (path === '/privacy') return 'privacy';
   if (path === '/terms') return 'terms';
   if (path === '/delete-account') return 'deleteAccount';
+  if (path === '/support') return 'support';
   return null;
 }
 
@@ -305,6 +307,14 @@ type TasteSessionSnapshot = {
   notifyPush: boolean;
   notifyEmail: boolean;
   supportEmail: string | null;
+  // How the signed-in account authenticates (users.auth_provider), so
+  // Settings can describe the password truthfully; null when signed out or
+  // when the server did not say.
+  authProvider: 'password' | 'google' | 'replit' | null;
+  // Whether the server can actually deliver a password-reset email. False
+  // until a transactional email provider is configured; the sign-in screen
+  // must never promise an email the server cannot send.
+  passwordResetAvailable: boolean;
   // Server-computed and server-authorized (see GET /api/me): whether this
   // account still needs to go through new-user onboarding, and which step to
   // resume at. Never derived or guessed client-side.
@@ -329,7 +339,7 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
     status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false, accountSuspended: false,
-    language: null, notifyPush: true, notifyEmail: true, supportEmail: null,
+    language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false,
     needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: {}, revision: 0,
   });
   const refresh = useCallback(async () => {
@@ -341,7 +351,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'> & { nativeAuth?: unknown }
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
       // Native shell only: drops the stored token when the server itself
       // reports it invalid/revoked/expired (never on other failures).
       await reconcileNativeSession(payload);
@@ -357,6 +367,8 @@ function useTasteSessionController(): TasteSession {
           notifyPush: payload.notifyPush ?? true,
           notifyEmail: payload.notifyEmail ?? true,
           supportEmail: payload.supportEmail ?? null,
+          authProvider: payload.authProvider === 'password' || payload.authProvider === 'google' || payload.authProvider === 'replit' ? payload.authProvider : null,
+          passwordResetAvailable: payload.passwordResetAvailable === true,
           needsOnboarding: Boolean(payload.needsOnboarding),
           onboardingStep: isOnboardingStep(payload.onboardingStep) ? payload.onboardingStep : 'done',
           googleAuthConfigured: Boolean(payload.googleAuthConfigured),
@@ -375,6 +387,8 @@ function useTasteSessionController(): TasteSession {
           && current.googleAuthConfigured === next.googleAuthConfigured
           && current.notifyEmail === next.notifyEmail
           && current.supportEmail === next.supportEmail
+          && current.authProvider === next.authProvider
+          && current.passwordResetAvailable === next.passwordResetAvailable
           && current.needsOnboarding === next.needsOnboarding
           && current.onboardingStep === next.onboardingStep
           && JSON.stringify(current.featureFlags) === JSON.stringify(next.featureFlags);
@@ -1282,6 +1296,7 @@ function TastekinApp() {
     {screen === 'deleteAccount' && <DeleteAccountScreen ar={ar} onSignIn={() => void session.refresh()} onDeleted={() => go('home')} onOpenPrivacy={() => go('privacy')} />}
     {screen === 'privacy' && <LegalScreen ar={ar} kind="privacy" />}
     {screen === 'terms' && <LegalScreen ar={ar} kind="terms" />}
+    {screen === 'support' && <SupportScreen ar={ar} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} />}
   </main></div></TasteSessionContext.Provider>;
   return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
     <header className="approved-topbar">{!ROOT_SCREENS.includes(screen) && screen !== 'onboarding' ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}{screen !== 'profile' && <img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" />}<div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
@@ -1317,9 +1332,10 @@ function TastekinApp() {
     {screen === 'collectionManager' && <CollectionManager ar={ar} collections={creatorCollections} edits={published} form={collectionForm} editing={editingCollectionId} featuredCollectionIds={featuredCollectionIds} onChange={setCollectionForm} onOpenCollection={(item) => { setSelectedCollectionId(item.id); go('collection'); }} onNew={() => openCollectionManager()} onSave={() => { saveCollection(); go('collection'); }} onDelete={() => editingCollectionId ? deleteCollection(editingCollectionId) : Promise.resolve(false)} onToggleFeatured={toggleFeaturedCollection} onMoveFeatured={moveFeaturedCollection} />}
     {screen === 'saved' && <SavedScreen ar={ar} saved={saved} lists={savedLists} activeListId={activeSavedListId} edits={publicFeedEdits} onSelectList={setActiveSavedListId} onCreateList={() => setSavedListCreatorOpen(true)} onRenameList={renameSavedList} onDeleteList={deleteSavedList} onOpen={openEdit} onUnsave={(id) => void toggleSaved(id)} />}
     {screen === 'you' && <SimpleScreen kicker={owner ? t('Creator owner mode', 'وضع مالك الحساب') : session.status === 'authenticated' ? t('Your profile', 'ملفك الشخصي') : t('Your account', 'حسابك')} title={t('Your profile', 'ملفك الشخصي')}><div className="approved-panel identity"><Avatar profile={owner ? creatorProfile : { avatar: '', displayName: session.user?.email || t('Guest', 'زائر') } as any} /><div><strong>{owner ? creatorProfile.displayName : session.user?.email || t('Guest', 'زائر')}</strong><span>{owner ? [creatorProfile.city, creatorProfile.country].filter(Boolean).join(', ') : session.status === 'authenticated' ? t('Signed in', 'تم تسجيل الدخول') : t('Signed out', 'تم تسجيل الخروج')}</span></div></div>{owner && <div className="approved-panel"><h3>{t('Taste profile', 'ملف الذوق')}</h3><p>{creatorProfile.interests.map((interest) => displayCategory(interest, ar ? 'ar' : 'en')).join(' · ')}</p></div>}{session.status !== 'authenticated' && <button data-testid="you-sign-in" className="approved-button primary wide" style={{ marginBottom: 12 }} onClick={() => go('auth')}>{t('Sign in', 'تسجيل الدخول')}</button>}<button className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => go('tune-taste')}>{t('Tune your taste', 'ضبط ذوقك')}</button>{session.status === 'authenticated' && myCircleEnabled && <button data-testid="open-my-circle" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => { setHomeFeedTab('my-circle'); go('home'); }}><CircleSparkleIcon style={{ width: 20, height: 20, marginInlineEnd: 6 }} /> {t('My Circle', 'دائرتي')}</button>}{owner && <button data-testid="open-creator-workspace" className="approved-button wide" style={{ marginBottom: 12 }} onClick={() => openComposer()}>{t('Create an Edit', 'إنشاء منشور')}</button>}{owner && <button className="approved-button wide" onClick={() => { setSelectedCreatorUsername(session.creator!.handle); go('profile'); }}>{t('View profile', 'عرض الملف')}</button>}<button data-testid="open-settings" className="approved-button wide" onClick={() => go('settings')}><Settings2 size={16} /> {t('Settings', 'الإعدادات')}</button>{session.status === 'authenticated' && <button data-testid="you-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}>{t('Sign out', 'تسجيل الخروج')}</button>}</SimpleScreen>}
-    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} onSignIn={() => go('auth')} />}
+    {screen === 'settings' && <SettingsScreen ar={ar} owner={owner} creatorProfile={creatorProfile} onApplyVerification={() => go('verificationApply')} language={language} onSetLanguage={(next) => { setLanguage(next); write('interface-language', next); void saveSettings({ language: next }); }} onSaveSettings={saveSettings} isAdmin={session.isAdmin} onOpenAdminVerification={() => go('adminVerification')} onOpenAdminReports={() => go('adminReports')} onOpenBlockedAccounts={() => go('blockedAccounts')} onOpenMutedAccounts={() => go('mutedAccounts')} onOpenAdminFeatureFlags={() => go('adminFeatureFlags')} onOpenAdminAnalytics={() => go('adminAnalytics')} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenSupport={() => go('support')} onOpenDeleteAccount={() => go('deleteAccount')} onSignIn={() => go('auth')} />}
     {screen === 'privacy' && <LegalScreen ar={ar} kind="privacy" />}
     {screen === 'terms' && <LegalScreen ar={ar} kind="terms" />}
+    {screen === 'support' && <SupportScreen ar={ar} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} />}
     {screen === 'deleteAccount' && <DeleteAccountScreen ar={ar} onSignIn={() => { authReturnScreen.current = 'deleteAccount'; go('auth'); }} onDeleted={() => go('home')} onOpenPrivacy={() => go('privacy')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => { const next = authReturnScreen.current ?? 'home'; authReturnScreen.current = null; go(next); }} />}
     {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
@@ -2371,13 +2387,23 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
   </SimpleScreen>;
 }
 
-function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onOpenAdminReports, onOpenBlockedAccounts, onOpenMutedAccounts, onOpenAdminFeatureFlags, onOpenAdminAnalytics, onOpenPrivacy, onOpenTerms, onOpenDeleteAccount, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onOpenAdminReports: () => void; onOpenBlockedAccounts: () => void; onOpenMutedAccounts: () => void; onOpenAdminFeatureFlags: () => void; onOpenAdminAnalytics: () => void; onOpenPrivacy: () => void; onOpenTerms: () => void; onOpenDeleteAccount: () => void; onSignIn: () => void }) {
+function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, language, onSetLanguage, onSaveSettings, isAdmin, onOpenAdminVerification, onOpenAdminReports, onOpenBlockedAccounts, onOpenMutedAccounts, onOpenAdminFeatureFlags, onOpenAdminAnalytics, onOpenPrivacy, onOpenTerms, onOpenSupport, onOpenDeleteAccount, onSignIn }: { ar: boolean; owner: boolean; creatorProfile: CreatorProfile; onApplyVerification: () => void; language: Language; onSetLanguage: (language: Language) => void; onSaveSettings: (updates: Partial<{ language: Language; notifyPush: boolean; notifyEmail: boolean }>) => Promise<void>; isAdmin: boolean; onOpenAdminVerification: () => void; onOpenAdminReports: () => void; onOpenBlockedAccounts: () => void; onOpenMutedAccounts: () => void; onOpenAdminFeatureFlags: () => void; onOpenAdminAnalytics: () => void; onOpenPrivacy: () => void; onOpenTerms: () => void; onOpenSupport: () => void; onOpenDeleteAccount: () => void; onSignIn: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   // UI-level convenience only — the server independently rejects
   // notifyPush/notifyEmail writes when this flag is disabled regardless of
   // what this map says (see PUT /api/settings).
-  const notificationPreferencesEnabled = session.featureFlags.notification_preferences !== false;
+  // Hidden unless the server explicitly reports the flag as enabled: while
+  // no push or email delivery exists, members must not be offered switches
+  // that do nothing.
+  const notificationPreferencesEnabled = session.featureFlags.notification_preferences === true;
+  // Truthful password description per sign-in method (users.auth_provider via
+  // GET /api/me) — only email/password accounts actually hold a password here.
+  const passwordStatus = session.status !== 'authenticated' ? t('Not available', 'غير متاح')
+    : session.authProvider === 'password' ? t('Set for this account', 'مُعيّنة لهذا الحساب')
+    : session.authProvider === 'google' ? t('Managed by Google', 'تُدار عبر Google')
+    : session.authProvider === 'replit' ? t('Managed by Replit', 'تُدار عبر Replit')
+    : t('Not available', 'غير متاح');
   // Seeded from the server-authorized session, and re-synced whenever a
   // fresh /me response arrives (sign-in, refresh, another device) — these
   // toggles are never sourced from or considered authoritative in localStorage.
@@ -2394,20 +2420,17 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
       <h3>{t('Account', 'الحساب')}</h3>
       <div className="settings-row"><span>{t('Name', 'الاسم')}</span><strong>{accountName || (ar ? 'غير محدد' : 'Not set')}</strong></div>
       <div className="settings-row"><span>{t('Email', 'البريد الإلكتروني')}</span><strong>{session.user?.email || (ar ? 'غير متاح' : 'Not available')}</strong></div>
-      <div className="settings-row"><span>{t('Password', 'كلمة المرور')}</span><strong>{t('Managed by your sign-in provider', 'تُدار عبر مزود تسجيل الدخول')}</strong></div>
+      <div className="settings-row"><span>{t('Password', 'كلمة المرور')}</span><strong data-testid="settings-password-status">{passwordStatus}</strong></div>
     </div>
     <div className="settings-section">
       <h3>{t('Language', 'اللغة')}</h3>
       <div className="approved-segment"><button data-testid="settings-language-en" className={!ar ? 'selected' : ''} onClick={() => onSetLanguage('en')}>English</button><button data-testid="settings-language-ar" className={ar ? 'selected' : ''} onClick={() => onSetLanguage('ar')}>العربية</button></div>
     </div>
-    {notificationPreferencesEnabled ? <div className="settings-section">
+    {notificationPreferencesEnabled && <div className="settings-section" data-testid="settings-notifications">
       <h3>{t('Notifications', 'الإشعارات')}</h3>
       <label className="settings-toggle"><span>{t('Push notifications', 'إشعارات فورية')}</span><input type="checkbox" checked={pushNotifications} onChange={togglePush} disabled={session.status !== 'authenticated'} /></label>
       <label className="settings-toggle"><span>{t('Email updates', 'تحديثات البريد الإلكتروني')}</span><input type="checkbox" checked={emailUpdates} onChange={toggleEmail} disabled={session.status !== 'authenticated'} /></label>
       <p className="settings-note">{t('These preferences are saved to your account. Actual delivery requires push and email infrastructure that is not connected yet.', 'يتم حفظ هذه التفضيلات في حسابك. يتطلب الإرسال الفعلي بنية إشعارات وبريد غير متصلة بعد.')}</p>
-    </div> : <div className="settings-section">
-      <h3>{t('Notifications', 'الإشعارات')}</h3>
-      <p className="settings-note">{t('Notification preferences are temporarily unavailable.', 'تفضيلات الإشعارات غير متاحة مؤقتًا.')}</p>
     </div>}
     {owner && <div className="settings-section">
       <h3>{t('Creator info', 'معلومات المبدع')}</h3>
@@ -2433,6 +2456,7 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
         <p className="settings-note">{t('Questions or issues? Reach us anytime.', 'لديك سؤال أو مشكلة؟ تواصل معنا في أي وقت.')}</p>
         <a className="approved-button wide" href={`mailto:${session.supportEmail}`}>{t('Contact support', 'تواصل مع الدعم')}</a>
       </> : <p className="settings-note">{t('Support contact is not configured yet.', 'لم يتم تفعيل التواصل مع الدعم بعد.')}</p>}
+      <button data-testid="settings-support-page" className="approved-button wide" onClick={onOpenSupport}><LifeBuoy size={16} /> {t('Support page', 'صفحة الدعم')}</button>
     </div>
     <div className="settings-section">
       <h3>{t('Legal', 'الشروط والخصوصية')}</h3>
@@ -2465,6 +2489,35 @@ function LegalScreen({ ar, kind }: { ar: boolean; kind: LegalDocumentKind }) {
         {section.bullets && <ul>{section.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul>}
       </section>)}
       <p className="legal-contact"><a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
+    </article>
+  </SimpleScreen>;
+}
+
+/**
+ * Public support page at /support — the Support URL the store listings
+ * point to. The contact shown is only ever the server-configured
+ * SUPPORT_EMAIL (via GET /api/me); nothing is hardcoded here, and an
+ * unconfigured server says so plainly instead of inventing an address.
+ */
+function SupportScreen({ ar, onOpenPrivacy, onOpenTerms, onOpenDeleteAccount }: { ar: boolean; onOpenPrivacy: () => void; onOpenTerms: () => void; onOpenDeleteAccount: () => void }) {
+  const session = useTasteSession();
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  return <SimpleScreen kicker="TASTEKIN" title={t('Support', 'الدعم')}>
+    <article className="legal-doc" data-testid="support-page">
+      {session.status === 'loading'
+        ? <p className="settings-note">{t('Loading…', 'جارٍ التحميل…')}</p>
+        : session.supportEmail
+          ? <>
+            <p>{t('Questions, trouble signing in, or anything about your account or content? Email us and we will get back to you.', 'لديك سؤال أو مشكلة في تسجيل الدخول أو أي أمر يخص حسابك أو محتواك؟ راسلنا وسنرد عليك.')}</p>
+            <p className="legal-contact"><a data-testid="support-email" href={`mailto:${session.supportEmail}`}>{session.supportEmail}</a></p>
+          </>
+          : <p className="settings-note" role="status" data-testid="support-unconfigured">{t('Support contact is not configured yet.', 'لم يتم تفعيل التواصل مع الدعم بعد.')}</p>}
+      <h2>{t('Helpful pages', 'صفحات مفيدة')}</h2>
+      <ul>
+        <li><button type="button" className="auth-link" data-testid="support-privacy" onClick={onOpenPrivacy}>{t('Privacy Policy', 'سياسة الخصوصية')}</button></li>
+        <li><button type="button" className="auth-link" data-testid="support-terms" onClick={onOpenTerms}>{t('Terms of Use', 'شروط الاستخدام')}</button></li>
+        <li><button type="button" className="auth-link" data-testid="support-delete-account" onClick={onOpenDeleteAccount}>{t('Delete your account', 'حذف حسابك')}</button></li>
+      </ul>
     </article>
   </SimpleScreen>;
 }
@@ -2611,6 +2664,9 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     try {
       const response = await fetch('/api/auth/forgot-password', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim() }) });
       const data = await response.json().catch(() => ({}));
+      // A server that cannot send reset emails answers 503 with an honest
+      // explanation; never turn that into a "link sent" notice.
+      if (!response.ok) { setError(data.error || t('Password reset by email is not available yet.', 'إعادة تعيين كلمة المرور عبر البريد الإلكتروني غير متاحة بعد.')); return; }
       setNotice(data.message || t('If an account with that email exists, a reset link has been sent.', 'إذا كان هناك حساب بهذا البريد، فقد تم إرسال رابط إعادة التعيين.'));
     } catch {
       setError(t('Network error. Please try again.', 'خطأ في الشبكة. حاول مرة أخرى.'));
@@ -2659,7 +2715,19 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
         {mode === 'signin' && <button type="button" className="auth-link" onClick={() => { setMode('forgot'); setError(''); setNotice(''); }}>{t('Forgot password?', 'نسيت كلمة المرور؟')}</button>}
       </div>
     </form>}
-    {mode === 'forgot' && <form onSubmit={(event) => void submitForgotPassword(event)}>
+    {mode === 'forgot' && !session.passwordResetAvailable && <div data-testid="forgot-password-unavailable">
+      {/* The server has no way to send a reset email yet (GET /api/me reports
+          passwordResetAvailable). Say so instead of promising a link. */}
+      <p className="settings-note" role="status">{t('Password reset by email is not available yet, so we cannot send you a reset link.', 'إعادة تعيين كلمة المرور عبر البريد الإلكتروني غير متاحة بعد، لذا لا يمكننا إرسال رابط إعادة التعيين.')}</p>
+      {session.supportEmail
+        ? <>
+          <p className="settings-note">{t('Contact support and we will help you get back into your account.', 'تواصل مع الدعم وسنساعدك على العودة إلى حسابك.')}</p>
+          <a className="approved-button wide" data-testid="forgot-password-support" href={`mailto:${session.supportEmail}`}>{t('Contact support', 'تواصل مع الدعم')}</a>
+        </>
+        : <p className="settings-note" data-testid="forgot-password-no-support">{t('Support contact is not configured yet.', 'لم يتم تفعيل التواصل مع الدعم بعد.')}</p>}
+      <div className="auth-links"><button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); setNotice(''); }}>{t('Back to sign in', 'العودة لتسجيل الدخول')}</button></div>
+    </div>}
+    {mode === 'forgot' && session.passwordResetAvailable && <form data-testid="forgot-password-form" onSubmit={(event) => void submitForgotPassword(event)}>
       <p className="settings-note">{t('Enter your email and we’ll send you a link to reset your password.', 'أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.')}</p>
       <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
