@@ -31,6 +31,7 @@ async function buildAll() {
     entryPoints: [
       path.resolve(artifactDir, "src/index.ts"),
       path.resolve(artifactDir, "src/cli/reconcile-video-uploads.ts"),
+      path.resolve(artifactDir, "src/cli/reconcile-account-media.ts"),
     ],
     platform: "node",
     bundle: true,

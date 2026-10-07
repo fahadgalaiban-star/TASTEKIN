@@ -20,9 +20,67 @@ async function session(page: Page, options: { authenticated: boolean; language?:
 }
 
 test.beforeEach(async ({ page }) => {
+  // Specific fixtures below take precedence. No unmatched request may reach
+  // the real API/database during these mocked browser checks.
+  await page.route('**/api/**', route => route.fulfill({
+    status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Unmocked test endpoint' }),
+  }));
   await page.addInitScript(() => {
     for (const key of Object.keys(localStorage)) if (key.startsWith('tastekin:')) localStorage.removeItem(key);
   });
+});
+
+for (const language of ['en', 'ar'] as const) {
+  for (const cleanup of ['pending', 'completed', 'none', undefined] as const) {
+    test(`account media status: ${cleanup ?? 'unknown'} (${language})`, async ({ page }) => {
+      const state = await session(page, { authenticated: true, language });
+      await page.route('**/api/me/delete-account', async route => {
+        state.authenticated = false;
+        await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ deleted: true, mediaCleanup: cleanup }) });
+      });
+      await page.goto('/delete-account');
+      await page.getByTestId('delete-account-continue').click();
+      await page.getByTestId('delete-account-acknowledge').check();
+      await page.getByTestId('delete-account-confirm-input').fill('DELETE');
+      await page.getByTestId('delete-account-submit').click();
+      await expect(page.getByTestId('delete-account-done')).toBeVisible();
+      const message = page.getByTestId('delete-account-media-status');
+      await expect(message).toBeVisible();
+      const expected = cleanup === 'completed'
+        ? (language === 'ar' ? 'اكتمل حذف ملفات الصور والفيديو.' : 'Photo and video cleanup is complete.')
+        : cleanup === 'none'
+          ? (language === 'ar' ? 'لم تكن هناك ملفات صور أو فيديو تتطلب الحذف.' : 'No photo or video files required cleanup.')
+          : (language === 'ar' ? 'لا يزال حذف ملفات الصور أو الفيديو معلقاً.' : 'Photo or video cleanup is still pending.');
+      await expect(message).toContainText(expected);
+      await expect(page.getByTestId('delete-account-done')).not.toContainText(/shortly after|بوقت قصير/);
+    });
+  }
+  test(`account deletion: lost response is not described as unchanged (${language})`, async ({ page }) => {
+    await session(page, { authenticated: true, language });
+    await page.route('**/api/me/delete-account', route => route.abort('connectionreset'));
+    await page.goto('/delete-account');
+    await page.getByTestId('delete-account-continue').click();
+    await page.getByTestId('delete-account-acknowledge').check();
+    await page.getByTestId('delete-account-confirm-input').fill('DELETE');
+    await page.getByTestId('delete-account-submit').click();
+    await expect(page.getByRole('alert')).toContainText(language === 'ar' ? 'تعذر تأكيد حذف الحساب' : 'could not confirm account deletion');
+    await expect(page.getByRole('alert')).not.toContainText(/Nothing was changed|لم يتغير شيء/);
+  });
+}
+
+test('confirmed deletion stays complete when session refresh fails', async ({ page }) => {
+  await session(page, { authenticated: true });
+  await page.route('**/api/me/delete-account', async route => {
+    await page.route('**/api/me', inner => inner.fulfill({ status: 503, contentType: 'application/json', body: '{}' }));
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({ deleted: true, mediaCleanup: 'pending' }) });
+  });
+  await page.goto('/delete-account');
+  await page.getByTestId('delete-account-continue').click();
+  await page.getByTestId('delete-account-acknowledge').check();
+  await page.getByTestId('delete-account-confirm-input').fill('DELETE');
+  await page.getByTestId('delete-account-submit').click();
+  await expect(page.getByTestId('delete-account-media-status')).toContainText('cleanup is still pending');
+  await expect(page.getByRole('alert')).toHaveCount(0);
 });
 
 test('Settings links to the Privacy Policy and Terms of Use, both carrying the effective date and the support address, in English', async ({ page }) => {

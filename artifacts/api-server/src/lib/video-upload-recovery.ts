@@ -165,6 +165,13 @@ export type AmbiguousRecoveryOutcome = "resolved" | "unresolved" | "skipped";
 export async function recoverAmbiguousUpload(row: Pick<VideoUpload, "id" | "ownerUserId" | "state" | "bunnyLibraryId" | "retryCount">): Promise<AmbiguousRecoveryOutcome> {
   if (row.state !== "create_ambiguous" && row.state !== "orphan_cleanup_pending") return "skipped";
   if (row.retryCount >= maxRecoveryAttempts()) return "skipped";
+  if (row.state === "create_ambiguous") {
+    const [orphan] = await db.update(videoUploads).set({
+      state: "orphan_cleanup_pending", attachedEditId: null, declaredFileName: null, updatedAt: new Date(),
+    }).where(and(eq(videoUploads.id, row.id), eq(videoUploads.state, "create_ambiguous"),
+      sql`NOT EXISTS (SELECT 1 FROM users WHERE users.id = ${videoUploads.ownerUserId})`)).returning();
+    if (orphan) row = orphan;
+  }
 
   const claimed = await claimRecoveryLease(row.id, row.ownerUserId, [row.state]);
   if (!claimed || !claimed.recoveryLeaseToken) return "skipped";
@@ -227,6 +234,12 @@ export async function reclaimStaleCreatingRows(limit = VIDEO_UPLOAD_RECOVERY_SWE
     .where(and(eq(videoUploads.state, "creating"), lt(videoUploads.createdAt, staleBefore)))
     .limit(limit);
   for (const row of staleRows) {
+    // A provider create can outlive account deletion. Never let the generic
+    // upload-recovery runner adopt that orphan for an account that is gone.
+    await db.update(videoUploads).set({
+      state: "orphan_cleanup_pending", attachedEditId: null, declaredFileName: null, updatedAt: new Date(),
+    }).where(and(eq(videoUploads.id, row.id), eq(videoUploads.state, "creating"),
+      sql`NOT EXISTS (SELECT 1 FROM users WHERE users.id = ${videoUploads.ownerUserId})`));
     // Fenced to state = "creating" inside finalizeCreateAmbiguous itself —
     // a no-op if the original request resolved it in the meantime.
     await finalizeCreateAmbiguous(row.id, row.ownerUserId, "stale: process interrupted before create resolved");
