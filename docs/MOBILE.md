@@ -122,6 +122,19 @@ ship in the web bundle, so the shell gets them for free:
 - **Privacy Policy / Terms of Use**: Settings → Legal, and public pages at
   `/privacy` and `/terms` (EN/AR, copy in `src/legal.ts`, effective date in
   `LEGAL_EFFECTIVE_DATE`). Contact: `support@tastekin.app`.
+- **Support page**: public `/support` (the Support URL for both store
+  listings) shows only the server-configured `SUPPORT_EMAIL` from
+  `GET /api/me`; when that variable is unset the page says support is not
+  configured yet rather than inventing an address. Settings → Help & Support
+  links to it.
+- **Honest password reset**: no transactional email provider is wired up, so
+  `GET /api/me` reports `passwordResetAvailable: false`, the sign-in screen's
+  "Forgot password?" explains that no email can be sent (and offers the
+  support contact when configured), and `POST /api/auth/forgot-password`
+  answers 503 `password_reset_unavailable` for every email while still
+  logging the link for manual delivery.
+- **Notification controls** are hidden behind the `notification_preferences`
+  flag, which now defaults to OFF until push/email delivery exists.
 
 ## What is deliberately *not* in the shell yet
 

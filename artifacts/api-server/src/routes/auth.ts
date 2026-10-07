@@ -68,11 +68,22 @@ export async function googleSignInAvailable(): Promise<boolean> {
   return googleAuthConfigured() && (await isFeatureEnabled("google_sign_in"));
 }
 
+/**
+ * A password-reset link can only reach a member through a transactional
+ * email provider, and none is wired up yet: POST /auth/forgot-password still
+ * creates the token and logs the link so an operator can deliver it by hand.
+ * Until a provider exists this stays false, GET /me reports it, and the
+ * sign-in screen must never promise an email that will not arrive.
+ */
+export function passwordResetEmailConfigured(): boolean {
+  return false;
+}
+
 router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({ user: req.user ?? null }); });
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, supportEmail: configuredSupportEmail(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
+    res.json({ user: null, role: "consumer", creator: null, supportEmail: configuredSupportEmail(), passwordResetAvailable: passwordResetEmailConfigured(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
     return;
   }
   try {
@@ -94,10 +105,15 @@ router.get("/me", async (req, res) => {
       } : null,
       isAdmin: await isCurrentUserAdmin(req.user),
       founderMappingConfigured: founderMappingConfigured(),
+      // How this account signs in ("password", "google" or "replit"), so
+      // Settings can describe the password accurately instead of assuming
+      // every account is provider-managed.
+      authProvider: account?.authProvider ?? null,
       language: account?.language ?? "en",
       notifyPush: account?.notifyPush ?? true,
       notifyEmail: account?.notifyEmail ?? true,
       supportEmail: configuredSupportEmail(),
+      passwordResetAvailable: passwordResetEmailConfigured(),
       needsOnboarding: onboarding.needsOnboarding,
       onboardingStep: onboarding.step,
       googleAuthConfigured: await googleSignInAvailable(),
@@ -272,6 +288,18 @@ router.post("/auth/forgot-password", async (req, res) => {
       const resetLink = `${origin(req)}/reset-password?token=${token}`;
       // No transactional email provider is configured yet — log the link so it can be delivered manually until one is wired up.
       logger.info({ email, resetLink }, "Password reset requested");
+    }
+    if (!passwordResetEmailConfigured()) {
+      // Honest answer: nothing was sent. Identical for every email, so it
+      // still reveals nothing about whether an account exists.
+      const support = configuredSupportEmail();
+      res.status(503).json({
+        error: support
+          ? `Password reset by email is not available yet. Contact ${support} for help signing in.`
+          : "Password reset by email is not available yet.",
+        code: "password_reset_unavailable",
+      });
+      return;
     }
     res.json({ message: "If an account with that email exists, a reset link has been sent." });
   } catch (error) {
