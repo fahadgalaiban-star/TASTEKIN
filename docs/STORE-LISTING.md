@@ -29,9 +29,22 @@ stores' current ones at the time of writing; confirm them in the consoles.
   `support@tastekin.app`.
 - Sign-in inside the native shell: email and password only (Google and Replit
   sign-in are web-only until system-browser OAuth is added).
-- Shell targets iPhone and iPad (`TARGETED_DEVICE_FAMILY = 1,2`, iOS 15+) and
-  Android phones and tablets (minSdk 24). On tablets the app renders as a
-  centred phone-width column; verified by `e2e/layout-viewports.spec.ts`.
+- Shell currently targets iPhone and iPad (`TARGETED_DEVICE_FAMILY = 1,2`,
+  iOS 15+) and Android phones and tablets (minSdk 24). On tablets the app
+  renders as a centred phone-width column (verified by
+  `e2e/layout-viewports.spec.ts`). **Recommendation for the first release:
+  iPhone-only** (see the iPad note below); the Xcode change has not been made
+  yet and needs founder approval.
+- Public website: `https://tastekin.app`. The legal, support and deletion
+  pages are served by the deployed app, so they are expected at that host;
+  confirm each path resolves there before submission. The API base URL the
+  shell talks to (`TASTEKIN_API_BASE_URL`) is a separate, still unconfirmed
+  value and must not be assumed to be `https://tastekin.app`.
+- Company name and support mailbox: `TASTEKIN, Inc.` is used below only on
+  the condition that this exact spelling matches the incorporation
+  documents, and `support@tastekin.app` only on the condition that the
+  mailbox is confirmed to receive mail. Neither is confirmed yet; neither has
+  been written into `src/legal.ts`.
 
 ## App Store Connect (English)
 
@@ -43,10 +56,10 @@ stores' current ones at the time of writing; confirm them in the consoles.
 | Keywords | 100 | `taste,creators,style,outfits,travel,places,restaurants,routine,edits,collections,KIN,arabic` |
 | Primary category | — | Lifestyle |
 | Secondary category | — | Social Networking |
-| Support URL | — | `https://<production-host>/support` |
-| Marketing URL | — | optional; `https://<production-host>` |
-| Privacy Policy URL | — | `https://<production-host>/privacy` |
-| Copyright | — | founder decision (see below) |
+| Support URL | — | `https://tastekin.app/support` (confirm the path resolves) |
+| Marketing URL | — | `https://tastekin.app` |
+| Privacy Policy URL | — | `https://tastekin.app/privacy` (confirm the path resolves) |
+| Copyright | — | `© 2026 TASTEKIN, Inc.` — only if that exact spelling matches the incorporation documents |
 
 Description (4000 max):
 
@@ -135,10 +148,11 @@ pasted here; none exist in the repository.
 | Full description | 4000 | same text as the App Store description above |
 | Category | — | Lifestyle |
 | Tags | — | Lifestyle, Social |
-| Contact email | — | the configured support address |
-| Contact website | — | `https://<production-host>` |
-| Privacy policy URL | — | `https://<production-host>/privacy` |
-| Account deletion URL (Data safety) | — | `https://<production-host>/delete-account` |
+| Contact email | — | `support@tastekin.app` — only once confirmed to receive mail |
+| Contact website | — | `https://tastekin.app` |
+| Privacy policy URL | — | `https://tastekin.app/privacy` (confirm the path resolves) |
+| Account deletion URL (Data safety) | — | `https://tastekin.app/delete-account` (confirm the path resolves) |
+| Developer name shown publicly | — | `TASTEKIN, Inc.` — only if that exact spelling matches the incorporation documents |
 
 Data safety form (from the Privacy Policy and privacy manifest): collects
 email, name, user ID, photos and videos, messages, other user-generated
@@ -177,33 +191,43 @@ Sizes (confirm in each console before uploading):
 | --- | --- | --- |
 | App Store | iPhone 6.9" (required) | 1320 × 2868 portrait |
 | App Store | iPhone 6.5" (optional, scaled from 6.9" if omitted) | 1284 × 2778 |
-| App Store | iPad 13" (required while iPad is targeted) | 2064 × 2752 |
+| App Store | iPad 13" | not needed if the first release is iPhone-only (recommended); 2064 × 2752 if iPad stays targeted |
 | App Store | App icon | from the asset catalog (1024 × 1024, already generated) |
 | Play | Phone screenshots, 2–8 | 9:16, e.g. 1080 × 1920 (min 320 px, max 3840 px) |
 | Play | 7" and 10" tablet screenshots (while tablets are not excluded) | 16:10 or 9:16, e.g. 1200 × 1920 / 1600 × 2560 |
 | Play | Feature graphic (required) | 1024 × 500 |
 | Play | App icon | 512 × 512 PNG (derive from the approved master, see `native/generate-assets.py`) |
 
-iPad note: the app renders as a centred phone-width column on iPad. Either
-keep iPad (and take real iPad screenshots that show that framing) or set
-`TARGETED_DEVICE_FAMILY` to `1` before the first submission. Changing it
-later is allowed but removes the app from iPad users who installed it.
+iPad note and recommendation: the app renders as a centred phone-width
+column on iPad, and Apple reviews iPad-targeted apps on iPad. **Recommended
+for the first release: iPhone-only.** It avoids iPad screenshots and iPad
+review on a layout that was designed for phones; iPad can be added in a
+later release by setting `TARGETED_DEVICE_FAMILY` back to `"1,2"`. The
+change for the first release is two lines in
+`ios/App/App.xcodeproj/project.pbxproj` (`TARGETED_DEVICE_FAMILY = "1";` in
+both build configurations) and is **not applied yet**; apply it on founder
+approval before the first archive. Android tablets are unaffected.
 
 ## Needed from the founder (not in the repository)
 
-1. Legal entity name, registered address and governing jurisdiction for the
-   Privacy Policy and Terms (`src/legal.ts` intentionally omits them) and the
-   copyright line.
-2. The final support email address (`SUPPORT_EMAIL`) and whether the legal
-   copy's `support@tastekin.app` is that mailbox.
-3. The production host for all URLs above (`TASTEKIN_API_BASE_URL`, legal,
-   support and deletion URLs).
+1. Confirmation that `TASTEKIN, Inc.` is the exact spelling on the
+   incorporation documents, plus the registered address and governing
+   jurisdiction for the Privacy Policy and Terms (`src/legal.ts`
+   intentionally omits them; nothing has been added).
+2. Confirmation that `support@tastekin.app` receives mail (send a test
+   message to it). Until then the `SUPPORT_EMAIL` deployment setting stays
+   unset and the app shows "support not configured".
+3. The API base URL for the native shell (`TASTEKIN_API_BASE_URL`). The
+   public website is `https://tastekin.app`; whether the API is served from
+   the same host is not assumed. Also confirm that `/privacy`, `/terms`,
+   `/support` and `/delete-account` resolve on `https://tastekin.app`.
 4. Apple Developer Program enrolment (individual or organisation; an
    organisation needs a D-U-N-S number) and Google Play developer account,
    including the Play Console contact phone number and the developer name
    shown publicly.
-5. Decision on iPad support and on the effective date of the corrected Terms
-   (PR #101).
+5. Approval of the iPhone-only recommendation (then the two-line Xcode
+   change is applied) and a decision on the effective date of the corrected
+   Terms in PR #101 (left unchanged at 2026-09-23).
 6. Demo reviewer account on Production and whether KIN quota should be
    reserved for it.
 7. Countries/regions for availability and the public developer name.
