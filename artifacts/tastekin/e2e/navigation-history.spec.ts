@@ -12,7 +12,7 @@ async function mockSession(page: Page) {
         user: { id: 'nav-e2e-user', email: 'nav-e2e@tastekin.test' },
         role: 'creator',
         creator: { id: 'fheed', handle: 'fheed', displayName: 'Fheed Alaiban', verified: true, ownsWorkspace: true },
-        featureFlags: { my_circle: true, my_things: true, kin_search: true },
+        featureFlags: { my_circle: true, my_things: true, kin_search: true, kin_looks: true },
       }),
     });
   });

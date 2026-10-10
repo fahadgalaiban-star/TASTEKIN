@@ -15,7 +15,8 @@ function meBody({ authenticated = true, kinSearch = true, myThings = false, lang
     needsOnboarding: false,
     onboardingStep: 'done',
     googleAuthConfigured: false,
-    featureFlags: { kin_search: kinSearch, my_things: myThings },
+    // kin_looks keeps the Style tab visible; these tests exercise KIN Looks.
+    featureFlags: { kin_search: kinSearch, my_things: myThings, kin_looks: true },
   });
 }
 

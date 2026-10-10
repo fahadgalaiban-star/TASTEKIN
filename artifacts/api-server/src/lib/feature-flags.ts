@@ -44,6 +44,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: "kin_looks",
+    description: "Show the Style (KIN Looks) tab — and, when my_things is also enabled, the My Things tab — in the KIN screen's mode bar. Disabled by default: the KIN screen then shows Travel alone as a single centred option and opens on Travel. UI visibility only: the KIN Looks API, the My Things screens under You and all stored data are unaffected, so an admin can bring Style back at any time by enabling this flag.",
+    defaultEnabled: false,
+  },
+  {
     key: "my_circle",
     description: "Private Circle of verified creators and their published edits.",
     defaultEnabled: false,
