@@ -63,9 +63,10 @@ No step is optional. No step runs out of order.
 
 ## 4. Database rules
 
-- Do not run `drizzle-kit generate`. There is a known snapshot/history gap (documented in PR #25). Migrations are hand-authored, minimal SQL.
-- `RUN_MIGRATIONS_ON_BOOT=true` must be set as a **Deployment** environment variable so migrations apply on each boot/republish.
-- Replit's Publishing panel validates migration SQL before publish. If it shows "Database migrations validated successfully", read the SQL, confirm it matches the intended change, then Approve and publish.
+- Do not run `drizzle-kit generate`. There is a known snapshot/history gap (documented in PR #25; `lib/db/migrations/meta/` snapshots stop at 0015). Migrations are hand-authored, minimal SQL.
+- **`RUN_MIGRATIONS_ON_BOOT=true` does nothing.** The boot-time migration runner was removed from the API entrypoint in commit `19c2069` (2026-09-15); the flag still appears in `.replit`'s run command but nothing reads it, and `scripts/src/verify-migrations.ts` Phase 9 asserts the compiled API ignores it. Migrations are **not** applied at API boot or by a Republish. The only code that writes Drizzle's ledger (`drizzle.__drizzle_migrations`) is `runPendingMigrations` in `lib/db/src/run-migrations.ts`, and it is run only by reviewed one-off tools under separate approval.
+- **Schema can change without the ledger changing.** `drizzle-kit push` (run by `scripts/post-merge.sh` against the Development database) and Replit's Publishing schema step both apply schema derived from `lib/db/src/schema` and never write a ledger row. After that, the journal is ahead of the ledger, and a later `migrate()` tries to re-run migrations whose objects already exist; 0012, 0013 and 0017–0023 have no `IF NOT EXISTS` guards, so it fails with "already exists" and rolls back. This is why Publishing and the ledger drift apart. Before relying on either, run the read-only `pnpm --filter scripts run report:migration-ledger` (see `docs/MIGRATION-LEDGER.md`); pointing it at Production is a production read and needs approval like any other.
+- Replit's Publishing panel validates schema SQL before publish. If it shows "Database migrations validated successfully", read the SQL and confirm it matches the intended change before approving. If it proposes any **DROP**, it is diffing against stale history, not the real database: do not approve; stop and review. Approving it does not advance the Drizzle ledger.
 - Every new table gets: `owner_user_id` FK to `users(id)` `ON DELETE cascade`, a `created_at timestamptz DEFAULT now() NOT NULL`, and an index on `(owner_user_id, created_at)`.
 - Neon SQL console is reachable on iPhone in landscape mode — use it for read-only verification, not for schema changes.
 
