@@ -186,11 +186,40 @@ Regenerate after any change to the master:
 cd artifacts/tastekin && python3 native/generate-assets.py
 ```
 
+## Release signing and store metadata in the repo
+
+- **Android release signing** (`android/app/build.gradle`): the release
+  variant is signed only when a keystore is supplied from outside the repo,
+  either an untracked `android/keystore.properties`
+  (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; `storeFile` is
+  absolute or relative to `android/`) or the environment variables
+  `TASTEKIN_ANDROID_KEYSTORE`, `TASTEKIN_ANDROID_KEYSTORE_PASSWORD`,
+  `TASTEKIN_ANDROID_KEY_ALIAS`, `TASTEKIN_ANDROID_KEY_PASSWORD`. With none of
+  them present (CI today) `bundleRelease` still builds, unsigned, and Gradle
+  prints a one-line notice. `keystore.properties`, `*.jks` and `*.keystore`
+  are git-ignored. Create the upload key with `keytool` once Play Console
+  app signing is set up; never commit it.
+- **iOS export compliance**: `Info.plist` sets `ITSAppUsesNonExemptEncryption`
+  to `false` — the app uses only HTTPS/TLS, which is exempt — so every
+  TestFlight/App Store upload skips the encryption questionnaire.
+- **iOS privacy manifest**: `App/PrivacyInfo.xcprivacy` (in the app target's
+  Resources) declares no tracking, no tracking domains, no required-reason
+  API use by the app's own code, and the collected data types that match
+  `src/legal.ts`: email, name, user ID, photos/videos, messages, other user
+  content (all linked, app functionality) and product interaction
+  (analytics). Capacitor's frameworks ship their own manifests. Give the
+  same answers in App Store Connect → App Privacy.
+
 ## Before public store submission (tracked separately)
 
 Free app, no In-App Purchase / Play Billing / Stripe / product IDs / paywall.
 Done: native auth (PR-2), paid-content removal, account deletion, Privacy
-Policy and Terms URLs (PR-3). Still required: the production origin for
-`TASTEKIN_API_BASE_URL` / the public legal URLs, reviewer demo access, store
-listing metadata, and Apple sign-in alongside Google sign-in if Google ships
+Policy and Terms URLs (PR-3), Support page and honest password reset, iOS
+export-compliance flag and privacy manifest, Android release-signing hook.
+Still required: the production origin for `TASTEKIN_API_BASE_URL` / the
+public legal URLs, `ALLOWED_ORIGINS` including the shell origins,
+`SUPPORT_EMAIL` as a Deployment secret, the Android upload keystore,
+reviewer demo access, store listing metadata and screenshots, the
+iPad-support decision (`TARGETED_DEVICE_FAMILY` is `1,2`, so Apple reviews
+on iPad too), and Apple sign-in alongside Google sign-in if Google ships
 on iOS.

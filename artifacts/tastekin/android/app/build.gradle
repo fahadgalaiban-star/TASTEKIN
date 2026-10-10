@@ -1,5 +1,26 @@
 apply plugin: 'com.android.application'
 
+// Release signing is supplied only from outside the repository: an untracked
+// android/keystore.properties (storeFile, storePassword, keyAlias,
+// keyPassword) or the TASTEKIN_ANDROID_KEYSTORE* environment variables.
+// Nothing here is committed, and when none of them is present the release
+// variant still builds, unsigned (what CI's bundleRelease produces).
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
+}
+def releaseSigning = [
+    storeFile: keystoreProperties['storeFile'] ?: System.getenv('TASTEKIN_ANDROID_KEYSTORE'),
+    storePassword: keystoreProperties['storePassword'] ?: System.getenv('TASTEKIN_ANDROID_KEYSTORE_PASSWORD'),
+    keyAlias: keystoreProperties['keyAlias'] ?: System.getenv('TASTEKIN_ANDROID_KEY_ALIAS'),
+    keyPassword: keystoreProperties['keyPassword'] ?: System.getenv('TASTEKIN_ANDROID_KEY_PASSWORD'),
+]
+def releaseSigningConfigured = releaseSigning.values().every { it }
+if (!releaseSigningConfigured) {
+    logger.lifecycle("TASTEKIN: no release keystore configured; the release variant will be unsigned (see docs/MOBILE.md).")
+}
+
 android {
     namespace = "app.tastekin"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -16,10 +37,23 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            release {
+                storeFile rootProject.file(releaseSigning.storeFile)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigningConfigured) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }
