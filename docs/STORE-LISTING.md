@@ -37,9 +37,16 @@ stores' current ones at the time of writing; confirm them in the consoles.
   yet and needs founder approval.
 - Public website: `https://tastekin.app`. The legal, support and deletion
   pages are served by the deployed app, so they are expected at that host;
-  confirm each path resolves there before submission. The API base URL the
-  shell talks to (`TASTEKIN_API_BASE_URL`) is a separate, still unconfirmed
-  value and must not be assumed to be `https://tastekin.app`.
+  confirm each path resolves there before submission. **Verification status
+  (2026-10-10): not verifiable from the agent/CI environment** — outbound
+  requests to `tastekin.app` and to the documented Replit host are blocked
+  by that environment's network policy, so none of the five URLs has been
+  checked. Open each one in Safari on the iPhone before filling the store
+  forms. The API base URL the shell talks to (`TASTEKIN_API_BASE_URL`) is a
+  separate, still unconfirmed value and must not be assumed to be
+  `https://tastekin.app`; the only API hostname documented in the repository
+  is `cheerful-easygoing-bytes.replit.app` (`TASTEKIN_CLAUDE.md`), also
+  unverified from here.
 - Company name and support mailbox: `TASTEKIN, Inc.` is used below only on
   the condition that this exact spelling matches the incorporation
   documents, and `support@tastekin.app` only on the condition that the
@@ -93,6 +100,8 @@ What's New (first release): `First release of TASTEKIN.`
 | --- | --- |
 | Subtitle | `اكتشف عبر ذوقك` |
 | Promotional text | `مجاني وبلا إعلانات. اعثر على مبدعين وأماكن وروتينات تطابق ذوقك، واطلب من KIN إطلالات من خزانتك.` |
+| Keywords | `ذوق,مبدعين,أزياء,إطلالات,سفر,أماكن,مطاعم,روتين,مجموعات,KIN,تيستكن` |
+| What's New | `الإصدار الأول من TASTEKIN.` |
 
 ```
 يساعدك TASTEKIN على اكتشاف المبدعين والأماكن والمنتجات والروتينات عبر الذوق المتوافق، لا عبر الشهرة.
@@ -134,10 +143,13 @@ returns; do not pre-state it.
 ### App Review notes (draft)
 
 ```
-TASTEKIN is a free taste-based discovery app. Sign in with the demo account below (email/password). Google and Replit sign-in are web-only and intentionally hidden in the app. KIN Looks and KIN Travel call an AI provider; the demo account has quota. Account deletion: Settings → Delete account (two-step). Reporting and blocking: the ⋯ menu on any creator profile or Edit.
+TASTEKIN is a free taste-based discovery app. Sign in with the demo account below (email/password). Google and Replit sign-in are web-only and intentionally hidden in the app. KIN Looks and KIN Travel call an AI provider; the demo account has quota. Account deletion: Settings → Delete account (two-step confirmation). Reporting, muting and blocking: open another creator's profile and tap the vertical "More options" (⋮) button next to the profile actions; the menu offers "Report this profile", "Mute this user" and "Block this user". On an Edit you do not own, the same ⋮ button offers "Report this Edit"; on a comment, "Report this comment".
 ```
-Demo account credentials must be created on Production before submission and
-pasted here; none exist in the repository.
+These in-app paths are taken from the code (`ReportMenu` in `src/App.tsx`)
+and are covered by `e2e/creator-actions-navigation.spec.ts` (profile menu in
+English and Arabic) — they are the only reporting/blocking surfaces in the
+app. Demo account credentials must be created on Production before
+submission and pasted here; none exist in the repository.
 
 ## Google Play Console
 
@@ -153,6 +165,13 @@ pasted here; none exist in the repository.
 | Privacy policy URL | — | `https://tastekin.app/privacy` (confirm the path resolves) |
 | Account deletion URL (Data safety) | — | `https://tastekin.app/delete-account` (confirm the path resolves) |
 | Developer name shown publicly | — | `TASTEKIN, Inc.` — only if that exact spelling matches the incorporation documents |
+
+Google Play Arabic listing (store listing → add language → Arabic):
+
+| Field | Draft |
+| --- | --- |
+| Short description (80) | `اكتشف مبدعين وأماكن وروتينات تطابق ذوقك. مجاني وبلا إعلانات.` |
+| Full description | same text as the App Store Arabic description above |
 
 Data safety form (from the Privacy Policy and privacy manifest): collects
 email, name, user ID, photos and videos, messages, other user-generated
@@ -198,15 +217,15 @@ Sizes (confirm in each console before uploading):
 | Play | Feature graphic (required) | 1024 × 500 |
 | Play | App icon | 512 × 512 PNG (derive from the approved master, see `native/generate-assets.py`) |
 
-iPad note and recommendation: the app renders as a centred phone-width
-column on iPad, and Apple reviews iPad-targeted apps on iPad. **Recommended
-for the first release: iPhone-only.** It avoids iPad screenshots and iPad
-review on a layout that was designed for phones; iPad can be added in a
-later release by setting `TARGETED_DEVICE_FAMILY` back to `"1,2"`. The
-change for the first release is two lines in
-`ios/App/App.xcodeproj/project.pbxproj` (`TARGETED_DEVICE_FAMILY = "1";` in
-both build configurations) and is **not applied yet**; apply it on founder
-approval before the first archive. Android tablets are unaffected.
+iPad note: the app renders as a centred phone-width column on iPad, and
+Apple reviews iPad-targeted apps on iPad. **Decision (2026-10-10): iPhone-only
+for the first release, approved by the founder.** The change is exactly two
+lines in `ios/App/App.xcodeproj/project.pbxproj`, one per build
+configuration: `TARGETED_DEVICE_FAMILY = "1,2";` becomes
+`TARGETED_DEVICE_FAMILY = "1";`. `Info.plist` keeps its
+`UISupportedInterfaceOrientations~ipad` block (ignored on an iPhone-only
+target; harmless). iPad can be added in a later release by setting the value
+back to `"1,2"`. Android tablets are unaffected.
 
 ## Needed from the founder (not in the repository)
 
@@ -225,9 +244,9 @@ approval before the first archive. Android tablets are unaffected.
    organisation needs a D-U-N-S number) and Google Play developer account,
    including the Play Console contact phone number and the developer name
    shown publicly.
-5. Approval of the iPhone-only recommendation (then the two-line Xcode
-   change is applied) and a decision on the effective date of the corrected
-   Terms in PR #101 (left unchanged at 2026-09-23).
+5. iPhone-only is approved; the two-line Xcode change is applied once the
+   founder has seen the exact diff. Still open: a decision on the effective
+   date of the corrected Terms in PR #101 (left unchanged at 2026-09-23).
 6. Demo reviewer account on Production and whether KIN quota should be
    reserved for it.
 7. Countries/regions for availability and the public developer name.
