@@ -80,6 +80,43 @@ for (const viewport of [{ name: 'iPhone SE', width: 375, height: 667 }, { name: 
   });
 }
 
+for (const language of ['en', 'ar'] as const) {
+  test(`kin_looks turned off while Style results are on screen: results vanish, Travel step 1 takes over (${language})`, async ({ page }) => {
+    // Start with the flag on and a Looks result on screen.
+    await openKin(page, language, { kin_search: true, my_things: true, kin_looks: true });
+    await page.route('**/api/kin/search', (route) => route.fulfill({
+      status: 200, contentType: 'application/json',
+      body: JSON.stringify({ status: 'ok', answer: '', citations: [], options: [{ label: 'signature', reasoning: '', ownedItems: [], missingItems: [] }], results: [] }),
+    }));
+    await page.getByTestId('kin-query').fill(language === 'ar' ? 'نسّق قطعة للعشاء' : 'style a dinner piece');
+    await page.getByTestId('kin-submit').click();
+    const resultHeading = page.getByRole('heading', { name: language === 'ar' ? 'مختارة لذوقك.' : 'Made for your taste.' });
+    await expect(resultHeading).toBeVisible();
+    await expect(page.getByTestId('kin-mode-looks')).toHaveClass(/selected/);
+
+    // The admin disables the flag; the app re-reads /api/me on focus/visibility.
+    // Routes registered later win, so this overrides the earlier /api/me mock.
+    await page.route('**/api/me', (route) => route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: meBody(language, { kin_search: true, my_things: true, kin_looks: false }) }));
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); });
+
+    await expect(resultHeading).toHaveCount(0);
+    await expect(page.getByTestId('kin-results')).toHaveCount(0);
+    await expect(page.getByTestId('kin-result-directions')).toHaveCount(0);
+    await expect(page.getByTestId('kin-mode-looks')).toHaveCount(0);
+    await expect(page.getByTestId('kin-mode-my-things')).toHaveCount(0);
+    await expect(page.getByTestId('kin-mode-toggle').locator('button')).toHaveCount(1);
+    await expect(page.getByTestId('kin-mode-travel')).toHaveClass(/selected/);
+    await expect(page.getByTestId('kin-travel-step')).toHaveAttribute('data-step', '1');
+    await expect(page.getByTestId('kin-query')).toHaveCount(0);
+    // The flag coming back restores Style as a tab without resurrecting the old result.
+    await page.route('**/api/me', (route) => route.fulfill({ contentType: 'application/json', headers: { 'Cache-Control': 'no-store' }, body: meBody(language, { kin_search: true, my_things: true, kin_looks: true }) }));
+    await page.evaluate(() => { window.dispatchEvent(new Event('focus')); });
+    await expect(page.getByTestId('kin-mode-looks')).toBeVisible();
+    await expect(resultHeading).toHaveCount(0);
+    await expect(page.getByTestId('kin-travel-step')).toHaveAttribute('data-step', '1');
+  });
+}
+
 test('tapping Travel in the single bar keeps Travel on step 1 and never reveals Style', async ({ page }) => {
   await openKin(page, 'en', { kin_search: true });
   await page.getByTestId('kin-mode-travel').click();

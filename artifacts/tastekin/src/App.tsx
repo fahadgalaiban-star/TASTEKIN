@@ -3766,11 +3766,16 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   }, [enlargedResult]);
 
   const myThingsEnabled = session.featureFlags.my_things === true;
-  // If an admin turns kin_looks off while a member is on Style, fall back to
-  // Travel (step 1) instead of leaving a mode that no longer has a tab.
+  // If an admin turns kin_looks off while a member is on Style — on the form
+  // or already looking at Style results — fall back to Travel step 1 and
+  // drop the Style result so nothing from a hidden mode stays on screen.
   useEffect(() => {
-    if (!looksEnabled && mode !== 'travel') { setMode('travel'); setTravelStep(1); setErrorMessage(''); }
-  }, [looksEnabled, mode]);
+    if (looksEnabled) return;
+    if (mode !== 'travel' || view === 'looks-result') {
+      setMode('travel'); setTravelStep(1); setErrorMessage('');
+      setView('form'); setState('idle'); setResult(null);
+    }
+  }, [looksEnabled, mode, view]);
   useEffect(() => {
     if (!allowed || !myThingsEnabled) return;
     let cancelled = false;
