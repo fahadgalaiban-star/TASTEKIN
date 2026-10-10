@@ -3673,7 +3673,12 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   const carRentalEnabled = session.featureFlags.kin_travel_car_rental === true;
   const reservationsEnabled = session.featureFlags.kin_travel_restaurant_reservations === true;
 
-  const [mode, setMode] = useState<KinMode>('looks');
+  // Style (KIN Looks) and the My Things shortcut are shown only while the
+  // kin_looks flag is on. With it off the screen is Travel-only: it opens on
+  // Travel and the mode bar is a single centred Travel option. Nothing about
+  // Looks, My Things or their data is removed — an admin re-enables the flag.
+  const looksEnabled = session.featureFlags.kin_looks === true;
+  const [mode, setMode] = useState<KinMode>(() => (session.featureFlags.kin_looks === true ? 'looks' : 'travel'));
   const [query, setQuery] = useState('');
   const [myThingsItems, setMyThingsItems] = useState<ClosetItem[]>([]);
   const [selectedItemId, setSelectedItemId] = useState('');
@@ -3761,6 +3766,11 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   }, [enlargedResult]);
 
   const myThingsEnabled = session.featureFlags.my_things === true;
+  // If an admin turns kin_looks off while a member is on Style, fall back to
+  // Travel (step 1) instead of leaving a mode that no longer has a tab.
+  useEffect(() => {
+    if (!looksEnabled && mode !== 'travel') { setMode('travel'); setTravelStep(1); setErrorMessage(''); }
+  }, [looksEnabled, mode]);
   useEffect(() => {
     if (!allowed || !myThingsEnabled) return;
     let cancelled = false;
@@ -4230,13 +4240,21 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     : state === 'empty' ? <Empty text={t('No results yet — try rephrasing your request.', 'لا نتائج بعد — حاول إعادة صياغة طلبك.')} />
     : null;
 
+  // The mode bar: Style | My Things | Travel while kin_looks is on; a single
+  // centred Travel pill (same test id, same handler) while it is off.
+  const modeToggle = ({ looksSelected, onLooks, onTravel }: { looksSelected: boolean; onLooks: () => void; onTravel: () => void }) => looksEnabled
+    ? <div className="kin-segmented" data-testid="kin-mode-toggle">
+        <button type="button" className={looksSelected ? 'selected' : ''} data-testid="kin-mode-looks" onClick={onLooks}>{t('Style', 'نسّق لي')}</button>
+        {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
+        <button type="button" className={looksSelected ? '' : 'selected'} data-testid="kin-mode-travel" onClick={onTravel}>{t('Travel', 'السفر')}</button>
+      </div>
+    : <div className="kin-segmented kin-segmented-single" data-testid="kin-mode-toggle">
+        <button type="button" className="selected" data-testid="kin-mode-travel" aria-current="page" onClick={onTravel}>{t('Travel', 'السفر')}</button>
+      </div>;
+
   if (view === 'looks-result') {
     return <section className="kin-style-screen" data-testid="kin-screen">
-      <div className="kin-segmented" data-testid="kin-mode-toggle">
-        <button type="button" className="selected" data-testid="kin-mode-looks" onClick={backToForm}>{t('Style', 'نسّق لي')}</button>
-        {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
-        <button type="button" data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); backToForm(); }}>{t('Travel', 'السفر')}</button>
-      </div>
+      {modeToggle({ looksSelected: true, onLooks: backToForm, onTravel: () => { setMode('travel'); setTravelStep(1); setErrorMessage(''); backToForm(); } })}
 
       <div className="kin-style-heading">
         <h1 className="kin-headline">{t('Made for your taste.', 'مختارة لذوقك.')}</h1>
@@ -4445,11 +4463,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   }
 
   return <section className={mode === 'looks' ? 'kin-style-screen' : undefined} data-testid="kin-screen">
-    <div className="kin-segmented" data-testid="kin-mode-toggle">
-      <button type="button" className={mode === 'looks' ? 'selected' : ''} data-testid="kin-mode-looks" onClick={() => { setMode('looks'); setErrorMessage(''); }}>{t('Style', 'نسّق لي')}</button>
-      {myThingsEnabled && <button type="button" data-testid="kin-mode-my-things" onClick={changeStylingItems}>{t('My Things', 'أغراضي')}</button>}
-      <button type="button" className={mode === 'travel' ? 'selected' : ''} data-testid="kin-mode-travel" onClick={() => { setMode('travel'); setTravelStep(1); setErrorMessage(''); }}>{t('Travel', 'السفر')}</button>
-    </div>
+    {modeToggle({ looksSelected: mode === 'looks', onLooks: () => { setMode('looks'); setErrorMessage(''); }, onTravel: () => { setMode('travel'); setTravelStep(1); setErrorMessage(''); } })}
 
     {mode === 'looks' && (
       <>

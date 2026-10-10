@@ -726,6 +726,11 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-segmented { display:flex; margin:0 0 16px; padding:4px; border-radius:999px; background:var(--tk-card); }
 .kin-segmented button { flex:1; padding:8px; border:0; border-radius:999px; background:transparent; color:var(--tk-stone); font-size:11px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; }
 .kin-segmented button.selected { background:var(--tk-wine); color:var(--tk-text-inverse); }
+/* Travel-only mode bar (kin_looks flag off): one centred pill sized to its
+   label, never stretched across the column, with the same wine fill as a
+   selected segment and slightly larger type. Works unchanged in RTL. */
+.kin-segmented.kin-segmented-single { justify-content:center; width:max-content; max-width:100%; margin:6px auto 22px; padding:0; background:transparent; }
+.kin-segmented.kin-segmented-single button { flex:0 0 auto; min-width:min(200px, calc(100vw - 64px)); min-height:46px; padding:12px 36px; font-size:13px; letter-spacing:.1em; box-shadow:0 8px 22px rgba(74,29,36,.16); }
 .kin-day-preview-row { position:relative; display:flex; gap:12px; margin-bottom:0px; padding:0; border:0; }
 .kin-day-preview-thumb { flex:0 0 72px; width:72px; height:48px; border-radius:6px; overflow:hidden; background:var(--tk-surface-muted); z-index:1; display:flex; align-items:center; justify-content:center; }
 .kin-day-preview-thumb img { width:100%; height:100%; object-fit:cover; }

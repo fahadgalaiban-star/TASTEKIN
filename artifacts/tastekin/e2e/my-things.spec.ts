@@ -15,7 +15,7 @@ function meBody({ authenticated = true, myThings = true, kinSearch = true, close
     needsOnboarding: false,
     onboardingStep: 'done',
     googleAuthConfigured: false,
-    featureFlags: { my_things: myThings, kin_search: kinSearch, closet_item_analysis: closetAnalysis },
+    featureFlags: { my_things: myThings, kin_search: kinSearch, closet_item_analysis: closetAnalysis, kin_looks: true },
   });
 }
 
