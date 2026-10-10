@@ -211,7 +211,7 @@ const termsEn: LegalDocument = {
       heading: 'Eligibility and your account',
       bullets: [
         'You must be at least 13 years old to use TASTEKIN.',
-        'Keep your sign-in details confidential. You are responsible for activity on your account. Tell us immediately if you believe it has been compromised; you can reset your password from the sign-in screen, which signs out every device.',
+        'Keep your sign-in details confidential. You are responsible for activity on your account. Tell us immediately if you believe it has been compromised. Resetting your password signs out every device; where self-service reset by email is not yet available, the sign-in screen shows how to reach support.',
         'One person, one account. Do not impersonate anyone or misrepresent who you are.',
       ],
     },
@@ -289,7 +289,7 @@ const termsAr: LegalDocument = {
       heading: 'الأهلية وحسابك',
       bullets: [
         'يجب ألا يقل عمرك عن 13 عاماً لاستخدام TASTEKIN.',
-        'حافظ على سرية بيانات تسجيل الدخول. أنت مسؤول عن النشاط في حسابك. أخبرنا فوراً إذا كنت تعتقد أنه تعرّض للاختراق؛ يمكنك إعادة تعيين كلمة المرور من شاشة تسجيل الدخول، وهو ما يُسجّل الخروج من جميع الأجهزة.',
+        'حافظ على سرية بيانات تسجيل الدخول. أنت مسؤول عن النشاط في حسابك. أخبرنا فوراً إذا كنت تعتقد أنه تعرّض للاختراق. إعادة تعيين كلمة المرور تُسجّل الخروج من جميع الأجهزة؛ وحيث لا تتوفر بعد إعادة التعيين الذاتية عبر البريد الإلكتروني، تعرض شاشة تسجيل الدخول طريقة التواصل مع الدعم.',
         'شخص واحد، حساب واحد. لا تنتحل شخصية أحد ولا تُضلّل بشأن هويتك.',
       ],
     },
