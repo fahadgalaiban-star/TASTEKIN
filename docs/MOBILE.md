@@ -188,6 +188,10 @@ cd artifacts/tastekin && python3 native/generate-assets.py
 
 ## Before public store submission (tracked separately)
 
+Listing drafts, the screenshot checklist and the details still needed from the
+founder live in `docs/STORE-LISTING.md`. Layout across iPhone and iPad sizes is
+checked by `e2e/layout-viewports.spec.ts`.
+
 Free app, no In-App Purchase / Play Billing / Stripe / product IDs / paywall.
 Done: native auth (PR-2), paid-content removal, account deletion, Privacy
 Policy and Terms URLs (PR-3). Still required: the production origin for
