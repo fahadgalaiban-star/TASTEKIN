@@ -115,9 +115,24 @@ new reconciliation review.
 DATABASE_URL=postgresql://... pnpm --filter scripts run verify:migration-ledger-report
 ```
 
-Creates and drops a uniquely named database on that server (never run it with
-a production credential). It checks the journal statically, then drives one
-disposable database through the four states above — 0022 baseline, applied
-0023 (via the real `runPendingMigrations`), ledger-only, schema-only, no
-ledger — asserting the report, exit codes, the runner's behaviour and that no
-pre-existing row is ever changed.
+Creates and drops a uniquely named database on that server, so it **fails
+closed before opening any connection** unless `DATABASE_URL` is a dedicated
+local disposable server (`scripts/src/disposable-db-guard.ts`): the host must
+be `localhost`, `127.0.0.1` or `::1`; managed-provider markers (neon.tech,
+replit, amazonaws, …), `sslmode=require`/`verify-*`, `channel_binding=require`,
+a missing admin database name, production-like names (prod, production, live,
+neondb, tastekin) and a target sharing host:port with `PROD_DB_URL` are all
+refused, without echoing the URL. `verify:disposable-db-guard` proves those
+rejections and runs the verifier end to end against remote and
+production-like URLs to show it stops before any connection attempt.
+
+The verifier checks the journal statically, then drives one disposable
+database through the four states above — 0022 baseline, applied 0023 (via the
+real `runPendingMigrations`), ledger-only, schema-only, no ledger — asserting
+the report, exit codes, the runner's behaviour and that no pre-existing row is
+ever changed.
+
+CI (`.github/workflows/migration-ledger.yml`) runs the typechecks, the guard
+test and the verifier against a job-local `postgres:16` service container on
+every pull request or push touching `lib/db/**` or `scripts/**`. No
+repository secret or managed database is involved.

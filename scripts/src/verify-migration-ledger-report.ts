@@ -4,11 +4,14 @@
  * has actually produced.
  *
  * DATABASE_URL selects only the server on which a new, uniquely named
- * throwaway database is created and dropped. It is never pointed at a real
- * database by this script; never run it with a production credential.
+ * throwaway database is created and dropped. Because of that, the script
+ * fails closed before opening any connection unless DATABASE_URL is a
+ * dedicated local disposable server (see disposable-db-guard.ts): remote
+ * hosts, managed providers, TLS-required and production-like URLs are
+ * refused, as is a target sharing host:port with PROD_DB_URL.
  *
  * Usage:
- *   DATABASE_URL=postgresql://... pnpm --filter scripts run verify:migration-ledger-report
+ *   DATABASE_URL=postgresql://postgres@127.0.0.1:5433/postgres pnpm --filter scripts run verify:migration-ledger-report
  *
  * Scenarios, all on the one disposable database:
  *   0. static: journal/files consistent; 0023 creates exactly the reviewed
@@ -37,6 +40,7 @@ import { fileURLToPath } from "node:url";
 
 import pg from "pg";
 
+import { assertDisposableDatabaseUrl } from "./disposable-db-guard";
 import {
   MIGRATIONS_FOLDER,
   exitCodeFor,
@@ -48,8 +52,9 @@ import {
 } from "./migration-ledger-report";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-const configuredUrl = process.env.DATABASE_URL;
-if (!configuredUrl) throw new Error("DATABASE_URL (a disposable server, never production) is required");
+// Fail closed before any pool exists: this script creates and drops
+// databases, so only a dedicated local disposable server is ever accepted.
+const configuredUrl = assertDisposableDatabaseUrl(process.env.DATABASE_URL, process.env).toString();
 
 const quote = (value: string) => `"${value.replaceAll('"', '""')}"`;
 const TAG_0023 = "0023_moderation_actions";

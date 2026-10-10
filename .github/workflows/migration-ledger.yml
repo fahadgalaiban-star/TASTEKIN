@@ -1,0 +1,65 @@
+# Typechecks the scripts package and runs the migration-ledger verifier
+# against a throwaway PostgreSQL 16 service container that exists only for
+# this job. No repository secret, managed database or deployment is involved:
+# the verifier's own guard (scripts/src/disposable-db-guard.ts) refuses any
+# DATABASE_URL that is not a local disposable server, and the container is
+# discarded when the job ends.
+name: Migration ledger checks
+
+on:
+  pull_request:
+    paths:
+      - 'lib/db/**'
+      - 'scripts/**'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - 'package.json'
+      - '.github/workflows/migration-ledger.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'lib/db/**'
+      - 'scripts/**'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/migration-ledger.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: migration-ledger-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ledger:
+    name: Typecheck + disposable-DB verifier
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      # The job-local service container only; never a repository secret.
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck:libs
+      - run: pnpm --filter @workspace/scripts run typecheck
+      - name: Guard rejects remote and production-like URLs
+        run: pnpm --filter @workspace/scripts run verify:disposable-db-guard
+      - name: Ledger report verifier (local disposable PostgreSQL only)
+        run: pnpm --filter @workspace/scripts run verify:migration-ledger-report

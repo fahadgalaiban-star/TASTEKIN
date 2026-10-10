@@ -30,6 +30,7 @@
     "verify:migrations": "tsx ./src/verify-migrations.ts",
     "report:migration-ledger": "tsx ./src/migration-ledger-report.ts",
     "verify:migration-ledger-report": "tsx ./src/verify-migration-ledger-report.ts",
+    "verify:disposable-db-guard": "tsx ./src/verify-disposable-db-guard.ts",
     "verify:native-session-recovery": "tsx ./src/verify-native-session-recovery.ts",
     "recover:native-sessions": "tsx ./src/native-session-recovery.ts",
     "verify:video-upload-migration-replay": "tsx ./src/verify-video-upload-migration-replay.ts",
