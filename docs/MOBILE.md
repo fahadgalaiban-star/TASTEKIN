@@ -210,6 +210,61 @@ cd artifacts/tastekin && python3 native/generate-assets.py
   (analytics). Capacitor's frameworks ship their own manifests. Give the
   same answers in App Store Connect → App Privacy.
 
+## TestFlight from GitHub Actions (no Mac)
+
+`.github/workflows/ios-testflight.yml` archives, signs and uploads the iOS
+app from GitHub's `macos-latest` runner (macOS 26, Xcode 26, which meets
+Apple's Xcode 26 / iOS 26 SDK upload requirement). It is manual only:
+Actions → **iOS TestFlight upload** → Run workflow. It uploads to App Store
+Connect → TestFlight and never submits for review or releases anything.
+
+Signing is Xcode **cloud signing** with an App Store Connect API key: Apple
+creates and keeps the distribution certificate and the App Store profile,
+so no `.p12`, no `.mobileprovision` and no keychain import exist anywhere.
+The shell targets iPhone only (`TARGETED_DEVICE_FAMILY = "1"`).
+
+One-time setup, all from a browser (iPhone is fine):
+
+1. **Apple Developer Program** enrolled and the latest agreements accepted
+   (App Store Connect shows a banner until they are).
+2. **Register the bundle ID**: developer.apple.com → Certificates, Identifiers
+   & Profiles → Identifiers → + → App IDs → App, explicit `app.tastekin`, no
+   extra capabilities. (Automatic signing can also register it, but the app
+   record in step 3 needs it first.)
+3. **Create the app record**: App Store Connect → Apps → + → New App: iOS,
+   name `TASTEKIN`, bundle ID `app.tastekin`, SKU e.g. `tastekin-ios`.
+   Uploads fail with "No suitable application records were found" without it.
+4. **Create an API key**: App Store Connect → Users and Access →
+   Integrations → App Store Connect API → Team Keys → +. Name it e.g.
+   `GitHub TestFlight`, role **Admin** (or App Manager with "Access to
+   Cloud Managed Distribution Certificate" ticked). Download the `.p8`
+   once; note the **Key ID** and the **Issuer ID** shown on that page.
+5. **Add to GitHub** (repo → Settings → Secrets and variables → Actions):
+
+   | Kind | Name | Value |
+   | --- | --- | --- |
+   | Variable | `TASTEKIN_API_BASE_URL` | `https://<production host>` (no trailing slash) |
+   | Variable | `APPLE_TEAM_ID` | the 10-character Team ID (developer.apple.com → Membership details) |
+   | Secret | `APP_STORE_CONNECT_API_KEY_ID` | the Key ID |
+   | Secret | `APP_STORE_CONNECT_API_ISSUER_ID` | the Issuer ID |
+   | Secret | `APP_STORE_CONNECT_API_KEY_P8` | the whole `.p8` file text, including the BEGIN/END PRIVATE KEY lines |
+
+   Never paste any of these into chat, issues or PRs. To read the `.p8` on an
+   iPhone: save it to Files, rename to `.txt`, open, Select All, Copy.
+6. **Run the workflow.** The preflight step names any missing item without
+   printing values. Each run uses the run number as the build number
+   (`CFBundleVersion`) unless one is typed in; `MARKETING_VERSION` stays 1.0
+   until changed in the Xcode project.
+7. **Install**: App Store Connect → TASTEKIN → TestFlight. After processing
+   (10–30 min) add yourself under Internal Testing and install via the
+   TestFlight app. Export compliance is already answered by
+   `ITSAppUsesNonExemptEncryption = false`.
+
+For sign-in to work inside the TestFlight build, the production API's
+`ALLOWED_ORIGINS` must include `capacitor://localhost` (deployment setting,
+not code), and `SUPPORT_EMAIL` should be set so the Support page shows a
+contact.
+
 ## Before public store submission (tracked separately)
 
 Listing drafts, the screenshot checklist and the details still needed from the
