@@ -1092,7 +1092,7 @@ test('opens an Edit that was "subscribers only" before the free product as an or
   await page.getByTestId('nav-home').click();
   await page.getByTestId('edit-title-private-hotel').click();
 
-  await expect(page.getByText('Public Edit')).toBeVisible();
+  await expect(page.getByTestId('edit-detail-screen')).toBeVisible();
   await expect(page.locator('.approved-detail-art')).not.toHaveClass(/locked/);
   await expect(page.locator('.approved-detail-art img')).toHaveAttribute('src', '/tastekin-media/coastal-notes.webp');
   await expect(page.getByText('This edit is for subscribers')).toHaveCount(0);

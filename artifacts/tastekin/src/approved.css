@@ -365,13 +365,20 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 /* Post detail: the full caption centered above the image (smaller on
    phones, never clamped or cut off), then one small tappable location row,
    then the image. */
-.edit-detail-title { margin:14px auto 6px; max-width:34ch; font-size:20px; line-height:1.25; letter-spacing:-.03em; text-align:center; overflow-wrap:anywhere; }
-@media (min-width:600px) { .edit-detail-title { font-size:24px; } }
-.edit-detail-location { display:flex; align-items:center; justify-content:center; gap:5px; width:max-content; max-width:100%; min-height:32px; margin:0 auto; padding:0 8px; border-radius:999px; color:var(--tk-stone); font-size:12px; font-weight:700; text-decoration:none; }
+/* Public post detail: media directly under the top bar, then the caption as
+   plain 16px text, then the location row — short, even gaps, start-aligned
+   so Arabic reads from the right and English from the left. */
+.edit-detail-screen { padding-top:10px; }
+.edit-detail-art.approved-detail-art { margin:0; }
+.edit-detail-screen .video-detail-player { margin-top:0; }
+.edit-detail-text { margin:14px 0 0; max-width:none; color:var(--tk-ink); font-family:inherit; font-size:16px; font-weight:400; line-height:1.5; letter-spacing:0; text-align:start; overflow-wrap:anywhere; }
+.edit-detail-location { display:flex; align-items:center; justify-content:flex-start; gap:6px; width:max-content; max-width:100%; min-height:24px; margin:6px 0 16px; padding:0; border-radius:999px; color:var(--tk-stone); font-size:14px; font-weight:500; line-height:1.4; text-decoration:none; }
+.edit-detail-text + .edit-detail-location { margin-top:6px; }
+.edit-detail-art + .edit-detail-location, .video-detail-player + .edit-detail-location { margin-top:14px; }
 .edit-detail-location span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.edit-detail-location svg { flex:0 0 auto; color:var(--tk-wine); }
-.edit-detail-location:hover, .edit-detail-location:focus-visible { color:var(--tk-wine); background:var(--tk-surface-muted); }
-.edit-detail-location + .approved-detail-art, .edit-detail-title + .approved-detail-art { margin-top:10px; }
+.edit-detail-location svg { flex:0 0 auto; width:15px; height:15px; color:var(--tk-wine); }
+.edit-detail-location:hover, .edit-detail-location:focus-visible { color:var(--tk-wine); }
+.edit-detail-text:last-child, .edit-detail-location:last-child { margin-bottom:16px; }
 .approved-detail-art { position:relative; width:100%; margin:15px 0 12px; overflow:hidden; border-radius:20px; background:var(--tk-surface-muted); }
 .approved-detail-art img { width:100%; height:100%; display:block; object-fit:cover; }
 /* Phase 3B — video playback cards. .video-card-media mirrors .approved-art's

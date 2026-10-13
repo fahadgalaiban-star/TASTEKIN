@@ -2184,16 +2184,21 @@ function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn,
   const mapsLink = locationRow
     ? mapsHref({ name: [placeName, location].filter(Boolean).join(', '), coordinates: parseCoordinates(isSafeMapsUrl(edit.mapsUrl) ? edit.mapsUrl : null) }, nativePlatform)
     : '';
-  return <SimpleScreen kicker={ar ? 'تعديل عام' : 'Public Edit'} title="">
-    {caption && <h1 className="approved-title edit-detail-title" data-testid="edit-detail-caption">{caption}</h1>}
-    {locationRow && <a className="edit-detail-location" data-testid="edit-detail-location" href={mapsLink} target="_blank" rel="noopener noreferrer" aria-label={ar ? `افتح ${locationRow} في الخرائط` : `Open ${locationRow} in Maps`}><MapPin size={14} aria-hidden="true" /><span>{locationRow}</span></a>}
-    {edit.image && <div className="approved-detail-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></div>}
+  // Layout: media first, directly under the top bar (its crop ratio and
+  // rounded corners unchanged, nothing drawn over it); then the caption as
+  // plain running text; then the single location row. Both text lines
+  // follow the page direction (start-aligned: left in English, right in
+  // Arabic). Values are the stored ones — nothing is added or guessed.
+  return <section className="edit-detail-screen" data-testid="edit-detail-screen">
+    {edit.image && <div className="approved-detail-art edit-detail-art" style={{ aspectRatio: cropAspectRatio(edit.crop?.aspect, edit.crop), height: 'auto' }}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></div>}
     {edit.video && <VideoDetailPlayer video={edit.video} ar={ar} />}
     {!edit.image && !edit.video && <div className="place-detail-panel"><PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} /></div>}
+    {caption && <h1 className="edit-detail-text" data-testid="edit-detail-caption">{caption}</h1>}
+    {locationRow && <a className="edit-detail-location" data-testid="edit-detail-location" href={mapsLink} target="_blank" rel="noopener noreferrer" aria-label={ar ? `افتح ${locationRow} في الخرائط` : `Open ${locationRow} in Maps`}><MapPin size={14} aria-hidden="true" /><span>{locationRow}</span></a>}
     {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} />}
     {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
     <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} />
-  </SimpleScreen>;
+  </section>;
 }
 
 function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, owner, hasPhoto, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; owner: boolean; hasPhoto: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
