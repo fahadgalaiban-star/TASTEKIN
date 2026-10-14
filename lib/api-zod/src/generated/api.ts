@@ -757,10 +757,6 @@ export const getCreatorWorkspaceResponseOneEditsItemTitleMax = 160;
 
 export const getCreatorWorkspaceResponseOneEditsItemTitleArMax = 160;
 
-export const getCreatorWorkspaceResponseOneEditsItemCaptionMax = 2000;
-
-export const getCreatorWorkspaceResponseOneEditsItemCaptionArMax = 2000;
-
 export const getCreatorWorkspaceResponseOneEditsItemImageMax = 1024;
 
 export const getCreatorWorkspaceResponseOneEditsItemSourceImageMax = 1024;
@@ -874,8 +870,8 @@ export const GetCreatorWorkspaceResponse = zod.object({
   "category": zod.enum(['Fashion', 'Travel', 'Places', 'Restaurants', 'DailyRoutine', 'PersonalCare', 'HealthFitness', 'Decor', 'Books', 'Vlogs']),
   "title": zod.string().max(getCreatorWorkspaceResponseOneEditsItemTitleMax),
   "titleAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemTitleArMax),
-  "caption": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionMax),
-  "captionAr": zod.string().max(getCreatorWorkspaceResponseOneEditsItemCaptionArMax),
+  "caption": zod.string(),
+  "captionAr": zod.string(),
   "image": zod.string().min(1).max(getCreatorWorkspaceResponseOneEditsItemImageMax).optional(),
   "sourceImage": zod.string().max(getCreatorWorkspaceResponseOneEditsItemSourceImageMax).optional(),
   "previewImage": zod.string().max(getCreatorWorkspaceResponseOneEditsItemPreviewImageMax).optional(),
@@ -971,10 +967,6 @@ export const saveCreatorWorkspaceBodyEditsItemIdMax = 120;
 export const saveCreatorWorkspaceBodyEditsItemTitleMax = 160;
 
 export const saveCreatorWorkspaceBodyEditsItemTitleArMax = 160;
-
-export const saveCreatorWorkspaceBodyEditsItemCaptionMax = 2000;
-
-export const saveCreatorWorkspaceBodyEditsItemCaptionArMax = 2000;
 
 export const saveCreatorWorkspaceBodyEditsItemImageMax = 1024;
 
@@ -1089,8 +1081,8 @@ export const SaveCreatorWorkspaceBody = zod.object({
   "category": zod.enum(['Fashion', 'Travel', 'Places', 'Restaurants', 'DailyRoutine', 'PersonalCare', 'HealthFitness', 'Decor', 'Books', 'Vlogs']),
   "title": zod.string().max(saveCreatorWorkspaceBodyEditsItemTitleMax),
   "titleAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemTitleArMax),
-  "caption": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionMax),
-  "captionAr": zod.string().max(saveCreatorWorkspaceBodyEditsItemCaptionArMax),
+  "caption": zod.string(),
+  "captionAr": zod.string(),
   "image": zod.string().min(1).max(saveCreatorWorkspaceBodyEditsItemImageMax).optional(),
   "sourceImage": zod.string().max(saveCreatorWorkspaceBodyEditsItemSourceImageMax).optional(),
   "previewImage": zod.string().max(saveCreatorWorkspaceBodyEditsItemPreviewImageMax).optional(),
@@ -1178,10 +1170,6 @@ export const saveCreatorWorkspaceResponseOneEditsItemIdMax = 120;
 export const saveCreatorWorkspaceResponseOneEditsItemTitleMax = 160;
 
 export const saveCreatorWorkspaceResponseOneEditsItemTitleArMax = 160;
-
-export const saveCreatorWorkspaceResponseOneEditsItemCaptionMax = 2000;
-
-export const saveCreatorWorkspaceResponseOneEditsItemCaptionArMax = 2000;
 
 export const saveCreatorWorkspaceResponseOneEditsItemImageMax = 1024;
 
@@ -1296,8 +1284,8 @@ export const SaveCreatorWorkspaceResponse = zod.object({
   "category": zod.enum(['Fashion', 'Travel', 'Places', 'Restaurants', 'DailyRoutine', 'PersonalCare', 'HealthFitness', 'Decor', 'Books', 'Vlogs']),
   "title": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemTitleMax),
   "titleAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemTitleArMax),
-  "caption": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionMax),
-  "captionAr": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemCaptionArMax),
+  "caption": zod.string(),
+  "captionAr": zod.string(),
   "image": zod.string().min(1).max(saveCreatorWorkspaceResponseOneEditsItemImageMax).optional(),
   "sourceImage": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemSourceImageMax).optional(),
   "previewImage": zod.string().max(saveCreatorWorkspaceResponseOneEditsItemPreviewImageMax).optional(),

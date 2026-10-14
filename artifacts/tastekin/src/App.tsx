@@ -17,6 +17,7 @@ import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeSignOut,
 import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
 import { MediaImage } from './components/MediaImage';
+import { editTextForSave, fullEditCaption } from './lib/edit-text';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -246,6 +247,16 @@ const homeFeedAspectRatio = (aspect?: CropAspect, crop?: CropMetadata) => {
 };
 const placeCategories = new Set<CreatorEdit['category']>(['Restaurants', 'Places', 'Travel']);
 const isPlaceCategory = (category: CreatorEdit['category'] | '') => category !== '' && placeCategories.has(category);
+const withoutPlaceDetails = (form: EditForm): EditForm => {
+  if (isPlaceCategory(form.category)) return form;
+  const clean = { ...form };
+  delete clean.placeName;
+  delete clean.locationLabel;
+  delete clean.mapsUrl;
+  delete clean.tasteRating;
+  delete clean.creatorReview;
+  return clean;
+};
 const placeLocation = (edit: CreatorEdit, ar: boolean) => edit.locationLabel || (ar ? edit.locationAr || edit.location : edit.location || edit.locationAr);
 const isSafeMapsUrl = (value?: string | null) => {
   if (!value?.trim()) return false;
@@ -686,18 +697,32 @@ function TastekinApp() {
     applyWorkspaceSnapshot(edits, collections, workspaceRevisionRef.current);
     setWorkspaceState('syncing'); setWorkspaceError('');
     pendingMediaIsDiscardable.current = false;
+    let serverError: string | null = null;
     try {
       const response = await fetch('/api/creator-workspace', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ edits, collections, expectedRevision: workspaceRevisionRef.current }) });
       if (response.status === 401) throw new Error('auth');
       if (response.status === 409) throw new Error('conflict');
-      if (!response.ok) throw new Error('Could not save the shared creator workspace.');
+      if (!response.ok) {
+        if (response.headers.get('content-type')?.includes('json')) {
+          try {
+            const body: unknown = await response.json();
+            if (body && typeof body === 'object' && !Array.isArray(body) && 'error' in body && typeof body.error === 'string') {
+              const message = body.error.trim();
+              if (message && message.length <= 300 && !/[\r\n<>/\\]|bearer|token|secret|password|authorization|cookie|stack trace/i.test(message)) {
+                serverError = message;
+              }
+            }
+          } catch { /* Keep the generic message for malformed responses. */ }
+        }
+        throw new Error('Could not save the shared creator workspace.');
+      }
       const workspace = await response.json() as { edits: CreatorEdit[]; collections: CreatorCollection[]; revision: number };
       applyWorkspaceSnapshot(workspace.edits, workspace.collections, workspace.revision);
       setPendingMediaPaths([]); setWorkspaceState('ready');
       return true;
     } catch (error) {
       if (cleanupPaths.length) { void cleanupCreatorMedia(cleanupPaths); setPendingMediaPaths([]); }
-      setWorkspaceState('error'); setWorkspaceError(error instanceof Error && error.message === 'auth' ? 'Sign in to save changes to your creator workspace.' : error instanceof Error && error.message === 'conflict' ? 'This workspace changed on another device. Reload your workspace before saving again.' : 'Your latest creator change has not been saved. Try again before leaving this screen.');
+      setWorkspaceState('error'); setWorkspaceError(error instanceof Error && error.message === 'auth' ? 'Sign in to save changes to your creator workspace.' : error instanceof Error && error.message === 'conflict' ? 'This workspace changed on another device. Reload your workspace before saving again.' : serverError ? `Could not save: ${serverError}` : 'Your latest creator change has not been saved. Try again before leaving this screen.');
       return false;
     }
   };
@@ -1075,7 +1100,7 @@ function TastekinApp() {
   const videoUpload = useVideoUpload(ar, (video) => setEditForm((prev) => ({ ...prev, video })));
   const openComposer = (item?: CreatorEdit) => {
     discardPendingCrop(); setEditingId(item?.id || null);
-    setEditForm(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit());
+    setEditForm(withoutPlaceDetails(item ? { category: item.category, title: item.title, titleAr: item.titleAr, caption: item.caption, captionAr: item.captionAr, image: item.image, sourceImage: item.sourceImage, imageMetadata: item.imageMetadata, crop: item.crop, video: item.video, location: item.location, locationAr: item.locationAr, altText: item.altText, access: item.access, collectionIds: item.collectionIds, outfitItems: item.outfitItems || [], showOutfitDetails: item.showOutfitDetails || false, placeName: item.placeName || null, locationLabel: item.locationLabel || null, mapsUrl: item.mapsUrl || null, tasteRating: item.tasteRating || null, creatorReview: item.creatorReview || null } : blankEdit()));
     if (item?.video) videoUpload.hydrate(item.video); else videoUpload.reset();
     go('composer');
   };
@@ -1106,9 +1131,9 @@ function TastekinApp() {
       setWorkspaceError(error instanceof Error ? error.message : 'Your image could not be saved. Try again before leaving this screen.');
       return false;
     }
+    formToSave = withoutPlaceDetails(formToSave);
     const id = editingId || `edit-${globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
-    const fallbackTitle = formToSave.placeName?.trim() || formToSave.caption.trim().slice(0, 80);
-    const next = { id, ...formToSave, title: formToSave.title.trim() || fallbackTitle, titleAr: formToSave.titleAr.trim() || fallbackTitle, captionAr: formToSave.captionAr || formToSave.caption, status } as CreatorEdit;
+    const next = { id, ...formToSave, ...editTextForSave(formToSave), status } as CreatorEdit;
     const nextEdits = creatorEdits.some((item) => item.id === id) ? creatorEdits.map((item) => item.id === id ? next : item) : [next, ...creatorEdits];
     const nextCollections = creatorCollections.map((collection) => ({
       ...collection,
@@ -1817,7 +1842,7 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 
 function SimpleScreen({ kicker, title, titleClassName, children }: { kicker: string; title: string; titleClassName?: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className={titleClassName ? `approved-title ${titleClassName}` : 'approved-title'}>{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
-function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return (ar ? edit.captionAr || edit.caption || edit.placeName || edit.title || '' : edit.caption || edit.captionAr || edit.placeName || edit.title || '').split(/\r?\n/, 1)[0].trim(); }
+function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return fullEditCaption(edit, ar).split(/\r?\n/, 1)[0].trim(); }
 function TasteRating({ rating, ar, id, compact = false }: { rating?: number | null; ar: boolean; id?: string; compact?: boolean }) {
   if (!rating) return null;
   const ratingLabel = ar ? `تقييم TASTEKIN ${rating} من 5` : `TASTEKIN Taste Rating ${rating} out of 5`;
@@ -2171,7 +2196,7 @@ function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean
   </Drawer.Root>;
 }
 function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; saved: boolean; owner: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
-  const caption = publicCaptionLine(edit, ar);
+  const caption = fullEditCaption(edit, ar);
   const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
   // The location is shown exactly once, as one small tappable row above the
   // image: "<place name> · <location>" (the name is left out when it is
@@ -6114,8 +6139,13 @@ function EditComposer({ ar, form, collections, busy, videoUploadEnabled, videoUp
     const saved = await onPublish();
     if (saved) videoUpload.markCommitted();
   };
-  const changeCategory = (value: Exclude<Category, 'All'>) => onChange({ ...form, category: value });
-  const updatePlaceLocation = (value: string) => onChange({ ...form, locationLabel: value || null, location: value, locationAr: value });
+  const changeCategory = (value: Exclude<Category, 'All'>) => onChange(isPlaceCategory(value)
+    ? { ...form, category: value, locationLabel: form.locationLabel ?? (form.location || null) }
+    : withoutPlaceDetails({ ...form, category: value }));
+  const updatePlaceLocation = (value: string) => onChange({
+    ...form, ...(isPlaceCategory(form.category) ? { locationLabel: value || null } : {}),
+    location: value, locationAr: value,
+  });
 
   if (pendingImage) return <CropEditor ar={ar} source={pendingImage} initialCrop={form.crop} error={imageError} busy={processing} onCancel={() => { URL.revokeObjectURL(pendingImage.url); setPendingImage(null); }} onConfirm={confirmCrop} />;
   const acceptMedia = `image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif${videoUploadEnabled ? ',video/mp4,video/quicktime' : ''}`;

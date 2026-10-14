@@ -371,7 +371,7 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .edit-detail-screen { padding-top:10px; }
 .edit-detail-art.approved-detail-art { margin:0; }
 .edit-detail-screen .video-detail-player { margin-top:0; }
-.edit-detail-text { margin:14px 0 0; max-width:none; color:var(--tk-ink); font-family:inherit; font-size:16px; font-weight:400; line-height:1.5; letter-spacing:0; text-align:start; overflow-wrap:anywhere; }
+.edit-detail-text { margin:14px 0 0; max-width:none; color:var(--tk-ink); font-family:inherit; font-size:16px; font-weight:400; line-height:1.5; letter-spacing:0; text-align:start; overflow-wrap:anywhere; white-space:pre-wrap; }
 .edit-detail-location { display:flex; align-items:center; justify-content:flex-start; gap:6px; width:max-content; max-width:100%; min-height:24px; margin:6px 0 16px; padding:0; border-radius:999px; color:var(--tk-stone); font-size:14px; font-weight:500; line-height:1.4; text-decoration:none; }
 .edit-detail-text + .edit-detail-location { margin-top:6px; }
 .edit-detail-art + .edit-detail-location, .video-detail-player + .edit-detail-location { margin-top:14px; }
