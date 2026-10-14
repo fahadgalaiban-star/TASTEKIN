@@ -29,12 +29,12 @@ stores' current ones at the time of writing; confirm them in the consoles.
   `support@tastekin.app`.
 - Sign-in inside the native shell: email and password only (Google and Replit
   sign-in are web-only until system-browser OAuth is added).
-- Shell currently targets iPhone and iPad (`TARGETED_DEVICE_FAMILY = 1,2`,
-  iOS 15+) and Android phones and tablets (minSdk 24). On tablets the app
+- Shell targets iPhone (`TARGETED_DEVICE_FAMILY = "1"`, iOS 15+) and
+  Android phones and tablets (minSdk 24). On tablets the app
   renders as a centred phone-width column (verified by
-  `e2e/layout-viewports.spec.ts`). **Recommendation for the first release:
-  iPhone-only** (see the iPad note below); the Xcode change has not been made
-  yet and needs founder approval.
+  `e2e/layout-viewports.spec.ts`). **First release is iPhone-only** (founder
+  approved 2026-10-10; `TARGETED_DEVICE_FAMILY` is now `"1"`), so no iPad
+  screenshots or iPad review apply.
 - Public website: `https://tastekin.app`. The legal, support and deletion
   pages are served by the deployed app, so they are expected at that host;
   confirm each path resolves there before submission. **Verification status
@@ -219,9 +219,9 @@ Sizes (confirm in each console before uploading):
 
 iPad note: the app renders as a centred phone-width column on iPad, and
 Apple reviews iPad-targeted apps on iPad. **Decision (2026-10-10): iPhone-only
-for the first release, approved by the founder.** The change is exactly two
-lines in `ios/App/App.xcodeproj/project.pbxproj`, one per build
-configuration: `TARGETED_DEVICE_FAMILY = "1,2";` becomes
+for the first release, approved by the founder; applied.** The change is
+exactly two lines in `ios/App/App.xcodeproj/project.pbxproj`, one per build
+configuration: `TARGETED_DEVICE_FAMILY = "1,2";` became
 `TARGETED_DEVICE_FAMILY = "1";`. `Info.plist` keeps its
 `UISupportedInterfaceOrientations~ipad` block (ignored on an iPhone-only
 target; harmless). iPad can be added in a later release by setting the value
@@ -244,9 +244,8 @@ back to `"1,2"`. Android tablets are unaffected.
    organisation needs a D-U-N-S number) and Google Play developer account,
    including the Play Console contact phone number and the developer name
    shown publicly.
-5. iPhone-only is approved; the two-line Xcode change is applied once the
-   founder has seen the exact diff. Still open: a decision on the effective
-   date of the corrected Terms in PR #101 (left unchanged at 2026-09-23).
+5. iPhone-only is approved and applied. Still open: a decision on the
+   effective date of the corrected Terms (left unchanged at 2026-09-23).
 6. Demo reviewer account on Production and whether KIN quota should be
    reserved for it.
 7. Countries/regions for availability and the public developer name.
