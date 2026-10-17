@@ -234,11 +234,16 @@ One-time setup, all from a browser (iPhone is fine):
 3. **Create the app record**: App Store Connect → Apps → + → New App: iOS,
    name `TASTEKIN`, bundle ID `app.tastekin`, SKU e.g. `tastekin-ios`.
    Uploads fail with "No suitable application records were found" without it.
-4. **Create an API key**: App Store Connect → Users and Access →
-   Integrations → App Store Connect API → Team Keys → +. Name it e.g.
-   `GitHub TestFlight`, role **Admin** (or App Manager with "Access to
-   Cloud Managed Distribution Certificate" ticked). Download the `.p8`
-   once; note the **Key ID** and the **Issuer ID** shown on that page.
+   (Steps 2 and 3 describe the TASTEKIN company account. For a partner
+   team's interim test build see "Partner-team test builds" below: there the
+   App ID and app record use a *temporary* bundle ID and a different app
+   name.)
+4. **Create an API key** (Account Holder or Admin): App Store Connect →
+   Users and Access → Integrations → App Store Connect API → Team Keys → +.
+   Name it e.g. `GitHub TestFlight`, access **Admin** (or App Manager).
+   Download the `.p8` once; note the **Key ID** and the **Issuer ID** shown
+   on that page. If the Integrations page shows "Request Access", the
+   Account Holder must request it first.
 5. **Add to GitHub** (repo → Settings → Secrets and variables → Actions):
 
    | Kind | Name | Value |
@@ -251,10 +256,17 @@ One-time setup, all from a browser (iPhone is fine):
 
    Never paste any of these into chat, issues or PRs. To read the `.p8` on an
    iPhone: save it to Files, rename to `.txt`, open, Select All, Copy.
-6. **Run the workflow.** The preflight step names any missing item without
-   printing values. Each run uses the run number as the build number
-   (`CFBundleVersion`) unless one is typed in; `MARKETING_VERSION` stays 1.0
-   until changed in the Xcode project.
+6. **Run the workflow.** Actions → iOS TestFlight upload → Run workflow asks
+   for the **bundle ID** every time. `app.tastekin` is reserved for the
+   TASTEKIN company account: the run refuses it unless "Use reserved bundle
+   ID" is ticked, so a partner team's upload always carries a temporary ID
+   (next section). The ID is passed to `xcodebuild` as a
+   `PRODUCT_BUNDLE_IDENTIFIER` override; `project.pbxproj` and
+   `capacitor.config.ts` keep `app.tastekin` and the same code ships either
+   way. The preflight step names any missing item without printing values.
+   Each run uses the run number as the build number (`CFBundleVersion`)
+   unless one is typed in; `MARKETING_VERSION` stays 1.0 until changed in
+   the Xcode project.
 7. **Install**: App Store Connect → TASTEKIN → TestFlight. After processing
    (10–30 min) add yourself under Internal Testing and install via the
    TestFlight app. Export compliance is already answered by
@@ -264,6 +276,96 @@ For sign-in to work inside the TestFlight build, the production API's
 `ALLOWED_ORIGINS` must include `capacitor://localhost` (deployment setting,
 not code), and `SUPPORT_EMAIL` should be set so the Support page shows a
 contact.
+
+### Which backend a TestFlight build talks to
+
+There is no test or staging API. The bundle calls whatever
+`TASTEKIN_API_BASE_URL` pointed at when the workflow ran, and the only
+deployed API is the production one on Replit. Every TestFlight build,
+temporary bundle ID or not, therefore uses the **production API and the
+production database**: accounts created and posts made by testers are real
+rows. Test with a dedicated test account, not placeholder data on a real
+profile. The bundle ID has no effect on this: the server does not know or
+check it.
+
+### Partner-team test builds (temporary bundle ID)
+
+While the TASTEKIN company's own Apple account is pending, a partner (for
+example a friend's company) can upload internal-test builds from *their*
+Apple Developer account. The workflow is team-agnostic — every Apple-side
+value comes from `APPLE_TEAM_ID` and the three API-key secrets — but two
+Apple rules decide how it must be done (both from Apple's App Store Connect
+Help pages):
+
+- **A bundle ID belongs to the first team that uploads a build with it.**
+  Apple's "Remove an app" page: once a build has been uploaded, "your bundle
+  ID can't be reused" — by any team, ever. And an app can only move between
+  teams by App Transfer, whose criteria require that "the app must have at
+  least one version that was released to the App Store"; a TestFlight-only
+  app cannot be transferred. Uploading `app.tastekin` from the partner's
+  team would therefore hand the real identifier to that team for good (or
+  until they publish it to the App Store and then transfer it).
+- **App names are unique across App Store Connect** and are owned by the
+  account that created the record ("if you remove an app, you'll lose
+  ownership of the app name"). So the partner's record must not be called
+  `TASTEKIN` either.
+
+Hence the rule built into the workflow: on a partner team, type a
+**temporary bundle ID** — `app.tastekin.beta` is the suggested one — and keep
+`app.tastekin` unregistered everywhere until the company account exists. The
+build is the same code, same version, same `TASTEKIN` display name on the
+home screen; only the identifier differs. When the company account is ready,
+the same workflow is run with `app.tastekin` and the box ticked, from that
+account's Team ID and key. The partner's temporary app can simply be left
+or removed; nothing from it needs to carry over.
+
+What the partner sets up (their **Account Holder or Admin**):
+
+1. Apple Developer Program membership active, latest agreements accepted
+   (App Store Connect shows a banner until they are).
+2. developer.apple.com → Certificates, Identifiers & Profiles → Identifiers
+   → + → App IDs → App → explicit **`app.tastekin.beta`** (not
+   `app.tastekin`), no extra capabilities.
+3. App Store Connect → Apps → + → New App → iOS, name **`TASTEKIN Beta`**
+   (not `TASTEKIN`), bundle ID `app.tastekin.beta`, SKU e.g.
+   `tastekin-beta-ios`.
+4. Users and Access → Integrations → App Store Connect API (the Account
+   Holder requests access once if the page says "Request Access") → Team
+   Keys → Generate API Key, name `GitHub TestFlight`, access **Admin** (or
+   App Manager). Download the `.p8` (one download only); note the Key ID and
+   Issuer ID on that page. A team key covers all of the partner's apps, so
+   they should revoke it on the same page when the testing period ends.
+5. Users and Access → People → + : the tester's name and a valid email, role
+   **Developer**, app access `TASTEKIN Beta`. Internal testers must be users
+   of the uploading team's App Store Connect account.
+6. After the first upload has processed (10–30 min, Apple emails): Apps →
+   TASTEKIN Beta → TestFlight → Internal Testing → + → group `TASTEKIN
+   internal`, tick "Enable automatic distribution" → Create → Invite Testers
+   → select the user. Up to 100 internal testers, no Beta App Review, builds
+   installable for 90 days; the tester accepts in the TestFlight app.
+
+The five GitHub values come from the partner's account: `APPLE_TEAM_ID`
+(public, developer.apple.com → Membership details) and, as secrets, the Key
+ID, Issuer ID and `.p8` text. Either the partner enters them in the
+repository (needs the GitHub **Admin** role on the repo) or hands them over
+through a password-manager share or in person — never chat, email or a
+commit. The repository owner cannot rotate anything on the Apple side; a
+leaked key is revoked by the partner in App Store Connect.
+
+Code access for the partner: GitHub → repo → Settings → Collaborators → Add
+people. **Read** lets them review the code; **Write** is the minimum to
+press "Run workflow"; **Admin** is needed only to enter secrets. The
+repository owner can also run the workflow themselves, in which case the
+partner needs no GitHub access at all — only the Apple-side setup above.
+
+After the test period: the partner revokes the API key, the repository
+owner deletes the three `APP_STORE_CONNECT_*` secrets and `APPLE_TEAM_ID`
+(they will be replaced with the company account's), and the partner removes
+the tester from the group. Later, if the real app ever needs to move between
+accounts, Apple's transfer rules apply: both Account Holders initiate and
+accept, agreements current, no version in review, TestFlight turned off
+first (builds and testers removed), bundle ID and ratings move, certificates
+and keys do not.
 
 ## Before public store submission (tracked separately)
 
@@ -278,7 +380,7 @@ export-compliance flag and privacy manifest, Android release-signing hook.
 Still required: the production origin for `TASTEKIN_API_BASE_URL` / the
 public legal URLs, `ALLOWED_ORIGINS` including the shell origins,
 `SUPPORT_EMAIL` as a Deployment secret, the Android upload keystore,
-reviewer demo access, store listing metadata and screenshots, the
-iPad-support decision (`TARGETED_DEVICE_FAMILY` is `1,2`, so Apple reviews
-on iPad too), and Apple sign-in alongside Google sign-in if Google ships
-on iOS.
+reviewer demo access, store listing metadata and screenshots, and Apple
+sign-in alongside Google sign-in if Google ships on iOS. The iPad decision is
+made: the shell is iPhone-only (`TARGETED_DEVICE_FAMILY = "1"`), so iPad
+screenshots and iPad review do not apply.

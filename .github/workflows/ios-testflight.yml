@@ -15,12 +15,29 @@
 #   Secrets:   APP_STORE_CONNECT_API_KEY_ID
 #              APP_STORE_CONNECT_API_ISSUER_ID
 #              APP_STORE_CONNECT_API_KEY_P8   (full text of the .p8 key file)
-# The App Store Connect app record for bundle ID app.tastekin must exist.
+# The App Store Connect app record for the bundle ID typed into the run must
+# exist in the signing team.
+#
+# Bundle ID: typed in per run. `app.tastekin` is reserved for the TASTEKIN
+# company account and is refused unless "Use reserved bundle ID" is ticked, so
+# a build uploaded from a partner's team (interim testing) always carries a
+# temporary ID such as app.tastekin.beta and never claims the real one — Apple
+# locks a bundle ID to the first team that uploads a build with it. The ID is
+# applied as an xcodebuild override; nothing in the project files changes.
 name: iOS TestFlight upload
 
 on:
   workflow_dispatch:
     inputs:
+      bundle_id:
+        description: 'Bundle ID for this upload. Partner team: a temporary ID, e.g. app.tastekin.beta. app.tastekin is refused unless the box below is ticked.'
+        required: true
+        type: string
+      allow_reserved_bundle_id:
+        description: 'Use reserved bundle ID — tick ONLY when uploading from the TASTEKIN company account itself (allows app.tastekin).'
+        required: false
+        type: boolean
+        default: false
       build_number:
         description: 'Build number (CFBundleVersion). Empty = this run number.'
         required: false
@@ -44,6 +61,8 @@ jobs:
       ASC_KEY_ID: ${{ secrets.APP_STORE_CONNECT_API_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_API_ISSUER_ID }}
       BUILD_NUMBER: ${{ inputs.build_number != '' && inputs.build_number || github.run_number }}
+      BUNDLE_ID: ${{ inputs.bundle_id }}
+      ALLOW_RESERVED_BUNDLE_ID: ${{ inputs.allow_reserved_bundle_id }}
     steps:
       - name: Preflight — required variables and secrets are present
         env:
@@ -67,6 +86,18 @@ jobs:
             *"BEGIN PRIVATE KEY"*) ;;
             *) echo "::error::APP_STORE_CONNECT_API_KEY_P8 must contain the whole .p8 file text, including the BEGIN/END PRIVATE KEY lines."; exit 1 ;;
           esac
+          case "$BUNDLE_ID" in
+            ""|*[!A-Za-z0-9.-]*|.*|*.|*..*)
+              echo "::error::bundle_id must be a reverse-DNS identifier made of letters, digits, dots and hyphens (for example app.tastekin.beta)."; exit 1 ;;
+          esac
+          if [ "$BUNDLE_ID" = "app.tastekin" ] && [ "$ALLOW_RESERVED_BUNDLE_ID" != "true" ]; then
+            echo "::error::app.tastekin is reserved for the TASTEKIN company account. For a partner team's test upload type a temporary bundle ID (for example app.tastekin.beta); tick 'Use reserved bundle ID' only when uploading from the company account itself."
+            exit 1
+          fi
+          if [ "$BUNDLE_ID" != "app.tastekin" ]; then
+            echo "::notice::Temporary bundle ID ${BUNDLE_ID}: the archive is signed and uploaded under this ID; app.tastekin is not touched."
+          fi
+          echo "Bundle ID for this upload: $BUNDLE_ID"
           echo "Build number for this upload: $BUILD_NUMBER"
 
       - uses: actions/checkout@v4
@@ -134,6 +165,7 @@ jobs:
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
             CODE_SIGN_STYLE=Automatic \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" \
             CURRENT_PROJECT_VERSION="$BUILD_NUMBER"
 
       - name: Export and upload to App Store Connect (TestFlight)
@@ -154,12 +186,14 @@ jobs:
         run: |
           version=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleShortVersionString' build/App.xcarchive/Info.plist 2>/dev/null || echo '?')
           build=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleVersion' build/App.xcarchive/Info.plist 2>/dev/null || echo "$BUILD_NUMBER")
+          archived_id=$(/usr/libexec/PlistBuddy -c 'Print :ApplicationProperties:CFBundleIdentifier' build/App.xcarchive/Info.plist 2>/dev/null || echo "$BUNDLE_ID")
           {
             echo "## Uploaded to App Store Connect"
             echo ""
-            echo "- Bundle ID: app.tastekin"
+            echo "- Bundle ID: ${archived_id}$([ "$archived_id" = "app.tastekin" ] || echo ' (temporary ID; app.tastekin untouched)')"
+            echo "- Signing team (APPLE_TEAM_ID): ${APPLE_TEAM_ID}"
             echo "- Version: ${version} (build ${build})"
-            echo "- Where to find it: App Store Connect → Apps → TASTEKIN → TestFlight. Processing usually takes 10–30 minutes; Apple emails when the build is ready for internal testers."
+            echo "- Where to find it: App Store Connect → Apps → the app record for this bundle ID → TestFlight. Processing usually takes 10–30 minutes; Apple emails when the build is ready for internal testers."
             echo "- Nothing was submitted for App Store review."
           } >> "$GITHUB_STEP_SUMMARY"
 
