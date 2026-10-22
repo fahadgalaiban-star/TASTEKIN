@@ -31,7 +31,7 @@ test('a brand-new email/password account gets through onboarding step 1 on the r
   await page.getByRole('button', { name: "Don't have an account? Sign up" }).click();
   await expect(page.getByRole('heading', { name: 'Create your account' })).toBeVisible();
   await page.getByLabel('Email').fill(email);
-  await page.getByLabel('Password').fill('live-onboarding-pass-1');
+  await page.getByLabel('Password', { exact: true }).fill('live-onboarding-pass-1');
   await page.getByTestId('signup-terms').check();
   await page.getByRole('button', { name: 'Create account' }).click();
 
@@ -65,7 +65,7 @@ test('a username with invalid characters is refused by the real API with the spe
   await page.getByTestId('settings-sign-in').click();
   await page.getByRole('button', { name: "Don't have an account? Sign up" }).click();
   await page.getByLabel('Email').fill(`live-bad-${stamp}@example.test`);
-  await page.getByLabel('Password').fill('live-onboarding-pass-1');
+  await page.getByLabel('Password', { exact: true }).fill('live-onboarding-pass-1');
   await page.getByTestId('signup-terms').check();
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByTestId('onboarding-basics')).toBeVisible({ timeout: 20_000 });
