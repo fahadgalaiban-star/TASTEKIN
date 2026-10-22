@@ -94,10 +94,14 @@ class Session {
       onboardingStep: "basics" | "photo" | "city" | "taste" | "done";
     };
   }
+  // Every key CreatorProfileInput requires, nullable ones included; a
+  // missing key is a 400 on the real server (see the drift check below).
   async saveProfile(body: Record<string, unknown>) {
+    return this.saveProfileRaw({ displayName: "New Member", username: "placeholder", bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatarObjectPath: null, coverImageObjectPath: null, ...body });
+  }
+  async saveProfileRaw(body: Record<string, unknown>) {
     return this.request("/api/creator-profile", {
-      method: "PUT", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ displayName: "New Member", username: "placeholder", bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatarObjectPath: null, ...body }),
+      method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
     });
   }
   async saveTaste(categories: string[], tags: string[]) {
@@ -182,6 +186,30 @@ async function main() {
           return code === "23505" || /duplicate key|unique constraint/i.test(`${message} ${causeMessage}`);
         },
       );
+    });
+
+    await check("a profile body missing a required key (coverImageObjectPath) is a 400 that names the key — the drift that once blocked every production sign-up", async () => {
+      const { coverImageObjectPath: _omitted, ...withoutCover } = { displayName: "Alice A", username: `alice_${suffix}`, bio: "", city: "", country: "", interests: [], dateOfBirth: null, showAge: false, avatarObjectPath: null, coverImageObjectPath: null };
+      void _omitted;
+      const response = await a.saveProfileRaw(withoutCover);
+      assert.equal(response.status, 400);
+      const body = await response.json() as { error: string };
+      assert.equal(body.error, "Invalid creator profile: coverImageObjectPath is required.");
+      assert.equal((await a.me()).onboardingStep, "basics");
+    });
+
+    await check("a malformed username (uppercase) is a 400 with the username-format message, not a generic one", async () => {
+      const response = await a.saveProfile({ displayName: "Alice A", username: "Review" });
+      assert.equal(response.status, 400);
+      const body = await response.json() as { error: string };
+      assert.equal(body.error, "Username must be 3-30 characters: lowercase letters, numbers, or underscores.");
+    });
+
+    await check("an empty display name is a 400 with the display-name message", async () => {
+      const response = await a.saveProfile({ displayName: "", username: `alice_${suffix}` });
+      assert.equal(response.status, 400);
+      const body = await response.json() as { error: string };
+      assert.equal(body.error, "Enter your display name.");
     });
 
     await check("saving a valid, available username advances 'basics' to 'photo'", async () => {
