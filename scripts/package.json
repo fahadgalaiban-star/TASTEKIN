@@ -12,6 +12,7 @@
     "verify:app-readiness": "tsx ./src/verify-app-readiness.ts",
     "verify:deployment-health": "tsx ./src/verify-deployment-health.ts",
     "verify:onboarding": "tsx ./src/verify-onboarding.ts",
+    "verify:onboarding-live": "tsx ./src/verify-onboarding-live.ts",
     "verify:reports": "tsx ./src/verify-reports.ts",
     "verify:blocks": "tsx ./src/verify-blocks.ts",
     "verify:mutes": "tsx ./src/verify-mutes.ts",

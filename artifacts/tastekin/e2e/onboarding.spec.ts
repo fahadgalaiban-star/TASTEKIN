@@ -4,11 +4,15 @@ import { expect, test } from '@playwright/test';
 // account, persists each step to the server, resumes at the correct step
 // after a reload (never restarting from scratch), and renders correctly in
 // both English/LTR and Arabic/RTL.
+// Keys the real PUT /api/creator-profile requires (lib/api-spec CreatorProfileInput).
+const REQUIRED_PROFILE_KEYS = ['displayName', 'username', 'bio', 'city', 'country', 'interests', 'dateOfBirth', 'showAge', 'avatarObjectPath', 'coverImageObjectPath'] as const;
+
 test('onboarding appears for a new user, saves each step, and resumes on reload', async ({ page }) => {
   let onboardingStep: 'basics' | 'photo' | 'city' | 'taste' | 'done' = 'basics';
   const profile = {
     displayName: '', username: 'member_123', bio: '', city: '', country: '',
     interests: [] as string[], avatar: '', avatarObjectPath: null as string | null,
+    coverImage: '', coverImageObjectPath: null as string | null,
     age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
   };
   let taste = { categories: [] as string[], tags: [] as string[] };
@@ -36,6 +40,14 @@ test('onboarding appears for a new user, saves each step, and resumes on reload'
   await page.route('**/api/creator-profile', async (route) => {
     if (route.request().method() === 'PUT') {
       const body = route.request().postDataJSON() as Record<string, unknown>;
+      // Mirror the real API: CreatorProfileInput requires every key, nullable
+      // ones included. A body without coverImageObjectPath is a 400 there
+      // (this is exactly what blocked production sign-ups once).
+      const missing = REQUIRED_PROFILE_KEYS.filter((key) => !(key in body));
+      if (missing.length) {
+        await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: `Invalid creator profile: ${missing[0]} is required.` }) });
+        return;
+      }
       Object.assign(profile, body);
       profile.revision += 1;
     }
@@ -127,7 +139,7 @@ test('onboarding renders correctly in Arabic/RTL', async ({ page }) => {
   await page.route('**/api/creator-profile', async (route) => {
     await route.fulfill({
       contentType: 'application/json',
-      body: JSON.stringify({ displayName: '', username: 'member', bio: '', city: '', country: '', interests: [], avatar: '', avatarObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1 }),
+      body: JSON.stringify({ displayName: '', username: 'member', bio: '', city: '', country: '', interests: [], avatar: '', avatarObjectPath: null, coverImage: '', coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1 }),
     });
   });
   await page.route('**/api/creator-workspace', async (route) => {
