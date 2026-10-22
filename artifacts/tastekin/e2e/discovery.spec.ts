@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { expectBackOnYou, openCreatorComposer } from './creator-flow';
 
 async function openConsumerProfile(page: Page) {
   await page.getByTestId('nav-explore').click();
@@ -232,11 +233,12 @@ test('keeps the five mobile destinations, Explore search and sort, and RTL avail
   await expect(page.getByRole('button', { name: 'Best Match' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New' })).toBeVisible();
   await expect(page.locator('[data-testid^="category-"]')).toHaveCount(0);
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  // The composer hides the bottom navigation on purpose; Back returns to You.
+  await openCreatorComposer(page);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expectBackOnYou(page);
   await page.getByTestId('nav-saved').click();
-  await expect(page.getByRole('heading', { name: 'Saved' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Saved', exact: true })).toBeVisible(); // "All Saved" is the list heading below it
   await page.getByTestId('nav-you').click();
   await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
   await page.getByTestId('nav-explore').click();
@@ -1052,9 +1054,13 @@ test('keeps owner controls compact without a standalone preview button and persi
   await page.getByTestId('featured-collection-quiet-luxury').click();
   await expect(page.getByRole('heading', { name: 'Quiet Luxury' })).toBeVisible();
 
+  // Manage collections lives in the owner's profile More menu (the creator
+  // dashboard has no route any more).
   await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await page.getByRole('button', { name: 'Manage collections' }).click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await page.getByRole('button', { name: 'More options' }).click();
+  await expect(page.getByTestId('profile-manage-edits')).toContainText('Manage edits');
+  await page.getByTestId('profile-manage-collections').click();
   await expect(page.getByRole('button', { name: 'Unfeature' })).toHaveCount(2);
   await page.getByRole('button', { name: 'Move featured collection later' }).first().click();
   await page.getByRole('button', { name: 'Unfeature' }).first().click();

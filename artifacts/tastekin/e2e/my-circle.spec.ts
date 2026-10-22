@@ -322,6 +322,33 @@ test('verified visitor Circle membership sends username actions and preserves Fo
   expect(targets).toEqual([VISITOR.username, VISITOR.username]);
 });
 
+for (const language of ['en', 'ar'] as const) {
+  test(`a 403 from Circle membership shows a localized notice and leaves the action unchanged (${language})`, async ({ page }) => {
+    await session(page, true, language);
+    await discovery(page, true);
+    await page.route(`**/api/circle/members/${VISITOR.username}`, async (route) => {
+      if (route.request().method() === 'GET') {
+        return route.fulfill({ contentType: 'application/json', body: JSON.stringify({ creatorId: VISITOR.username, active: false }) });
+      }
+      // What the API answers when the target creator is not verified.
+      return route.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'Only verified creators can join Circle' }) });
+    });
+    await page.goto('/');
+    await openVisitor(page);
+    const circleAction = page.getByTestId('profile-circle-action');
+    await expect(page.getByTestId('profile-circle-notice')).toHaveCount(0);
+    await circleAction.click();
+    const notice = page.getByTestId('profile-circle-notice');
+    await expect(notice).toHaveText(language === 'ar' ? 'لا يمكن إضافة سوى المبدعين الموثقين إلى دائرتك.' : 'Only verified creators can join your Circle.');
+    await expect(circleAction).toHaveAccessibleName(language === 'ar' ? 'أضف إلى دائرتي' : 'Add to My Circle');
+    await expect(circleAction).toBeEnabled();
+    await expect(page.getByTestId('profile-follow-action')).toHaveAccessibleName(language === 'ar' ? 'متابعة' : 'Follow');
+    // Leaving the profile clears the notice.
+    await page.getByTestId('nav-explore').click();
+    await expect(notice).toHaveCount(0);
+  });
+}
+
 test('profile actions keep Arabic labels, RTL, and mobile width', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await session(page, true, 'ar');

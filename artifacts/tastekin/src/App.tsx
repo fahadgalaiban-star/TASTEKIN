@@ -38,7 +38,7 @@ type Language = 'en' | 'ar';
 const ONBOARDING_STEPS = ['basics', 'photo', 'city', 'taste', 'done'] as const;
 type OnboardingStep = (typeof ONBOARDING_STEPS)[number];
 function isOnboardingStep(value: unknown): value is OnboardingStep { return typeof value === 'string' && (ONBOARDING_STEPS as readonly string[]).includes(value); }
-const SCREENS = ['home', 'explore', 'add', 'kin', 'saved', 'you', 'profile', 'profileEdit', 'verificationApply', 'collections', 'collection', 'match', 'edit', 'composer', 'creatorPreview', 'collectionManager', 'tune-taste', 'inbox', 'conversation', 'insights', 'adminVerification', 'adminReports', 'adminFeatureFlags', 'adminAnalytics', 'blockedAccounts', 'mutedAccounts', 'settings', 'auth', 'onboarding', 'myThings', 'myThingsAdd', 'myThingsEdit', 'privacy', 'terms', 'deleteAccount', 'support'] as const;
+const SCREENS = ['home', 'explore', 'manageEdits', 'kin', 'saved', 'you', 'profile', 'profileEdit', 'verificationApply', 'collections', 'collection', 'match', 'edit', 'composer', 'creatorPreview', 'collectionManager', 'tune-taste', 'inbox', 'conversation', 'insights', 'adminVerification', 'adminReports', 'adminFeatureFlags', 'adminAnalytics', 'blockedAccounts', 'mutedAccounts', 'settings', 'auth', 'onboarding', 'myThings', 'myThingsAdd', 'myThingsEdit', 'privacy', 'terms', 'deleteAccount', 'support'] as const;
 type Screen = (typeof SCREENS)[number];
 // Screens that no longer exist, mapped to where they now live. A browser
 // history entry (or any other saved UI state) recorded before a screen was
@@ -512,6 +512,15 @@ function TastekinApp() {
 
   const addCircleMember = useAddCircleMember();
   const removeCircleMember = useRemoveCircleMember();
+  // Shown under the visitor action row when adding/removing a Circle member
+  // fails. The server answers 403 for an unverified target ("Only verified
+  // creators can join Circle"); anything else is a generic retry notice.
+  const [circleNotice, setCircleNotice] = useState<string | null>(null);
+  const circleErrorMessage = (error: unknown): string => {
+    const status = typeof error === 'object' && error !== null && 'status' in error ? (error as { status?: unknown }).status : undefined;
+    if (status === 403) return language === 'ar' ? 'لا يمكن إضافة سوى المبدعين الموثقين إلى دائرتك.' : 'Only verified creators can join your Circle.';
+    return language === 'ar' ? 'تعذر تحديث دائرتك. حاول مرة أخرى.' : 'Could not update your Circle. Try again.';
+  };
   const { data: circleMemberStatus } = useGetCircleMemberStatus(
     publicCreatorProfile?.username || '',
     { query: { enabled: myCircleEnabled && session.status === 'authenticated' && !!publicCreatorProfile?.username, queryKey: getGetCircleMemberStatusQueryKey(publicCreatorProfile?.username || '') } }
@@ -525,6 +534,8 @@ function TastekinApp() {
   const [selectedEditId, setSelectedEditId] = useState('quiet-tailoring');
   const [selectedCollectionId, setSelectedCollectionId] = useState('quiet-luxury');
   const [selectedCreatorUsername, setSelectedCreatorUsername] = useState('fheed');
+  // A Circle notice belongs to the profile it was raised on.
+  useEffect(() => { setCircleNotice(null); }, [screen, selectedCreatorUsername]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingClosetItem, setEditingClosetItem] = useState<ClosetItem | null>(null);
@@ -916,7 +927,7 @@ function TastekinApp() {
     if (workspaceState === 'syncing') return;
     const leavingCreatorFlow = (screen === 'composer' || screen === 'creatorPreview') && next !== 'composer' && next !== 'creatorPreview';
     if (leavingCreatorFlow && pendingMediaPaths.length) { pendingMediaIsDiscardable.current = false; void cleanupCreatorMedia(pendingMediaPaths); setPendingMediaPaths([]); }
-    if (leavingCreatorFlow) discardPendingCrop();
+    if (leavingCreatorFlow) { discardPendingCrop(); videoUpload.discardUncommitted(); }
     if (!['profile', 'profileEdit', 'collection', 'collections'].includes(next)) { setVisitorPreview(false); setProfileVisitorMode(false); }
     // A transition driven by history.back()/forward() (see the popstate
     // listener below) must never itself push or replace another entry —
@@ -1132,12 +1143,6 @@ function TastekinApp() {
     if (item?.video) videoUpload.hydrate(item.video); else videoUpload.reset();
     go('composer');
   };
-  useEffect(() => {
-    if (screen === 'add' && owner) openComposer();
-    // The legacy Creator Workspace screen is retained, but creator visits redirect
-    // directly into the existing composer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [screen, owner]);
   const commitEdit = async (status: EditStatus) => {
     let formToSave = editForm;
     const uploadedPaths: string[] = [];
@@ -1421,7 +1426,7 @@ function TastekinApp() {
     </>}
     {screen === 'explore' && <ExploreScreen ar={ar} saved={saved} toggleSaved={toggleSaved} edits={exploreEdits.slice(0, 4)} allEdits={exploreEdits} onOpenProfile={(username) => { setSelectedCreatorUsername(username); go('profile'); }} onOpenEdit={openEdit} onSignIn={() => go('auth')} />}
     {screen === 'tune-taste' && <TuneTasteScreen ar={ar} onBack={() => go('you')} onSignIn={() => go('auth')} />}
-    {screen === 'add' && (owner ? <CreatorDashboard ar={ar} displayName={creatorProfile.displayName} edits={creatorEdits} collections={creatorCollections} busy={workspaceState !== 'ready'} onNew={() => openComposer()} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} onCollections={() => openCollectionManager()} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Creator workspace', 'مساحة المبدع')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
+    {screen === 'manageEdits' && (owner ? <ManageEdits ar={ar} edits={creatorEdits} busy={workspaceState !== 'ready'} onEdit={openComposer} onArchive={archiveEdit} onUnarchive={unarchiveEdit} /> : <SimpleScreen kicker={t('Creator tools', 'أدوات المبدع')} title={t('Manage edits', 'إدارة التعديلات')}><p>{t('Sign in to create your profile and publish.', 'سجّل الدخول لإنشاء ملفك والنشر.')}</p></SimpleScreen>)}
     {screen === 'kin' && <KinScreen ar={ar} stylingItemIds={kinStylingItemIds} onClearStylingItems={() => setKinStylingItemIds(new Set())} onChangeStylingItems={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'composer' && <EditComposer ar={ar} form={editForm} collections={creatorCollections} busy={workspaceState === 'syncing'} videoUploadEnabled={session.featureFlags.video_upload === true} videoUpload={videoUpload} onChange={setEditForm} onCropPrepared={(crop) => { discardPendingCrop(); setPendingCrop(crop); }} onPublish={publishEdit} onCreateCollection={createCollectionFromComposer} />}
     {screen === 'creatorPreview' && <CreatorPreview ar={ar} busy={workspaceState === 'syncing'} edit={{ id: editingId || 'preview', ...editForm, status: 'draft' } as CreatorEdit} videoUpload={videoUpload} onBack={() => go('composer')} onPublish={publishEdit} />}
@@ -1434,7 +1439,7 @@ function TastekinApp() {
     {screen === 'support' && <SupportScreen ar={ar} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} />}
     {screen === 'deleteAccount' && <DeleteAccountScreen ar={ar} onSignIn={() => { authReturnScreen.current = 'deleteAccount'; go('auth'); }} onDeleted={() => go('home')} onOpenPrivacy={() => go('privacy')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => { const next = authReturnScreen.current ?? 'home'; authReturnScreen.current = null; go(next); }} />}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); hapticTap(); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); } }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); } }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); hapticTap();track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} circleNotice={circleNotice} onManageCollections={() => openCollectionManager()} onManageEdits={() => go('manageEdits')} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; setCircleNotice(null); const onError = (error: unknown) => setCircleNotice(circleErrorMessage(error)); if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); }, onError }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); }, onError }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><MediaImage src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
@@ -1990,7 +1995,7 @@ async function shareWithFallback(data: ShareData): Promise<'shared' | 'copied' |
   try { await navigator.clipboard.writeText(fallbackText); return 'copied'; } catch { return 'failed'; }
 }
 
-function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onShare, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onShare?: () => void; showReport?: boolean }) {
+function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onManageCollections, onManageEdits, onShare, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onManageCollections?: () => void; onManageEdits?: () => void; onShare?: () => void; showReport?: boolean }) {
   const session = useTasteSession();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ReportStep>('menu');
@@ -2070,6 +2075,8 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
           {step === 'menu' && <div className="report-menu">
             {onShare && <button type="button" className="report-menu-item" data-testid="profile-share" onClick={() => { setOpen(false); onShare(); }}><Share2 size={16} /> {ar ? 'مشاركة الملف الشخصي' : 'Share profile'}</button>}
             {onViewPublicProfile && <button type="button" className="report-menu-item" data-testid="profile-view-public" onClick={() => { setOpen(false); onViewPublicProfile(); }}><Eye size={16} /> {ar ? 'عرض الملف العام' : 'View public profile'}</button>}
+            {onManageCollections && <button type="button" className="report-menu-item" data-testid="profile-manage-collections" onClick={() => { setOpen(false); onManageCollections(); }}><FileText size={16} /> {ar ? 'إدارة المجموعات' : 'Manage collections'}</button>}
+            {onManageEdits && <button type="button" className="report-menu-item" data-testid="profile-manage-edits" onClick={() => { setOpen(false); onManageEdits(); }}><Archive size={16} /> {ar ? 'إدارة التعديلات' : 'Manage edits'}</button>}
             {showReport && <button type="button" className="report-menu-item" onClick={() => setStep('reason')}><Flag size={16} /> {label || (ar ? 'إبلاغ' : 'Report')}</button>}
             {muteUsername && (muted
               ? <button type="button" className="report-menu-item" onClick={() => void toggleMute()}><Volume2 size={16} /> {ar ? 'إلغاء كتم هذا المستخدم' : 'Unmute this user'}</button>
@@ -5439,7 +5446,7 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
 // The profile has no section tab row: Featured collections (with "View all"
 // opening the full Collections screen) sit at the top, followed directly by
 // the category filters and the Edits grid.
-function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, circleBusy, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onToggleCircle, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onMatch, onSignIn, onBlocked, onUploadCover, coverUploadBusy }: { ar: boolean; owner: boolean; ownerView: boolean; visitorPreview: boolean; following: boolean; inCircle: boolean; circleBusy: boolean; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onToggleCircle: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onMatch: () => void; onSignIn: () => void; onBlocked: () => void; onUploadCover: (file: File) => void; coverUploadBusy: boolean }) {
+function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, circleBusy, circleNotice, profile, edits, featuredCollections, onViewAsVisitor, onExitVisitor, onFollow, onToggleCircle, onManageCollections, onManageEdits, onEditProfile, onApplyVerification, onMessage, onInsights, onEdit, onOpenCollection, onCollections, onMatch, onSignIn, onBlocked, onUploadCover, coverUploadBusy }: { ar: boolean; owner: boolean; ownerView: boolean; visitorPreview: boolean; following: boolean; inCircle: boolean; circleBusy: boolean; circleNotice: string | null; profile: CreatorProfile; edits: CreatorEdit[]; featuredCollections: CreatorCollection[]; onViewAsVisitor: () => void; onExitVisitor: () => void; onFollow: () => void; onToggleCircle: () => void; onManageCollections: () => void; onManageEdits: () => void; onEditProfile: () => void; onApplyVerification: () => void; onMessage?: () => void; onInsights: () => void; onEdit: (edit: CreatorEdit) => void; onOpenCollection: (collection: CreatorCollection) => void; onCollections: () => void; onMatch: () => void; onSignIn: () => void; onBlocked: () => void; onUploadCover: (file: File) => void; coverUploadBusy: boolean }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const myCircleEnabled = session.featureFlags.my_circle === true;
@@ -5584,14 +5591,15 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       {ownerView ? <>
         <button className="approved-button primary profile-follow-button profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
         <button className="approved-button profile-message-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={16} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
-        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} onShare={() => void shareProfile()} showReport={false} />
+        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} onManageCollections={onManageCollections} onManageEdits={onManageEdits} onShare={() => void shareProfile()} showReport={false} />
       </> : <>
         <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
         {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
-        {myCircleEnabled && !owner && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
+        {myCircleEnabled && !owner && profile.verified && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
         {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onShare={() => void shareProfile()} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
       </>}
     </div>
+    {!ownerView && circleNotice && <div className="workspace-notice" role="alert" data-testid="profile-circle-notice">{circleNotice}</div>}
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}
     {sealOpen && <div className="taste-seal-popover" role="dialog" aria-label="Taste Seal verification"><p>Verified by TASTEKIN — selected for authentic taste and identity.</p><button className="approved-icon" onClick={() => setSealOpen(false)} aria-label={ar ? 'إغلاق' : 'Close'}><X size={16} /></button></div>}
     {visitorPreview && <button className="approved-button wide visitor-exit" onClick={onExitVisitor}>{ar ? 'إنهاء معاينة الزائر' : 'Exit visitor preview'}</button>}
@@ -5654,20 +5662,22 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
     </div>
   </section>;
 }
-function CreatorDashboard({ ar, displayName, edits, collections, busy, onNew, onEdit, onArchive, onUnarchive, onCollections }: { ar: boolean; displayName: string; edits: CreatorEdit[]; collections: CreatorCollection[]; busy: boolean; onNew: () => void; onEdit: (edit: CreatorEdit) => void; onArchive: (id: string) => void; onUnarchive: (id: string) => void; onCollections: () => void }) {
+// Owner-only "Manage edits" screen, reached from the profile's More menu. It
+// is the Drafts / Published / Archived list that used to sit on the creator
+// dashboard (removed from the routes in 686ab77); Archive and Restore move an
+// Edit between the published grid and the archive without deleting anything.
+function ManageEdits({ ar, edits, busy, onEdit, onArchive, onUnarchive }: { ar: boolean; edits: CreatorEdit[]; busy: boolean; onEdit: (edit: CreatorEdit) => void; onArchive: (id: string) => void; onUnarchive: (id: string) => void }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
-  const groups: [EditStatus, string, string][] = [['draft', 'Drafts', 'مسودات'], ['published', 'Published', 'منشور'], ['archived', 'Archived', 'مؤرشف']];
+  const groups: [EditStatus, string, string][] = [['published', 'Published', 'منشور'], ['draft', 'Drafts', 'مسودات'], ['archived', 'Archived', 'مؤرشف']];
   const internalLabel = (item: CreatorEdit) => {
     const title = (ar ? item.titleAr || item.title : item.title || item.titleAr || '').trim();
     const caption = (ar ? item.captionAr || item.caption || '' : item.caption || item.captionAr || '').split(/\r?\n/, 1)[0].trim();
     return title || caption || t('Photo Edit', 'تعديل صورة');
   };
   const internalMeta = (item: CreatorEdit) => [t('Public', 'عام'), placeLocation(item, ar)].filter(Boolean).join(' · ');
-  return <section className="creator-workspace">
-    <span className="approved-kicker">{t('Creator Workspace', 'مساحة المبدع')}</span>
-    <div className="workspace-head"><div><h1 className="approved-title">{ar ? `مساء الخير، ${displayName}.` : `Good afternoon, ${displayName}.`}</h1><p>{t('Shape the next thing people save.', 'اصنع ما سيحفظه الناس لاحقاً.')}</p></div><button className="approved-button primary" onClick={onNew} disabled={busy}><Plus size={16} /> {t('New Edit', 'تعديل جديد')}</button></div>
-    <div className="creator-stats"><Stat value={edits.filter((item) => item.status === 'published').length} label={t('Published', 'منشور')} /><Stat value={edits.filter((item) => item.status === 'draft').length} label={t('Drafts', 'مسودات')} /><Stat value={collections.length} label={t('Collections', 'مجموعات')} /></div>
-    <button className="workspace-collection-link" onClick={onCollections} disabled={busy}><span><FileText size={17} /><strong>{t('Manage collections', 'إدارة المجموعات')}</strong></span><ChevronRight size={17} /></button>
+  return <section className="creator-workspace" data-testid="manage-edits">
+    <span className="approved-kicker">{t('Creator tools', 'أدوات المبدع')}</span>
+    <div className="workspace-head"><div><h1 className="approved-title">{t('Manage edits', 'إدارة التعديلات')}</h1><p>{t('Archived Edits leave your profile but keep their media; restore them any time.', 'التعديلات المؤرشفة تختفي من ملفك مع الاحتفاظ بوسائطها، ويمكنك استعادتها في أي وقت.')}</p></div></div>
     {groups.map(([status, en, arabic]) => <div className="workspace-section" key={status}><div className="workspace-section-head"><h2>{ar ? arabic : en}</h2><span>{edits.filter((item) => item.status === status).length}</span></div>{edits.filter((item) => item.status === status).map((item) => <div className="workspace-edit" key={item.id}>{item.image ? <MediaImage src={imageSrc(item.image)} alt={item.altText} /> : <div className="workspace-place-thumb"><MapPin size={17} /></div>}<div><strong>{internalLabel(item)}</strong><span>{internalMeta(item)}</span></div><div className="workspace-edit-actions">{status === 'archived' ? <button onClick={() => onUnarchive(item.id)} disabled={busy}>{t('Restore', 'استعادة')}</button> : <><button onClick={() => onEdit(item)} aria-label={t('Edit', 'تعديل')} disabled={busy}><Pencil size={15} /></button><button onClick={() => onArchive(item.id)} aria-label={t('Archive', 'أرشفة')} disabled={busy}><Archive size={15} /></button></>}</div></div>)}{!edits.some((item) => item.status === status) && <Empty text={t('Nothing here yet.', 'لا يوجد شيء هنا بعد.')} />}</div>)}
   </section>;
 }
@@ -6143,6 +6153,20 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
 
   const markCommitted = useCallback(() => { committedRef.current = true; setState((prev) => ({ ...prev, committed: true })); }, []);
 
+  // Leaving the composer (Back arrow, swipe-back, tab switch, popstate)
+  // with a video that was uploaded but never saved into an Edit: cancel it
+  // server-side right away. The pagehide beacon below only runs when the
+  // page unloads, which in-app navigation never does, so without this an
+  // abandoned upload — e.g. after a rejected publish — stayed on Bunny
+  // until the recovery sweep. A hydrated or committed video is left alone.
+  const discardUncommitted = useCallback(() => {
+    if (committedRef.current) return;
+    const uploadId = stateRef.current.video?.uploadId;
+    stopEverything();
+    if (uploadId) void fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}/cancel`, { method: 'POST', credentials: 'include', keepalive: true }).catch(() => undefined);
+    reset();
+  }, [reset]);
+
   useEffect(() => () => stopEverything(), []);
 
   // Best-effort cleanup only while bytes are still actively uploading.
@@ -6162,7 +6186,7 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
     return () => window.removeEventListener('pagehide', onPageHide);
   }, []);
 
-  return { state, select, cancel, reset, hydrate, markCommitted, retry };
+  return { state, select, cancel, reset, hydrate, markCommitted, retry, discardUncommitted };
 }
 
 /**
