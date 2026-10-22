@@ -98,6 +98,63 @@ approved schedule invokes it. Existing closet/video reconciliation commands
 remain available, but this runner covers all three account-deletion media
 types, including interrupted confirmed-video deletions.
 
+### Scheduling the runner (documented, not enabled)
+
+The runner deletes files in production object storage and Bunny Stream, so
+enabling a schedule is a production change that needs the founder's explicit
+approval and the production secrets. Nothing in the repository schedules it;
+this section is the recipe to follow when that approval is given.
+
+**Where to run it.** On Replit, next to the app, as a Scheduled Deployment
+(Deployments → Create → Scheduled, names as of this writing). The Repl
+already holds every secret the runner needs, so no credential leaves Replit.
+Do not wire it into GitHub Actions: that would require copying the
+production database URL and storage keys into GitHub Secrets.
+
+**Command** (one line; the build is required because the runner is a
+compiled CLI under `artifacts/api-server/dist/cli/`):
+
+```
+pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build && pnpm --filter @workspace/api-server run reconcile:account-media --yes
+```
+
+**Schedule.** Once a day at a quiet hour (for example `0 3 * * *` UTC) is
+enough: each run claims at most 50 items per media type, retries failures
+with backoff, and deleted-account work never expires, so a daily run drains
+any backlog within a few days and keeps up afterwards. More often than hourly
+brings nothing, because retries are spaced by at least five minutes and
+claims lease for five minutes.
+
+**Environment the runner reads** (values stay in Replit Secrets; never paste
+them anywhere else): `DATABASE_URL`, `OBJECT_STORAGE_SIDECAR_ENDPOINT`,
+`PRIVATE_OBJECT_DIR`, `BUNNY_STREAM_API_KEY`, `BUNNY_STREAM_LIBRARY_ID`,
+`BUNNY_STREAM_BASE_URL` (optional override), `BUNNY_STREAM_READONLY_API_KEY`
+(optional). The Scheduled Deployment must use the same database as the
+published app, otherwise it reconciles the wrong ledger.
+
+**First run, in this order.**
+
+1. Run the command once **without** `--yes` (dry run). It prints a JSON
+   summary with `dryRun: true` and the `eligible` counts per media type and
+   changes nothing. Confirm the counts look like the accounts actually
+   deleted so far.
+2. Run it once **with** `--yes` by hand and read the summary: `deleted` is
+   the number of files removed, `pending` the number that failed this time
+   and stay queued (provider errors are durable; nothing is abandoned).
+3. Only then enable the schedule.
+
+**Watching it.** The process exits non-zero and logs
+`Account media cleanup failed` when the run itself crashes (bad database
+URL, missing secret); a run that merely leaves `pending` items exits zero,
+because those retry next time. Replit shows the exit status and logs per
+scheduled run. If `pending` stays above zero for more than a few days, check
+the provider credentials before anything else.
+
+**Alternative without a schedule.** Until the schedule is approved, an
+operator can run the same two commands from the Replit shell after each
+account deletion that reports `mediaCleanup: "pending"`; the runner is
+idempotent and safe to repeat.
+
 The focused regression command is:
 
 ```
