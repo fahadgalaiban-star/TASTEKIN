@@ -37,7 +37,7 @@ for (const language of ['en', 'ar'] as const) {
     await expect(page.getByTestId('signup-consent')).toContainText(language === 'ar' ? 'أوافق على شروط الاستخدام وسياسة الخصوصية.' : 'I agree to the Terms of Use and the Privacy Policy.');
     await expect(page.getByTestId('signup-terms')).not.toBeChecked();
     await page.getByLabel(language === 'ar' ? 'البريد الإلكتروني' : 'Email').fill('new@tastekin.test');
-    await page.getByLabel(language === 'ar' ? 'كلمة المرور' : 'Password').fill('longenoughpassword');
+    await page.getByLabel(language === 'ar' ? 'كلمة المرور' : 'Password', { exact: true }).fill('longenoughpassword');
 
     // Unticked: refused on the client, nothing is sent.
     await page.getByRole('button', { name: language === 'ar' ? 'إنشاء حساب' : 'Create account' }).click();
@@ -80,7 +80,7 @@ test('a server-side Terms refusal is shown to the user', async ({ page }) => {
   }));
   await openSignup(page);
   await page.getByLabel('Email').fill('new@tastekin.test');
-  await page.getByLabel('Password').fill('longenoughpassword');
+  await page.getByLabel('Password', { exact: true }).fill('longenoughpassword');
   await page.getByTestId('signup-terms').check();
   await page.getByRole('button', { name: 'Create account' }).click();
   await expect(page.getByRole('alert')).toHaveText('You must accept the Terms of Use and Privacy Policy to create an account.');

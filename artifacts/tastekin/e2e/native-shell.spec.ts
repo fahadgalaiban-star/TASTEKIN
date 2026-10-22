@@ -91,7 +91,7 @@ async function signInNatively(page: Page) {
   await page.getByTestId('open-settings-topbar').click();
   await page.getByRole('button', { name: 'Sign in' }).first().click();
   await page.getByLabel('Email').fill('member@example.com');
-  await page.getByLabel('Password').fill('correct-horse-1');
+  await page.getByLabel('Password', { exact: true }).fill('correct-horse-1');
   await page.getByRole('button', { name: 'Sign in', exact: true }).last().click();
   // Login lands on Home; the sign-out control lives on Settings.
   await expect(page.getByTestId('open-settings-topbar')).toBeVisible();
