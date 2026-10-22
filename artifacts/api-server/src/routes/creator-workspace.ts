@@ -168,6 +168,28 @@ function normalizeProfile(value: unknown): CreatorProfileRecord {
   };
 }
 
+/**
+ * A specific, user-facing reason for a rejected profile body. The wording
+ * for username and display name matches the web app's own client-side
+ * messages so the Arabic translations there cover both. Any other field is
+ * named so a client/API drift (a missing required key, say) is visible in
+ * the error instead of hiding behind a generic sentence.
+ */
+export function profileValidationMessage(issues: ReadonlyArray<{ path: ReadonlyArray<string | number>; code: string; received?: unknown }>): string {
+  const issue = issues[0];
+  const field = issue ? String(issue.path[0] ?? "") : "";
+  switch (field) {
+    case "username": return "Username must be 3-30 characters: lowercase letters, numbers, or underscores.";
+    case "displayName": return issue?.code === "too_big" ? "Display name must be 80 characters or fewer." : "Enter your display name.";
+    case "bio": return "Bio must be 500 characters or fewer.";
+    case "city": return "City must be 80 characters or fewer.";
+    case "country": return "Country must be 80 characters or fewer.";
+    case "interests": return "Choose up to 12 interests.";
+    case "": return "Invalid creator profile.";
+    default: return `Invalid creator profile: ${field} is ${issue?.received === "undefined" ? "required" : "invalid"}.`;
+  }
+}
+
 function ageFor(dateOfBirth: string | null) {
   if (!dateOfBirth || !/^\d{4}-\d{2}-\d{2}$/.test(dateOfBirth)) return null;
   const [year, month, day] = dateOfBirth.split("-").map(Number);
@@ -273,7 +295,7 @@ router.put("/creator-profile", async (req, res): Promise<void> => {
   }
   const parsed = SaveCreatorProfileBody.safeParse(req.body);
   if (!parsed.success) {
-    res.status(400).json({ error: "Invalid creator profile" });
+    res.status(400).json({ error: profileValidationMessage(parsed.error.issues) });
     return;
   }
 

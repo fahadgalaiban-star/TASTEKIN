@@ -1689,14 +1689,35 @@ function TuneTasteScreen({ ar, onBack, onSignIn }: { ar: boolean; onBack: () => 
   );
 }
 
-const ONBOARDING_ERROR_AR: Record<string, string> = {
+// Server messages from PUT /api/creator-profile and POST /api/onboarding/advance
+// (see profileValidationMessage in api-server/src/routes/creator-workspace.ts),
+// shared by onboarding and Edit profile so both show Arabic for the same
+// reasons: username taken or malformed, display name missing or too long,
+// field limits.
+const PROFILE_ERROR_AR: Record<string, string> = {
   'That username is already in use': 'اسم المستخدم هذا مُستخدم بالفعل.',
+  'Username must be 3-30 characters: lowercase letters, numbers, or underscores.': 'اسم المستخدم يجب أن يكون من 3 إلى 30 حرفاً: أحرف صغيرة أو أرقام أو شرطة سفلية.',
+  'Enter your display name.': 'أدخل اسمك الظاهر.',
+  'Display name must be 80 characters or fewer.': 'يجب ألا يتجاوز الاسم الظاهر 80 حرفاً.',
+  'Bio must be 500 characters or fewer.': 'يجب ألا تتجاوز النبذة 500 حرف.',
+  'City must be 80 characters or fewer.': 'يجب ألا تتجاوز المدينة 80 حرفاً.',
+  'Country must be 80 characters or fewer.': 'يجب ألا تتجاوز الدولة 80 حرفاً.',
+  'Choose up to 12 interests.': 'اختر 12 اهتماماً كحد أقصى.',
+  'Invalid creator profile.': 'بيانات الملف الشخصي غير صالحة.',
+  'The new profile photo is no longer available. Choose it again and retry.': 'صورة الملف الجديدة لم تعد متاحة. اخترها مرة أخرى وأعد المحاولة.',
   'Save your display name and username first.': 'يرجى حفظ اسمك الظاهر واسم المستخدم أولاً.',
   'Choose at least one taste category to continue.': 'يرجى اختيار فئة ذوق واحدة على الأقل للمتابعة.',
 };
-function onboardingErrorText(raw: string, ar: boolean) {
+function profileErrorText(raw: string, ar: boolean, fallbackAr = 'تعذر حفظ ملفك الشخصي. حاول مرة أخرى.') {
   if (!ar) return raw;
-  return ONBOARDING_ERROR_AR[raw] || 'حدث خطأ أثناء الحفظ. حاول مرة أخرى.';
+  if (PROFILE_ERROR_AR[raw]) return PROFILE_ERROR_AR[raw];
+  // "Invalid creator profile: <field> is required." names a client/API drift;
+  // keep the field visible in Arabic too.
+  if (raw.startsWith('Invalid creator profile:')) return `بيانات الملف الشخصي غير صالحة: ${raw.slice('Invalid creator profile:'.length).trim()}`;
+  return fallbackAr;
+}
+function onboardingErrorText(raw: string, ar: boolean) {
+  return profileErrorText(raw, ar, 'حدث خطأ أثناء الحفظ. حاول مرة أخرى.');
 }
 async function advanceOnboarding(): Promise<{ step: OnboardingStep; completed: boolean }> {
   const response = await fetch('/api/onboarding/advance', { method: 'POST', credentials: 'include' });
@@ -1770,6 +1791,9 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
       dateOfBirth: creatorProfile.dateOfBirth,
       showAge: creatorProfile.showAge,
       avatarObjectPath: updates.avatarObjectPath !== undefined ? updates.avatarObjectPath : creatorProfile.avatarObjectPath,
+      // Required by the API (CreatorProfileInput) even when null; omitting it
+      // made every onboarding save a 400 "Invalid creator profile".
+      coverImageObjectPath: creatorProfile.coverImageObjectPath ?? null,
     };
     const response = await fetch('/api/creator-profile', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     if (!response.ok) {
@@ -5946,7 +5970,7 @@ function ProfileEditor({ ar, form, photo, busy, error, saved, onChange, onPhotoP
     try { setSource(await prepareImage(file)); } catch (cause) { setImageError(cause instanceof Error ? cause.message : t('Could not prepare your photo.', 'تعذر تجهيز صورتك.')); event.target.value = ''; } finally { setProcessing(false); }
   };
   if (source) return <ProfilePhotoCropper ar={ar} source={source} onCancel={() => { URL.revokeObjectURL(source.url); setSource(null); }} onConfirm={(next) => { URL.revokeObjectURL(source.url); setSource(null); onPhotoPrepared(next); }} />;
-  return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || apiUrl(form.avatar)} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div><div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{error}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
+  return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || apiUrl(form.avatar)} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div><div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{profileErrorText(error, ar)}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
 }
 
 // --- Video Foundation, Phase 3A: the composer's upload state machine -------
