@@ -1,5 +1,10 @@
 # Store listing drafts and screenshot checklist
 
+> The App Store Connect text, App Privacy answers and age-rating answers
+> now live in `docs/app-store-listing.md` (submission-ready, EN + AR); the
+> App Review notes template is `docs/APP-REVIEW-NOTES.md`. This file keeps
+> the shared facts, the Google Play draft and the screenshot checklist.
+
 Drafts for App Store Connect and Google Play Console, written only from
 facts already in this repository (`src/legal.ts`, `replit.md`,
 `lib/taste-catalog`, `docs/MOBILE.md`, the native shells). Nothing here is a
