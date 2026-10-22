@@ -83,7 +83,7 @@ router.get("/auth/user", (req, res) => { noStoreSessionResponse(res); res.json({
 router.get("/me", async (req, res) => {
   noStoreSessionResponse(res);
   if (!req.user) {
-    res.json({ user: null, role: "consumer", creator: null, supportEmail: configuredSupportEmail(), passwordResetAvailable: passwordResetEmailConfigured(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
+    res.json({ user: null, role: "consumer", creator: null, supportEmail: configuredSupportEmail(), passwordResetAvailable: passwordResetEmailConfigured(), needsOnboarding: false, onboardingStep: "done", googleAuthConfigured: await googleSignInAvailable(), replitAuthAvailable: await isFeatureEnabled("replit_sign_in"), featureFlags: await currentFlagStates(), nativeAuth: req.nativeAuth ?? null });
     return;
   }
   try {
@@ -117,6 +117,9 @@ router.get("/me", async (req, res) => {
       needsOnboarding: onboarding.needsOnboarding,
       onboardingStep: onboarding.step,
       googleAuthConfigured: await googleSignInAvailable(),
+      // "Continue with Replit" is shown only when the replit_sign_in flag is
+      // on; /api/login itself keeps working by direct URL for operators.
+      replitAuthAvailable: await isFeatureEnabled("replit_sign_in"),
       featureFlags: await currentFlagStates(),
       nativeAuth: req.nativeAuth ?? null,
     });

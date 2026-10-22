@@ -340,6 +340,7 @@ type TasteSessionSnapshot = {
   // "Continue with Google" button must only ever appear when this is true,
   // never unconditionally.
   googleAuthConfigured: boolean;
+  replitAuthAvailable: boolean;
   // Server-enforced feature flags (see GET /api/me and the Admin "Feature
   // Flags" screen). This map is only ever a UI convenience for hiding a
   // disabled surface — the actual enforcement always happens server-side,
@@ -355,7 +356,7 @@ function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
     status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false, accountSuspended: false,
     language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false,
-    needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, featureFlags: {}, revision: 0,
+    needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, replitAuthAvailable: false, featureFlags: {}, revision: 0,
   });
   const refresh = useCallback(async () => {
     try {
@@ -366,7 +367,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'> & { nativeAuth?: unknown }
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, featureFlags: {} as Record<string, boolean> };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, replitAuthAvailable: false, featureFlags: {} as Record<string, boolean> };
       // Native shell only: drops the stored token when the server itself
       // reports it invalid/revoked/expired (never on other failures).
       await reconcileNativeSession(payload);
@@ -387,6 +388,7 @@ function useTasteSessionController(): TasteSession {
           needsOnboarding: Boolean(payload.needsOnboarding),
           onboardingStep: isOnboardingStep(payload.onboardingStep) ? payload.onboardingStep : 'done',
           googleAuthConfigured: Boolean(payload.googleAuthConfigured),
+          replitAuthAvailable: Boolean(payload.replitAuthAvailable),
           featureFlags: payload.featureFlags && typeof payload.featureFlags === 'object' ? payload.featureFlags : {},
         };
         const unchanged = current.status === next.status
@@ -400,6 +402,7 @@ function useTasteSessionController(): TasteSession {
           && current.language === next.language
           && current.notifyPush === next.notifyPush
           && current.googleAuthConfigured === next.googleAuthConfigured
+          && current.replitAuthAvailable === next.replitAuthAvailable
           && current.notifyEmail === next.notifyEmail
           && current.supportEmail === next.supportEmail
           && current.authProvider === next.authProvider
@@ -2892,9 +2895,10 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
   };
 
   return <SimpleScreen kicker={t('Account', 'الحساب')} title={mode === 'signup' ? t('Create your account', 'أنشئ حسابك') : mode === 'forgot' ? t('Reset your password', 'إعادة تعيين كلمة المرور') : mode === 'reset' ? t('Choose a new password', 'اختر كلمة مرور جديدة') : t('Sign in', 'تسجيل الدخول')}>
-    {mode !== 'reset' && !isNativeApp && <>
-      {/* Browser-redirect providers stay web-only: the native shell offers email/password until system-browser OAuth (Google + Apple together) ships. */}
-      <button className="approved-button wide" onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Continue with Replit', 'متابعة عبر Replit')}</button>
+    {mode !== 'reset' && !isNativeApp && (session.replitAuthAvailable || session.googleAuthConfigured) && <>
+      {/* Browser-redirect providers stay web-only: the native shell offers email/password until system-browser OAuth (Google + Apple together) ships.
+          "Continue with Replit" is an operator/dev sign-in, hidden from regular members unless the replit_sign_in flag is on; /api/login still works by URL. */}
+      {session.replitAuthAvailable && <button className="approved-button wide" data-testid="auth-replit" onClick={() => window.location.assign('/api/login?returnTo=/')}>{t('Continue with Replit', 'متابعة عبر Replit')}</button>}
       {session.googleAuthConfigured && <button className="approved-button wide" onClick={() => window.location.assign('/api/auth/google?returnTo=/')}>{t('Continue with Google', 'متابعة عبر Google')}</button>}
       <div className="auth-divider">{t('or', 'أو')}</div>
     </>}

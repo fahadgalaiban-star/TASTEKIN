@@ -41,7 +41,7 @@ Edit the bracketed parts before pasting. Keep it factual; reviewers follow
 these steps literally.
 
 ```
-TASTEKIN is a free taste-based discovery app (no purchases, no ads). Please sign in with the demo account above (email and password). Google and Replit sign-in exist on the website only and are intentionally not shown in the app.
+TASTEKIN is a free taste-based discovery app (no purchases, no ads). Please sign in with the demo account above (email and password). Google sign-in exists on the website only and is intentionally not shown in the app; Replit sign-in is an operator login that regular members never see.
 
 Creating an account: the sign-up form requires ticking "I agree to the Terms of Use and the Privacy Policy"; both documents open inside the form. Terms: https://tastekin.app/terms — Privacy: https://tastekin.app/privacy.
 
@@ -92,6 +92,7 @@ listing description.
 | Flag | Default | What the reviewer sees when enabled |
 | --- | --- | --- |
 | `google_sign_in` | on | nothing in the app (web only); harmless |
+| `replit_sign_in` | off | nothing in the app; on the website it shows "Continue with Replit" (operator/dev sign-in). Keep **off** for members; `/api/login` still works by direct URL |
 | `notification_preferences` | off | push/email switches in Settings — keep **off** until delivery exists |
 | `my_things` | off | My Things screen under You |
 | `closet_item_analysis` | off | automatic tagging suggestions in My Things |
