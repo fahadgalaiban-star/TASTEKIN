@@ -87,7 +87,7 @@ class Session {
     const response = await this.request("/api/auth/signup", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, termsAccepted: true, password }),
     });
     assert.equal(response.status, 201, `signup for ${email} should succeed`);
     return (await response.json()) as { user: { id: string; email: string } };

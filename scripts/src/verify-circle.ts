@@ -53,7 +53,7 @@ async function waitForServer() {
 async function signup(name: string) {
   const response = await httpRequest("/api/auth/signup", {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ email: `${name}@example.test`, password: "CircleVerifierPassword1!" }),
+    body: JSON.stringify({ email: `${name}@example.test`, termsAccepted: true, password: "CircleVerifierPassword1!" }),
   });
   assert.equal(response.status, 201);
   const cookie = response.headers.get("set-cookie")?.split(";")[0];

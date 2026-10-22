@@ -82,7 +82,7 @@ async function main() {
 
     // ------------------------------------------------------------------ issue
     await check("native signup (ios) returns a bearer token, no cookie, user echo", async () => {
-      const response = await postJson(server.baseUrl, "/api/auth/native/signup", { email, password: PASSWORD, platform: "ios", appVersion: "1.0.0 (1)" });
+      const response = await postJson(server.baseUrl, "/api/auth/native/signup", { email, termsAccepted: true, password: PASSWORD, platform: "ios", appVersion: "1.0.0 (1)" });
       const text = await response.text();
       assert.equal(response.status, 201, text);
       assert.equal(response.headers.get("set-cookie"), null, "native routes must never set a cookie");
@@ -132,7 +132,7 @@ async function main() {
       const wrong = await postJson(server.baseUrl, "/api/auth/native/login", { email, password: "wrong-password-1", platform: "ios" });
       assert.equal(wrong.status, 401);
       assert.deepEqual(await wrong.json(), { error: "Incorrect email or password." });
-      const dup = await postJson(server.baseUrl, "/api/auth/native/signup", { email, password: PASSWORD, platform: "ios" });
+      const dup = await postJson(server.baseUrl, "/api/auth/native/signup", { email, termsAccepted: true, password: PASSWORD, platform: "ios" });
       assert.equal(dup.status, 409);
     });
 
@@ -208,7 +208,7 @@ async function main() {
     // ------------------------------------------------------- web unchanged
     await check("web signup/login are unchanged: cookie session, no token in the body, nativeAuth null", async () => {
       const webEmail = `web-${suffix}@example.com`;
-      const signup = await postJson(server.baseUrl, "/api/auth/signup", { email: webEmail, password: PASSWORD });
+      const signup = await postJson(server.baseUrl, "/api/auth/signup", { email: webEmail, termsAccepted: true, password: PASSWORD });
       assert.equal(signup.status, 201);
       assert.ok(sidFrom(signup));
       assert.equal("token" in (await signup.json() as object), false);
@@ -235,7 +235,7 @@ async function main() {
     // --------------------------------------------------------- rate limiting
     await check("the shared login throttle covers web AND native for the same email, with a generic 429", async () => {
       const victim = `victim-${suffix}@example.com`;
-      await postJson(server.baseUrl, "/api/auth/signup", { email: victim, password: PASSWORD });
+      await postJson(server.baseUrl, "/api/auth/signup", { email: victim, termsAccepted: true, password: PASSWORD });
       for (let i = 0; i < 5; i += 1) assert.equal((await postJson(server.baseUrl, "/api/auth/login", { email: victim, password: "wrong-1" })).status, 401);
       for (let i = 0; i < 5; i += 1) assert.equal((await postJson(server.baseUrl, "/api/auth/native/login", { email: victim, password: "wrong-1", platform: "ios" })).status, 401);
       const web = await postJson(server.baseUrl, "/api/auth/login", { email: victim, password: PASSWORD });

@@ -30,6 +30,11 @@ export const usersTable = pgTable("users", {
   authProvider: text("auth_provider").notNull().default("replit"),
   passwordHash: varchar("password_hash"),
   googleId: varchar("google_id").unique(),
+  // Terms of Use / Privacy Policy acceptance recorded at email/password
+  // signup (web and native). Nullable: accounts created before this column
+  // existed, and OAuth signups, have no recorded acceptance.
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  termsVersion: text("terms_version"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 }, (table) => [index("users_suspended_idx").on(table.id).where(sql`${table.isSuspended} = true`)]);

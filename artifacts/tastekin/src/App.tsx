@@ -2622,19 +2622,26 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
  * Privacy Policy / Terms of Use, rendered from src/legal.ts in the interface
  * language. Reachable from Settings and by plain URL (/privacy, /terms).
  */
+// The document body alone: used by the public /privacy and /terms screens
+// and by the consent sheet on the signup form.
+function LegalDocumentBody({ ar, kind }: { ar: boolean; kind: LegalDocumentKind }) {
+  const document = legalDocument(kind, ar ? 'ar' : 'en');
+  return <article className="legal-doc" data-testid={`legal-${kind}`}>
+    <p className="legal-effective">{ar ? `سارية اعتباراً من ${LEGAL_EFFECTIVE_DATE}` : `Effective ${LEGAL_EFFECTIVE_DATE}`}</p>
+    <p>{document.intro}</p>
+    {document.sections.map((section) => <section key={section.heading}>
+      <h2>{section.heading}</h2>
+      {section.paragraphs?.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      {section.bullets && <ul>{section.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul>}
+    </section>)}
+    <p className="legal-contact"><a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
+  </article>;
+}
+
 function LegalScreen({ ar, kind }: { ar: boolean; kind: LegalDocumentKind }) {
   const document = legalDocument(kind, ar ? 'ar' : 'en');
   return <SimpleScreen kicker="TASTEKIN" title={document.title}>
-    <article className="legal-doc" data-testid={`legal-${kind}`}>
-      <p className="legal-effective">{ar ? `سارية اعتباراً من ${LEGAL_EFFECTIVE_DATE}` : `Effective ${LEGAL_EFFECTIVE_DATE}`}</p>
-      <p>{document.intro}</p>
-      {document.sections.map((section) => <section key={section.heading}>
-        <h2>{section.heading}</h2>
-        {section.paragraphs?.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
-        {section.bullets && <ul>{section.bullets.map((bullet, index) => <li key={index}>{bullet}</li>)}</ul>}
-      </section>)}
-      <p className="legal-contact"><a href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a></p>
-    </article>
+    <LegalDocumentBody ar={ar} kind={kind} />
   </SimpleScreen>;
 }
 
@@ -2767,6 +2774,12 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
   const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset'>(initialResetToken ? 'reset' : 'signin');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  // Terms of Use / Privacy Policy consent, required to create an account and
+  // sent with the signup request so the server records it on the account.
+  // The documents open in a sheet over the form (not another screen) so the
+  // half-filled form and the unticked box survive reading them.
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [legalOpen, setLegalOpen] = useState<LegalDocumentKind | null>(null);
   const [error, setError] = useState(initialError || '');
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -2776,6 +2789,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     setError(''); setNotice('');
     if (!email.trim() || !email.includes('@')) { setError(t('Enter a valid email address.', 'أدخل بريداً إلكترونياً صحيحاً.')); return; }
     if (password.length < 8) { setError(t('Password must be at least 8 characters.', 'يجب ألا تقل كلمة المرور عن 8 أحرف.')); return; }
+    if (mode === 'signup' && !termsAccepted) { setError(t('Please accept the Terms of Use and Privacy Policy to create your account.', 'يرجى الموافقة على شروط الاستخدام وسياسة الخصوصية لإنشاء حسابك.')); return; }
     setBusy(true);
     try {
       // Native shell: the bearer-token routes (no cookie is ever set); the
@@ -2784,7 +2798,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
         ? (mode === 'signup' ? '/api/auth/native/signup' : '/api/auth/native/login')
         : (mode === 'signup' ? '/api/auth/signup' : '/api/auth/login');
       const response = await fetch(endpoint, {
-        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password, ...(isNativeApp ? nativeClientFields() : {}) }),
+        method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email.trim(), password, ...(mode === 'signup' ? { termsAccepted: true, termsVersion: LEGAL_EFFECTIVE_DATE } : {}), ...(isNativeApp ? nativeClientFields() : {}) }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) { setError(data.error || t('Something went wrong. Please try again.', 'حدث خطأ ما. حاول مرة أخرى.')); return; }
@@ -2849,6 +2863,23 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
       <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" enterKeyHint="next" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
       <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       {mode === 'signup' && <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>}
+      {mode === 'signup' && <label className="auth-consent" data-testid="signup-consent">
+        <input type="checkbox" data-testid="signup-terms" checked={termsAccepted} onChange={(event) => { setTermsAccepted(event.target.checked); setError(''); }} />
+        {/* The document links sit inside the label; preventDefault keeps a tap on them from toggling the checkbox. */}
+        <span>{t('I agree to the ', 'أوافق على ')}<button type="button" className="auth-link" data-testid="signup-terms-link" onClick={(event) => { event.preventDefault(); setLegalOpen('terms'); }}>{t('Terms of Use', 'شروط الاستخدام')}</button>{t(' and the ', ' و')}<button type="button" className="auth-link" data-testid="signup-privacy-link" onClick={(event) => { event.preventDefault(); setLegalOpen('privacy'); }}>{t('Privacy Policy', 'سياسة الخصوصية')}</button>{t('.', '.')}</span>
+      </label>}
+      {mode === 'signup' && <Drawer.Root open={legalOpen !== null} onOpenChange={(next) => { if (!next) setLegalOpen(null); }}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="approved-drawer-overlay" />
+          <Drawer.Content className="approved-drawer-content legal-drawer" aria-label={legalOpen ? legalDocument(legalOpen, ar ? 'ar' : 'en').title : ''} data-testid="signup-legal-sheet">
+            <div className="approved-drawer-handle" />
+            {legalOpen && <>
+              <div className="legal-drawer-head"><h2>{legalDocument(legalOpen, ar ? 'ar' : 'en').title}</h2><button type="button" className="approved-icon" aria-label={t('Close', 'إغلاق')} onClick={() => setLegalOpen(null)}><X size={16} /></button></div>
+              <div className="legal-drawer-body"><LegalDocumentBody ar={ar} kind={legalOpen} /></div>
+            </>}
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>}
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : mode === 'signup' ? t('Create account', 'إنشاء حساب') : t('Sign in', 'تسجيل الدخول')}</button>
       <div className="auth-links">

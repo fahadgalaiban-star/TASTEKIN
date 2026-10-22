@@ -177,7 +177,7 @@ function authErrorResponse(res: import("express").Response, error: unknown, acti
 
 router.post("/auth/signup", async (req, res) => {
   try {
-    const result = await registerWithPassword(req.body?.email, req.body?.password);
+    const result = await registerWithPassword(req.body?.email, req.body?.password, { termsAccepted: req.body?.termsAccepted, termsVersion: req.body?.termsVersion });
     if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
     const sid = await createSession({ user: result.user, accessToken: "", expiresAt: Date.now() + 7 * 24 * 60 * 60 * 1000 });
     setSessionCookie(res, sid);
@@ -223,7 +223,7 @@ router.post("/auth/native/signup", async (req, res) => {
   const client = nativeClient(req);
   if (!client.ok) { res.status(400).json({ error: "Unsupported client." }); return; }
   try {
-    const result = await registerWithPassword(req.body?.email, req.body?.password);
+    const result = await registerWithPassword(req.body?.email, req.body?.password, { termsAccepted: req.body?.termsAccepted, termsVersion: req.body?.termsVersion });
     if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
     const session = await createNativeSession({ userId: result.user.id, platform: client.platform, appVersion: client.appVersion });
     noStoreSessionResponse(res);

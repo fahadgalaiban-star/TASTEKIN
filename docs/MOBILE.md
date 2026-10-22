@@ -265,8 +265,8 @@ One-time setup, all from a browser (iPhone is fine):
    `capacitor.config.ts` keep `app.tastekin` and the same code ships either
    way. The preflight step names any missing item without printing values.
    Each run uses the run number as the build number (`CFBundleVersion`)
-   unless one is typed in; `MARKETING_VERSION` stays 1.0 until changed in
-   the Xcode project.
+   unless one is typed in; `MARKETING_VERSION` is `1.0.0` (set in the Xcode
+   project, both configurations) and only changes with a release.
 7. **Install**: App Store Connect → TASTEKIN → TestFlight. After processing
    (10–30 min) add yourself under Internal Testing and install via the
    TestFlight app. Export compliance is already answered by

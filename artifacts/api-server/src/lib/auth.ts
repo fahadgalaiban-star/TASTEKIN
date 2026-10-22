@@ -78,8 +78,23 @@ export async function findUserByEmail(email: string) {
   return user ?? null;
 }
 
-export async function createLocalUser(email: string, passwordHash: string) {
-  const [user] = await db.insert(usersTable).values({ email: email.trim().toLowerCase(), passwordHash, authProvider: "password" }).returning();
+/**
+ * Version label stored with each signup's Terms acceptance. It mirrors
+ * LEGAL_EFFECTIVE_DATE in artifacts/tastekin/src/legal.ts (the date printed
+ * on the Terms of Use and Privacy Policy); bump both together when the
+ * documents change. The client sends the version it displayed; the server
+ * keeps that when it is a plausible label and falls back to this constant.
+ */
+export const TERMS_VERSION = "2026-09-23";
+export const TERMS_REQUIRED_ERROR = "You must accept the Terms of Use and Privacy Policy to create an account.";
+
+export type TermsAcceptance = { acceptedAt: Date; version: string };
+
+export async function createLocalUser(email: string, passwordHash: string, terms: TermsAcceptance) {
+  const [user] = await db.insert(usersTable).values({
+    email: email.trim().toLowerCase(), passwordHash, authProvider: "password",
+    termsAcceptedAt: terms.acceptedAt, termsVersion: terms.version,
+  }).returning();
   return user;
 }
 
@@ -106,15 +121,23 @@ export async function authenticateWithPassword(rawEmail: unknown, rawPassword: u
 }
 
 /** Shared email/password signup validation + creation (web and native). */
-export async function registerWithPassword(rawEmail: unknown, rawPassword: unknown): Promise<PasswordAuthResult> {
+/**
+ * Shared by the web and native signup routes. Signup is refused unless the
+ * request carries `termsAccepted: true`; the acceptance time and the Terms
+ * version shown to the user are stored on the new account.
+ */
+export async function registerWithPassword(rawEmail: unknown, rawPassword: unknown, rawTerms?: { termsAccepted?: unknown; termsVersion?: unknown }): Promise<PasswordAuthResult> {
   const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : "";
   const password = typeof rawPassword === "string" ? rawPassword : "";
   if (!email || !email.includes("@")) return { ok: false, status: 400, error: "A valid email is required." };
   if (!validatePassword(password)) return { ok: false, status: 400, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` };
+  if (rawTerms?.termsAccepted !== true) return { ok: false, status: 400, error: TERMS_REQUIRED_ERROR };
+  const sentVersion = typeof rawTerms.termsVersion === "string" ? rawTerms.termsVersion.trim() : "";
+  const version = /^[0-9A-Za-z.-]{1,32}$/.test(sentVersion) ? sentVersion : TERMS_VERSION;
   const existing = await findUserByEmail(email);
   if (existing) return { ok: false, status: 409, error: "An account with this email already exists." };
   const passwordHash = await hashPassword(password);
-  const user = await createLocalUser(email, passwordHash);
+  const user = await createLocalUser(email, passwordHash, { acceptedAt: new Date(), version });
   return { ok: true, user };
 }
 

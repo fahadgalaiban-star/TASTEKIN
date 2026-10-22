@@ -1,5 +1,10 @@
 # Store listing drafts and screenshot checklist
 
+> The App Store Connect text, App Privacy answers and age-rating answers
+> now live in `docs/app-store-listing.md` (submission-ready, EN + AR); the
+> App Review notes template is `docs/APP-REVIEW-NOTES.md`. This file keeps
+> the shared facts, the Google Play draft and the screenshot checklist.
+
 Drafts for App Store Connect and Google Play Console, written only from
 facts already in this repository (`src/legal.ts`, `replit.md`,
 `lib/taste-catalog`, `docs/MOBILE.md`, the native shells). Nothing here is a
@@ -10,7 +15,8 @@ stores' current ones at the time of writing; confirm them in the consoles.
 
 ## Facts the copy is built on
 
-- Name `TASTEKIN`; bundle/application ID `app.tastekin`; version 1.0 (build 1).
+- Name `TASTEKIN`; bundle/application ID `app.tastekin`; version 1.0.0
+  (`MARKETING_VERSION`; the build number comes from the TestFlight workflow run).
 - Free. No subscriptions, purchases, ads, paid or locked content, or payment SDKs.
 - Discovery through compatible taste rather than popularity (`replit.md`).
 - Taste categories: Fashion & Outfits, Travel, Places, Restaurants, Daily
@@ -224,7 +230,10 @@ exactly two lines in `ios/App/App.xcodeproj/project.pbxproj`, one per build
 configuration: `TARGETED_DEVICE_FAMILY = "1,2";` became
 `TARGETED_DEVICE_FAMILY = "1";`. `Info.plist` keeps its
 `UISupportedInterfaceOrientations~ipad` block (ignored on an iPhone-only
-target; harmless). iPad can be added in a later release by setting the value
+target; harmless). On iPhone the app is portrait-only
+(`UISupportedInterfaceOrientations` lists only
+`UIInterfaceOrientationPortrait`) and requires `arm64`
+(`UIRequiredDeviceCapabilities`), matching the iOS 15+ deployment target. iPad can be added in a later release by setting the value
 back to `"1,2"`. Android tablets are unaffected.
 
 ## Needed from the founder (not in the repository)

@@ -79,7 +79,7 @@ class Session {
     return this.request(pathName, { method, headers: { "content-type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) });
   }
   async signup(email: string, password: string) {
-    const response = await this.json("/api/auth/signup", "POST", { email, password });
+    const response = await this.json("/api/auth/signup", "POST", { email, termsAccepted: true, password });
     const text = await response.text();
     assert.equal(response.status, 201, `signup for ${email}: ${text}`);
     return JSON.parse(text) as { user: { id: string; email: string } };
