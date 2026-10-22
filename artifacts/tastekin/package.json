@@ -89,6 +89,7 @@
     "zod": "catalog:"
   },
   "dependencies": {
-    "@capacitor/haptics": "8.0.2"
+    "@capacitor/haptics": "8.0.2",
+    "@capacitor/share": "8.0.3"
   }
 }

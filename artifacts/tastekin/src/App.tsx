@@ -13,7 +13,7 @@ import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
-import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
+import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeShare, nativeSignOut, publicWebOrigin, reconcileNativeSession, storeNativeToken, type ShareData } from './native';
 import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
 import { MediaImage } from './components/MediaImage';
@@ -943,7 +943,18 @@ function TastekinApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
   const pendingSharedPost = useRef<{ username: string; editId: string } | null>(null);
+  // A shared profile link (/creators/:username, the URL "Share profile"
+  // produces) opens that creator's profile as a nested screen, so Back
+  // returns to Home exactly like a shared post does.
+  const pendingSharedProfile = useRef<string | null>(null);
   useEffect(() => {
+    const profileMatch = window.location.pathname.match(/^\/creators\/([^/]+)\/?$/);
+    if (profileMatch) {
+      const username = decodeURIComponent(profileMatch[1]);
+      pendingSharedProfile.current = username;
+      setSelectedCreatorUsername(username);
+      return;
+    }
     const match = window.location.pathname.match(/^\/posts\/([^/]+)\/([^/]+)\/?$/);
     if (!match) return;
     const username = decodeURIComponent(match[1]);
@@ -951,6 +962,13 @@ function TastekinApp() {
     pendingSharedPost.current = { username, editId };
     setSelectedCreatorUsername(username);
   }, []);
+  useEffect(() => {
+    const pending = pendingSharedProfile.current;
+    if (!pending || pending !== selectedCreatorUsername) return;
+    pendingSharedProfile.current = null;
+    go('profile');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCreatorUsername]);
   useEffect(() => {
     const pending = pendingSharedPost.current;
     if (!pending || pending.username !== selectedCreatorUsername) return;
@@ -1907,7 +1925,22 @@ type ReportStep = 'menu' | 'reason' | 'details' | 'submitting' | 'done' | 'error
  * profile that is about to become inaccessible — muting never does that,
  * since a muted profile stays fully visible to the muter.
  */
-function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; showReport?: boolean }) {
+/**
+ * Shares through the native sheet in the shell, the Web Share API where a
+ * browser has one, or copies the link. Returns what happened so the caller
+ * can show a "Link copied" notice only when a copy actually took place.
+ */
+async function shareWithFallback(data: ShareData): Promise<'shared' | 'copied' | 'failed'> {
+  if (await nativeShare(data)) return 'shared';
+  if (navigator.share) {
+    try { await navigator.share(data); return 'shared'; }
+    catch (err) { if (err instanceof Error && err.name === 'AbortError') return 'shared'; }
+  }
+  const fallbackText = data.url || data.text || '';
+  try { await navigator.clipboard.writeText(fallbackText); return 'copied'; } catch { return 'failed'; }
+}
+
+function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onShare, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onShare?: () => void; showReport?: boolean }) {
   const session = useTasteSession();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ReportStep>('menu');
@@ -1985,6 +2018,7 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
         <Drawer.Content className="approved-drawer-content report-drawer" aria-label={ar ? 'الإبلاغ' : 'Report'}>
           <div className="approved-drawer-handle" />
           {step === 'menu' && <div className="report-menu">
+            {onShare && <button type="button" className="report-menu-item" data-testid="profile-share" onClick={() => { setOpen(false); onShare(); }}><Share2 size={16} /> {ar ? 'مشاركة الملف الشخصي' : 'Share profile'}</button>}
             {onViewPublicProfile && <button type="button" className="report-menu-item" data-testid="profile-view-public" onClick={() => { setOpen(false); onViewPublicProfile(); }}><Eye size={16} /> {ar ? 'عرض الملف العام' : 'View public profile'}</button>}
             {showReport && <button type="button" className="report-menu-item" onClick={() => setStep('reason')}><Flag size={16} /> {label || (ar ? 'إبلاغ' : 'Report')}</button>}
             {muteUsername && (muted
@@ -2311,8 +2345,9 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
   const shareNoticeTimeout = useRef<number | null>(null);
   useEffect(() => () => { if (shareNoticeTimeout.current) window.clearTimeout(shareNoticeTimeout.current); }, []);
   const sharePost = async () => {
-    const shareUrl = `${window.location.origin}/posts/${encodeURIComponent(creatorUsername)}/${encodeURIComponent(editId)}`;
+    const shareUrl = `${publicWebOrigin()}/posts/${encodeURIComponent(creatorUsername)}/${encodeURIComponent(editId)}`;
     const shareData = { title: creatorUsername ? `${creatorUsername} · TASTEKIN` : 'TASTEKIN', text: shareCaption || '', url: shareUrl };
+    if (await nativeShare(shareData)) return;
     if (navigator.share) {
       try { await navigator.share(shareData); return; }
       catch (err) { if (err instanceof Error && err.name === 'AbortError') return; }
@@ -3688,6 +3723,15 @@ function buildKinDayDirectionsUrl(places: KinTravelPlace[]): string | null {
 function KinTravelDayRoute({ places, ar }: { places: KinTravelPlace[]; ar: boolean }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const dayUrl = buildKinDayDirectionsUrl(places);
+  const [shareNotice, setShareNotice] = useState('');
+  // Share the day as plain text (numbered stops, addresses) plus the Google
+  // Maps directions link, through the native sheet in the shell.
+  const sharePlan = async () => {
+    const lines = places.map((place, index) => `${index + 1}. ${place.name}${place.formattedAddress ? ` — ${place.formattedAddress}` : ''}`);
+    const outcome = await shareWithFallback({ title: t('Trip plan · TASTEKIN', 'خطة الرحلة · TASTEKIN'), text: `${t('Trip plan', 'خطة الرحلة')} · TASTEKIN\n${lines.join('\n')}`, url: dayUrl || undefined });
+    setShareNotice(outcome === 'copied' ? t('Plan copied', 'تم نسخ الخطة') : outcome === 'failed' ? t('Could not share this plan.', 'تعذرت مشاركة الخطة.') : '');
+    if (outcome !== 'shared') window.setTimeout(() => setShareNotice(''), 2500);
+  };
   return <div className="kin-route" data-testid="kin-travel-route">
     <ol className="kin-route-list">
       {places.map((place, index) => {
@@ -3704,6 +3748,8 @@ function KinTravelDayRoute({ places, ar }: { places: KinTravelPlace[]; ar: boole
       })}
     </ol>
     {dayUrl && <a className="approved-button primary wide" data-testid="kin-route-open-day" href={dayUrl} target="_blank" rel="noopener noreferrer">{t('Open day in Google Maps', 'فتح يوم الرحلة في خرائط Google')}</a>}
+    {places.length > 0 && <button type="button" className="approved-button wide" data-testid="kin-route-share-day" onClick={() => void sharePlan()}><Share2 size={16} /> {t('Share this plan', 'مشاركة هذه الخطة')}</button>}
+    {shareNotice && <p className="settings-note" role="status" aria-live="polite" data-testid="kin-route-share-notice">{shareNotice}</p>}
   </div>;
 }
 
@@ -5342,6 +5388,14 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const myCircleEnabled = session.featureFlags.my_circle === true;
   const [sealOpen, setSealOpen] = useState(false);
+  const [shareNotice, setShareNotice] = useState('');
+  // "Share profile": a public /creators/:username link (App.tsx opens it as
+  // a nested profile screen) through the native sheet in the shell.
+  const shareProfile = async () => {
+    const outcome = await shareWithFallback({ title: `${profile.displayName || profile.username} · TASTEKIN`, text: profile.bio || '', url: `${publicWebOrigin()}/creators/${encodeURIComponent(profile.username)}` });
+    setShareNotice(outcome === 'copied' ? t('Link copied', 'تم نسخ الرابط') : outcome === 'failed' ? t('Could not share this profile.', 'تعذرت مشاركة الملف الشخصي.') : '');
+    if (outcome !== 'shared') window.setTimeout(() => setShareNotice(''), 2500);
+  };
   // This Profile presentation — the Edits grid and the Featured collections
   // strip alike — shows published Edits only, for owner and visitor alike.
   const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
@@ -5395,6 +5449,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
   }
 
   return <section className="creator-profile creator-profile-travel">
+    {shareNotice && <div className="saved-confirmation" role="status" aria-live="polite" data-testid="profile-share-notice">{shareNotice}</div>}
     <div className="profile-cover" data-testid="profile-cover">
       {profile.coverImage ? <MediaImage src={apiUrl(profile.coverImage)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
       {ownerView && <label className="profile-cover-edit" aria-label={t('Change cover photo', 'تغيير صورة الغلاف')} data-testid="profile-cover-edit">
@@ -5473,12 +5528,12 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       {ownerView ? <>
         <button className="approved-button primary profile-follow-button profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
         <button className="approved-button profile-message-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={16} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
-        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} showReport={false} />
+        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} onShare={() => void shareProfile()} showReport={false} />
       </> : <>
         <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
         {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
         {myCircleEnabled && !owner && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
-        {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
+        {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onShare={() => void shareProfile()} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
       </>}
     </div>
     {profile.bio && <p className="profile-bio">{profile.bio}</p>}

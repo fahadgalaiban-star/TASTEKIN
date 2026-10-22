@@ -19,6 +19,7 @@
 import { App as CapacitorApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
+import { Share } from '@capacitor/share';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { classifyExternalLink } from './lib/external-links';
@@ -209,6 +210,40 @@ function installFetchRewrite(): void {
     // omitted: simpler CORS, and no chance of a stray Set-Cookie mattering.
     return originalFetch(target, { ...init, headers, credentials: 'omit' });
   };
+}
+
+// ---------------------------------------------------------------------------
+// Sharing
+// ---------------------------------------------------------------------------
+
+/**
+ * The origin a shared link should point at. In the browser that is the page
+ * itself; in the shell the page origin is capacitor://localhost, which no
+ * recipient can open, so links point at the remote web/API origin instead.
+ */
+export function publicWebOrigin(): string {
+  return isNativeApp && API_BASE_URL ? API_BASE_URL : window.location.origin;
+}
+
+export type ShareData = { title: string; text?: string; url?: string };
+
+/**
+ * Native share sheet (UIActivityViewController / Android chooser). Resolves
+ * true when the sheet was shown — including when the user then dismissed
+ * it, which must not trigger a clipboard fallback — and false only when
+ * sharing is not available at all, so callers can fall back to the web
+ * path. Always false in the browser.
+ */
+export async function nativeShare(data: ShareData): Promise<boolean> {
+  if (!isNativeApp) return false;
+  try {
+    await Share.share({ title: data.title, text: data.text || undefined, url: data.url, dialogTitle: data.title });
+    return true;
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
+    if (code === 'UNIMPLEMENTED' || code === 'UNAVAILABLE') return false;
+    return true; // cancelled by the user: handled
+  }
 }
 
 // ---------------------------------------------------------------------------
