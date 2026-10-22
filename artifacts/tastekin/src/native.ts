@@ -19,6 +19,7 @@
 import { App as CapacitorApp } from '@capacitor/app';
 import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
+import { Keyboard } from '@capacitor/keyboard';
 import { Share } from '@capacitor/share';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
@@ -280,6 +281,54 @@ function installExternalLinkHandler(): void {
   }, true);
 }
 
+// ---------------------------------------------------------------------------
+// Keyboard
+// ---------------------------------------------------------------------------
+
+/**
+ * Keyboard behaviour that a web page in a WebView does not get for free:
+ * the focused field is scrolled into view once the keyboard is up (the
+ * `resize: body` config shrinks the viewport but does not move the field),
+ * the bottom tab bar hides while typing (html.keyboard-open, see
+ * approved.css) instead of floating above the keyboard, the Done/Return key
+ * dismisses single-line fields that have nothing to submit, and the
+ * accessory bar (previous / next / Done) stays available for everything else.
+ */
+async function configureNativeKeyboard(): Promise<void> {
+  const root = document.documentElement;
+  try { await Keyboard.setAccessoryBarVisible({ isVisible: true }); } catch { /* not supported on this platform build */ }
+  try {
+    await Keyboard.addListener('keyboardWillShow', (info) => {
+      root.classList.add('keyboard-open');
+      root.style.setProperty('--keyboard-height', `${info.keyboardHeight}px`);
+    });
+    await Keyboard.addListener('keyboardDidShow', () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+        // Two frames: let the body resize settle before measuring.
+        requestAnimationFrame(() => requestAnimationFrame(() => active.scrollIntoView({ block: 'center', behavior: 'smooth' })));
+      }
+    });
+    await Keyboard.addListener('keyboardWillHide', () => {
+      root.classList.remove('keyboard-open');
+      root.style.removeProperty('--keyboard-height');
+    });
+  } catch { /* plugin unavailable */ }
+  // Return on a single-line field that is not inside a form, or that asks
+  // for "done", simply closes the keyboard — the web default is to do nothing.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const hint = target.enterKeyHint || target.getAttribute('enterkeyhint') || '';
+    if (hint === 'done' || (!target.form && hint !== 'send')) {
+      event.preventDefault();
+      target.blur();
+      void Keyboard.hide().catch(() => {});
+    }
+  });
+}
+
 async function configureNativeChrome(): Promise<void> {
   // Warm Ivory canvas → dark status-bar glyphs (Style.Light = light background).
   try { await StatusBar.setStyle({ style: Style.Light }); } catch { /* plugin unavailable on this platform build */ }
@@ -317,6 +366,7 @@ export function initNativeShell(): void {
   setAuthTokenGetter(async () => { await tokenReady; return memoryToken; });
   document.documentElement.classList.add('native-app', `native-${nativePlatform}`);
   void configureNativeChrome();
+  void configureNativeKeyboard();
 }
 
 /** Hides the launch splash once the web app has painted its first frame. */

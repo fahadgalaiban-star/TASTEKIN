@@ -2420,7 +2420,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
       {owner ? <EditOwnerMenu ar={ar} hasPhoto={hasPhoto} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} /> : <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} />}
     </div>
     <div className="comment-composer">
-      <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
+      <input enterKeyHint="send" value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
       <button className="approved-icon" onClick={() => void submitComment()} disabled={sending} aria-label={ar ? 'إرسال تعليق' : 'Post comment'}><Send size={17} /></button>
     </div>
     {error && <div className="engagement-error" role="alert">{error}</div>}
@@ -2746,7 +2746,7 @@ function DeleteAccountScreen({ ar, onSignIn, onDeleted, onOpenPrivacy }: { ar: b
     </>}
     {session.status === 'authenticated' && step === 'confirm' && <div className="settings-danger">
       <label className="settings-toggle delete-account-ack"><input data-testid="delete-account-acknowledge" type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>{t('I understand this permanently deletes my account and everything I created.', 'أفهم أن هذا يحذف حسابي وكل ما أنشأته نهائياً.')}</span></label>
-      <label className="form-field"><span>{t('Type DELETE to confirm', 'اكتب DELETE للتأكيد')}</span><input data-testid="delete-account-confirm-input" type="text" autoComplete="off" autoCapitalize="characters" dir="ltr" value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="DELETE" /></label>
+      <label className="form-field"><span>{t('Type DELETE to confirm', 'اكتب DELETE للتأكيد')}</span><input data-testid="delete-account-confirm-input" type="text" autoComplete="off" autoCapitalize="characters" enterKeyHint="done" dir="ltr" value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="DELETE" /></label>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       <button data-testid="delete-account-submit" className="approved-button wide danger" disabled={!confirmed || busy} onClick={() => void deleteNow()}><Trash2 size={16} /> {busy ? t('Deleting…', 'جارٍ الحذف…') : t('Delete my account permanently', 'احذف حسابي نهائياً')}</button>
       <button className="approved-button wide" disabled={busy} onClick={() => { setStep('explain'); setAcknowledged(false); setTyped(''); setError(''); }}>{t('Cancel', 'إلغاء')}</button>
@@ -2839,8 +2839,8 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
       <div className="auth-divider">{t('or', 'أو')}</div>
     </>}
     {(mode === 'signin' || mode === 'signup') && <form onSubmit={(event) => void submitEmailPassword(event)}>
-      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-      <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" enterKeyHint="next" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+      <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       {mode === 'signup' && <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>}
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : mode === 'signup' ? t('Create account', 'إنشاء حساب') : t('Sign in', 'تسجيل الدخول')}</button>
@@ -2867,14 +2867,14 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     </div>}
     {mode === 'forgot' && session.passwordResetAvailable && <form data-testid="forgot-password-form" onSubmit={(event) => void submitForgotPassword(event)}>
       <p className="settings-note">{t('Enter your email and we’ll send you a link to reset your password.', 'أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.')}</p>
-      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" enterKeyHint="next" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : t('Send reset link', 'إرسال رابط إعادة التعيين')}</button>
       <div className="auth-links"><button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); setNotice(''); }}>{t('Back to sign in', 'العودة لتسجيل الدخول')}</button></div>
     </form>}
     {mode === 'reset' && <form onSubmit={(event) => void submitReset(event)}>
-      <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}
@@ -4673,7 +4673,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         <p className="settings-note kin-text-input-label">{t("Or describe what you're looking for…", 'أو صف ما تبحث عنه…')}</p>
         <div className="kin-text-input">
            <Pencil size={18} color="var(--tk-stone)" />
-           <input type="text" data-testid="kin-query" aria-label={t("Or describe what you're looking for", 'أو صف ما تبحث عنه')} placeholder={t('Black trousers to match my cream shirt', 'بنطال أسود يناسب قميصي الكريمي')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
+           <input type="text" enterKeyHint="search" data-testid="kin-query" aria-label={t("Or describe what you're looking for", 'أو صف ما تبحث عنه')} placeholder={t('Black trousers to match my cream shirt', 'بنطال أسود يناسب قميصي الكريمي')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
         </div>
 
         <span className="kin-occasion-label">{t("What's the occasion?", 'ما المناسبة؟')}</span>
@@ -4688,7 +4688,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         ) : (
           <div className="kin-budget-row" data-testid="kin-preferences">
             <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
-            <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
+            <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" enterKeyHint="done" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
             <button type="button" className="approved-icon" data-testid="kin-remove-budget" aria-label={t('Remove budget', 'إزالة الميزانية')} onClick={() => { setBudgetOpen(false); setBudget(''); }}><X size={14} /></button>
           </div>
         )}
@@ -4706,7 +4706,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         <p className="kin-step-subline">{t('Tell KIN where and when.', 'أخبر KIN أين ومتى')}</p>
         <p className="kin-step-progress">{t('1 of 2', '1 من 2')}</p>
         <label className="form-field"><span>{t('Destination', 'الوجهة')}</span>
-          <input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))}
+          <input data-testid="kin-destination" type="text" enterKeyHint="done" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))}
             placeholder={t('Search a city or place', 'ابحث عن مدينة أو مكان')} />
         </label>
         <div className="kin-date-row">
@@ -4976,7 +4976,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { 
 
     {tabItems.length > MY_THINGS_SEARCH_VISIBLE_THRESHOLD && <label className="approved-search" data-testid="my-things-search">
       <Search size={14} />
-      <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في قطعك')} aria-label={t('Search your items', 'ابحث في قطعك')} data-testid="my-things-search-input" />
+      <input type="search" enterKeyHint="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في قطعك')} aria-label={t('Search your items', 'ابحث في قطعك')} data-testid="my-things-search-input" />
     </label>}
 
     <div className="my-things-category-row" data-testid="my-things-categories">
@@ -5427,7 +5427,7 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
       <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={(next) => setStyle(next === style ? '' : next)} disabled={saving} />
       <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={(next) => setOccasion(next === occasion ? '' : next)} disabled={saving} />
       <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={(next) => setSeason(next === season ? '' : next)} disabled={saving} />
-      <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={saving} placeholder={t('Optional', 'اختياري')} /></label>
+      <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" enterKeyHint="done" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={saving} placeholder={t('Optional', 'اختياري')} /></label>
     </div></details>
 
     {submitError && <p className="workspace-notice" role="alert" data-testid="my-things-edit-error">{submitError}</p>}
@@ -5880,7 +5880,7 @@ function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenCom
       <small className="form-field-hint">{t('Instagram, portfolio, website, or press.', 'إنستغرام، ملف أعمال، موقع إلكتروني، أو تغطية إعلامية.')}</small>
       {links.map((link, index) => (
         <div className="verification-link-row" key={index}>
-          <input type="url" inputMode="url" data-testid="verification-link-input" value={link} onChange={(event) => updateLink(index, event.target.value)} placeholder="https://…" disabled={disabled} />
+          <input type="url" inputMode="url" enterKeyHint="done" data-testid="verification-link-input" value={link} onChange={(event) => updateLink(index, event.target.value)} placeholder="https://…" disabled={disabled} />
           {links.length > 1 && <button type="button" className="verification-link-remove" aria-label={t('Remove link', 'إزالة الرابط')} onClick={() => removeLink(index)} disabled={disabled}><X size={14} /></button>}
         </div>
       ))}
