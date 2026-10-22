@@ -80,6 +80,14 @@ html.native-app [dir="rtl"] .screen-view-back { animation-name:tk-screen-back-rt
 .ptr-indicator[data-state="refreshing"] { opacity:1; transform:translateY(6px) scale(1); }
 .ptr-indicator[data-state="refreshing"] svg { animation:tk-ptr-spin 900ms linear infinite; }
 @keyframes tk-ptr-spin { to { transform:rotate(360deg); } }
+/* Native shell: connectivity (src/lib/network-status.ts). The banner sits
+   under the top bar while offline with content already on screen; the
+   full offline screen replaces the app only when nothing has loaded yet. */
+.offline-banner { display:flex; align-items:center; gap:8px; margin:0 0 12px; padding:9px 11px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); color:var(--tk-stone); font-size:11px; font-weight:700; line-height:1.4; }
+.offline-banner svg { flex:0 0 auto; }
+.offline-screen { display:grid; justify-items:center; gap:14px; padding:48px 16px; text-align:center; }
+.offline-screen svg { color:var(--tk-stone); }
+.offline-screen p { margin:0; color:var(--tk-text-secondary); font-size:14px; line-height:1.5; max-width:30ch; }
 .approved-topbar { position:relative; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .approved-logo { position:absolute; left:50%; width:115px; max-height:32px; object-fit:contain; transform:translateX(-50%); }
 .approved-topbar-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }

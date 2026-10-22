@@ -7,7 +7,7 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink, LifeBuoy,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink, LifeBuoy, WifiOff,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
@@ -21,6 +21,7 @@ import { editTextForSave, fullEditCaption } from './lib/edit-text';
 import { useSwipeBack } from './lib/swipe-back';
 import { hapticSelection, hapticTap } from './lib/haptics';
 import { usePullToRefresh } from './lib/pull-to-refresh';
+import { useConnectivity } from './lib/network-status';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -1338,6 +1339,22 @@ function TastekinApp() {
     }
   }, [screen, loadPublicFeed, myCircleEnabled, homeFeedTab, refetchCircleMembers, refetchCircleFeed, queryClient, loadSavedLists]);
   const pull = usePullToRefresh({ enabled: isNativeApp && (screen === 'home' || screen === 'explore' || screen === 'saved' || screen === 'inbox'), onRefresh: refreshCurrentScreen, onArm: hapticSelection });
+  // Native shell only: connectivity. While offline with content on screen a
+  // banner says so; with nothing loaded yet the offline screen replaces the
+  // app. Coming back online re-reads the session and the current screen.
+  const connectivity = useConnectivity(isNativeApp);
+  const offline = isNativeApp && connectivity.known && !connectivity.online;
+  const wasOfflineRef = useRef(false);
+  useEffect(() => {
+    if (offline) { wasOfflineRef.current = true; return; }
+    if (!wasOfflineRef.current) return;
+    wasOfflineRef.current = false;
+    void session.refresh();
+    void refreshCurrentScreen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offline]);
+  const nothingLoadedYet = session.status !== 'authenticated' && publicFeedEdits.length === 0 && creatorEdits === seedEdits;
+  const retryOffline = () => { void session.refresh(); void loadPublicFeed(); };
   useEffect(() => {
     // Establishes the base entry once, at mount, so the very first nested
     // screen has something real to push on top of.
@@ -1361,6 +1378,10 @@ function TastekinApp() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [go]);
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'kin' as const, icon: Link2, en: 'KIN', ar: 'كين' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
+  if (offline && nothingLoadedYet) return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
+    <header className="approved-topbar"><span className="approved-spacer" /><img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><span className="approved-spacer" /></header>
+    <OfflineScreen ar={ar} onRetry={retryOffline} />
+  </main></div></TasteSessionContext.Provider>;
   if (session.accountSuspended) return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
     <SuspendedAccountPanel ar={ar} supportEmail={session.supportEmail} onLogout={() => void signOut(session.refresh)}
       onDelete={() => go('deleteAccount')} onPrivacy={() => go('privacy')} onTerms={() => go('terms')} />
@@ -1373,6 +1394,7 @@ function TastekinApp() {
     {(pull.pulling || pull.refreshing) && <div className="ptr-indicator" data-testid="pull-to-refresh" data-state={pull.refreshing ? 'refreshing' : 'pulling'} data-armed={pull.armed ? 'true' : 'false'} style={{ '--ptr-distance': `${pull.distance}px`, '--ptr-progress': String(pull.progress) } as CSSProperties} aria-hidden="true"><RefreshCw size={18} /></div>}
     <main className="approved-shell">
     <header className="approved-topbar">{!ROOT_SCREENS.includes(screen) && screen !== 'onboarding' ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}{screen !== 'profile' && <img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" />}<div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
+    {offline && <div className="offline-banner" role="status" aria-live="polite" data-testid="offline-banner"><WifiOff size={14} aria-hidden="true" /> {t('No internet connection. Showing what was already loaded.', 'لا يوجد اتصال بالإنترنت. يُعرض ما تم تحميله سابقًا.')}</div>}
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
@@ -1892,6 +1914,16 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 
 function SimpleScreen({ kicker, title, titleClassName, children }: { kicker: string; title: string; titleClassName?: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className={titleClassName ? `approved-title ${titleClassName}` : 'approved-title'}>{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
+/** Native shell only: shown instead of the app when the device is offline and nothing has loaded yet. */
+function OfflineScreen({ ar, onRetry }: { ar: boolean; onRetry: () => void }) {
+  return <SimpleScreen kicker={ar ? 'غير متصل' : 'Offline'} title={ar ? 'لا يوجد اتصال بالإنترنت' : 'No internet connection'}>
+    <div className="offline-screen" data-testid="offline-screen">
+      <WifiOff size={40} aria-hidden="true" />
+      <p>{ar ? 'تحقق من اتصالك بالشبكة ثم حاول مرة أخرى. سيعود TASTEKIN تلقائيًا عند عودة الاتصال.' : 'Check your connection and try again. TASTEKIN picks up automatically when you are back online.'}</p>
+      <button type="button" className="approved-button primary" data-testid="offline-retry" onClick={onRetry}>{ar ? 'إعادة المحاولة' : 'Try again'}</button>
+    </div>
+  </SimpleScreen>;
+}
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return fullEditCaption(edit, ar).split(/\r?\n/, 1)[0].trim(); }
 function TasteRating({ rating, ar, id, compact = false }: { rating?: number | null; ar: boolean; id?: string; compact?: boolean }) {
   if (!rating) return null;

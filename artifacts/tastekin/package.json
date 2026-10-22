@@ -90,6 +90,7 @@
   },
   "dependencies": {
     "@capacitor/haptics": "8.0.2",
+    "@capacitor/network": "8.0.1",
     "@capacitor/share": "8.0.3"
   }
 }
