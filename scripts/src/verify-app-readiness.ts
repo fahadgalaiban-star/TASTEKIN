@@ -116,8 +116,17 @@ async function main() {
       assert.equal(me.featureFlags.notification_preferences, false);
     });
 
+    await check("signup without accepting the Terms is refused with 400 and creates no account", async () => {
+      const refused = await member.json("/api/auth/signup", { email, password: "readiness-pass-1234" });
+      assert.equal(refused.status, 400);
+      const body = await refused.json() as { error?: string };
+      assert.match(body.error ?? "", /Terms of Use and Privacy Policy/);
+      const me = await anon.me();
+      assert.equal("authProvider" in me, false, "no session was created by the refused signup");
+    });
+
     await check("an email/password signup is described as authProvider 'password' on /api/me", async () => {
-      const response = await member.json("/api/auth/signup", { email, password: "readiness-pass-1234" });
+      const response = await member.json("/api/auth/signup", { email, termsAccepted: true, password: "readiness-pass-1234" });
       assert.equal(response.status, 201);
       const me = await member.me();
       assert.equal(me.authProvider, "password");
