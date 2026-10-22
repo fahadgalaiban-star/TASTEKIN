@@ -328,6 +328,23 @@ class PrivateCropApi {
       return;
     }
 
+    // Public creator routes, used by the owner's "View public profile"
+    // preview and by signed-out visitors. The profile is reachable under its
+    // handle and under its current (possibly renamed) username.
+    const creatorMatch = url.pathname.match(/^\/api\/creators\/([^/]+)\/(profile|workspace|featured-collections|views)$/);
+    if (creatorMatch) {
+      const [, username, resource] = creatorMatch;
+      if (username !== 'fheed' && username !== this.profile.username) {
+        await route.fulfill({ status: 404, json: { error: 'Not found' } });
+        return;
+      }
+      if (resource === 'views') { await route.fulfill({ status: 204, body: '' }); return; }
+      if (resource === 'profile') { await route.fulfill({ json: { ...this.profile, dateOfBirth: null } }); return; }
+      if (resource === 'workspace') { await route.fulfill({ json: this.publicWorkspace() }); return; }
+      await route.fulfill({ json: { collectionIds: [] } });
+      return;
+    }
+
     await route.fulfill({ status: 404, json: { error: 'Not found' } });
   }
 }
@@ -541,25 +558,34 @@ test('creator profile photo, private birthday, and public age settings persist w
   });
   expect(api.profile.avatarObjectPath).toBeTruthy();
 
+  // Archive lives on the owner's "Manage edits" screen, reached from the
+  // profile's More menu (the creator dashboard has no route any more).
   await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await page.getByRole('button', { name: 'Archive' }).click();
+  await page.getByRole('button', { name: 'View profile' }).click();
+  await page.getByRole('button', { name: 'More options' }).click();
+  await page.getByTestId('profile-manage-edits').click();
+  await expect(page.getByRole('heading', { name: 'Manage edits' })).toBeVisible();
+  await page.getByRole('button', { name: 'Archive', exact: true }).click();
   await expect.poll(() => api.workspace.edits[0]?.status).toBe('archived');
+  await expect(page.getByRole('button', { name: 'Restore' })).toBeVisible();
 
   await page.reload();
   await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
   await expect(page.getByRole('heading', { name: 'Fheed Alaiban Studio' })).toBeVisible();
-  await expect(page.getByText(/Age 30/)).toBeVisible();
+  // The public age line left the profile header in "simplify creator profile
+  // chrome" (162ac40); the setting itself is still persisted (asserted above).
+  await expect(page.getByText(/Age 30/)).toHaveCount(0);
   await expect(page.locator('.taste-seal img')).toHaveJSProperty('complete', true);
   expect(await page.locator('.taste-seal img').evaluate((image) => image.naturalWidth)).toBeGreaterThan(0);
   await page.getByRole('button', { name: 'Verified by TASTEKIN' }).click();
   await expect(page.getByRole('dialog')).toContainText('Verified by TASTEKIN — selected for authentic taste and identity.');
 
-  await page.getByRole('button', { name: 'Open menu' }).click();
-  await page.getByTestId('identity-consumer').click();
-  await page.getByTestId('nav-explore').click();
-  await page.getByTestId('fheed-profile-mini').click();
+  // The consumer/creator identity switch is gone; the owner previews the
+  // visitor view through More → "View public profile" instead.
+  await page.getByRole('button', { name: 'More options' }).click();
+  await page.getByTestId('profile-view-public').click();
+  await expect(page.getByTestId('profile-visitor-actions')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Follow' })).toBeVisible();
   await expect(page.getByRole('button', { name: /Subscribe/ })).toHaveCount(0);
   await expect(page.getByText(/followers/i)).toHaveCount(0);
