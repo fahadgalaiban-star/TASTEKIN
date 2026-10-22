@@ -1,5 +1,14 @@
 # Native-session production migration recovery
 
+> **Superseded (2026-10-23).** Replit Support confirmed that Publishing
+> applies a Development→Production schema diff and never runs the Drizzle
+> migration files or writes the ledger; the boot-time runner this page
+> worried about no longer exists (`RUN_MIGRATIONS_ON_BOOT` is inert). The
+> production ledger stopping short of the schema is now the expected,
+> permanent state and must not be repaired. Do not run the ledger repair
+> below. Current workflow: `docs/DATABASE-SCHEMA-WORKFLOW.md`. The text is
+> kept for the history of the 0017–0022 period only.
+
 > **Complete this recovery before any further Replit republish.**
 > Production's Drizzle ledger stops at 0016 while the 0017–0021 schema is
 > already present. Migrations 0017–0020 contain non-idempotent DDL, so the
