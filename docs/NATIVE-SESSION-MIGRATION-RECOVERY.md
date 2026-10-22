@@ -1,12 +1,32 @@
 # Native-session production migration recovery
 
-> **Complete this recovery before any further Replit republish.**
+> **Complete this recovery before any migration is run against Production.**
 > Production's Drizzle ledger stops at 0016 while the 0017–0021 schema is
-> already present. Migrations 0017–0020 contain non-idempotent DDL, so the
-> deployment's boot-time migration runner (`RUN_MIGRATIONS_ON_BOOT=true`)
-> would try to re-run 0017 on the next republish, fail on the existing
-> `video_uploads` table, and leave the deployment unable to start. Run the
-> apply step below first; only then republish.
+> already present. Migrations 0017–0020 contain non-idempotent DDL, so any
+> run of Drizzle's `migrate()` (`runPendingMigrations`) would try to re-run
+> 0017, fail on the existing `video_uploads` table, roll back, and leave the
+> ledger unchanged. Run the apply step below first; only then run 0022-or-later
+> migration steps or republish.
+>
+> **Correction (2026-10-10):** earlier text said the deployment's boot-time
+> runner (`RUN_MIGRATIONS_ON_BOOT=true`) would hit this on the next republish.
+> That runner was removed from the API entrypoint in commit `19c2069`
+> (2026-09-15); the flag in `.replit` is inert and a republish applies no
+> migration. The drift is therefore not a startup crash risk today, but it
+> still blocks every future ledger-based migration, including 0022/0023.
+
+## Why the ledger fell behind the schema
+
+The 0017–0021 schema reached Production without ledger rows because schema
+can be applied by two paths that never write `drizzle.__drizzle_migrations`:
+`drizzle-kit push` (used by `scripts/post-merge.sh` against the Development
+database) and Replit's Publishing schema step. Both derive their SQL from
+`lib/db/src/schema`, not from `lib/db/migrations`, so the objects appear
+while the journal entries stay unrecorded. Only Drizzle's `migrate()` writes
+the ledger, and it matches entries by timestamp alone, never by checking
+whether the objects already exist. See `docs/MIGRATION-LEDGER.md` for the
+full mechanism and the read-only `report:migration-ledger` tool that shows a
+database's exact ledger/schema state before any recovery decision.
 
 This is an **exceptional, one-time ledger repair** for the reviewed drift:
 production has the complete schema effects of migrations 0017–0021, but its
@@ -39,9 +59,10 @@ existing rows or reads from the workspace `DATABASE_URL`.
    authentication through the deployed application separately.
 7. Only now republish from the Replit Publishing panel.
 
-The apply path takes a transaction-scoped advisory lock (the same key the
-boot runner uses, so a concurrent republish migration is serialized against
-it), rechecks the same preconditions *after* obtaining it, appends the five
+The apply path takes a transaction-scoped advisory lock (the same key
+`runPendingMigrations` uses, so any concurrent run of that runner is
+serialized against it; a republish itself runs no migration), rechecks the
+same preconditions *after* obtaining it, appends the five
 missing historical hash/timestamp pairs, executes the unchanged committed
 0022 SQL, verifies the resulting table/ledger, and commits once. Any
 precondition, SQL, or verification failure rolls back the whole transaction.
