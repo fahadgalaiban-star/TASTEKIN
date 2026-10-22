@@ -38,7 +38,7 @@ button { font:inherit; cursor:pointer; }
 .approved-shell { width:min(100%,440px); min-height:100dvh; margin:auto; padding:14px 16px 98px; }
 /* Native shell only (class set by src/native.ts): the WebView extends under
    the status bar / notch, so keep the top bar and content out of it. */
-html.native-app .approved-shell { padding-top:max(14px, env(safe-area-inset-top)); padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); }
+html.native-app .approved-shell { padding-top:max(14px, env(safe-area-inset-top)); padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); padding-bottom:calc(98px + env(safe-area-inset-bottom)); }
 html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:transparent; }
 /* Native shell: no web-page behaviours on UI chrome — no text selection or
    long-press callout on buttons, labels, tiles and bars, no image/link drag,
