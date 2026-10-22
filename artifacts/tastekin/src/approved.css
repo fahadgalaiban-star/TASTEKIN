@@ -70,6 +70,16 @@ html.native-app [dir="rtl"] .screen-view-back { animation-name:tk-screen-back-rt
 @keyframes tk-screen-forward-rtl { from { transform:translateX(-28px); opacity:.55; } to { transform:none; opacity:1; } }
 @keyframes tk-screen-back-rtl { from { transform:translateX(18px); opacity:.55; } to { transform:none; opacity:1; } }
 @media (prefers-reduced-motion: reduce) { html.native-app .screen-view-forward, html.native-app .screen-view-back { animation:none; } html.native-app .screen-view-settling { transition:none; } }
+/* Native shell: pull-to-refresh indicator (src/lib/pull-to-refresh.ts). A
+   small disc that drops in under the top bar as the finger pulls, with the
+   arrow turning as the threshold nears; it spins while the refresh runs. */
+.ptr-indicator { position:fixed; z-index:9; top:calc(env(safe-area-inset-top) + 58px); left:50%; width:36px; height:36px; margin-left:-18px; display:grid; place-items:center; border-radius:50%; background:var(--tk-card); color:var(--tk-wine); box-shadow:0 4px 14px rgba(23,20,22,.14); opacity:0; transform:translateY(-48px) scale(.6); transition:opacity 120ms ease, transform 160ms cubic-bezier(.2,.8,.2,1); pointer-events:none; }
+.ptr-indicator[data-state="pulling"] { opacity:1; transition:opacity 120ms ease; transform:translateY(calc(var(--ptr-distance, 0px) - 48px)) scale(calc(.6 + .4 * var(--ptr-progress, 0))); }
+.ptr-indicator[data-state="pulling"] svg { transform:rotate(calc(180deg * var(--ptr-progress, 0))); transition:transform 80ms linear; }
+.ptr-indicator[data-state="pulling"][data-armed="true"] { color:var(--tk-ink); }
+.ptr-indicator[data-state="refreshing"] { opacity:1; transform:translateY(6px) scale(1); }
+.ptr-indicator[data-state="refreshing"] svg { animation:tk-ptr-spin 900ms linear infinite; }
+@keyframes tk-ptr-spin { to { transform:rotate(360deg); } }
 .approved-topbar { position:relative; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .approved-logo { position:absolute; left:50%; width:115px; max-height:32px; object-fit:contain; transform:translateX(-50%); }
 .approved-topbar-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }

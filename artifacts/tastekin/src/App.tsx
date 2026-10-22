@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { SuspendedAccountPanel } from './components/SuspendedAccountPanel';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, useListCircleMembers, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
@@ -19,7 +19,8 @@ import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentK
 import { MediaImage } from './components/MediaImage';
 import { editTextForSave, fullEditCaption } from './lib/edit-text';
 import { useSwipeBack } from './lib/swipe-back';
-import { hapticTap } from './lib/haptics';
+import { hapticSelection, hapticTap } from './lib/haptics';
+import { usePullToRefresh } from './lib/pull-to-refresh';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -1322,6 +1323,21 @@ function TastekinApp() {
   // Native shell only: the iOS-style edge swipe ends in the same
   // history.back() as the arrow, on exactly the screens that show the arrow.
   useSwipeBack({ enabled: isNativeApp && !ROOT_SCREENS.includes(screen) && screen !== 'onboarding', rtl: ar, target: screenViewRef, onBack: goBack });
+  // Native shell only: pull-to-refresh on the four feed screens. Each
+  // refresh re-runs the same loaders the screen used to fill itself.
+  const inboxRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const refreshCurrentScreen = useCallback(async () => {
+    if (screen === 'home') {
+      await Promise.all([loadPublicFeed(), myCircleEnabled && homeFeedTab === 'my-circle' ? Promise.all([refetchCircleMembers(), refetchCircleFeed()]) : Promise.resolve()]);
+    } else if (screen === 'explore') {
+      await queryClient.refetchQueries({ queryKey: getExploreQueryKey() });
+    } else if (screen === 'saved') {
+      await Promise.all([loadSavedLists(), loadPublicFeed()]);
+    } else if (screen === 'inbox') {
+      await inboxRefreshRef.current?.();
+    }
+  }, [screen, loadPublicFeed, myCircleEnabled, homeFeedTab, refetchCircleMembers, refetchCircleFeed, queryClient, loadSavedLists]);
+  const pull = usePullToRefresh({ enabled: isNativeApp && (screen === 'home' || screen === 'explore' || screen === 'saved' || screen === 'inbox'), onRefresh: refreshCurrentScreen, onArm: hapticSelection });
   useEffect(() => {
     // Establishes the base entry once, at mount, so the very first nested
     // screen has something real to push on top of.
@@ -1353,7 +1369,9 @@ function TastekinApp() {
     {screen === 'terms' && <LegalScreen ar={ar} kind="terms" />}
     {screen === 'support' && <SupportScreen ar={ar} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} />}
   </main></div></TasteSessionContext.Provider>;
-  return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
+  return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}>
+    {(pull.pulling || pull.refreshing) && <div className="ptr-indicator" data-testid="pull-to-refresh" data-state={pull.refreshing ? 'refreshing' : 'pulling'} data-armed={pull.armed ? 'true' : 'false'} style={{ '--ptr-distance': `${pull.distance}px`, '--ptr-progress': String(pull.progress) } as CSSProperties} aria-hidden="true"><RefreshCw size={18} /></div>}
+    <main className="approved-shell">
     <header className="approved-topbar">{!ROOT_SCREENS.includes(screen) && screen !== 'onboarding' ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}{screen !== 'profile' && <img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" />}<div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
@@ -1400,7 +1418,7 @@ function TastekinApp() {
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><MediaImage src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && selectedCollection && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
      {screen === 'edit' && (selectedEdit ? <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} /> : <Empty text={t('Edit unavailable.', 'المنشور غير متاح.')} />)}
-    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
+    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} refreshRef={inboxRefreshRef} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
@@ -2379,7 +2397,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
   </section>;
 }
 
-function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void; onSignIn: () => void }) {
+function InboxScreen({ ar, activeConversationId, onOpen, onSignIn, refreshRef }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void; onSignIn: () => void; refreshRef?: { current: (() => Promise<void>) | null } }) {
   const session = useTasteSession();
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -2392,6 +2410,12 @@ function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boole
     } catch { setState('error'); }
   }, [session.status]);
   useEffect(() => { void load(); }, [load, activeConversationId]);
+  // Lets the shell's pull-to-refresh re-run this screen's own loader.
+  useEffect(() => {
+    if (!refreshRef) return;
+    refreshRef.current = load;
+    return () => { refreshRef.current = null; };
+  }, [refreshRef, load]);
   if (session.status !== 'authenticated') return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}><div className="workspace-notice">{ar ? 'سجّل الدخول لرؤية رسائلك.' : 'Sign in to view your messages.'}<button onClick={onSignIn}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button></div></SimpleScreen>;
   return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}>
     {state === 'loading' && <Empty text={ar ? 'جارٍ تحميل رسائلك…' : 'Loading your messages…'} />}
