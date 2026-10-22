@@ -1,5 +1,6 @@
 import { expect, test, type Browser, type Page, type Route } from '@playwright/test';
 import path from 'node:path';
+import { expectBackOnYou, openCreatorComposer } from './creator-flow';
 
 // TASTEKIN is free: every Edit is public (the API normalizes legacy values).
 type Access = 'public';
@@ -297,6 +298,19 @@ class PrivateCropApi {
       return;
     }
 
+    if (url.pathname === '/api/public-feed') {
+      // Home feed: every published public Edit, with private renditions
+      // exposed only through the public-media route (as the server does).
+      const items = this.workspace.edits
+        .filter((edit) => edit.status === 'published' && edit.access === 'public')
+        .map((edit) => ({
+          creatorUsername: 'fheed', creatorName: this.profile.displayName, creatorVerified: this.profile.verified, creatorAvatar: this.profile.avatar, following: false,
+          edit: { ...edit, image: edit.image.startsWith('/objects/') ? `/api/public-media/fheed/${edit.id}` : edit.image, sourceImage: undefined, previewImage: undefined },
+        }));
+      await route.fulfill({ json: { items } });
+      return;
+    }
+
     if (url.pathname === '/api/public-profile-media/fheed') {
       await this.image(route, this.profile.avatarObjectPath && !this.cleanedPaths.has(this.profile.avatarObjectPath) ? 200 : 404);
       return;
@@ -318,15 +332,20 @@ class PrivateCropApi {
   }
 }
 
-async function creatorPage(browser: Browser, api: PrivateCropApi, options: { ar?: boolean; viewport?: { width: number; height: number } } = {}) {
+async function creatorPage(browser: Browser, api: PrivateCropApi, options: { ar?: boolean; viewport?: { width: number; height: number }; landOn?: 'composer' | 'you' } = {}) {
   const context = await browser.newContext({ viewport: options.viewport });
   await context.addCookies([{ name: 'sid', value: ownerSession, url: 'http://127.0.0.1:23385' }]);
   const page = await context.newPage();
   await api.attach(page);
   await page.goto(options.ar ? '/?lang=ar' : '/');
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByRole('heading', { name: options.ar ? 'مساء الخير، Fheed Alaiban.' : 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  // Lands on the composer: You → "Create an Edit" (see e2e/creator-flow.ts),
+  // or stays on the You screen for tests that never compose.
+  if (options.landOn === 'you') {
+    await page.getByTestId('nav-you').click();
+    await expectBackOnYou(page, { ar: options.ar });
+  } else {
+    await openCreatorComposer(page, { ar: options.ar });
+  }
   return { context, page };
 }
 
@@ -339,7 +358,9 @@ const cropFormats: CropFormat[] = [
 ];
 
 async function prepareCrop(page: Page, format: CropFormat = cropFormats[0]) {
-  await page.getByRole('button', { name: 'New Edit' }).click();
+  // creatorPage() lands on the composer; after a Publish the app is back on
+  // You, so re-open it when needed (the composer hides the bottom nav).
+  if (!(await page.getByRole('heading', { name: 'Create an Edit' }).isVisible())) await openCreatorComposer(page);
   await page.locator('input[type="file"]').setInputFiles(imagePath);
   await expect(page.locator('[aria-label="Crop image"]')).toBeVisible();
   await page.getByRole('button', { name: format.button }).click();
@@ -359,7 +380,7 @@ async function publish(page: Page, title: string, category: 'Stays' | 'Food' | '
   await fillRequiredFields(page, title);
   await selectCategory(page, category);
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
 }
 
 for (const { tab, category, placeDetails } of [
@@ -428,11 +449,17 @@ test('an authenticated creator persists each exact canonical crop format after p
   expect(portrait?.previewImage).toBeUndefined();
 
   await page.reload();
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByText('portrait crop survives refresh')).toBeVisible();
-  await expect(page.getByText('square crop survives refresh')).toBeVisible();
-  await expect(page.getByText('story crop survives refresh')).toBeVisible();
+  // The published Edits are listed with their captions on the creator's
+  // public profile (Style tab); the old dashboard list has no route anymore.
+  await page.getByTestId('nav-explore').click();
+  await page.getByTestId('fheed-profile-mini').click();
+  await page.getByTestId('profile-travel-tab-Style').click();
+  // Thumbnails are image-only (no caption over the photo), so tiles are
+  // addressed by the published Edit's id.
+  for (const format of cropFormats) {
+    const published = api.workspace.edits.find((edit) => edit.title === `${format.aspect} crop survives refresh`)!;
+    await expect(page.getByTestId(`profile-edit-${published.id}`)).toBeVisible();
+  }
   expect(api.cleanupRequests).toEqual([]);
   await context.close();
 });
@@ -443,6 +470,7 @@ test('anonymous visitors receive the published crop through the public media rou
     ...existingEdit,
     id: 'seeded-public-edit',
     title: 'Published crop is public',
+    caption: 'Published crop is public', // feed cards show the caption line, not the title
     access: 'public',
     image: '/objects/uploads/seeded-crop',
     sourceImage: '/objects/uploads/seeded-source',
@@ -454,9 +482,10 @@ test('anonymous visitors receive the published crop through the public media rou
   const visitor = await visitorContext.newPage();
   await api.attach(visitor);
   await visitor.goto('/');
-  await expect(visitor.getByRole('button', { name: 'Published crop is public' })).toBeVisible();
-  const card = visitor.locator('article').filter({ hasText: 'Published crop is public' });
-  await expect(card.locator('img')).toHaveAttribute('src', `/api/public-media/fheed/${seeded!.id}`);
+  await expect(visitor.getByTestId(`edit-title-${seeded.id}`)).toBeVisible();
+  const card = visitor.getByTestId(`edit-card-${seeded.id}`);
+  // The card also carries the creator avatar and the verified seal; only the art image is the crop.
+  await expect(card.locator('.approved-art img')).toHaveAttribute('src', `/api/public-media/fheed/${seeded!.id}`);
   await expect(card.locator('.approved-access')).toHaveCount(0);
 
   const [publicMedia, source, crop] = await visitor.evaluate(async ({ id, sourceImage, image }) => Promise.all([
@@ -477,7 +506,7 @@ test('cancelling after a crop leaves no remote private renditions to clean up', 
 
   await prepareCrop(page);
   await page.getByRole('button', { name: 'Back', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   expect(api.objectPaths).toEqual([]);
   expect(api.cleanupRequests).toEqual([]);
   await context.close();
@@ -485,9 +514,8 @@ test('cancelling after a crop leaves no remote private renditions to clean up', 
 
 test('creator profile photo, private birthday, and public age settings persist without exposing counts', async ({ browser }) => {
   const api = new PrivateCropApi();
-  const { context, page } = await creatorPage(browser, api);
+  const { context, page } = await creatorPage(browser, api, { landOn: 'you' });
 
-  await page.getByTestId('nav-you').click();
   await page.getByRole('button', { name: 'View profile' }).click();
   await page.getByRole('button', { name: 'Edit profile' }).click();
   await page.getByLabel('Display name').fill('Fheed Alaiban Studio');
@@ -544,6 +572,7 @@ test('a save conflict cleans up a cropped image instead of abandoning private ob
 
   await prepareCrop(page);
   await fillRequiredFields(page, 'Conflict removes private media');
+  await selectCategory(page, 'Style'); // Publish refuses without a category (see "publishing requires a category chip")
   api.conflictNextSave();
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
 
@@ -567,6 +596,7 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   const saving = await creatorPage(browser, saveApi);
   await prepareCrop(saving.page);
   await fillRequiredFields(saving.page, 'In-flight publish keeps media');
+  await selectCategory(saving.page, 'Style'); // Publish refuses without a category
   saveApi.deferNextSave();
   await saving.page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(saving.page.getByText('Saving your creator changes across devices…')).toBeVisible();
@@ -575,7 +605,7 @@ test('page exit cleans abandoned crops but never deletes media while a publish i
   expect(saveApi.cleanupRequests).toEqual([]);
 
   saveApi.finishDeferredSave();
-  await expect(saving.page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(saving.page);
   expect(saveApi.objectPaths.every((path) => saveApi.cleanedPaths.has(path))).toBe(false);
   await saving.context.close();
 });
@@ -584,7 +614,6 @@ test('publishing requires a category chip', async ({ browser }) => {
   const api = new PrivateCropApi();
   const { context, page } = await creatorPage(browser, api);
 
-  await page.getByRole('button', { name: 'New Edit' }).click();
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('Choose a category');
   expect(api.objectPaths).toEqual([]);
@@ -598,12 +627,14 @@ test('the unified media picker accepts a crop and optional caption', async ({ br
   await prepareCrop(page);
   await selectCategory(page, 'Stays');
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   const saved = api.workspace.edits.find((edit) => edit.crop?.aspect === 'portrait' && edit.id !== existingEdit.id);
   expect(saved).toMatchObject({ category: 'Decor', caption: '', access: 'public', status: 'published' });
   expect(saved?.image).toMatch(/^\/objects\/uploads\//);
   expect(saved?.crop).toMatchObject({ aspect: 'portrait', outputWidth: 1080, outputHeight: 1350 });
-  expect(api.objectPaths).toHaveLength(3);
+  // Source + crop. The blurred preview rendition went with the paywall
+  // (previewImage is never produced now; see the refresh test above).
+  expect(api.objectPaths).toHaveLength(2);
   await context.close();
 });
 
@@ -631,7 +662,7 @@ test('a published edit can optionally be associated with a collection', async ({
   await expect(page.locator('.collection-checks')).toHaveCount(0);
   await expect(page.getByRole('button', { name: /Field Notes/ }).locator('.lucide-check')).toHaveCount(1);
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   expect(api.workspace.edits.find((edit) => edit.caption === 'Collection edit')?.collectionIds).toContain('field-notes');
   await context.close();
 });
@@ -640,7 +671,6 @@ test('the create flow stays within a 390px viewport', async ({ browser }) => {
   const api = new PrivateCropApi();
   const { context, page } = await creatorPage(browser, api);
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'New Edit' }).click();
   await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   await context.close();
@@ -650,7 +680,6 @@ test('captures the three approved Create Edit review states at exactly 390×844'
   const viewport = { width: 390, height: 844 };
   const api = new PrivateCropApi();
   const english = await creatorPage(browser, api, { viewport });
-  await english.page.getByRole('button', { name: 'New Edit' }).click();
   await expect(english.page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
   await english.page.screenshot({ path: 'test-results/create-edit-empty-390x844.png' });
 
@@ -668,7 +697,6 @@ test('captures the three approved Create Edit review states at exactly 390×844'
 
   const arabicApi = new PrivateCropApi();
   const arabic = await creatorPage(browser, arabicApi, { ar: true, viewport });
-  await arabic.page.getByRole('button', { name: 'تعديل جديد' }).click();
   await expect(arabic.page.getByRole('heading', { name: 'إنشاء منشور' })).toBeVisible();
   await expect(arabic.page.locator('html')).toHaveAttribute('dir', 'rtl');
   await arabic.page.screenshot({ path: 'test-results/create-edit-arabic-rtl-390x844.png' });
@@ -687,7 +715,10 @@ test('profile category filtering shows published edits end to end', async ({ bro
   await page.getByTestId('fheed-profile-mini').click();
   await expect(page.getByTestId('profile-travel-tab-Food')).toBeVisible();
   await page.getByTestId('profile-travel-tab-Food').click();
-  await expect(page.getByText('Fresh food edit')).toBeVisible();
+  // Image-only tiles: the tile is addressed by id, the caption shows on the post.
+  await expect(page.getByTestId(`profile-edit-${foodEdit!.id}`)).toBeVisible();
+  await page.getByTestId(`profile-edit-${foodEdit!.id}`).click();
+  await expect(page.getByTestId('edit-detail-caption')).toHaveText('Fresh food edit');
   await expect(page.getByText('Existing public edit')).toHaveCount(0);
   await context.close();
 });

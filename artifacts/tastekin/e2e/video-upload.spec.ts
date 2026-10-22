@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { expectBackOnYou, openCreatorComposer } from './creator-flow';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -379,13 +380,12 @@ async function creatorPage(page: Page, api: VideoUploadApi, options: { ar?: bool
   await fakeVideoDecoding(page);
   await api.attach(page);
   await page.goto(options.ar ? '/?lang=ar' : '/');
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByRole('heading', { name: options.ar ? 'مساء الخير، Fheed Alaiban.' : 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  // Lands on the composer: You → "Create an Edit" (see e2e/creator-flow.ts).
+  await openCreatorComposer(page, { ar: options.ar });
 }
 
 async function openComposer(page: Page, options: { ar?: boolean } = {}) {
-  await page.getByRole('button', { name: options.ar ? 'تعديل جديد' : 'New Edit' }).click();
+  // creatorPage() already opened the composer; this only prepares it.
   await expect(page.getByRole('heading', { name: options.ar ? 'إنشاء منشور' : 'Create an Edit' })).toBeVisible();
   // The simplified composer requires a category before Publish can proceed.
   await page.getByRole('radio', { name: options.ar ? 'ستايل' : 'Style', exact: true }).click();
@@ -481,7 +481,7 @@ test('upload progress is rendered mid-upload, then the video reaches ready and u
   await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
 
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   const saved = api.workspace.edits.find((edit) => edit.video);
   expect(saved?.video).toMatchObject({ uploadId, bunnyVideoId });
   expect(saved?.status).toBe('published');
@@ -524,7 +524,7 @@ test('replacing a selected video cancels the previous upload and publishes with 
   api.markReady(secondId);
   await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   const saved = api.workspace.edits.find((edit) => edit.video);
   expect(saved?.video?.uploadId).toBe(secondId);
 });
@@ -569,7 +569,7 @@ test('the existing photo crop-and-publish flow is completely unchanged with vide
   await expect(page.getByRole('heading', { name: 'Create an Edit' })).toBeVisible();
   await page.locator('textarea.unified-caption-input').fill('Unchanged photo flow');
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
 
   const saved = api.workspace.edits.find((edit) => edit.title === 'Unchanged photo flow' || edit.caption === 'Unchanged photo flow');
   expect(saved?.image).toMatch(/^\/objects\/uploads\//);
@@ -620,7 +620,7 @@ test('Preview is absent while a video is mid-upload and the composer retains its
   api.markReady(uploadId);
   await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   const saved = api.workspace.edits.find((edit) => edit.video);
   expect(saved?.video?.uploadId).toBe(uploadId);
 });
@@ -662,7 +662,7 @@ test('an interrupted upload is retried from the confirmed offset, reusing the sa
   api.markReady(uploadId);
   await expect(page.getByText('Ready')).toBeVisible({ timeout: 45000 });
   await page.getByRole('button', { name: 'Publish', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page);
   const saved = api.workspace.edits.find((edit) => edit.video);
   expect(saved?.video).toMatchObject({ uploadId, bunnyVideoId });
 });
@@ -766,7 +766,7 @@ test('the video composer works end-to-end in Arabic/RTL at 390×844: upload, rea
   await expect(page.getByText('جاهز')).toBeVisible({ timeout: 45000 });
 
   await page.getByRole('button', { name: 'نشر', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'مساء الخير، Fheed Alaiban.' })).toBeVisible();
+  await expectBackOnYou(page, { ar: true });
   const saved = api.workspace.edits.find((edit) => edit.video);
   expect(saved?.video?.uploadId).toBe(uploadId);
 });

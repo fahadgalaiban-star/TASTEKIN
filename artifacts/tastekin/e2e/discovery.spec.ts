@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { expectBackOnYou, openCreatorComposer } from './creator-flow';
 
 async function openConsumerProfile(page: Page) {
   await page.getByTestId('nav-explore').click();
@@ -232,11 +233,12 @@ test('keeps the five mobile destinations, Explore search and sort, and RTL avail
   await expect(page.getByRole('button', { name: 'Best Match' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'New' })).toBeVisible();
   await expect(page.locator('[data-testid^="category-"]')).toHaveCount(0);
-  await page.getByTestId('nav-you').click();
-  await page.getByTestId('open-creator-workspace').click();
-  await expect(page.getByRole('heading', { name: 'Good afternoon, Fheed Alaiban.' })).toBeVisible();
+  // The composer hides the bottom navigation on purpose; Back returns to You.
+  await openCreatorComposer(page);
+  await page.getByRole('button', { name: 'Back', exact: true }).click();
+  await expectBackOnYou(page);
   await page.getByTestId('nav-saved').click();
-  await expect(page.getByRole('heading', { name: 'Saved' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Saved', exact: true })).toBeVisible(); // "All Saved" is the list heading below it
   await page.getByTestId('nav-you').click();
   await expect(page.getByRole('heading', { name: 'Your profile' })).toBeVisible();
   await page.getByTestId('nav-explore').click();
