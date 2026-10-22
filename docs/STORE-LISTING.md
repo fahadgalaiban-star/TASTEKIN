@@ -10,7 +10,8 @@ stores' current ones at the time of writing; confirm them in the consoles.
 
 ## Facts the copy is built on
 
-- Name `TASTEKIN`; bundle/application ID `app.tastekin`; version 1.0 (build 1).
+- Name `TASTEKIN`; bundle/application ID `app.tastekin`; version 1.0.0
+  (`MARKETING_VERSION`; the build number comes from the TestFlight workflow run).
 - Free. No subscriptions, purchases, ads, paid or locked content, or payment SDKs.
 - Discovery through compatible taste rather than popularity (`replit.md`).
 - Taste categories: Fashion & Outfits, Travel, Places, Restaurants, Daily
