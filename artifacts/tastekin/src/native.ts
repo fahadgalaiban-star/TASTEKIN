@@ -17,9 +17,11 @@
 // Keychain / Android Keystore via @aparajita/capacitor-secure-storage and sent
 // as `Authorization: Bearer` on every API call. See docs/MOBILE.md.
 import { App as CapacitorApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { classifyExternalLink } from './lib/external-links';
 import { packagedMediaUrl } from './lib/packaged-media-url';
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
@@ -209,6 +211,40 @@ function installFetchRewrite(): void {
   };
 }
 
+// ---------------------------------------------------------------------------
+// External links
+// ---------------------------------------------------------------------------
+
+/** Origins that count as "the app itself" for link handling in the shell. */
+function ownOrigins(): string[] {
+  return API_BASE_URL ? [window.location.origin, API_BASE_URL] : [window.location.origin];
+}
+
+/**
+ * Opens ordinary web links in the in-app browser (SFSafariViewController on
+ * iOS, Custom Tabs on Android) instead of Capacitor's default for
+ * `target="_blank"`, which hands the URL to the OS and leaves the app.
+ * Maps links and non-web schemes keep the system behaviour on purpose (see
+ * src/lib/external-links.ts). One capture-phase listener covers every
+ * anchor in the app, present and future, with no per-call-site changes.
+ */
+function installExternalLinkHandler(): void {
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target?.closest('a[href]');
+    if (!(anchor instanceof HTMLAnchorElement)) return;
+    if (classifyExternalLink(anchor.getAttribute('href') ?? '', ownOrigins()) !== 'in-app-browser') return;
+    event.preventDefault();
+    void Browser.open({ url: anchor.href, toolbarColor: '#F5F1E9' }).catch((error: unknown) => {
+      // The plugin is unavailable only on a build without it; fall back to
+      // the OS so the tap still does something rather than nothing.
+      console.error('[tastekin-native] in-app browser unavailable; opening externally', error);
+      window.open(anchor.href, '_blank', 'noopener');
+    });
+  }, true);
+}
+
 async function configureNativeChrome(): Promise<void> {
   // Warm Ivory canvas → dark status-bar glyphs (Style.Light = light background).
   try { await StatusBar.setStyle({ style: Style.Light }); } catch { /* plugin unavailable on this platform build */ }
@@ -241,6 +277,7 @@ export function initNativeShell(): void {
   }
   tokenReady = loadStoredToken();
   installFetchRewrite();
+  installExternalLinkHandler();
   setBaseUrl(API_BASE_URL || null);
   setAuthTokenGetter(async () => { await tokenReady; return memoryToken; });
   document.documentElement.classList.add('native-app', `native-${nativePlatform}`);
