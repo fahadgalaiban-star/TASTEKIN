@@ -225,7 +225,10 @@ exactly two lines in `ios/App/App.xcodeproj/project.pbxproj`, one per build
 configuration: `TARGETED_DEVICE_FAMILY = "1,2";` became
 `TARGETED_DEVICE_FAMILY = "1";`. `Info.plist` keeps its
 `UISupportedInterfaceOrientations~ipad` block (ignored on an iPhone-only
-target; harmless). iPad can be added in a later release by setting the value
+target; harmless). On iPhone the app is portrait-only
+(`UISupportedInterfaceOrientations` lists only
+`UIInterfaceOrientationPortrait`) and requires `arm64`
+(`UIRequiredDeviceCapabilities`), matching the iOS 15+ deployment target. iPad can be added in a later release by setting the value
 back to `"1,2"`. Android tablets are unaffected.
 
 ## Needed from the founder (not in the repository)
