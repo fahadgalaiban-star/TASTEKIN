@@ -40,6 +40,19 @@ button { font:inherit; cursor:pointer; }
    the status bar / notch, so keep the top bar and content out of it. */
 html.native-app .approved-shell { padding-top:max(14px, env(safe-area-inset-top)); padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); }
 html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:transparent; }
+/* Native shell: no web-page behaviours on UI chrome — no text selection or
+   long-press callout on buttons, labels, tiles and bars, no image/link drag,
+   no font inflation when the device rotates, no double-tap zoom on controls.
+   Text a member may want to copy stays selectable: post captions, comments,
+   messages, bios, the legal documents, and every input. Inner scrollers keep
+   their overscroll to themselves instead of bouncing the whole page. */
+html.native-app { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+html.native-app body { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+html.native-app img, html.native-app a { -webkit-user-drag:none; }
+html.native-app .edit-detail-text, html.native-app .comment-list, html.native-app .conversation-thread, html.native-app .profile-bio, html.native-app .legal-doc,
+html.native-app input, html.native-app textarea, html.native-app [contenteditable] { -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; }
+html.native-app button, html.native-app [role="button"], html.native-app .approved-bottom { touch-action:manipulation; }
+html.native-app .collection-picker-list, html.native-app .conversation-thread, html.native-app .closet-editor-sheet, html.native-app .kin-stay-sheet-body { overscroll-behavior:contain; }
 .approved-topbar { position:relative; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .approved-logo { position:absolute; left:50%; width:115px; max-height:32px; object-fit:contain; transform:translateX(-50%); }
 .approved-topbar-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }
