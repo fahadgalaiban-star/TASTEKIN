@@ -884,7 +884,14 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-step-headline { margin:0 0 4px; color:var(--tk-ink); font-family:'Lora', serif; font-size:24px; font-weight:500; line-height:1.2; letter-spacing:-.01em; text-align:start; }
 .kin-step-subline { margin:0 0 10px; color:var(--tk-stone); font-size:12px; text-align:start; }
 .kin-step-progress { margin:0 0 16px; color:var(--tk-stone); font-size:11px; font-weight:700; text-align:start; }
-.kin-date-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* Start/End side by side. minmax(0,1fr) lets a column shrink below the
+   date control's intrinsic width (iOS Safari gives <input type=date> a
+   wide min-content size, which pushed "End (optional)" past the right
+   edge at 390px); the input itself is forced to fill its column. */
+.kin-date-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+.kin-date-row .form-field { min-width:0; grid-template-columns:minmax(0,1fr); }
+.kin-date-row input[type="date"] { display:block; min-width:0; width:100%; max-width:100%; -webkit-appearance:none; appearance:none; min-height:40px; text-align:start; }
+.kin-date-row input[type="date"]::-webkit-date-and-time-value { text-align:start; }
 
 .kin-interest-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 16px; }
 .kin-interest-card { position:relative; display:flex; align-items:center; gap:10px; min-height:56px; padding:14px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:700; text-align:start; }
