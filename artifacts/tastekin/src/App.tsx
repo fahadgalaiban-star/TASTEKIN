@@ -5,7 +5,7 @@ import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, us
 import { Drawer } from 'vaul';
 import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
 import {
-  Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
+  Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, EyeOff, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
   Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink, LifeBuoy, WifiOff,
 } from 'lucide-react';
@@ -2792,6 +2792,21 @@ function DeleteAccountScreen({ ar, onSignIn, onDeleted, onOpenPrivacy }: { ar: b
   </SimpleScreen>;
 }
 
+/**
+ * Password input with a show/hide toggle. The toggle sits outside the
+ * <label> (overlaid on the field's trailing edge, mirrored in RTL through
+ * inset-inline-end) so the input's accessible label stays exactly the
+ * visible caption and a tap on the eye never re-focuses or submits.
+ */
+function PasswordField({ ar, label, value, onChange, autoComplete, testId }: { ar: boolean; label: string; value: string; onChange: (value: string) => void; autoComplete: 'current-password' | 'new-password'; testId?: string }) {
+  const [visible, setVisible] = useState(false);
+  const toggleLabel = visible ? (ar ? 'إخفاء كلمة المرور' : 'Hide password') : (ar ? 'إظهار كلمة المرور' : 'Show password');
+  return <div className="password-field">
+    <label className="form-field"><span>{label}</span><input type={visible ? 'text' : 'password'} autoComplete={autoComplete} enterKeyHint="go" value={value} onChange={(event) => onChange(event.target.value)} minLength={8} required data-testid={testId} /></label>
+    <button type="button" className="password-toggle" aria-label={toggleLabel} title={toggleLabel} aria-pressed={visible} data-testid={testId ? `${testId}-toggle` : 'password-toggle'} onMouseDown={(event) => event.preventDefault()} onClick={() => setVisible((prev) => !prev)}>{visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button>
+  </div>;
+}
+
 function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boolean; initialResetToken: string | null; initialError: string | null; onDone: () => void }) {
   const session = useTasteSession();
   const t = (en: string, arabic: string) => ar ? arabic : en;
@@ -2885,7 +2900,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     </>}
     {(mode === 'signin' || mode === 'signup') && <form onSubmit={(event) => void submitEmailPassword(event)}>
       <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" enterKeyHint="next" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-      <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <PasswordField ar={ar} label={t('Password', 'كلمة المرور')} value={password} onChange={setPassword} autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} testId="auth-password" />
       {mode === 'signup' && <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>}
       {mode === 'signup' && <label className="auth-consent" data-testid="signup-consent">
         <input type="checkbox" data-testid="signup-terms" checked={termsAccepted} onChange={(event) => { setTermsAccepted(event.target.checked); setError(''); }} />
@@ -2936,7 +2951,7 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
       <div className="auth-links"><button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); setNotice(''); }}>{t('Back to sign in', 'العودة لتسجيل الدخول')}</button></div>
     </form>}
     {mode === 'reset' && <form onSubmit={(event) => void submitReset(event)}>
-      <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <PasswordField ar={ar} label={t('New password', 'كلمة مرور جديدة')} value={password} onChange={setPassword} autoComplete="new-password" testId="reset-password" />
       <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}

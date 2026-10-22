@@ -671,6 +671,12 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .auth-divider::before, .auth-divider::after { content:''; flex:1; height:1px; background:var(--tk-border); }
 .auth-links { display:grid; gap:8px; margin-top:14px; text-align:center; }
 .auth-link { border:0; background:transparent; color:var(--tk-wine); font-size:12px; font-weight:700; text-decoration:underline; padding:4px; }
+/* Password field with a show/hide eye on the trailing edge (mirrors in RTL). */
+.password-field { position:relative; }
+.password-field .form-field input { padding-inline-end:44px; }
+.password-toggle { position:absolute; inset-inline-end:4px; bottom:1px; width:40px; height:40px; display:grid; place-items:center; padding:0; border:0; border-radius:50%; background:transparent; color:var(--tk-stone); cursor:pointer; }
+.password-toggle:hover, .password-toggle[aria-pressed="true"] { color:var(--tk-wine); }
+.password-toggle:focus-visible { outline:2px solid var(--tk-focus); outline-offset:-2px; }
 .settings-toggle input { width:20px; height:20px; accent-color:var(--tk-wine); }
 .auth-consent { display:flex; align-items:flex-start; gap:10px; margin:2px 0 12px; font-size:12px; line-height:1.5; color:var(--tk-ink); }
 .auth-consent input { flex:0 0 20px; width:20px; height:20px; margin-top:1px; accent-color:var(--tk-wine); }
@@ -878,7 +884,14 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-step-headline { margin:0 0 4px; color:var(--tk-ink); font-family:'Lora', serif; font-size:24px; font-weight:500; line-height:1.2; letter-spacing:-.01em; text-align:start; }
 .kin-step-subline { margin:0 0 10px; color:var(--tk-stone); font-size:12px; text-align:start; }
 .kin-step-progress { margin:0 0 16px; color:var(--tk-stone); font-size:11px; font-weight:700; text-align:start; }
-.kin-date-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+/* Start/End side by side. minmax(0,1fr) lets a column shrink below the
+   date control's intrinsic width (iOS Safari gives <input type=date> a
+   wide min-content size, which pushed "End (optional)" past the right
+   edge at 390px); the input itself is forced to fill its column. */
+.kin-date-row { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px; }
+.kin-date-row .form-field { min-width:0; grid-template-columns:minmax(0,1fr); }
+.kin-date-row input[type="date"] { display:block; min-width:0; width:100%; max-width:100%; -webkit-appearance:none; appearance:none; min-height:40px; text-align:start; }
+.kin-date-row input[type="date"]::-webkit-date-and-time-value { text-align:start; }
 
 .kin-interest-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:0 0 16px; }
 .kin-interest-card { position:relative; display:flex; align-items:center; gap:10px; min-height:56px; padding:14px; border:1px solid var(--tk-border); border-radius:16px; background:var(--tk-card); color:var(--tk-ink); font-size:13px; font-weight:700; text-align:start; }
