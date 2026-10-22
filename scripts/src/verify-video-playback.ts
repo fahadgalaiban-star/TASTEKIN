@@ -113,7 +113,7 @@ class Session {
     return response;
   }
   async signup(email: string, password: string) {
-    const response = await this.request("/api/auth/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
+    const response = await this.request("/api/auth/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, termsAccepted: true, password }) });
     await expectStatus(response, 201);
     return (await response.json()) as { user: { id: string; email: string } };
   }

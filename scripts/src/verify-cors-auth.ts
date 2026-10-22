@@ -113,7 +113,7 @@ async function main() {
 
     // --- 1. the actual reported bug: signup from an unlisted "self" origin ---
     await check("signup from an origin matching the request's own Host succeeds (not a 500)", async () => {
-      const response = await postJson(server.baseUrl, "/api/auth/signup", { email: `preview-${suffix}@example.com`, password: PASSWORD }, { Origin: selfOrigin });
+      const response = await postJson(server.baseUrl, "/api/auth/signup", { email: `preview-${suffix}@example.com`, termsAccepted: true, password: PASSWORD }, { Origin: selfOrigin });
       const body = await response.json() as { user?: { email: string }; error?: string };
       assert.equal(response.status, 201, `expected 201, got ${response.status}: ${JSON.stringify(body)}`);
       assert.equal(response.headers.get("access-control-allow-origin"), selfOrigin, "the browser needs this header to read the response");
@@ -140,7 +140,7 @@ async function main() {
 
     // --- 3. an origin that is genuinely cross-site must still be denied ---
     await check("a request from a completely different origin gets no CORS header (the browser blocks it), but the server never 500s", async () => {
-      const response = await postJson(server.baseUrl, "/api/auth/signup", { email: `evil-${suffix}@example.com`, password: PASSWORD }, { Origin: evilOrigin });
+      const response = await postJson(server.baseUrl, "/api/auth/signup", { email: `evil-${suffix}@example.com`, termsAccepted: true, password: PASSWORD }, { Origin: evilOrigin });
       assert.notEqual(response.status, 500, "a disallowed origin must never surface as an opaque server error");
       assert.equal(response.headers.get("access-control-allow-origin"), null, "no ACAO header means the browser will refuse to expose this response to that origin's JS");
     });

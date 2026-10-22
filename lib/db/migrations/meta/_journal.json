@@ -169,6 +169,13 @@
       "when": 1790983213528,
       "tag": "0023_moderation_actions",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1792699200000,
+      "tag": "0024_terms_acceptance",
+      "breakpoints": true
     }
   ]
 }
