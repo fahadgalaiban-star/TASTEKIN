@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, Fragment, type ChangeEvent, type CSSProperties, type FormEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { SuspendedAccountPanel } from './components/SuspendedAccountPanel';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, useListCircleMembers, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
@@ -7,17 +7,21 @@ import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@works
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
-  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink, LifeBuoy,
+  Send, Share2, ShieldCheck, Trash2, Upload, UserRound, Volume2, VolumeX, X, ZoomIn, ZoomOut, Sparkles, RefreshCw, Camera, Video as VideoIcon, Clock, Star, ExternalLink, LifeBuoy, WifiOff,
 } from 'lucide-react';
 import tasteSealImage from '@assets/B19A2529-07AA-4327-B95B-1A45527C3EA2_1787320127362.png';
 import { CLOSET_ITEM_TYPES, CLOSET_PRIMARY_COLORS, CLOSET_STYLES, CLOSET_OCCASIONS, CLOSET_SEASONS, closetTaxonomyLabel, type TaxonomyOption } from './closet-taxonomy';
 import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasics, readVideoDuration, uploadVideoViaTus, TusAuthorizationExpiredError, type TusUploadAuthorization } from './video-upload';
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
-import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeSignOut, reconcileNativeSession, storeNativeToken } from './native';
+import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeShare, nativeSignOut, publicWebOrigin, reconcileNativeSession, storeNativeToken, type ShareData } from './native';
 import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
 import { MediaImage } from './components/MediaImage';
 import { editTextForSave, fullEditCaption } from './lib/edit-text';
+import { useSwipeBack } from './lib/swipe-back';
+import { hapticSelection, hapticTap } from './lib/haptics';
+import { usePullToRefresh } from './lib/pull-to-refresh';
+import { useConnectivity } from './lib/network-status';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -452,6 +456,11 @@ function TastekinApp() {
   // already popped to — history itself is the source of truth for that
   // transition, so go() must not push or replace another entry on top of it.
   const isRestoringFromHistoryRef = useRef(false);
+  // Direction of the most recent navigation, read by the screen wrapper's
+  // mount animation in the native shell: a push slides in from the trailing
+  // edge, a pop from the leading edge, a root-tab switch just appears.
+  const navDirectionRef = useRef<'forward' | 'back' | 'none'>('none');
+  const screenViewRef = useRef<HTMLDivElement | null>(null);
   // Where AuthScreen returns after a successful sign-in. Only the public
   // account-deletion page sets this (so a Google Play visitor lands back on
   // it after signing in); everything else keeps the existing Home landing.
@@ -929,8 +938,8 @@ function TastekinApp() {
     // Back gesture and the on-screen arrow (which calls history.back())
     // always land on the real previous screen.
     if (!isRestoringFromHistoryRef.current && next !== screen) {
-      if (ROOT_SCREENS.includes(next)) window.history.replaceState({ screen: next }, '');
-      else window.history.pushState({ screen: next }, '');
+      if (ROOT_SCREENS.includes(next)) { window.history.replaceState({ screen: next }, ''); navDirectionRef.current = 'none'; }
+      else { window.history.pushState({ screen: next }, ''); navDirectionRef.current = 'forward'; }
     }
     setScreen(next);
   };
@@ -947,7 +956,18 @@ function TastekinApp() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [screen]);
   const pendingSharedPost = useRef<{ username: string; editId: string } | null>(null);
+  // A shared profile link (/creators/:username, the URL "Share profile"
+  // produces) opens that creator's profile as a nested screen, so Back
+  // returns to Home exactly like a shared post does.
+  const pendingSharedProfile = useRef<string | null>(null);
   useEffect(() => {
+    const profileMatch = window.location.pathname.match(/^\/creators\/([^/]+)\/?$/);
+    if (profileMatch) {
+      const username = decodeURIComponent(profileMatch[1]);
+      pendingSharedProfile.current = username;
+      setSelectedCreatorUsername(username);
+      return;
+    }
     const match = window.location.pathname.match(/^\/posts\/([^/]+)\/([^/]+)\/?$/);
     if (!match) return;
     const username = decodeURIComponent(match[1]);
@@ -955,6 +975,13 @@ function TastekinApp() {
     pendingSharedPost.current = { username, editId };
     setSelectedCreatorUsername(username);
   }, []);
+  useEffect(() => {
+    const pending = pendingSharedProfile.current;
+    if (!pending || pending !== selectedCreatorUsername) return;
+    pendingSharedProfile.current = null;
+    go('profile');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCreatorUsername]);
   useEffect(() => {
     const pending = pendingSharedPost.current;
     if (!pending || pending.username !== selectedCreatorUsername) return;
@@ -970,6 +997,7 @@ function TastekinApp() {
     const next = wasSaved ? saved.filter((item) => item !== id) : [...saved, id];
     savedHydrationVersion.current += 1;
     setSaved(next);
+    hapticTap();
     track(wasSaved ? 'save_removed' : 'save_added', { editId: id });
     if (!wasSaved && savedLists.length === 0) {
       setSavedConfirmationVisible(true);
@@ -1297,7 +1325,41 @@ function TastekinApp() {
   // The on-screen arrow and the OS/browser Back gesture are the same
   // navigation path: both ultimately move the browser's own history
   // position, which is what the popstate listener below reacts to.
-  const goBack = () => { window.history.back(); };
+  const goBack = useCallback(() => { window.history.back(); }, []);
+  // Native shell only: the iOS-style edge swipe ends in the same
+  // history.back() as the arrow, on exactly the screens that show the arrow.
+  useSwipeBack({ enabled: isNativeApp && !ROOT_SCREENS.includes(screen) && screen !== 'onboarding', rtl: ar, target: screenViewRef, onBack: goBack });
+  // Native shell only: pull-to-refresh on the four feed screens. Each
+  // refresh re-runs the same loaders the screen used to fill itself.
+  const inboxRefreshRef = useRef<(() => Promise<void>) | null>(null);
+  const refreshCurrentScreen = useCallback(async () => {
+    if (screen === 'home') {
+      await Promise.all([loadPublicFeed(), myCircleEnabled && homeFeedTab === 'my-circle' ? Promise.all([refetchCircleMembers(), refetchCircleFeed()]) : Promise.resolve()]);
+    } else if (screen === 'explore') {
+      await queryClient.refetchQueries({ queryKey: getExploreQueryKey() });
+    } else if (screen === 'saved') {
+      await Promise.all([loadSavedLists(), loadPublicFeed()]);
+    } else if (screen === 'inbox') {
+      await inboxRefreshRef.current?.();
+    }
+  }, [screen, loadPublicFeed, myCircleEnabled, homeFeedTab, refetchCircleMembers, refetchCircleFeed, queryClient, loadSavedLists]);
+  const pull = usePullToRefresh({ enabled: isNativeApp && (screen === 'home' || screen === 'explore' || screen === 'saved' || screen === 'inbox'), onRefresh: refreshCurrentScreen, onArm: hapticSelection });
+  // Native shell only: connectivity. While offline with content on screen a
+  // banner says so; with nothing loaded yet the offline screen replaces the
+  // app. Coming back online re-reads the session and the current screen.
+  const connectivity = useConnectivity(isNativeApp);
+  const offline = isNativeApp && connectivity.known && !connectivity.online;
+  const wasOfflineRef = useRef(false);
+  useEffect(() => {
+    if (offline) { wasOfflineRef.current = true; return; }
+    if (!wasOfflineRef.current) return;
+    wasOfflineRef.current = false;
+    void session.refresh();
+    void refreshCurrentScreen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offline]);
+  const nothingLoadedYet = session.status !== 'authenticated' && publicFeedEdits.length === 0 && creatorEdits === seedEdits;
+  const retryOffline = () => { void session.refresh(); void loadPublicFeed(); };
   useEffect(() => {
     // Establishes the base entry once, at mount, so the very first nested
     // screen has something real to push on top of.
@@ -1309,6 +1371,7 @@ function TastekinApp() {
       const state = event.state as { screen?: unknown } | null;
       const requested = screenFromHistoryState(state?.screen);
       isRestoringFromHistoryRef.current = true;
+      navDirectionRef.current = 'back';
       // Composer/creator-preview always abandon to "you" on the way out —
       // matching the one existing exit path for that flow — rather than
       // whatever nested screen happened to sit below them in history.
@@ -1320,6 +1383,10 @@ function TastekinApp() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, [go]);
   const nav = [{ id: 'home' as const, icon: Home, en: 'Home', ar: 'الرئيسية' }, { id: 'explore' as const, icon: Search, en: 'Explore', ar: 'اكتشف' }, { id: 'kin' as const, icon: Link2, en: 'KIN', ar: 'كين' }, { id: 'saved' as const, icon: Bookmark, en: 'Saved', ar: 'المحفوظات' }, { id: 'you' as const, icon: UserRound, en: 'You', ar: 'أنت' }];
+  if (offline && nothingLoadedYet) return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
+    <header className="approved-topbar"><span className="approved-spacer" /><img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" /><span className="approved-spacer" /></header>
+    <OfflineScreen ar={ar} onRetry={retryOffline} />
+  </main></div></TasteSessionContext.Provider>;
   if (session.accountSuspended) return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
     <SuspendedAccountPanel ar={ar} supportEmail={session.supportEmail} onLogout={() => void signOut(session.refresh)}
       onDelete={() => go('deleteAccount')} onPrivacy={() => go('privacy')} onTerms={() => go('terms')} />
@@ -1328,11 +1395,15 @@ function TastekinApp() {
     {screen === 'terms' && <LegalScreen ar={ar} kind="terms" />}
     {screen === 'support' && <SupportScreen ar={ar} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} />}
   </main></div></TasteSessionContext.Provider>;
-  return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}><main className="approved-shell">
+  return <TasteSessionContext.Provider value={session}><div className="approved-app" dir={ar ? 'rtl' : 'ltr'}>
+    {(pull.pulling || pull.refreshing) && <div className="ptr-indicator" data-testid="pull-to-refresh" data-state={pull.refreshing ? 'refreshing' : 'pulling'} data-armed={pull.armed ? 'true' : 'false'} style={{ '--ptr-distance': `${pull.distance}px`, '--ptr-progress': String(pull.progress) } as CSSProperties} aria-hidden="true"><RefreshCw size={18} /></div>}
+    <main className="approved-shell">
     <header className="approved-topbar">{!ROOT_SCREENS.includes(screen) && screen !== 'onboarding' ? <button className="approved-icon" onClick={goBack} aria-label={t('Back', 'رجوع')}><ArrowLeft size={21} /></button> : <span className="approved-spacer" />}{screen !== 'profile' && <img src="/tastekin-logo.svg" className="approved-logo" alt="TASTEKIN" />}<div className="approved-topbar-actions">{screen === 'profile' && viewingOwnProfile && !profileVisitorMode && <button className="approved-icon" onClick={() => go('inbox')} aria-label={t('Open inbox', 'فتح الرسائل')}><Inbox size={19} /></button>}<button className="approved-icon settings-icon" data-testid="open-settings-topbar" onClick={() => go('settings')} aria-label={t('Settings', 'الإعدادات')}><Settings2 size={19} /></button></div></header>
+    {offline && <div className="offline-banner" role="status" aria-live="polite" data-testid="offline-banner"><WifiOff size={14} aria-hidden="true" /> {t('No internet connection. Showing what was already loaded.', 'لا يوجد اتصال بالإنترنت. يُعرض ما تم تحميله سابقًا.')}</div>}
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
+    <div key={screen} ref={screenViewRef} className={`screen-view${navDirectionRef.current === 'forward' ? ' screen-view-forward' : navDirectionRef.current === 'back' ? ' screen-view-back' : ''}`}>
     {screen === 'home' && <><section className="home-feed-header"><h1>{ar ? homeFeedHeaderCopy[homeFeedTab].ar : homeFeedHeaderCopy[homeFeedTab].en}</h1><p>{ar ? homeFeedHeaderCopy[homeFeedTab].arSub : homeFeedHeaderCopy[homeFeedTab].enSub}</p></section><HomeFeedTabs ar={ar} active={homeFeedTab} onSelect={setHomeFeedTab} />
       {homeFeedTab === 'my-circle' && !circleLoading && !circleError && circleMembers.length > 0 && (
         <>
@@ -1368,13 +1439,13 @@ function TastekinApp() {
     {screen === 'support' && <SupportScreen ar={ar} onOpenPrivacy={() => go('privacy')} onOpenTerms={() => go('terms')} onOpenDeleteAccount={() => go('deleteAccount')} />}
     {screen === 'deleteAccount' && <DeleteAccountScreen ar={ar} onSignIn={() => { authReturnScreen.current = 'deleteAccount'; go('auth'); }} onDeleted={() => go('home')} onOpenPrivacy={() => go('privacy')} />}
     {screen === 'auth' && <AuthScreen ar={ar} initialResetToken={passwordResetToken} initialError={authError} onDone={() => { const next = authReturnScreen.current ?? 'home'; authReturnScreen.current = null; go(next); }} />}
-    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} circleNotice={circleNotice} onManageCollections={() => openCollectionManager()} onManageEdits={() => go('manageEdits')} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; setCircleNotice(null); const onError = (error: unknown) => setCircleNotice(circleErrorMessage(error)); if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); }, onError }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); }, onError }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
+    {screen === 'profile' && <Profile ar={ar} owner={viewingOwnProfile} ownerView={viewingOwnProfile && !profileVisitorMode} visitorPreview={visitorPreview} following={following} inCircle={circleMemberStatus?.active || false} circleBusy={addCircleMember.isPending || removeCircleMember.isPending} profile={viewedCreatorProfile} edits={viewedCreatorEdits} featuredCollections={viewingOwnProfile ? featuredCollections : publicFeaturedCollections} onViewAsVisitor={() => { setVisitorPreview(true); setProfileVisitorMode(true); }} onExitVisitor={() => { setVisitorPreview(false); setProfileVisitorMode(false); }} onFollow={() => { if (!publicProfileViewer) return; if (session.status !== 'authenticated') { go('auth'); return; } const next = !following; setFollowing(next); hapticTap();track(next ? 'follow_added' : 'follow_removed', { creatorId: selectedCreatorUsername }); void fetch('/api/relationships', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'follow', targetId: selectedCreatorUsername, active: next }) }).then((response) => { if (!response.ok) setFollowing(!next); }); }} circleNotice={circleNotice} onManageCollections={() => openCollectionManager()} onManageEdits={() => go('manageEdits')} onToggleCircle={() => { if (session.status !== 'authenticated') { go('auth'); return; } const targetId = viewedCreatorProfile.username; if (!targetId) return; setCircleNotice(null); const onError = (error: unknown) => setCircleNotice(circleErrorMessage(error)); if (circleMemberStatus?.active) removeCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); }, onError }); else addCircleMember.mutate({ targetId }, { onSuccess: () => { queryClient.invalidateQueries({ queryKey: getGetCircleMemberStatusQueryKey(targetId) }); queryClient.invalidateQueries({ queryKey: getGetCircleFeedQueryKey() }); queryClient.invalidateQueries({ queryKey: getListCircleMembersQueryKey() }); setFollowing(true); }, onError }); }} onEditProfile={openProfileEditor} onApplyVerification={() => go('verificationApply')} onMessage={!viewingOwnProfile || profileVisitorMode ? startMessage : undefined} onInsights={() => go('insights')} onEdit={openEdit} onOpenCollection={(collection) => { setSelectedCollectionId(collection.id); go('collection'); }} onCollections={() => go('collections')} onMatch={() => go('tune-taste')} onSignIn={() => go('auth')} onBlocked={() => go('home')} onUploadCover={(file) => void saveCoverImage(file)} coverUploadBusy={coverUploadState === 'saving'} />}
      {screen === 'profileEdit' && <ProfileEditor ar={ar} form={profileForm} photo={pendingProfilePhoto} busy={profileSaveState === 'saving'} error={profileError} saved={profileSaveState === 'saved'} onChange={setProfileForm} onPhotoPrepared={(photo) => { discardPendingProfilePhoto(); setPendingProfilePhoto(photo); setProfileSaveState('idle'); }} onCancelPhoto={discardPendingProfilePhoto} onSave={() => void saveProfile()} />}
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><MediaImage src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && selectedCollection && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
      {screen === 'edit' && (selectedEdit ? <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} /> : <Empty text={t('Edit unavailable.', 'المنشور غير متاح.')} />)}
-    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
+    {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} refreshRef={inboxRefreshRef} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
     {screen === 'insights' && <InsightsScreen ar={ar} edits={creatorEdits} />}
@@ -1393,6 +1464,7 @@ function TastekinApp() {
     {screen === 'myThingsEdit' && editingClosetItem && <EditClosetItemScreen ar={ar} item={editingClosetItem} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
+    </div>
    </main>
     <CreateSavedListDrawer ar={ar} open={savedListCreatorOpen} onClose={() => setSavedListCreatorOpen(false)} onCreate={createSavedList} />
     <SavedListPicker ar={ar} editId={savedListPickerEditId} lists={savedLists} onClose={() => setSavedListPickerEditId(null)} onToggle={updateSavedListItem} />
@@ -1847,6 +1919,16 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
 
 function SimpleScreen({ kicker, title, titleClassName, children }: { kicker: string; title: string; titleClassName?: string; children: ReactNode }) { return <section><span className="approved-kicker">{kicker}</span>{title && <h1 className={titleClassName ? `approved-title ${titleClassName}` : 'approved-title'}>{title}</h1>}{children}</section>; }
 function Empty({ text }: { text: string }) { return <div className="approved-empty">{text}</div>; }
+/** Native shell only: shown instead of the app when the device is offline and nothing has loaded yet. */
+function OfflineScreen({ ar, onRetry }: { ar: boolean; onRetry: () => void }) {
+  return <SimpleScreen kicker={ar ? 'غير متصل' : 'Offline'} title={ar ? 'لا يوجد اتصال بالإنترنت' : 'No internet connection'}>
+    <div className="offline-screen" data-testid="offline-screen">
+      <WifiOff size={40} aria-hidden="true" />
+      <p>{ar ? 'تحقق من اتصالك بالشبكة ثم حاول مرة أخرى. سيعود TASTEKIN تلقائيًا عند عودة الاتصال.' : 'Check your connection and try again. TASTEKIN picks up automatically when you are back online.'}</p>
+      <button type="button" className="approved-button primary" data-testid="offline-retry" onClick={onRetry}>{ar ? 'إعادة المحاولة' : 'Try again'}</button>
+    </div>
+  </SimpleScreen>;
+}
 function publicCaptionLine(edit: CreatorEdit, ar: boolean) { return fullEditCaption(edit, ar).split(/\r?\n/, 1)[0].trim(); }
 function TasteRating({ rating, ar, id, compact = false }: { rating?: number | null; ar: boolean; id?: string; compact?: boolean }) {
   if (!rating) return null;
@@ -1898,7 +1980,22 @@ type ReportStep = 'menu' | 'reason' | 'details' | 'submitting' | 'done' | 'error
  * profile that is about to become inaccessible — muting never does that,
  * since a muted profile stays fully visible to the muter.
  */
-function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onManageCollections, onManageEdits, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onManageCollections?: () => void; onManageEdits?: () => void; showReport?: boolean }) {
+/**
+ * Shares through the native sheet in the shell, the Web Share API where a
+ * browser has one, or copies the link. Returns what happened so the caller
+ * can show a "Link copied" notice only when a copy actually took place.
+ */
+async function shareWithFallback(data: ShareData): Promise<'shared' | 'copied' | 'failed'> {
+  if (await nativeShare(data)) return 'shared';
+  if (navigator.share) {
+    try { await navigator.share(data); return 'shared'; }
+    catch (err) { if (err instanceof Error && err.name === 'AbortError') return 'shared'; }
+  }
+  const fallbackText = data.url || data.text || '';
+  try { await navigator.clipboard.writeText(fallbackText); return 'copied'; } catch { return 'failed'; }
+}
+
+function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onManageCollections, onManageEdits, onShare, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onManageCollections?: () => void; onManageEdits?: () => void; onShare?: () => void; showReport?: boolean }) {
   const session = useTasteSession();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ReportStep>('menu');
@@ -1976,6 +2073,7 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
         <Drawer.Content className="approved-drawer-content report-drawer" aria-label={ar ? 'الإبلاغ' : 'Report'}>
           <div className="approved-drawer-handle" />
           {step === 'menu' && <div className="report-menu">
+            {onShare && <button type="button" className="report-menu-item" data-testid="profile-share" onClick={() => { setOpen(false); onShare(); }}><Share2 size={16} /> {ar ? 'مشاركة الملف الشخصي' : 'Share profile'}</button>}
             {onViewPublicProfile && <button type="button" className="report-menu-item" data-testid="profile-view-public" onClick={() => { setOpen(false); onViewPublicProfile(); }}><Eye size={16} /> {ar ? 'عرض الملف العام' : 'View public profile'}</button>}
             {onManageCollections && <button type="button" className="report-menu-item" data-testid="profile-manage-collections" onClick={() => { setOpen(false); onManageCollections(); }}><FileText size={16} /> {ar ? 'إدارة المجموعات' : 'Manage collections'}</button>}
             {onManageEdits && <button type="button" className="report-menu-item" data-testid="profile-manage-edits" onClick={() => { setOpen(false); onManageEdits(); }}><Archive size={16} /> {ar ? 'إدارة التعديلات' : 'Manage edits'}</button>}
@@ -2259,6 +2357,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
     if (liking) return;
     const prior = engagement;
     setLiking(true);
+    hapticTap();
     setEngagement({ ...prior, liked: !prior.liked, likeCount: Math.max(0, prior.likeCount + (prior.liked ? -1 : 1)) });
     try {
       const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/like`, { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ active: !prior.liked }) });
@@ -2276,6 +2375,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
     if (session.status !== 'authenticated') { signIn(); return; }
     if (!comment.trim()) return;
     setSending(true); setError('');
+    hapticTap();
     try {
       const response = await fetch(`/api/edits/${encodeURIComponent(editId)}/comments`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body: comment.trim() }) });
       if (!response.ok) throw new Error(await describeFailedResponse(response));
@@ -2302,8 +2402,9 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
   const shareNoticeTimeout = useRef<number | null>(null);
   useEffect(() => () => { if (shareNoticeTimeout.current) window.clearTimeout(shareNoticeTimeout.current); }, []);
   const sharePost = async () => {
-    const shareUrl = `${window.location.origin}/posts/${encodeURIComponent(creatorUsername)}/${encodeURIComponent(editId)}`;
+    const shareUrl = `${publicWebOrigin()}/posts/${encodeURIComponent(creatorUsername)}/${encodeURIComponent(editId)}`;
     const shareData = { title: creatorUsername ? `${creatorUsername} · TASTEKIN` : 'TASTEKIN', text: shareCaption || '', url: shareUrl };
+    if (await nativeShare(shareData)) return;
     if (navigator.share) {
       try { await navigator.share(shareData); return; }
       catch (err) { if (err instanceof Error && err.name === 'AbortError') return; }
@@ -2326,7 +2427,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
       {owner ? <EditOwnerMenu ar={ar} hasPhoto={hasPhoto} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} /> : <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} />}
     </div>
     <div className="comment-composer">
-      <input value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
+      <input enterKeyHint="send" value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
       <button className="approved-icon" onClick={() => void submitComment()} disabled={sending} aria-label={ar ? 'إرسال تعليق' : 'Post comment'}><Send size={17} /></button>
     </div>
     {error && <div className="engagement-error" role="alert">{error}</div>}
@@ -2335,7 +2436,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
   </section>;
 }
 
-function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void; onSignIn: () => void }) {
+function InboxScreen({ ar, activeConversationId, onOpen, onSignIn, refreshRef }: { ar: boolean; activeConversationId: string | null; onOpen: (id: string) => void; onSignIn: () => void; refreshRef?: { current: (() => Promise<void>) | null } }) {
   const session = useTasteSession();
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
@@ -2348,6 +2449,12 @@ function InboxScreen({ ar, activeConversationId, onOpen, onSignIn }: { ar: boole
     } catch { setState('error'); }
   }, [session.status]);
   useEffect(() => { void load(); }, [load, activeConversationId]);
+  // Lets the shell's pull-to-refresh re-run this screen's own loader.
+  useEffect(() => {
+    if (!refreshRef) return;
+    refreshRef.current = load;
+    return () => { refreshRef.current = null; };
+  }, [refreshRef, load]);
   if (session.status !== 'authenticated') return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}><div className="workspace-notice">{ar ? 'سجّل الدخول لرؤية رسائلك.' : 'Sign in to view your messages.'}<button onClick={onSignIn}>{ar ? 'تسجيل الدخول' : 'Sign in'}</button></div></SimpleScreen>;
   return <SimpleScreen kicker={ar ? 'الرسائل' : 'Messages'} title={ar ? 'صندوق الوارد' : 'Inbox'}>
     {state === 'loading' && <Empty text={ar ? 'جارٍ تحميل رسائلك…' : 'Loading your messages…'} />}
@@ -2382,6 +2489,7 @@ function ConversationScreen({ ar, conversationId }: { ar: boolean; conversationI
     const body = message.trim();
     const pending: ConversationMessage = { id: `pending-${Date.now()}`, senderUserId: session.user.id, body, createdAt: new Date().toISOString(), readAt: null };
     setMessage(''); setSending(true); setError('');
+    hapticTap();
     setConversation((current) => current ? { ...current, messages: [...current.messages, pending] } : current);
     try {
       const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/messages`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body }) });
@@ -2645,7 +2753,7 @@ function DeleteAccountScreen({ ar, onSignIn, onDeleted, onOpenPrivacy }: { ar: b
     </>}
     {session.status === 'authenticated' && step === 'confirm' && <div className="settings-danger">
       <label className="settings-toggle delete-account-ack"><input data-testid="delete-account-acknowledge" type="checkbox" checked={acknowledged} onChange={(event) => setAcknowledged(event.target.checked)} /><span>{t('I understand this permanently deletes my account and everything I created.', 'أفهم أن هذا يحذف حسابي وكل ما أنشأته نهائياً.')}</span></label>
-      <label className="form-field"><span>{t('Type DELETE to confirm', 'اكتب DELETE للتأكيد')}</span><input data-testid="delete-account-confirm-input" type="text" autoComplete="off" autoCapitalize="characters" dir="ltr" value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="DELETE" /></label>
+      <label className="form-field"><span>{t('Type DELETE to confirm', 'اكتب DELETE للتأكيد')}</span><input data-testid="delete-account-confirm-input" type="text" autoComplete="off" autoCapitalize="characters" enterKeyHint="done" dir="ltr" value={typed} onChange={(event) => setTyped(event.target.value)} placeholder="DELETE" /></label>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       <button data-testid="delete-account-submit" className="approved-button wide danger" disabled={!confirmed || busy} onClick={() => void deleteNow()}><Trash2 size={16} /> {busy ? t('Deleting…', 'جارٍ الحذف…') : t('Delete my account permanently', 'احذف حسابي نهائياً')}</button>
       <button className="approved-button wide" disabled={busy} onClick={() => { setStep('explain'); setAcknowledged(false); setTyped(''); setError(''); }}>{t('Cancel', 'إلغاء')}</button>
@@ -2738,8 +2846,8 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
       <div className="auth-divider">{t('or', 'أو')}</div>
     </>}
     {(mode === 'signin' || mode === 'signup') && <form onSubmit={(event) => void submitEmailPassword(event)}>
-      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
-      <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" enterKeyHint="next" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+      <label className="form-field"><span>{t('Password', 'كلمة المرور')}</span><input type="password" autoComplete={mode === 'signup' ? 'new-password' : 'current-password'} enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       {mode === 'signup' && <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>}
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : mode === 'signup' ? t('Create account', 'إنشاء حساب') : t('Sign in', 'تسجيل الدخول')}</button>
@@ -2766,14 +2874,14 @@ function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boole
     </div>}
     {mode === 'forgot' && session.passwordResetAvailable && <form data-testid="forgot-password-form" onSubmit={(event) => void submitForgotPassword(event)}>
       <p className="settings-note">{t('Enter your email and we’ll send you a link to reset your password.', 'أدخل بريدك الإلكتروني وسنرسل لك رابطاً لإعادة تعيين كلمة المرور.')}</p>
-      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
+      <label className="form-field"><span>{t('Email', 'البريد الإلكتروني')}</span><input type="email" autoComplete="email" enterKeyHint="next" value={email} onChange={(event) => setEmail(event.target.value)} required /></label>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}
       <button className="approved-button primary wide" type="submit" disabled={busy}>{busy ? t('Please wait…', 'يرجى الانتظار…') : t('Send reset link', 'إرسال رابط إعادة التعيين')}</button>
       <div className="auth-links"><button type="button" className="auth-link" onClick={() => { setMode('signin'); setError(''); setNotice(''); }}>{t('Back to sign in', 'العودة لتسجيل الدخول')}</button></div>
     </form>}
     {mode === 'reset' && <form onSubmit={(event) => void submitReset(event)}>
-      <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
+      <label className="form-field"><span>{t('New password', 'كلمة مرور جديدة')}</span><input type="password" autoComplete="new-password" enterKeyHint="go" value={password} onChange={(event) => setPassword(event.target.value)} minLength={8} required /></label>
       <p className="settings-note">{t('At least 8 characters.', 'ثماني أحرف على الأقل.')}</p>
       {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
       {notice && <p className="settings-note" role="status">{notice}</p>}
@@ -3678,6 +3786,15 @@ function buildKinDayDirectionsUrl(places: KinTravelPlace[]): string | null {
 function KinTravelDayRoute({ places, ar }: { places: KinTravelPlace[]; ar: boolean }) {
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const dayUrl = buildKinDayDirectionsUrl(places);
+  const [shareNotice, setShareNotice] = useState('');
+  // Share the day as plain text (numbered stops, addresses) plus the Google
+  // Maps directions link, through the native sheet in the shell.
+  const sharePlan = async () => {
+    const lines = places.map((place, index) => `${index + 1}. ${place.name}${place.formattedAddress ? ` — ${place.formattedAddress}` : ''}`);
+    const outcome = await shareWithFallback({ title: t('Trip plan · TASTEKIN', 'خطة الرحلة · TASTEKIN'), text: `${t('Trip plan', 'خطة الرحلة')} · TASTEKIN\n${lines.join('\n')}`, url: dayUrl || undefined });
+    setShareNotice(outcome === 'copied' ? t('Plan copied', 'تم نسخ الخطة') : outcome === 'failed' ? t('Could not share this plan.', 'تعذرت مشاركة الخطة.') : '');
+    if (outcome !== 'shared') window.setTimeout(() => setShareNotice(''), 2500);
+  };
   return <div className="kin-route" data-testid="kin-travel-route">
     <ol className="kin-route-list">
       {places.map((place, index) => {
@@ -3694,6 +3811,8 @@ function KinTravelDayRoute({ places, ar }: { places: KinTravelPlace[]; ar: boole
       })}
     </ol>
     {dayUrl && <a className="approved-button primary wide" data-testid="kin-route-open-day" href={dayUrl} target="_blank" rel="noopener noreferrer">{t('Open day in Google Maps', 'فتح يوم الرحلة في خرائط Google')}</a>}
+    {places.length > 0 && <button type="button" className="approved-button wide" data-testid="kin-route-share-day" onClick={() => void sharePlan()}><Share2 size={16} /> {t('Share this plan', 'مشاركة هذه الخطة')}</button>}
+    {shareNotice && <p className="settings-note" role="status" aria-live="polite" data-testid="kin-route-share-notice">{shareNotice}</p>}
   </div>;
 }
 
@@ -4561,7 +4680,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         <p className="settings-note kin-text-input-label">{t("Or describe what you're looking for…", 'أو صف ما تبحث عنه…')}</p>
         <div className="kin-text-input">
            <Pencil size={18} color="var(--tk-stone)" />
-           <input type="text" data-testid="kin-query" aria-label={t("Or describe what you're looking for", 'أو صف ما تبحث عنه')} placeholder={t('Black trousers to match my cream shirt', 'بنطال أسود يناسب قميصي الكريمي')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
+           <input type="text" enterKeyHint="search" data-testid="kin-query" aria-label={t("Or describe what you're looking for", 'أو صف ما تبحث عنه')} placeholder={t('Black trousers to match my cream shirt', 'بنطال أسود يناسب قميصي الكريمي')} value={query} onChange={e => setQuery(e.target.value.slice(0, 2000))} />
         </div>
 
         <span className="kin-occasion-label">{t("What's the occasion?", 'ما المناسبة؟')}</span>
@@ -4576,7 +4695,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         ) : (
           <div className="kin-budget-row" data-testid="kin-preferences">
             <label className="form-field"><span>{t('Budget', 'الميزانية')}</span><input data-testid="kin-budget" type="number" min="0" value={budget} onChange={(event) => setBudget(event.target.value)} /></label>
-            <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
+            <label className="form-field"><span>{t('Currency', 'العملة')}</span><input data-testid="kin-currency" type="text" enterKeyHint="done" value={currency} onChange={(event) => setCurrency(event.target.value.toUpperCase().slice(0, 3))} /></label>
             <button type="button" className="approved-icon" data-testid="kin-remove-budget" aria-label={t('Remove budget', 'إزالة الميزانية')} onClick={() => { setBudgetOpen(false); setBudget(''); }}><X size={14} /></button>
           </div>
         )}
@@ -4594,7 +4713,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         <p className="kin-step-subline">{t('Tell KIN where and when.', 'أخبر KIN أين ومتى')}</p>
         <p className="kin-step-progress">{t('1 of 2', '1 من 2')}</p>
         <label className="form-field"><span>{t('Destination', 'الوجهة')}</span>
-          <input data-testid="kin-destination" type="text" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))}
+          <input data-testid="kin-destination" type="text" enterKeyHint="done" value={destination} onChange={(event) => setDestination(event.target.value.slice(0, 200))}
             placeholder={t('Search a city or place', 'ابحث عن مدينة أو مكان')} />
         </label>
         <div className="kin-date-row">
@@ -4864,7 +4983,7 @@ function MyThingsScreen({ ar, onAdd, onEdit, onUnavailable, onStyleWithKin }: { 
 
     {tabItems.length > MY_THINGS_SEARCH_VISIBLE_THRESHOLD && <label className="approved-search" data-testid="my-things-search">
       <Search size={14} />
-      <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في قطعك')} aria-label={t('Search your items', 'ابحث في قطعك')} data-testid="my-things-search-input" />
+      <input type="search" enterKeyHint="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('Search your items', 'ابحث في قطعك')} aria-label={t('Search your items', 'ابحث في قطعك')} data-testid="my-things-search-input" />
     </label>}
 
     <div className="my-things-category-row" data-testid="my-things-categories">
@@ -5315,7 +5434,7 @@ function EditClosetItemScreen({ ar, item, onDone, onUnavailable }: { ar: boolean
       <ClosetChoiceField label={t('Style', 'الطراز')} options={CLOSET_STYLES} value={style} onSelect={(next) => setStyle(next === style ? '' : next)} disabled={saving} />
       <ClosetChoiceField label={t('Occasion', 'المناسبة')} options={CLOSET_OCCASIONS} value={occasion} onSelect={(next) => setOccasion(next === occasion ? '' : next)} disabled={saving} />
       <ClosetChoiceField label={t('Season', 'الموسم')} options={CLOSET_SEASONS} value={season} onSelect={(next) => setSeason(next === season ? '' : next)} disabled={saving} />
-      <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={saving} placeholder={t('Optional', 'اختياري')} /></label>
+      <label className="form-field"><span>{t('Brand', 'العلامة التجارية')}</span><input type="text" enterKeyHint="done" value={brand} onChange={(event) => setBrand(event.target.value.slice(0, CLOSET_MAX_BRAND_LENGTH))} disabled={saving} placeholder={t('Optional', 'اختياري')} /></label>
     </div></details>
 
     {submitError && <p className="workspace-notice" role="alert" data-testid="my-things-edit-error">{submitError}</p>}
@@ -5332,6 +5451,14 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const myCircleEnabled = session.featureFlags.my_circle === true;
   const [sealOpen, setSealOpen] = useState(false);
+  const [shareNotice, setShareNotice] = useState('');
+  // "Share profile": a public /creators/:username link (App.tsx opens it as
+  // a nested profile screen) through the native sheet in the shell.
+  const shareProfile = async () => {
+    const outcome = await shareWithFallback({ title: `${profile.displayName || profile.username} · TASTEKIN`, text: profile.bio || '', url: `${publicWebOrigin()}/creators/${encodeURIComponent(profile.username)}` });
+    setShareNotice(outcome === 'copied' ? t('Link copied', 'تم نسخ الرابط') : outcome === 'failed' ? t('Could not share this profile.', 'تعذرت مشاركة الملف الشخصي.') : '');
+    if (outcome !== 'shared') window.setTimeout(() => setShareNotice(''), 2500);
+  };
   // This Profile presentation — the Edits grid and the Featured collections
   // strip alike — shows published Edits only, for owner and visitor alike.
   const publishedEdits = useMemo(() => edits.filter((edit) => edit.status === 'published'), [edits]);
@@ -5385,6 +5512,7 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
   }
 
   return <section className="creator-profile creator-profile-travel">
+    {shareNotice && <div className="saved-confirmation" role="status" aria-live="polite" data-testid="profile-share-notice">{shareNotice}</div>}
     <div className="profile-cover" data-testid="profile-cover">
       {profile.coverImage ? <MediaImage src={apiUrl(profile.coverImage)} alt="" /> : <div className="profile-cover-fallback" aria-hidden="true" />}
       {ownerView && <label className="profile-cover-edit" aria-label={t('Change cover photo', 'تغيير صورة الغلاف')} data-testid="profile-cover-edit">
@@ -5463,12 +5591,12 @@ function Profile({ ar, owner, ownerView, visitorPreview, following, inCircle, ci
       {ownerView ? <>
         <button className="approved-button primary profile-follow-button profile-edit-button" onClick={onEditProfile}>{ar ? 'تعديل الملف' : 'Edit profile'}</button>
         <button className="approved-button profile-message-button profile-insights-button" type="button" onClick={onInsights}><BarChart3 aria-hidden="true" size={16} /><span>{ar ? 'الإحصاءات' : 'Insights'}</span></button>
-        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} onManageCollections={onManageCollections} onManageEdits={onManageEdits} showReport={false} />
+        <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onViewPublicProfile={onViewAsVisitor} onManageCollections={onManageCollections} onManageEdits={onManageEdits} onShare={() => void shareProfile()} showReport={false} />
       </> : <>
         <button data-testid="profile-follow-action" className="approved-button primary profile-follow-button" onClick={onFollow} disabled={visitorPreview} aria-label={following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}>{following ? (ar ? 'تتابع' : 'Following') : (ar ? 'متابعة' : 'Follow')}</button>
         {onMessage && <button data-testid="profile-message-action" className="approved-button profile-message-button" type="button" onClick={onMessage} disabled={visitorPreview} aria-label={ar ? 'مراسلة' : 'Message'}>{ar ? 'مراسلة' : 'Message'}</button>}
         {myCircleEnabled && !owner && profile.verified && <button data-testid="profile-circle-action" className={`profile-circle-icon-button ${inCircle ? 'active' : ''}`} type="button" onClick={onToggleCircle} disabled={circleBusy} aria-pressed={inCircle} aria-label={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')} title={inCircle ? (ar ? 'في دائرتي' : 'In My Circle') : (ar ? 'أضف إلى دائرتي' : 'Add to My Circle')}>{inCircle ? <Check data-testid="circle-active-check" aria-hidden="true" /> : <Sparkles aria-hidden="true" size={18} />}</button>}
-        {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
+        {!visitorPreview && <ReportMenu ar={ar} targetType="profile" targetId={profile.username} onSignIn={onSignIn} onShare={() => void shareProfile()} label={ar ? 'الإبلاغ عن هذا الحساب' : 'Report this profile'} blockUsername={profile.username} onBlocked={onBlocked} muteUsername={profile.username} />}
       </>}
     </div>
     {!ownerView && circleNotice && <div className="workspace-notice" role="alert" data-testid="profile-circle-notice">{circleNotice}</div>}
@@ -5762,7 +5890,7 @@ function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenCom
       <small className="form-field-hint">{t('Instagram, portfolio, website, or press.', 'إنستغرام، ملف أعمال، موقع إلكتروني، أو تغطية إعلامية.')}</small>
       {links.map((link, index) => (
         <div className="verification-link-row" key={index}>
-          <input type="url" inputMode="url" data-testid="verification-link-input" value={link} onChange={(event) => updateLink(index, event.target.value)} placeholder="https://…" disabled={disabled} />
+          <input type="url" inputMode="url" enterKeyHint="done" data-testid="verification-link-input" value={link} onChange={(event) => updateLink(index, event.target.value)} placeholder="https://…" disabled={disabled} />
           {links.length > 1 && <button type="button" className="verification-link-remove" aria-label={t('Remove link', 'إزالة الرابط')} onClick={() => removeLink(index)} disabled={disabled}><X size={14} /></button>}
         </div>
       ))}

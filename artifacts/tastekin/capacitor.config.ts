@@ -22,6 +22,9 @@ const config: CapacitorConfig = {
     // env(safe-area-inset-*), so let the WebView extend under the status bar.
     contentInset: 'never',
     backgroundColor: '#F5F1E9',
+    // No Safari-style link preview on long-press: links either open in the
+    // in-app browser or the Maps app (src/native.ts), never as a web peek.
+    allowsLinkPreview: false,
   },
   android: {
     backgroundColor: '#F5F1E9',
