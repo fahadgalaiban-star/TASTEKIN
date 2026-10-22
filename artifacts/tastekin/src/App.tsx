@@ -918,7 +918,7 @@ function TastekinApp() {
     if (workspaceState === 'syncing') return;
     const leavingCreatorFlow = (screen === 'composer' || screen === 'creatorPreview') && next !== 'composer' && next !== 'creatorPreview';
     if (leavingCreatorFlow && pendingMediaPaths.length) { pendingMediaIsDiscardable.current = false; void cleanupCreatorMedia(pendingMediaPaths); setPendingMediaPaths([]); }
-    if (leavingCreatorFlow) discardPendingCrop();
+    if (leavingCreatorFlow) { discardPendingCrop(); videoUpload.discardUncommitted(); }
     if (!['profile', 'profileEdit', 'collection', 'collections'].includes(next)) { setVisitorPreview(false); setProfileVisitorMode(false); }
     // A transition driven by history.back()/forward() (see the popstate
     // listener below) must never itself push or replace another entry —
@@ -6025,6 +6025,20 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
 
   const markCommitted = useCallback(() => { committedRef.current = true; setState((prev) => ({ ...prev, committed: true })); }, []);
 
+  // Leaving the composer (Back arrow, swipe-back, tab switch, popstate)
+  // with a video that was uploaded but never saved into an Edit: cancel it
+  // server-side right away. The pagehide beacon below only runs when the
+  // page unloads, which in-app navigation never does, so without this an
+  // abandoned upload — e.g. after a rejected publish — stayed on Bunny
+  // until the recovery sweep. A hydrated or committed video is left alone.
+  const discardUncommitted = useCallback(() => {
+    if (committedRef.current) return;
+    const uploadId = stateRef.current.video?.uploadId;
+    stopEverything();
+    if (uploadId) void fetch(`/api/video-uploads/${encodeURIComponent(uploadId)}/cancel`, { method: 'POST', credentials: 'include', keepalive: true }).catch(() => undefined);
+    reset();
+  }, [reset]);
+
   useEffect(() => () => stopEverything(), []);
 
   // Best-effort cleanup only while bytes are still actively uploading.
@@ -6044,7 +6058,7 @@ function useVideoUpload(ar: boolean, onAttach: (video: CreatorEditVideo) => void
     return () => window.removeEventListener('pagehide', onPageHide);
   }, []);
 
-  return { state, select, cancel, reset, hydrate, markCommitted, retry };
+  return { state, select, cancel, reset, hydrate, markCommitted, retry, discardUncommitted };
 }
 
 /**
