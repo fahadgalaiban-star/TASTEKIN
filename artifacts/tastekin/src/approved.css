@@ -38,8 +38,61 @@ button { font:inherit; cursor:pointer; }
 .approved-shell { width:min(100%,440px); min-height:100dvh; margin:auto; padding:14px 16px 98px; }
 /* Native shell only (class set by src/native.ts): the WebView extends under
    the status bar / notch, so keep the top bar and content out of it. */
-html.native-app .approved-shell { padding-top:max(14px, env(safe-area-inset-top)); padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); }
+html.native-app .approved-shell { padding-top:max(14px, env(safe-area-inset-top)); padding-left:max(16px, env(safe-area-inset-left)); padding-right:max(16px, env(safe-area-inset-right)); padding-bottom:calc(98px + env(safe-area-inset-bottom)); }
 html.native-app body { overscroll-behavior-y:none; -webkit-tap-highlight-color:transparent; }
+/* Native shell: no web-page behaviours on UI chrome — no text selection or
+   long-press callout on buttons, labels, tiles and bars, no image/link drag,
+   no font inflation when the device rotates, no double-tap zoom on controls.
+   Text a member may want to copy stays selectable: post captions, comments,
+   messages, bios, the legal documents, and every input. Inner scrollers keep
+   their overscroll to themselves instead of bouncing the whole page. */
+html.native-app { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+html.native-app body { -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+html.native-app img, html.native-app a { -webkit-user-drag:none; }
+html.native-app .edit-detail-text, html.native-app .comment-list, html.native-app .conversation-thread, html.native-app .profile-bio, html.native-app .legal-doc,
+html.native-app input, html.native-app textarea, html.native-app [contenteditable] { -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; }
+html.native-app button, html.native-app [role="button"], html.native-app .approved-bottom { touch-action:manipulation; }
+html.native-app .collection-picker-list, html.native-app .conversation-thread, html.native-app .closet-editor-sheet, html.native-app .kin-stay-sheet-body { overscroll-behavior:contain; }
+/* Native shell: screen transitions. The screen wrapper (.screen-view, keyed
+   by screen in App.tsx) mounts fresh on every navigation; a push slides in
+   from the trailing edge, a pop from the leading edge, and tab switches
+   just appear. During an edge swipe-back (src/lib/swipe-back.ts) the
+   wrapper follows the finger, then settles. Web: no animation at all. */
+html.native-app .screen-view { will-change:transform; }
+html.native-app .screen-view-forward { animation:tk-screen-forward 220ms cubic-bezier(.2,.8,.2,1); }
+html.native-app .screen-view-back { animation:tk-screen-back 220ms cubic-bezier(.2,.8,.2,1); }
+html.native-app .screen-view-dragging { animation:none; transition:none; }
+html.native-app .screen-view-settling { animation:none; transition:transform 180ms cubic-bezier(.2,.8,.2,1); }
+@keyframes tk-screen-forward { from { transform:translateX(28px); opacity:.55; } to { transform:none; opacity:1; } }
+@keyframes tk-screen-back { from { transform:translateX(-18px); opacity:.55; } to { transform:none; opacity:1; } }
+html.native-app [dir="rtl"] .screen-view-forward { animation-name:tk-screen-forward-rtl; }
+html.native-app [dir="rtl"] .screen-view-back { animation-name:tk-screen-back-rtl; }
+@keyframes tk-screen-forward-rtl { from { transform:translateX(-28px); opacity:.55; } to { transform:none; opacity:1; } }
+@keyframes tk-screen-back-rtl { from { transform:translateX(18px); opacity:.55; } to { transform:none; opacity:1; } }
+@media (prefers-reduced-motion: reduce) { html.native-app .screen-view-forward, html.native-app .screen-view-back { animation:none; } html.native-app .screen-view-settling { transition:none; } }
+/* Native shell: pull-to-refresh indicator (src/lib/pull-to-refresh.ts). A
+   small disc that drops in under the top bar as the finger pulls, with the
+   arrow turning as the threshold nears; it spins while the refresh runs. */
+.ptr-indicator { position:fixed; z-index:9; top:calc(env(safe-area-inset-top) + 58px); left:50%; width:36px; height:36px; margin-left:-18px; display:grid; place-items:center; border-radius:50%; background:var(--tk-card); color:var(--tk-wine); box-shadow:0 4px 14px rgba(23,20,22,.14); opacity:0; transform:translateY(-48px) scale(.6); transition:opacity 120ms ease, transform 160ms cubic-bezier(.2,.8,.2,1); pointer-events:none; }
+.ptr-indicator[data-state="pulling"] { opacity:1; transition:opacity 120ms ease; transform:translateY(calc(var(--ptr-distance, 0px) - 48px)) scale(calc(.6 + .4 * var(--ptr-progress, 0))); }
+.ptr-indicator[data-state="pulling"] svg { transform:rotate(calc(180deg * var(--ptr-progress, 0))); transition:transform 80ms linear; }
+.ptr-indicator[data-state="pulling"][data-armed="true"] { color:var(--tk-ink); }
+.ptr-indicator[data-state="refreshing"] { opacity:1; transform:translateY(6px) scale(1); }
+.ptr-indicator[data-state="refreshing"] svg { animation:tk-ptr-spin 900ms linear infinite; }
+@keyframes tk-ptr-spin { to { transform:rotate(360deg); } }
+/* Native shell: connectivity (src/lib/network-status.ts). The banner sits
+   under the top bar while offline with content already on screen; the
+   full offline screen replaces the app only when nothing has loaded yet. */
+.offline-banner { display:flex; align-items:center; gap:8px; margin:0 0 12px; padding:9px 11px; border:1px solid var(--tk-border); border-radius:12px; background:var(--tk-card); color:var(--tk-stone); font-size:11px; font-weight:700; line-height:1.4; }
+.offline-banner svg { flex:0 0 auto; }
+.offline-screen { display:grid; justify-items:center; gap:14px; padding:48px 16px; text-align:center; }
+.offline-screen svg { color:var(--tk-stone); }
+.offline-screen p { margin:0; color:var(--tk-text-secondary); font-size:14px; line-height:1.5; max-width:30ch; }
+/* Native shell: while the keyboard is up (html.keyboard-open, set by
+   src/native.ts) the bottom tab bar hides instead of floating above the
+   keys, and the shell gives its bottom padding back to the content. */
+html.native-app.keyboard-open .approved-bottom { display:none; }
+html.native-app.keyboard-open .approved-shell { padding-bottom:16px; }
 .approved-topbar { position:relative; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .approved-logo { position:absolute; left:50%; width:115px; max-height:32px; object-fit:contain; transform:translateX(-50%); }
 .approved-topbar-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }

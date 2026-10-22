@@ -17,9 +17,13 @@
 // Keychain / Android Keystore via @aparajita/capacitor-secure-storage and sent
 // as `Authorization: Bearer` on every API call. See docs/MOBILE.md.
 import { App as CapacitorApp } from '@capacitor/app';
+import { Browser } from '@capacitor/browser';
 import { Capacitor } from '@capacitor/core';
+import { Keyboard } from '@capacitor/keyboard';
+import { Share } from '@capacitor/share';
 import { SplashScreen } from '@capacitor/splash-screen';
 import { StatusBar, Style } from '@capacitor/status-bar';
+import { classifyExternalLink } from './lib/external-links';
 import { packagedMediaUrl } from './lib/packaged-media-url';
 import { KeychainAccess, SecureStorage } from '@aparajita/capacitor-secure-storage';
 import { setAuthTokenGetter, setBaseUrl } from '@workspace/api-client-react';
@@ -209,6 +213,122 @@ function installFetchRewrite(): void {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Sharing
+// ---------------------------------------------------------------------------
+
+/**
+ * The origin a shared link should point at. In the browser that is the page
+ * itself; in the shell the page origin is capacitor://localhost, which no
+ * recipient can open, so links point at the remote web/API origin instead.
+ */
+export function publicWebOrigin(): string {
+  return isNativeApp && API_BASE_URL ? API_BASE_URL : window.location.origin;
+}
+
+export type ShareData = { title: string; text?: string; url?: string };
+
+/**
+ * Native share sheet (UIActivityViewController / Android chooser). Resolves
+ * true when the sheet was shown — including when the user then dismissed
+ * it, which must not trigger a clipboard fallback — and false only when
+ * sharing is not available at all, so callers can fall back to the web
+ * path. Always false in the browser.
+ */
+export async function nativeShare(data: ShareData): Promise<boolean> {
+  if (!isNativeApp) return false;
+  try {
+    await Share.share({ title: data.title, text: data.text || undefined, url: data.url, dialogTitle: data.title });
+    return true;
+  } catch (error) {
+    const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: unknown }).code) : '';
+    if (code === 'UNIMPLEMENTED' || code === 'UNAVAILABLE') return false;
+    return true; // cancelled by the user: handled
+  }
+}
+
+// ---------------------------------------------------------------------------
+// External links
+// ---------------------------------------------------------------------------
+
+/** Origins that count as "the app itself" for link handling in the shell. */
+function ownOrigins(): string[] {
+  return API_BASE_URL ? [window.location.origin, API_BASE_URL] : [window.location.origin];
+}
+
+/**
+ * Opens ordinary web links in the in-app browser (SFSafariViewController on
+ * iOS, Custom Tabs on Android) instead of Capacitor's default for
+ * `target="_blank"`, which hands the URL to the OS and leaves the app.
+ * Maps links and non-web schemes keep the system behaviour on purpose (see
+ * src/lib/external-links.ts). One capture-phase listener covers every
+ * anchor in the app, present and future, with no per-call-site changes.
+ */
+function installExternalLinkHandler(): void {
+  document.addEventListener('click', (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target?.closest('a[href]');
+    if (!(anchor instanceof HTMLAnchorElement)) return;
+    if (classifyExternalLink(anchor.getAttribute('href') ?? '', ownOrigins()) !== 'in-app-browser') return;
+    event.preventDefault();
+    void Browser.open({ url: anchor.href, toolbarColor: '#F5F1E9' }).catch((error: unknown) => {
+      // The plugin is unavailable only on a build without it; fall back to
+      // the OS so the tap still does something rather than nothing.
+      console.error('[tastekin-native] in-app browser unavailable; opening externally', error);
+      window.open(anchor.href, '_blank', 'noopener');
+    });
+  }, true);
+}
+
+// ---------------------------------------------------------------------------
+// Keyboard
+// ---------------------------------------------------------------------------
+
+/**
+ * Keyboard behaviour that a web page in a WebView does not get for free:
+ * the focused field is scrolled into view once the keyboard is up (the
+ * `resize: body` config shrinks the viewport but does not move the field),
+ * the bottom tab bar hides while typing (html.keyboard-open, see
+ * approved.css) instead of floating above the keyboard, the Done/Return key
+ * dismisses single-line fields that have nothing to submit, and the
+ * accessory bar (previous / next / Done) stays available for everything else.
+ */
+async function configureNativeKeyboard(): Promise<void> {
+  const root = document.documentElement;
+  try { await Keyboard.setAccessoryBarVisible({ isVisible: true }); } catch { /* not supported on this platform build */ }
+  try {
+    await Keyboard.addListener('keyboardWillShow', (info) => {
+      root.classList.add('keyboard-open');
+      root.style.setProperty('--keyboard-height', `${info.keyboardHeight}px`);
+    });
+    await Keyboard.addListener('keyboardDidShow', () => {
+      const active = document.activeElement;
+      if (active instanceof HTMLElement && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.isContentEditable)) {
+        // Two frames: let the body resize settle before measuring.
+        requestAnimationFrame(() => requestAnimationFrame(() => active.scrollIntoView({ block: 'center', behavior: 'smooth' })));
+      }
+    });
+    await Keyboard.addListener('keyboardWillHide', () => {
+      root.classList.remove('keyboard-open');
+      root.style.removeProperty('--keyboard-height');
+    });
+  } catch { /* plugin unavailable */ }
+  // Return on a single-line field that is not inside a form, or that asks
+  // for "done", simply closes the keyboard — the web default is to do nothing.
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    const target = event.target;
+    if (!(target instanceof HTMLInputElement)) return;
+    const hint = target.enterKeyHint || target.getAttribute('enterkeyhint') || '';
+    if (hint === 'done' || (!target.form && hint !== 'send')) {
+      event.preventDefault();
+      target.blur();
+      void Keyboard.hide().catch(() => {});
+    }
+  });
+}
+
 async function configureNativeChrome(): Promise<void> {
   // Warm Ivory canvas → dark status-bar glyphs (Style.Light = light background).
   try { await StatusBar.setStyle({ style: Style.Light }); } catch { /* plugin unavailable on this platform build */ }
@@ -241,10 +361,12 @@ export function initNativeShell(): void {
   }
   tokenReady = loadStoredToken();
   installFetchRewrite();
+  installExternalLinkHandler();
   setBaseUrl(API_BASE_URL || null);
   setAuthTokenGetter(async () => { await tokenReady; return memoryToken; });
   document.documentElement.classList.add('native-app', `native-${nativePlatform}`);
   void configureNativeChrome();
+  void configureNativeKeyboard();
 }
 
 /** Hides the launch splash once the web app has painted its first frame. */
