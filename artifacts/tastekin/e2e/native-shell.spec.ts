@@ -120,7 +120,9 @@ test.describe('native shell', () => {
     await expect(page.locator('html')).not.toHaveClass(/native-app/);
     await page.getByTestId('open-settings-topbar').click();
     await page.getByRole('button', { name: 'Sign in' }).first().click();
-    await expect(page.getByRole('button', { name: 'Continue with Replit' })).toBeVisible();
+    // Web mode shows the email/password form; "Continue with Replit" is
+    // behind the replit_sign_in flag (off by default) and not asserted here.
+    await expect(page.getByLabel('Email')).toBeVisible();
   });
 
   test('simulated shell: /api and media go to VITE_API_BASE_URL, no cookies, provider buttons hidden', async ({ page, context }) => {

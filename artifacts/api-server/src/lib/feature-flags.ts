@@ -24,6 +24,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: true,
   },
   {
+    key: "replit_sign_in",
+    description: "Show the 'Continue with Replit' button on the public website's sign-in/sign-up screen. Off by default: regular members use email/password (and Google when enabled). The /api/login route itself stays available by direct URL for operator and admin access regardless of this flag.",
+    defaultEnabled: false,
+  },
+  {
     key: "notification_preferences",
     description: "Show and allow the push/email notification preference controls in Settings. Disabled by default while no push or email delivery exists, so members are not offered switches that do nothing; stored preferences are left untouched and changes to them are rejected server-side until an admin enables the flag.",
     defaultEnabled: false,
