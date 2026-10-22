@@ -1,0 +1,78 @@
+# Deletes remote branches that are proven merged into main, nothing else.
+# Manual trigger only, dry run by default: Actions → "Branch cleanup" →
+# Run workflow, read the log, then run again with dry_run = false.
+#
+# A branch is deleted only when BOTH hold:
+#   - it is not main, not protected below, and not the head of an OPEN pull
+#     request; and
+#   - its tip is an ancestor of main, OR a pull request from it was MERGED
+#     (covers branches whose history was rewritten when main was rebuilt
+#     from Replit snapshots, so their tips are no longer ancestors).
+# Everything else is listed as "kept" with the reason. Branches named in
+# PROTECTED are never touched even if they look merged.
+name: Branch cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Only list what would be deleted'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: read
+
+concurrency:
+  group: branch-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      DRY_RUN: ${{ inputs.dry_run }}
+      PROTECTED: 'main backup/replit-snapshot-2026-10-01 replit-work fix/dev-video-upload-workflow claude/update-session-state-pr36'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Classify and delete merged branches
+        run: |
+          set -euo pipefail
+          repo="${{ github.repository }}"
+          open_heads="$(gh pr list --repo "$repo" --state open --limit 200 --json headRefName --jq '.[].headRefName')"
+          deleted=0; kept=0
+          for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origin/ | grep -v '^origin/HEAD$'); do
+            b="${ref#origin/}"
+            reason=""
+            for p in $PROTECTED; do [ "$b" = "$p" ] && reason="protected"; done
+            if [ -z "$reason" ] && printf '%s\n' "$open_heads" | grep -qx "$b"; then reason="head of an open PR"; fi
+            if [ -z "$reason" ]; then
+              if git merge-base --is-ancestor "$ref" origin/main; then
+                verdict="merged (ancestor of main)"
+              else
+                merged_pr="$(gh pr list --repo "$repo" --state merged --head "$b" --limit 1 --json number --jq '.[0].number // empty')"
+                if [ -n "$merged_pr" ]; then verdict="merged (PR #$merged_pr)"; else reason="no merged PR and not an ancestor of main"; fi
+              fi
+            fi
+            if [ -n "$reason" ]; then
+              echo "KEEP    $b — $reason"; kept=$((kept+1)); continue
+            fi
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "WOULD DELETE $b — $verdict"
+            else
+              git push origin --delete "$b" >/dev/null && echo "DELETED $b — $verdict"
+            fi
+            deleted=$((deleted+1))
+          done
+          {
+            echo "## Branch cleanup ($([ "$DRY_RUN" = "true" ] && echo dry run || echo executed))"
+            echo ""
+            echo "- Branches deleted (or listed for deletion): $deleted"
+            echo "- Branches kept: $kept"
+            echo ""
+            echo "See the job log for every branch and its reason."
+          } >> "$GITHUB_STEP_SUMMARY"
