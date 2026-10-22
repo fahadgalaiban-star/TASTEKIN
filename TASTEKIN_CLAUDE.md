@@ -45,14 +45,14 @@ No step is optional. No step runs out of order.
 1. **Branch + PR.** Claude Code commits to a named branch and opens a PR. Never commit directly to `main`.
 2. **Founder merges the PR on GitHub.**
 3. **Sync Replit:** `git fetch origin main` then `git merge origin/main`. Verify the remote first with `git remote -v` — the Replit↔GitHub remote breaks silently and often.
-4. **Schema changes:** apply migrations to production before the merge is published when tables are net-new. See §4.
+4. **Schema changes:** make sure the Development database already has the new schema (the post-merge `drizzle-kit push` does this), then read the schema diff the Publishing panel shows and approve it. Publishing is what changes production's schema. See §4.
 5. **Republish** from the Replit Publishing panel. Pull ≠ Republish. The live site does not change until Republish completes.
 6. **Verify on the live URL** before starting anything else.
 7. **Update `SESSION_STATE.md`** (see the session-state skill).
 
 ### Known failure patterns — check these before debugging anything else
 
-- `lib/db/migrations/` files are not auto-applied by the app's original setup.
+- `lib/db/migrations/` files are never applied to production by anything: Publishing applies a dev→prod schema diff instead (§4).
 - Replit **Deployment Secrets** and **Workspace Secrets** are separate stores. Setting one does not set the other.
 - When Claude Code pushes to an already-merged branch, GitHub creates a new PR instead of updating `main`.
 - After a merge, reset the Replit workspace with `git reset --hard origin/main` to discard stale Replit-generated commits. Prefer `reset --hard` over `merge` when syncing after a PR — merging while the workspace sits on an old branch produces conflicts that have to be aborted.
@@ -63,9 +63,11 @@ No step is optional. No step runs out of order.
 
 ## 4. Database rules
 
+- **How production schema changes happen (confirmed by Replit Support):** Publishing compares the Development database schema with the Production database schema and applies the difference. It does **not** run the files in `lib/db/migrations/` and does **not** write Drizzle's ledger (`drizzle.__drizzle_migrations`). The official workflow is therefore: apply the schema change to Development (`drizzle-kit push` via `scripts/post-merge.sh`, or `pnpm --filter @workspace/db run push`) → open the Publishing panel → read the schema diff it proposes → approve and publish. Full detail: `docs/DATABASE-SCHEMA-WORKFLOW.md`.
+- **The production ledger mismatch is expected and must not be "fixed".** The ledger stops at 0022 while the schema is current; that is the normal state under this workflow. Do not delete, renumber or replay migration files to make the ledger match, do not run `drizzle-kit migrate` / `pnpm --filter @workspace/db run migrate` against production, and do not add a migration runner to the build or to boot (it would apply changes a second time). `RUN_MIGRATIONS_ON_BOOT=true` in `.replit` is inert (the boot runner was removed) and is left as is.
+- `lib/db/migrations/*.sql` stay as the reviewed, hand-authored record of each schema change and are used to build disposable databases for the verify scripts. Every schema change still gets a migration file plus the Drizzle schema change in `lib/db/src/schema/`; the file documents and tests the change, Publishing ships it.
 - Do not run `drizzle-kit generate`. There is a known snapshot/history gap (documented in PR #25). Migrations are hand-authored, minimal SQL.
-- `RUN_MIGRATIONS_ON_BOOT=true` must be set as a **Deployment** environment variable so migrations apply on each boot/republish.
-- Replit's Publishing panel validates migration SQL before publish. If it shows "Database migrations validated successfully", read the SQL, confirm it matches the intended change, then Approve and publish.
+- Before approving a Publish diff, check it against the migration file: only the intended additive statements (CREATE TABLE / ADD COLUMN / CREATE INDEX / ADD CONSTRAINT). Stop and investigate if it proposes a DROP, a type change or anything you did not write. Two harmless items reappear in every diff (a truncated FK name on `my_circle_memberships` and a `profile` default) and can be approved.
 - Every new table gets: `owner_user_id` FK to `users(id)` `ON DELETE cascade`, a `created_at timestamptz DEFAULT now() NOT NULL`, and an index on `(owner_user_id, created_at)`.
 - Neon SQL console is reachable on iPhone in landscape mode — use it for read-only verification, not for schema changes.
 
