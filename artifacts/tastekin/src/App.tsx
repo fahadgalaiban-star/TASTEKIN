@@ -18,6 +18,7 @@ import { mapsHref, parseCoordinates } from './maps-link';
 import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
 import { MediaImage } from './components/MediaImage';
 import { editTextForSave, fullEditCaption } from './lib/edit-text';
+import { useSwipeBack } from './lib/swipe-back';
 import './approved.css';
 
 const queryClient = new QueryClient();
@@ -452,6 +453,11 @@ function TastekinApp() {
   // already popped to — history itself is the source of truth for that
   // transition, so go() must not push or replace another entry on top of it.
   const isRestoringFromHistoryRef = useRef(false);
+  // Direction of the most recent navigation, read by the screen wrapper's
+  // mount animation in the native shell: a push slides in from the trailing
+  // edge, a pop from the leading edge, a root-tab switch just appears.
+  const navDirectionRef = useRef<'forward' | 'back' | 'none'>('none');
+  const screenViewRef = useRef<HTMLDivElement | null>(null);
   // Where AuthScreen returns after a successful sign-in. Only the public
   // account-deletion page sets this (so a Google Play visitor lands back on
   // it after signing in); everything else keeps the existing Home landing.
@@ -918,8 +924,8 @@ function TastekinApp() {
     // Back gesture and the on-screen arrow (which calls history.back())
     // always land on the real previous screen.
     if (!isRestoringFromHistoryRef.current && next !== screen) {
-      if (ROOT_SCREENS.includes(next)) window.history.replaceState({ screen: next }, '');
-      else window.history.pushState({ screen: next }, '');
+      if (ROOT_SCREENS.includes(next)) { window.history.replaceState({ screen: next }, ''); navDirectionRef.current = 'none'; }
+      else { window.history.pushState({ screen: next }, ''); navDirectionRef.current = 'forward'; }
     }
     setScreen(next);
   };
@@ -1292,7 +1298,10 @@ function TastekinApp() {
   // The on-screen arrow and the OS/browser Back gesture are the same
   // navigation path: both ultimately move the browser's own history
   // position, which is what the popstate listener below reacts to.
-  const goBack = () => { window.history.back(); };
+  const goBack = useCallback(() => { window.history.back(); }, []);
+  // Native shell only: the iOS-style edge swipe ends in the same
+  // history.back() as the arrow, on exactly the screens that show the arrow.
+  useSwipeBack({ enabled: isNativeApp && !ROOT_SCREENS.includes(screen) && screen !== 'onboarding', rtl: ar, target: screenViewRef, onBack: goBack });
   useEffect(() => {
     // Establishes the base entry once, at mount, so the very first nested
     // screen has something real to push on top of.
@@ -1304,6 +1313,7 @@ function TastekinApp() {
       const state = event.state as { screen?: unknown } | null;
       const requested = screenFromHistoryState(state?.screen);
       isRestoringFromHistoryRef.current = true;
+      navDirectionRef.current = 'back';
       // Composer/creator-preview always abandon to "you" on the way out —
       // matching the one existing exit path for that flow — rather than
       // whatever nested screen happened to sit below them in history.
@@ -1328,6 +1338,7 @@ function TastekinApp() {
     {workspaceState === 'loading' && <div className="workspace-sync">{t('Loading your shared creator workspace…', 'جارٍ تحميل مساحة المبدع المشتركة…')}</div>}
     {workspaceState === 'syncing' && <div className="workspace-sync">{t('Saving your creator changes across devices…', 'جارٍ حفظ تغييرات المبدع على جميع الأجهزة…')}</div>}
     {workspaceState === 'error' && <div className="workspace-notice" role="alert">{workspaceError}<button onClick={() => workspaceError.startsWith('Sign in') ? go('auth') : void loadWorkspace()}>{workspaceError.startsWith('Sign in') ? t('Sign in', 'تسجيل الدخول') : t('Try again', 'حاول مجددًا')}</button></div>}
+    <div key={screen} ref={screenViewRef} className={`screen-view${navDirectionRef.current === 'forward' ? ' screen-view-forward' : navDirectionRef.current === 'back' ? ' screen-view-back' : ''}`}>
     {screen === 'home' && <><section className="home-feed-header"><h1>{ar ? homeFeedHeaderCopy[homeFeedTab].ar : homeFeedHeaderCopy[homeFeedTab].en}</h1><p>{ar ? homeFeedHeaderCopy[homeFeedTab].arSub : homeFeedHeaderCopy[homeFeedTab].enSub}</p></section><HomeFeedTabs ar={ar} active={homeFeedTab} onSelect={setHomeFeedTab} />
       {homeFeedTab === 'my-circle' && !circleLoading && !circleError && circleMembers.length > 0 && (
         <>
@@ -1388,6 +1399,7 @@ function TastekinApp() {
     {screen === 'myThingsEdit' && editingClosetItem && <EditClosetItemScreen ar={ar} item={editingClosetItem} onDone={() => go('myThings')} onUnavailable={() => go('you')} />}
     {screen === 'myThingsEdit' && !editingClosetItem && <MyThingsScreen ar={ar} onStyleWithKin={(ids) => { setKinStylingItemIds(new Set(ids)); go('kin'); }} onAdd={() => go('myThingsAdd')} onEdit={(item) => { setEditingClosetItem(item); go('myThingsEdit'); }} onUnavailable={() => go('you')} />}
     {screen === 'onboarding' && <OnboardingScreen ar={ar} creatorProfile={creatorProfile} onUploadPhoto={uploadCreatorImage} onDone={() => { track('onboarding_completed'); go('home'); }} />}
+    </div>
    </main>
     <CreateSavedListDrawer ar={ar} open={savedListCreatorOpen} onClose={() => setSavedListCreatorOpen(false)} onCreate={createSavedList} />
     <SavedListPicker ar={ar} editId={savedListPickerEditId} lists={savedLists} onClose={() => setSavedListPickerEditId(null)} onToggle={updateSavedListItem} />

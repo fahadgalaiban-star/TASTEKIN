@@ -53,6 +53,23 @@ html.native-app .edit-detail-text, html.native-app .comment-list, html.native-ap
 html.native-app input, html.native-app textarea, html.native-app [contenteditable] { -webkit-user-select:text; user-select:text; -webkit-touch-callout:default; }
 html.native-app button, html.native-app [role="button"], html.native-app .approved-bottom { touch-action:manipulation; }
 html.native-app .collection-picker-list, html.native-app .conversation-thread, html.native-app .closet-editor-sheet, html.native-app .kin-stay-sheet-body { overscroll-behavior:contain; }
+/* Native shell: screen transitions. The screen wrapper (.screen-view, keyed
+   by screen in App.tsx) mounts fresh on every navigation; a push slides in
+   from the trailing edge, a pop from the leading edge, and tab switches
+   just appear. During an edge swipe-back (src/lib/swipe-back.ts) the
+   wrapper follows the finger, then settles. Web: no animation at all. */
+html.native-app .screen-view { will-change:transform; }
+html.native-app .screen-view-forward { animation:tk-screen-forward 220ms cubic-bezier(.2,.8,.2,1); }
+html.native-app .screen-view-back { animation:tk-screen-back 220ms cubic-bezier(.2,.8,.2,1); }
+html.native-app .screen-view-dragging { animation:none; transition:none; }
+html.native-app .screen-view-settling { animation:none; transition:transform 180ms cubic-bezier(.2,.8,.2,1); }
+@keyframes tk-screen-forward { from { transform:translateX(28px); opacity:.55; } to { transform:none; opacity:1; } }
+@keyframes tk-screen-back { from { transform:translateX(-18px); opacity:.55; } to { transform:none; opacity:1; } }
+html.native-app [dir="rtl"] .screen-view-forward { animation-name:tk-screen-forward-rtl; }
+html.native-app [dir="rtl"] .screen-view-back { animation-name:tk-screen-back-rtl; }
+@keyframes tk-screen-forward-rtl { from { transform:translateX(-28px); opacity:.55; } to { transform:none; opacity:1; } }
+@keyframes tk-screen-back-rtl { from { transform:translateX(18px); opacity:.55; } to { transform:none; opacity:1; } }
+@media (prefers-reduced-motion: reduce) { html.native-app .screen-view-forward, html.native-app .screen-view-back { animation:none; } html.native-app .screen-view-settling { transition:none; } }
 .approved-topbar { position:relative; min-height:42px; display:flex; align-items:center; justify-content:space-between; gap:12px; }
 .approved-logo { position:absolute; left:50%; width:115px; max-height:32px; object-fit:contain; transform:translateX(-50%); }
 .approved-topbar-actions { display:flex; align-items:center; gap:2px; margin-inline-start:auto; }
