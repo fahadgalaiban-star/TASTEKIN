@@ -15,7 +15,7 @@ import { VIDEO_MAX_SIZE_BYTES, VIDEO_MAX_DURATION_SECONDS, validateVideoFileBasi
 import { HomeVideoCard, PosterVideoCard, VideoDetailPlayer } from './video-playback';
 import { apiUrl, isNativeApp, nativeClientFields, nativePlatform, nativeShare, nativeSignOut, publicWebOrigin, reconcileNativeSession, storeNativeToken, type ShareData } from './native';
 import { mapsHref, parseCoordinates } from './maps-link';
-import { LEGAL_EFFECTIVE_DATE, SUPPORT_EMAIL, legalDocument, type LegalDocumentKind } from './legal';
+import { LEGAL_EFFECTIVE_DATE, PRIVACY_EFFECTIVE_DATE, SUPPORT_EMAIL, TERMS_EFFECTIVE_DATE, legalDocument, legalEffectiveDate, type LegalDocumentKind } from './legal';
 import { MediaImage } from './components/MediaImage';
 import { editTextForSave, fullEditCaption } from './lib/edit-text';
 import { useSwipeBack } from './lib/swipe-back';
@@ -1330,6 +1330,18 @@ function TastekinApp() {
     });
   };
   const abandonComposer = () => go('you');
+  // Taste learning (flag taste_learning on top of taste_ranking): "Not
+  // interested" hides the Edit for this member and leaves the detail screen;
+  // dwell reporting on Home cards is gated on the same flag.
+  const tasteLearningEnabled = session.featureFlags.taste_ranking === true && session.featureFlags.taste_learning === true;
+  const dismissEdit = async (edit: CreatorEdit) => {
+    try {
+      const response = await fetch(`/api/edits/${encodeURIComponent(edit.id)}/not-interested`, { method: 'POST', credentials: 'include' });
+      if (!response.ok) return;
+    } catch { return; }
+    setPublicFeedEdits((prev) => prev.filter((item) => item.id !== edit.id));
+    goBack();
+  };
   const finishSavedCreatorFlow = () => { pendingMediaIsDiscardable.current = false; setPendingMediaPaths([]); setScreen('you'); };
   // Shared by EditComposer and CreatorPreview: markCommitted() on the video
   // controller must only run once this resolves true, so both callers await
@@ -1433,7 +1445,7 @@ function TastekinApp() {
       <div className="approved-feed">
         {homeFeedTab === 'my-circle' && circleLoading && <div className="approved-empty">{ar ? 'جارٍ التحميل...' : 'Loading...'}</div>}
         {homeFeedTab === 'my-circle' && circleError && <div className="workspace-notice" role="alert">{ar ? 'تعذر تحميل دائرتك.' : 'Could not load your circle.'}<button type="button" onClick={() => void Promise.all([refetchCircleMembers(), refetchCircleFeed()])}>{ar ? 'حاول مجددًا' : 'Try again'}</button></div>}
-        {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeed.map((item) => <EditCard key={`${item.creatorUsername || 'self'}:${item.id}`} edit={item} ar={ar} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} videoAutoplay capPortraitHeight />)}
+        {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeed.map((item) => <EditCard key={`${item.creatorUsername || 'self'}:${item.id}`} edit={item} ar={ar} onDwell={tasteLearningEnabled && session.status === 'authenticated' ? (seconds) => track('edit_dwell', { editId: item.id, seconds, surface: 'home' }) : undefined} saved={saved.includes(item.id)} onSave={() => toggleSaved(item.id)} onOpen={() => openEdit(item)} onOpenProfile={() => { if(item.creatorUsername) { setSelectedCreatorUsername(item.creatorUsername); go('profile'); } }} videoAutoplay capPortraitHeight />)}
         {!(homeFeedTab === 'my-circle' && (circleLoading || circleError)) && homeFeedTab !== 'for-you' && !homeFeed.length && <FeedEmpty ar={ar} tab={homeFeedTab} onExplore={() => go('explore')} />}
       </div>
     </>}
@@ -1457,7 +1469,7 @@ function TastekinApp() {
      {screen === 'verificationApply' && <VerificationApplicationScreen ar={ar} onDone={() => go('profile')} hasPublishedEdit={published.length > 0} onOpenComposer={() => openComposer()} />}
      {screen === 'collections' && <SimpleScreen kicker={viewedCreatorProfile.displayName} title={t('Collections', 'المجموعات')}><p>{t('Complete taste worlds, not a pile of posts.', 'عوالم ذوق مكتملة، وليست مجرد مجموعة منشورات.')}</p>{viewedCreatorCollections.length ? <div className="approved-grid">{viewedCreatorCollections.map((item) => <button className="approved-collection" key={item.id} onClick={() => { setSelectedCollectionId(item.id); go('collection'); }}><MediaImage src={imageSrc(collectionCoverImage(item, owner && creatorCollections.some((mine) => mine.id === item.id) ? published : viewedCreatorEdits))} alt="" /><strong>{ar ? item.titleAr : item.title}</strong><span>{t('Public collection', 'مجموعة عامة')}</span></button>)}</div> : <Empty text={t('No Collections yet. This space will hold complete taste worlds as they are published.', 'لا توجد مجموعات بعد. ستضم هذه المساحة عوالم ذوق مكتملة عند نشرها.')} />}</SimpleScreen>}
      {screen === 'collection' && selectedCollection && <CollectionDetail ar={ar} collection={selectedCollection} edits={selectedCollection.editIds.map((id) => collectionEditsSource.find((item) => item.id === id)).filter((item): item is CreatorEdit => Boolean(item))} allPublishedEdits={published} owner={isCollectionOwnerView} onOpen={openEdit} onAddEdits={(ids) => addEditsToCollection(selectedCollection.id, ids)} onUploadPhotos={(files) => uploadCollectionPhotos(selectedCollection.id, files)} onRemoveItem={(id) => removeCollectionItem(selectedCollection.id, id)} onReorder={(ids) => reorderCollectionItems(selectedCollection.id, ids)} onEditDetails={() => openCollectionManager(selectedCollection)} onUploadCover={(file) => void uploadCollectionCover(selectedCollection.id, file)} onClearCover={() => clearCollectionCover(selectedCollection.id)} />}
-     {screen === 'edit' && (selectedEdit ? <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} /> : <Empty text={t('Edit unavailable.', 'المنشور غير متاح.')} />)}
+     {screen === 'edit' && (selectedEdit ? <EditDetail edit={selectedEdit} creatorUsername={selectedEdit.creatorUsername || (viewingOwnProfile ? creatorProfile.username : selectedCreatorUsername)} ar={ar} saved={saved.includes(selectedEdit.id)} owner={selectedEditOwner} onSave={() => void toggleSaved(selectedEdit.id)} onSignIn={() => go('auth')} onEdit={() => openComposer(selectedEdit)} onRemovePhoto={() => removeEditPhoto(selectedEdit.id)} onDeleteEdit={() => deleteEditRecord(selectedEdit.id).then((ok) => { if (ok) goBack(); return ok; })} onNotInterested={tasteLearningEnabled && session.status === 'authenticated' && !selectedEditOwner ? () => void dismissEdit(selectedEdit) : undefined} /> : <Empty text={t('Edit unavailable.', 'المنشور غير متاح.')} />)}
     {screen === 'inbox' && <InboxScreen ar={ar} activeConversationId={activeConversationId} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} refreshRef={inboxRefreshRef} />}
     {screen === 'conversation' && activeConversationId && <ConversationScreen ar={ar} conversationId={activeConversationId} />}
     {screen === 'conversation' && !activeConversationId && <InboxScreen ar={ar} activeConversationId={null} onOpen={(id) => { setActiveConversationId(id); go('conversation'); }} onSignIn={() => go('auth')} />}
@@ -2047,7 +2059,7 @@ async function shareWithFallback(data: ShareData): Promise<'shared' | 'copied' |
   try { await navigator.clipboard.writeText(fallbackText); return 'copied'; } catch { return 'failed'; }
 }
 
-function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onManageCollections, onManageEdits, onShare, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onManageCollections?: () => void; onManageEdits?: () => void; onShare?: () => void; showReport?: boolean }) {
+function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, onBlocked, muteUsername, onViewPublicProfile, onManageCollections, onManageEdits, onShare, onNotInterested, showReport = true }: { ar: boolean; targetType: 'edit' | 'comment' | 'profile'; targetId: string; onSignIn: () => void; label?: string; blockUsername?: string; onBlocked?: () => void; muteUsername?: string; onViewPublicProfile?: () => void; onManageCollections?: () => void; onManageEdits?: () => void; onShare?: () => void; onNotInterested?: () => void; showReport?: boolean }) {
   const session = useTasteSession();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<ReportStep>('menu');
@@ -2129,6 +2141,7 @@ function ReportMenu({ ar, targetType, targetId, onSignIn, label, blockUsername, 
             {onViewPublicProfile && <button type="button" className="report-menu-item" data-testid="profile-view-public" onClick={() => { setOpen(false); onViewPublicProfile(); }}><Eye size={16} /> {ar ? 'عرض الملف العام' : 'View public profile'}</button>}
             {onManageCollections && <button type="button" className="report-menu-item" data-testid="profile-manage-collections" onClick={() => { setOpen(false); onManageCollections(); }}><FileText size={16} /> {ar ? 'إدارة المجموعات' : 'Manage collections'}</button>}
             {onManageEdits && <button type="button" className="report-menu-item" data-testid="profile-manage-edits" onClick={() => { setOpen(false); onManageEdits(); }}><Archive size={16} /> {ar ? 'إدارة التعديلات' : 'Manage edits'}</button>}
+            {onNotInterested && <button type="button" className="report-menu-item" data-testid="edit-not-interested" onClick={() => { setOpen(false); onNotInterested(); }}><EyeOff size={16} /> {ar ? 'لا يهمني' : 'Not interested'}</button>}
             {showReport && <button type="button" className="report-menu-item" onClick={() => setStep('reason')}><Flag size={16} /> {label || (ar ? 'إبلاغ' : 'Report')}</button>}
             {muteUsername && (muted
               ? <button type="button" className="report-menu-item" onClick={() => void toggleMute()}><Volume2 size={16} /> {ar ? 'إلغاء كتم هذا المستخدم' : 'Unmute this user'}</button>
@@ -2254,10 +2267,44 @@ function EditOwnerMenu({ ar, hasPhoto, onEdit, onRemovePhoto, onDeleteEdit }: { 
   </>;
 }
 
-function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutoplay = false, capPortraitHeight = false }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void; onOpenProfile?: () => void; videoAutoplay?: boolean; capPortraitHeight?: boolean }) {
+/**
+ * Dwell measurement for taste learning: how long a card stays at least half
+ * visible, reported once per mount when it reaches 2 s (rounded to the
+ * second, capped at 60). Nothing else is observed. Returns a callback ref;
+ * with no handler it observes nothing.
+ */
+function useDwellObserver(onDwell?: (seconds: number) => void) {
+  const handler = useRef(onDwell);
+  handler.current = onDwell;
+  const state = useRef<{ element: HTMLElement | null; observer: IntersectionObserver | null; visibleSince: number | null; accumulated: number; reported: boolean }>({ element: null, observer: null, visibleSince: null, accumulated: 0, reported: false });
+  const flush = useCallback(() => {
+    const s = state.current;
+    if (s.visibleSince !== null) { s.accumulated += (performance.now() - s.visibleSince) / 1000; s.visibleSince = null; }
+    if (s.reported || !handler.current) return;
+    const seconds = Math.min(60, Math.round(s.accumulated));
+    if (seconds >= 2) { s.reported = true; handler.current(seconds); }
+  }, []);
+  useEffect(() => () => { flush(); state.current.observer?.disconnect(); }, [flush]);
+  return useCallback((element: HTMLElement | null) => {
+    const s = state.current;
+    if (s.observer) { s.observer.disconnect(); s.observer = null; }
+    s.element = element;
+    if (!element || !handler.current || typeof IntersectionObserver === 'undefined') return;
+    s.observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.5) { if (s.visibleSince === null) s.visibleSince = performance.now(); }
+        else if (s.visibleSince !== null) flush();
+      }
+    }, { threshold: [0, 0.5] });
+    s.observer.observe(element);
+  }, [flush]);
+}
+
+function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutoplay = false, capPortraitHeight = false, onDwell }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void; onOpen: () => void; onOpenProfile?: () => void; videoAutoplay?: boolean; capPortraitHeight?: boolean; onDwell?: (seconds: number) => void }) {
   const caption = publicCaptionLine(edit, ar);
+  const dwellRef = useDwellObserver(onDwell);
   if (edit.video) {
-    return <article className="approved-card" data-testid={`edit-card-${edit.id}`}>
+    return <article ref={dwellRef} className="approved-card" data-testid={`edit-card-${edit.id}`}>
       <CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} />
       {videoAutoplay ? <HomeVideoCard id={edit.id} video={edit.video} ar={ar} onOpen={onOpen} /> : <button className="approved-art" onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><PosterVideoCard video={edit.video} ar={ar} /></button>}
       {caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}
@@ -2265,8 +2312,8 @@ function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutopla
     </article>;
   }
   const noPhoto = !edit.image;
-  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
-  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
+  if (noPhoto) return <article ref={dwellRef} className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
+  return <article ref={dwellRef} className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
 
 function SavedScreen({ ar, saved, lists, activeListId, edits, onSelectList, onCreateList, onRenameList, onDeleteList, onOpen, onUnsave }: { ar: boolean; saved: string[]; lists: SavedList[]; activeListId: string | null; edits: CreatorEdit[]; onSelectList: (id: string | null) => void; onCreateList: () => void; onRenameList: (id: string, name: string) => Promise<void>; onDeleteList: (id: string) => Promise<void>; onOpen: (edit: CreatorEdit) => void; onUnsave: (id: string) => void }) {
@@ -2352,7 +2399,7 @@ function SavedListPicker({ ar, editId, lists, onClose, onToggle }: { ar: boolean
     </Drawer.Content></Drawer.Portal>
   </Drawer.Root>;
 }
-function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; saved: boolean; owner: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
+function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit, onNotInterested }: { edit: CreatorEdit; creatorUsername: string; ar: boolean; saved: boolean; owner: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean>; onNotInterested?: () => void }) {
   const caption = fullEditCaption(edit, ar);
   const outfitItems = (edit.outfitItems || []).filter((item) => item.type || item.brand || item.name);
   // The location is shown exactly once, as one small tappable row above the
@@ -2379,11 +2426,11 @@ function EditDetail({ edit, creatorUsername, ar, saved, owner, onSave, onSignIn,
     {locationRow && <a className="edit-detail-location" data-testid="edit-detail-location" href={mapsLink} target="_blank" rel="noopener noreferrer" aria-label={ar ? `افتح ${locationRow} في الخرائط` : `Open ${locationRow} in Maps`}><MapPin size={14} aria-hidden="true" /><span>{locationRow}</span></a>}
     {isPlaceCategory(edit.category) && (edit.image || edit.video) && <PlaceDetails edit={edit} ar={ar} showName={false} showLocation={false} />}
     {edit.showOutfitDetails && outfitItems.length > 0 && <div className="outfit-published"><h3>{ar ? 'تفاصيل الإطلالة' : 'Outfit details'}</h3>{outfitItems.map((item, index) => <div key={index}><strong>{item.type || item.name}</strong><span>{[item.brand, item.name].filter(Boolean).join(' · ')}</span>{item.link && <a href={item.link} target="_blank" rel="noreferrer">{ar ? 'عرض المنتج' : 'View item'}</a>}</div>)}</div>}
-    <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} />
+    <EditEngagementPanel editId={edit.id} creatorUsername={creatorUsername} shareCaption={caption} ar={ar} saved={saved} owner={owner} hasPhoto={Boolean(edit.image)} onSave={onSave} onSignIn={onSignIn} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} onNotInterested={onNotInterested} />
   </section>;
 }
 
-function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, owner, hasPhoto, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit }: { editId: string; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; owner: boolean; hasPhoto: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
+function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved, owner, hasPhoto, onSave, onSignIn, onEdit, onRemovePhoto, onDeleteEdit, onNotInterested }: { editId: string; onNotInterested?: () => void; creatorUsername: string; shareCaption?: string; ar: boolean; saved: boolean; owner: boolean; hasPhoto: boolean; onSave: () => void; onSignIn: () => void; onEdit: () => void; onRemovePhoto: () => Promise<boolean>; onDeleteEdit: () => Promise<boolean> }) {
   const session = useTasteSession();
   const [engagement, setEngagement] = useState<EditEngagement>({ editId, likeCount: 0, commentCount: 0, liked: false, saved });
   const [comments, setComments] = useState<EditComment[]>([]);
@@ -2476,7 +2523,7 @@ function EditEngagementPanel({ editId, creatorUsername, shareCaption, ar, saved,
       <span><MessageCircle size={18} /> {engagement.commentCount}</span>
       <button className={`save-pill ${saved ? 'active' : ''}`} onClick={onSave} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /> {saved ? (ar ? 'تم الحفظ' : 'Saved') : (ar ? 'حفظ' : 'Save')}</button>
       <button className="share-pill" onClick={() => void sharePost()} aria-label={ar ? 'مشاركة هذا التعديل' : 'Share this edit'}><Share2 size={18} /></button>
-      {owner ? <EditOwnerMenu ar={ar} hasPhoto={hasPhoto} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} /> : <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} />}
+      {owner ? <EditOwnerMenu ar={ar} hasPhoto={hasPhoto} onEdit={onEdit} onRemovePhoto={onRemovePhoto} onDeleteEdit={onDeleteEdit} /> : <ReportMenu ar={ar} targetType="edit" targetId={editId} onSignIn={signIn} label={ar ? 'الإبلاغ عن هذا التعديل' : 'Report this Edit'} onNotInterested={onNotInterested} />}
     </div>
     <div className="comment-composer">
       <input enterKeyHint="send" value={comment} onChange={(event) => setComment(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void submitComment(); }} placeholder={session.status === 'authenticated' ? (ar ? 'أضف تعليقاً' : 'Add a comment') : (ar ? 'سجّل الدخول للتعليق' : 'Sign in to comment')} onFocus={() => { if (session.status !== 'authenticated') signIn(); }} maxLength={800} />
@@ -2668,7 +2715,7 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
       <h3>{t('Legal', 'الشروط والخصوصية')}</h3>
       <button data-testid="settings-privacy" className="approved-button wide" onClick={onOpenPrivacy}><FileText size={16} /> {t('Privacy Policy', 'سياسة الخصوصية')}</button>
       <button data-testid="settings-terms" className="approved-button wide" onClick={onOpenTerms}><FileText size={16} /> {t('Terms of Use', 'شروط الاستخدام')}</button>
-      <p className="settings-note">{t(`Effective ${LEGAL_EFFECTIVE_DATE}.`, `سارية اعتباراً من ${LEGAL_EFFECTIVE_DATE}.`)}</p>
+      <p className="settings-note">{t(`Privacy Policy effective ${PRIVACY_EFFECTIVE_DATE} · Terms effective ${TERMS_EFFECTIVE_DATE}.`, `سياسة الخصوصية سارية اعتباراً من ${PRIVACY_EFFECTIVE_DATE} · الشروط سارية اعتباراً من ${TERMS_EFFECTIVE_DATE}.`)}</p>
     </div>
     {session.status === 'authenticated' && <button data-testid="settings-sign-out" className="approved-button wide" onClick={() => void signOut(session.refresh)}><LogOut size={16} /> {t('Sign out', 'تسجيل الخروج')}</button>}
     {session.status === 'authenticated' && <div className="settings-section settings-danger">
@@ -2688,7 +2735,7 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
 function LegalDocumentBody({ ar, kind }: { ar: boolean; kind: LegalDocumentKind }) {
   const document = legalDocument(kind, ar ? 'ar' : 'en');
   return <article className="legal-doc" data-testid={`legal-${kind}`}>
-    <p className="legal-effective">{ar ? `سارية اعتباراً من ${LEGAL_EFFECTIVE_DATE}` : `Effective ${LEGAL_EFFECTIVE_DATE}`}</p>
+    <p className="legal-effective">{ar ? `سارية اعتباراً من ${legalEffectiveDate(kind)}` : `Effective ${legalEffectiveDate(kind)}`}</p>
     <p>{document.intro}</p>
     {document.sections.map((section) => <section key={section.heading}>
       <h2>{section.heading}</h2>
