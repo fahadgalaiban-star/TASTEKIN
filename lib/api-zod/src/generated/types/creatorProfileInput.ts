@@ -31,6 +31,12 @@ export interface CreatorProfileInput {
      */
   interests: string[];
   /**
+     * @maxItems 8
+     * @items.minLength 1
+     * @items.maxLength 60
+     */
+  tasteTags?: string[];
+  /**
      * @nullable
      * @pattern ^\d{4}-\d{2}-\d{2}$
      */

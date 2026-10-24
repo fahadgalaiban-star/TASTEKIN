@@ -1,4 +1,4 @@
-import { creatorFeaturedCollections, creatorFollows, creatorMediaUploads, db, creatorWorkspaces, usersTable, type CreatorProfileRecord } from "@workspace/db";
+import { creatorFeaturedCollections, creatorFollows, creatorMediaUploads, db, creatorWorkspaces, usersTable, userTastePreferences, type CreatorProfileRecord } from "@workspace/db";
 import {
   GetCreatorProfileResponse,
   GetCreatorWorkspaceResponse,
@@ -9,6 +9,9 @@ import {
 } from "@workspace/api-zod";
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
+import { normalizeTasteTagIds, tasteCategoryIds, tasteTagIds } from "@workspace/taste-catalog";
+import { editTasteTags, hasCompleteTaste, rankForYou, scoreEditForViewer } from "../lib/taste-ranking";
+import type { TasteSelection } from "../lib/taste-match";
 
 import {
   FHEED_CREATOR_ID,
@@ -161,6 +164,7 @@ function normalizeProfile(value: unknown): CreatorProfileRecord {
     city: typeof source.city === "string" ? source.city : fallback.city,
     country: typeof source.country === "string" ? source.country : fallback.country,
     interests: Array.isArray(source.interests) ? source.interests.filter((interest): interest is string => typeof interest === "string").slice(0, 12) : fallback.interests,
+    tasteTags: Array.isArray(source.tasteTags) ? normalizeTasteTagIds(source.tasteTags) : [],
     dateOfBirth: typeof source.dateOfBirth === "string" ? source.dateOfBirth : null,
     showAge: Boolean(source.showAge),
     avatar: typeof source.avatar === "string" ? source.avatar : fallback.avatar,
@@ -209,6 +213,7 @@ function serializeProfile(value: unknown, includePrivate: boolean, revision: num
     city: profile.city,
     country: profile.country,
     interests: profile.interests,
+    tasteTags: profile.tasteTags ?? [],
     avatar: avatarObjectPath ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
     avatarObjectPath: includePrivate ? avatarObjectPath : null,
     coverImage: coverImageObjectPath ? `/api/public-profile-media/${encodeURIComponent(profile.username)}/cover` : profile.coverImage,
@@ -326,6 +331,8 @@ router.put("/creator-profile", async (req, res): Promise<void> => {
         city: profileInput.city.trim(),
         country: profileInput.country.trim(),
         interests: Array.from(new Set(profileInput.interests.map((interest) => interest.trim()).filter(Boolean))),
+        // Optional on input (older clients omit it): keep what was there.
+        tasteTags: profileInput.tasteTags ? normalizeTasteTagIds(profileInput.tasteTags) : (previous.tasteTags ?? []),
         dateOfBirth: profileInput.dateOfBirth,
         showAge: profileInput.showAge,
         avatar,
@@ -488,9 +495,19 @@ router.get("/creators/:username/workspace", async (req, res) => {
   }
 });
 
+async function viewerTastePreferences(userId: string): Promise<TasteSelection | null> {
+  const [row] = await db.select({ categories: userTastePreferences.categories, tags: userTastePreferences.tags })
+    .from(userTastePreferences).where(eq(userTastePreferences.userId, userId)).limit(1);
+  if (!row) return null;
+  return {
+    categories: row.categories.filter((item) => (tasteCategoryIds as readonly string[]).includes(item)),
+    tags: row.tags.filter((item) => (tasteTagIds as readonly string[]).includes(item)),
+  };
+}
+
 router.get("/public-feed", async (req, res) => {
   try {
-    const [rows, followed, blockedUserIds, mutedIds] = await Promise.all([
+    const [rows, followed, blockedUserIds, mutedIds, tasteRankingEnabled, viewerTaste] = await Promise.all([
       db.select({ workspace: creatorWorkspaces, verified: usersTable.isVerified })
         .from(creatorWorkspaces)
         .leftJoin(usersTable, eq(creatorWorkspaces.ownerUserId, usersTable.id)),
@@ -499,7 +516,12 @@ router.get("/public-feed", async (req, res) => {
         : Promise.resolve([]),
       blockedCounterpartIds(req.user?.id),
       mutedUserIds(req.user?.id),
+      isFeatureEnabled("taste_ranking"),
+      req.user ? viewerTastePreferences(req.user.id) : Promise.resolve(null),
     ]);
+    // Taste-driven "For you" (flag taste_ranking): only for a signed-in
+    // viewer with a complete taste profile. Everyone else keeps newest-first.
+    const rankByTaste = tasteRankingEnabled && hasCompleteTaste(viewerTaste);
     const followedIds = new Set(followed.map((item) => item.creatorId));
     // Block always takes precedence and is checked independently of mute;
     // mute only additionally hides content from this Home/For You feed for
@@ -527,19 +549,31 @@ router.get("/public-feed", async (req, res) => {
       const resolvedEdits = videoPlaybackEnabled && workspace.ownerUserId
         ? attachResolvedPlayback(edits, videoRowsById, workspace.ownerUserId, workspace.creatorId)
         : edits;
-      return resolvedEdits.map((edit) => ({
-        creatorUsername: profile.username,
-        creatorName: profile.displayName,
-        creatorVerified: Boolean(verified),
-        creatorAvatar: profile.avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
-        following: followedIds.has(workspace.creatorId),
-        workspaceUpdatedAt: workspace.updatedAt,
-        edit,
-      }));
-    }).sort((left, right) => right.workspaceUpdatedAt.getTime() - left.workspaceUpdatedAt.getTime())
-      .map(({ workspaceUpdatedAt: _updatedAt, ...item }) => item);
+      return resolvedEdits.map((edit) => {
+        // What this Edit is about: its own words plus the creator's picked
+        // tags. Computed at read time; nothing derived is stored.
+        const tasteTags = rankByTaste ? editTasteTags(edit as Record<string, string | undefined>, profile.tasteTags ?? []) : [];
+        const match = rankByTaste
+          ? scoreEditForViewer(viewerTaste, { category: String(edit.category ?? ""), tasteTags })
+          : null;
+        return {
+          creatorUsername: profile.username,
+          creatorName: profile.displayName,
+          creatorVerified: Boolean(verified),
+          creatorAvatar: profile.avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
+          following: followedIds.has(workspace.creatorId),
+          workspaceUpdatedAt: workspace.updatedAt,
+          creatorId: workspace.creatorId,
+          edit,
+          ...(match ? { matchScore: match.score, sharedTastes: match.sharedTastes, tasteTags } : {}),
+        };
+      });
+    });
+    const ordered = rankByTaste
+      ? rankForYou(items.map((item) => ({ ...item, id: `${item.creatorId}:${String(item.edit.id)}`, score: item.matchScore ?? null, updatedAt: item.workspaceUpdatedAt })))
+      : [...items].sort((left, right) => right.workspaceUpdatedAt.getTime() - left.workspaceUpdatedAt.getTime());
     res.set("Cache-Control", "private, no-store");
-    res.json({ items });
+    res.json({ ranking: rankByTaste ? "taste" : "recency", items: ordered.map(({ workspaceUpdatedAt: _updatedAt, creatorId: _creatorId, id: _rankId, score: _score, updatedAt: _rankUpdatedAt, ...item }: Record<string, unknown>) => item) });
   } catch (error) {
     req.log.error({ err: error }, "Unable to load public creator feed");
     res.status(500).json({ error: "Unable to load the public feed" });
