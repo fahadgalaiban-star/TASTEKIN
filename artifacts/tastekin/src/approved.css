@@ -865,6 +865,9 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .kin-timeline-name { display:block; color:var(--tk-text); font-size:17px; font-family:Lora, serif; line-height:1.2; margin-bottom:6px; }
 .kin-timeline-meta { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
 .kin-timeline-slot { color:var(--tk-wine); font-size:9px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
+/* taste_everywhere: a stop that came from an Edit the member saved or a creator they follow. */
+.kin-from-creator { color:var(--tk-stone); font-size:10px; font-weight:700; }
+.kin-taste-hint { color:var(--tk-wine); }
 .kin-timeline-rating { color:var(--tk-stone); font-size:10px; font-weight:700; }
 .kin-timeline-note { display:block; color:var(--tk-stone); font-size:12px; font-style:italic; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 

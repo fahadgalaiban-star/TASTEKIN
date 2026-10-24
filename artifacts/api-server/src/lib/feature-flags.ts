@@ -64,6 +64,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: "taste_everywhere",
+    description: "Taste in KIN Travel: the 'Choose your interests' step opens with chips pre-selected from the member's taste profile (always editable), and real places from Edits the member saved or from creators they follow, within the destination, are added to the plan and labelled 'from @creator'. Never uses follower, like or save counts. Off: KIN Travel is exactly as before.",
+    defaultEnabled: false,
+  },
+  {
     key: "video_upload",
     description: "User-uploaded video via Bunny Stream (backend foundation only in this phase — no upload endpoint, webhook, or UI is gated by this flag yet; it exists so later phases have a kill switch from day one). Missing Bunny configuration (BUNNY_STREAM_API_KEY/BUNNY_STREAM_LIBRARY_ID) never affects startup or any other feature while this flag is disabled.",
     defaultEnabled: false,

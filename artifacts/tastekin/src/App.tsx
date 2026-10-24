@@ -3,7 +3,7 @@ import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/reac
 import { SuspendedAccountPanel } from './components/SuspendedAccountPanel';
 import { useGetTasteCatalog, useGetTastePreferences, useSaveTastePreferences, useGetTasteMatch, useExplore, getExploreQueryKey, getGetTasteMatchQueryKey, getGetTastePreferencesQueryKey, useListCircleMembers, getListCircleMembersQueryKey, useGetCircleMemberStatus, getGetCircleMemberStatusQueryKey, useAddCircleMember, useRemoveCircleMember, useGetCircleFeed, getGetCircleFeedQueryKey } from '@workspace/api-client-react';
 import { Drawer } from 'vaul';
-import { tasteCategoryLabel, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
+import { tasteCategoryLabel, travelInterestsForTaste, MIN_TASTE_CATEGORIES, MIN_TASTE_TAGS } from '@workspace/taste-catalog';
 import {
   Archive, ArrowLeft, Ban, BarChart3, Bookmark, Check, ChevronRight, Eye, EyeOff, FileText, Flag, Globe, Heart, Inbox, LogOut, MessageCircle,
   Home, ImagePlus, Link2, MapPin, MoreVertical, Pencil, Plus, PlusCircle, Search, Settings2,
@@ -3621,7 +3621,7 @@ function KinRingsMark({ size = 40 }: { size?: number }) {
 // TASTEKIN is a referral intermediary: booking, payment, insurance,
 // changes, cancellations and support stay with the partner.
 type KinReferralLink = { url: string; partnerName: string | null };
-type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; activityInterest?: KinMainInterest | KinSportSubchoice; openingHours: string | null; venueKind?: 'restaurant' | 'cafe' | null; reservation?: KinReferralLink };
+type KinTravelPlace = { placeId: string; name: string; formattedAddress: string | null; lat: number | null; lng: number | null; rating: number | null; websiteUrl: string | null; mapsUrl: string | null; photoUrl: string | null; photoAttribution: string | null; slot: 'COFFEE' | 'BREAKFAST' | 'LUNCH' | 'DINNER' | null; activityInterest?: KinMainInterest | KinSportSubchoice; openingHours: string | null; venueKind?: 'restaurant' | 'cafe' | null; reservation?: KinReferralLink; fromCreator?: { username: string; displayName: string; editId: string; via: 'saved' | 'followed' } };
 type KinTravelRouteLeg = { fromPlaceId: string; toPlaceId: string; distanceMeters: number; durationSeconds: number };
 type KinTravelDay = { dayIndex: number; date: string | null; places: KinTravelPlace[]; routes: KinTravelRouteLeg[] };
 // Optional accommodation — shared with api-server's lib/kin-travel.ts. Every
@@ -3953,6 +3953,7 @@ function KinTravelDayRoute({ places, ar }: { places: KinTravelPlace[]; ar: boole
           <span className="kin-route-index" aria-hidden="true">{index + 1}</span>
           <div className="kin-route-body">
             {categoryLabel && <span className="kin-route-category">{categoryLabel}</span>}
+            {place.fromCreator && <span className="kin-from-creator" data-testid="kin-route-from-creator" dir="auto"><bdi>{t(`from @${place.fromCreator.username}`, `من @${place.fromCreator.username}`)}</bdi></span>}
             <span className="kin-route-name" dir="auto"><bdi>{place.name}</bdi></span>
             {place.formattedAddress && <span className="kin-route-address" dir="auto"><bdi>{place.formattedAddress}</bdi></span>}
           </div>
@@ -3978,6 +3979,16 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
   // client's own second gate so nothing referral-related can render either.
   const carRentalEnabled = session.featureFlags.kin_travel_car_rental === true;
   const reservationsEnabled = session.featureFlags.kin_travel_restaurant_reservations === true;
+  // taste_everywhere: the interests step opens with chips suggested by the
+  // member's taste profile. Read only while the flag is on; the member can
+  // change any chip, and once they touch one we never pre-select again.
+  const tasteEverywhere = session.featureFlags.taste_everywhere === true;
+  const { data: tastePrefs } = useGetTastePreferences({
+    query: { retry: false, queryKey: getGetTastePreferencesQueryKey(), enabled: session.status === 'authenticated' && tasteEverywhere, staleTime: 60_000 },
+    request: { credentials: 'include', cache: 'no-store' },
+  });
+  const interestsTouched = useRef(false);
+  const [preselectedFromTaste, setPreselectedFromTaste] = useState(false);
 
   // Style (KIN Looks) and the My Things shortcut are shown only while the
   // kin_looks flag is on. With it off the screen is Travel-only: it opens on
@@ -4412,16 +4423,28 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
       if (!destination.trim()) { setErrorMessage(t("Tell KIN where you're going.", 'أخبر كين إلى أين أنت ذاهب.')); return; }
       if (Boolean(startDate) !== Boolean(endDate)) { setErrorMessage(t('Enter both dates, or leave both blank.', 'أدخل التاريخين معًا، أو اتركهما فارغين.')); return; }
       if (startDate && endDate && endDate < startDate) { setErrorMessage(t('The end date must be on or after the start date.', 'يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.')); return; }
+      if (tasteEverywhere && tastePrefs && !interestsTouched.current && mainInterests.size === 0 && !sportSelected) {
+        const suggested = travelInterestsForTaste({ categories: tastePrefs.categories, tags: tastePrefs.tags });
+        const mains = suggested.filter((value): value is KinMainInterest => KIN_MAIN_INTERESTS.some((item) => item.value === value));
+        const sports = suggested.filter((value): value is KinSportSubchoice => KIN_SPORT_SUBCHOICES.some((item) => item.value === value));
+        if (mains.length || sports.length) {
+          setMainInterests(new Set(mains));
+          if (sports.length) { setSportSelected(true); setSportSubchoices(new Set(sports)); }
+          setPreselectedFromTaste(true);
+        }
+      }
       setTravelStep(2);
     }
   };
 
   const toggleMainInterest = (value: KinMainInterest) => setMainInterests((prev) => {
+    interestsTouched.current = true;
     const next = new Set(prev);
     if (next.has(value)) next.delete(value); else next.add(value);
     return next;
   });
   const toggleSport = () => {
+    interestsTouched.current = true;
     setSportSelected((prev) => {
       const next = !prev;
       if (!next) setSportSubchoices(new Set());
@@ -4429,6 +4452,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
     });
   };
   const toggleSportSubchoice = (value: KinSportSubchoice) => setSportSubchoices((prev) => {
+    interestsTouched.current = true;
     const next = new Set(prev);
     if (next.has(value)) next.delete(value); else next.add(value);
     return next;
@@ -4746,6 +4770,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
                 <div className="kin-timeline-body">
                   <div className="kin-timeline-meta">
                     {categoryLabel && <span className="kin-timeline-slot">{categoryLabel}</span>}
+                    {place.fromCreator && <span className="kin-from-creator" data-testid="kin-place-from-creator" dir="auto"><bdi>{t(`from @${place.fromCreator.username}`, `من @${place.fromCreator.username}`)}</bdi></span>}
                   </div>
                   <span className="kin-timeline-name" dir="auto" style={{ WebkitLineClamp: 2, display: '-webkit-box', overflow: 'hidden', WebkitBoxOrient: 'vertical' }}><bdi>{place.name}</bdi></span>
                   {place.photoAttribution && <span className="kin-photo-credit" style={{ textAlign: 'start', margin: 0, opacity: 0.7 }}>{t('Photo', 'صورة')}: <bdi dir="auto">{place.photoAttribution}</bdi></span>}
@@ -4876,6 +4901,7 @@ function KinScreen({ ar, stylingItemIds, onClearStylingItems, onChangeStylingIte
         <h2 className="kin-step-headline">{t('Choose your interests', 'اختر اهتماماتك')}</h2>
         <p className="kin-step-subline">{t('Pick everything you want included.', 'اختر كل ما تريد تضمينه')}</p>
         <p className="kin-step-progress">{t('2 of 2', '2 من 2')}</p>
+        {preselectedFromTaste && <p className="kin-step-subline kin-taste-hint" data-testid="kin-taste-preselected">{t('Pre-selected from your taste. Change anything.', 'اخترناها مسبقًا من ذوقك. غيّر ما تشاء.')}</p>}
         <div className="kin-interest-grid" data-testid="kin-interest-grid">
           {(['hotel', 'apartment'] as const).map((kind) => {
             const selected = kind === 'hotel' ? hotelsSelected : apartmentsSelected;
