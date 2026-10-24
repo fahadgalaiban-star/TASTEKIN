@@ -331,6 +331,9 @@ type TasteSessionSnapshot = {
   // Settings can describe the password truthfully; null when signed out or
   // when the server did not say.
   authProvider: 'password' | 'google' | 'replit' | null;
+  // Whether the account can sign in with email + password right now (true
+  // for email/password accounts and for provider accounts that set one).
+  passwordSet: boolean;
   // Whether the server can actually deliver a password-reset email. False
   // until a transactional email provider is configured; the sign-in screen
   // must never promise an email the server cannot send.
@@ -360,7 +363,7 @@ const TasteSessionContext = createContext<TasteSession | null>(null);
 function useTasteSessionController(): TasteSession {
   const [snapshot, setSnapshot] = useState<TasteSessionSnapshot>({
     status: 'loading', user: null, role: 'consumer', creator: null, isAdmin: false, accountSuspended: false,
-    language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false,
+    language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordSet: false, passwordResetAvailable: false,
     needsOnboarding: false, onboardingStep: 'done', googleAuthConfigured: false, replitAuthAvailable: false, featureFlags: {}, revision: 0,
   });
   const refresh = useCallback(async () => {
@@ -372,7 +375,7 @@ function useTasteSessionController(): TasteSession {
       });
       const payload = response.ok
         ? await response.json() as Omit<TasteSessionSnapshot, 'status' | 'revision'> & { nativeAuth?: unknown }
-        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordResetAvailable: false, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, replitAuthAvailable: false, featureFlags: {} as Record<string, boolean> };
+        : { user: null, role: 'consumer' as const, creator: null, isAdmin: false, accountSuspended: false, language: null, notifyPush: true, notifyEmail: true, supportEmail: null, authProvider: null, passwordSet: false, passwordResetAvailable: false, needsOnboarding: false, onboardingStep: 'done' as const, googleAuthConfigured: false, replitAuthAvailable: false, featureFlags: {} as Record<string, boolean> };
       // Native shell only: drops the stored token when the server itself
       // reports it invalid/revoked/expired (never on other failures).
       await reconcileNativeSession(payload);
@@ -389,6 +392,7 @@ function useTasteSessionController(): TasteSession {
           notifyEmail: payload.notifyEmail ?? true,
           supportEmail: payload.supportEmail ?? null,
           authProvider: payload.authProvider === 'password' || payload.authProvider === 'google' || payload.authProvider === 'replit' ? payload.authProvider : null,
+          passwordSet: payload.passwordSet === true,
           passwordResetAvailable: payload.passwordResetAvailable === true,
           needsOnboarding: Boolean(payload.needsOnboarding),
           onboardingStep: isOnboardingStep(payload.onboardingStep) ? payload.onboardingStep : 'done',
@@ -411,6 +415,7 @@ function useTasteSessionController(): TasteSession {
           && current.notifyEmail === next.notifyEmail
           && current.supportEmail === next.supportEmail
           && current.authProvider === next.authProvider
+          && current.passwordSet === next.passwordSet
           && current.passwordResetAvailable === next.passwordResetAvailable
           && current.needsOnboarding === next.needsOnboarding
           && current.onboardingStep === next.onboardingStep
@@ -2592,10 +2597,17 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
   // Truthful password description per sign-in method (users.auth_provider via
   // GET /api/me) — only email/password accounts actually hold a password here.
   const passwordStatus = session.status !== 'authenticated' ? t('Not available', 'غير متاح')
-    : session.authProvider === 'password' ? t('Set for this account', 'مُعيّنة لهذا الحساب')
+    : session.authProvider === 'password' || session.passwordSet ? t('Set for this account', 'مُعيّنة لهذا الحساب')
     : session.authProvider === 'google' ? t('Managed by Google', 'تُدار عبر Google')
     : session.authProvider === 'replit' ? t('Managed by Replit', 'تُدار عبر Replit')
     : t('Not available', 'غير متاح');
+  // A Replit/Google account with no password yet can attach one here (and
+  // only here: the request needs this signed-in session), after which the
+  // same account also signs in with email + password.
+  const canSetPassword = session.status === 'authenticated' && !session.passwordSet
+    && (session.authProvider === 'replit' || session.authProvider === 'google') && Boolean(session.user?.email);
+  // Confirmation survives the session refresh that hides the panel.
+  const [passwordJustSetFor, setPasswordJustSetFor] = useState<string | null>(null);
   // Seeded from the server-authorized session, and re-synced whenever a
   // fresh /me response arrives (sign-in, refresh, another device) — these
   // toggles are never sourced from or considered authoritative in localStorage.
@@ -2613,6 +2625,8 @@ function SettingsScreen({ ar, owner, creatorProfile, onApplyVerification, langua
       <div className="settings-row"><span>{t('Name', 'الاسم')}</span><strong>{accountName || (ar ? 'غير محدد' : 'Not set')}</strong></div>
       <div className="settings-row"><span>{t('Email', 'البريد الإلكتروني')}</span><strong>{session.user?.email || (ar ? 'غير متاح' : 'Not available')}</strong></div>
       <div className="settings-row"><span>{t('Password', 'كلمة المرور')}</span><strong data-testid="settings-password-status">{passwordStatus}</strong></div>
+      {passwordJustSetFor && <p className="settings-note" role="status" data-testid="settings-password-set-done">{t(`Password set. You can now also sign in with ${passwordJustSetFor} and this password.`, `تم تعيين كلمة المرور. يمكنك الآن أيضاً تسجيل الدخول بـ ${passwordJustSetFor} وكلمة المرور هذه.`)}</p>}
+      {canSetPassword && !passwordJustSetFor && <SetPasswordPanel ar={ar} email={session.user?.email ?? ''} onDone={() => { setPasswordJustSetFor(session.user?.email ?? ''); void session.refresh(); }} />}
     </div>
     <div className="settings-section">
       <h3>{t('Language', 'اللغة')}</h3>
@@ -2828,6 +2842,48 @@ function PasswordField({ ar, label, value, onChange, autoComplete, testId }: { a
     <label className="form-field"><span>{label}</span><input type={visible ? 'text' : 'password'} autoComplete={autoComplete} enterKeyHint="go" value={value} onChange={(event) => onChange(event.target.value)} minLength={8} required data-testid={testId} /></label>
     <button type="button" className="password-toggle" aria-label={toggleLabel} title={toggleLabel} aria-pressed={visible} data-testid={testId ? `${testId}-toggle` : 'password-toggle'} onMouseDown={(event) => event.preventDefault()} onClick={() => setVisible((prev) => !prev)}>{visible ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}</button>
   </div>;
+}
+
+/**
+ * Settings → Account → "Set a password" for a Replit/Google account. Posts to
+ * /api/auth/set-password with the current session; on success the account
+ * keeps its id, admin rights, profile and content and additionally signs in
+ * with email + password. Not offered anywhere a signed-out visitor can reach.
+ */
+function SetPasswordPanel({ ar, email, onDone }: { ar: boolean; email: string; onDone: () => void }) {
+  const t = (en: string, arabic: string) => ar ? arabic : en;
+  const [open, setOpen] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setError('');
+    if (password.length < 8) { setError(t('Password must be at least 8 characters.', 'يجب ألا تقل كلمة المرور عن 8 أحرف.')); return; }
+    if (password !== confirm) { setError(t('The two passwords do not match.', 'كلمتا المرور غير متطابقتين.')); return; }
+    setBusy(true);
+    try {
+      const response = await fetch('/api/auth/set-password', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password }) });
+      const data = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) { setError(data.error || t('Could not set the password. Try again.', 'تعذر تعيين كلمة المرور. حاول مرة أخرى.')); return; }
+      setOpen(false); setPassword(''); setConfirm('');
+      onDone();
+    } catch {
+      setError(t('Network error. Please try again.', 'خطأ في الشبكة. حاول مرة أخرى.'));
+    } finally { setBusy(false); }
+  };
+  if (!open) return <div className="settings-row settings-row-action"><span className="settings-note">{t('Add a password to also sign in with your email.', 'أضف كلمة مرور لتسجيل الدخول ببريدك الإلكتروني أيضاً.')}</span><button type="button" className="approved-button" data-testid="settings-set-password" onClick={() => setOpen(true)}>{t('Set a password', 'تعيين كلمة مرور')}</button></div>;
+  return <form className="settings-set-password" data-testid="settings-set-password-form" onSubmit={(event) => void submit(event)}>
+    <p className="settings-note">{t(`For ${email}. Your Replit or Google sign-in keeps working.`, `لـ ${email}. يبقى تسجيل الدخول عبر Replit أو Google يعمل.`)}</p>
+    <PasswordField ar={ar} label={t('New password', 'كلمة مرور جديدة')} value={password} onChange={setPassword} autoComplete="new-password" testId="set-password" />
+    <PasswordField ar={ar} label={t('Confirm password', 'تأكيد كلمة المرور')} value={confirm} onChange={setConfirm} autoComplete="new-password" testId="set-password-confirm" />
+    {error && <p className="settings-note approved-error-text" role="alert">{error}</p>}
+    <div className="settings-set-password-actions">
+      <button type="button" className="approved-button" onClick={() => { setOpen(false); setError(''); }} disabled={busy}>{t('Cancel', 'إلغاء')}</button>
+      <button type="submit" className="approved-button primary" disabled={busy}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save password', 'حفظ كلمة المرور')}</button>
+    </div>
+  </form>;
 }
 
 function AuthScreen({ ar, initialResetToken, initialError, onDone }: { ar: boolean; initialResetToken: string | null; initialError: string | null; onDone: () => void }) {

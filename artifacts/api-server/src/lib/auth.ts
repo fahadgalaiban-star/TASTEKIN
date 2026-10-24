@@ -73,9 +73,43 @@ export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
+// Case-insensitive: accounts created through Replit or Google keep the
+// email exactly as the provider sent it (possibly mixed case), while the
+// password routes normalise what the member types.
 export async function findUserByEmail(email: string) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.email, email.trim().toLowerCase()));
+  const [user] = await db.select().from(usersTable).where(sql`lower(${usersTable.email}) = ${email.trim().toLowerCase()}`);
   return user ?? null;
+}
+
+export type SetPasswordResult =
+  | { ok: true; user: UserRow }
+  | { ok: false; status: 400 | 404 | 409; error: string };
+
+/**
+ * Attaches a password to the SIGNED-IN account (Replit or Google provider)
+ * so the same row — same id, admin flag, profile and content — can also
+ * sign in with email + password. Only for a session that already proved
+ * ownership; never reachable from the sign-in screen. The provider sign-in
+ * keeps working: auth_provider is left as is and the provider upserts never
+ * touch password_hash. Refuses when a password already exists (there is no
+ * change-password flow yet) or when the account has no email to sign in
+ * with. The UPDATE is guarded by "password_hash IS NULL" so two concurrent
+ * requests cannot both succeed.
+ */
+export async function setPasswordForUser(userId: string, rawPassword: unknown): Promise<SetPasswordResult> {
+  const password = typeof rawPassword === "string" ? rawPassword : "";
+  if (!validatePassword(password)) return { ok: false, status: 400, error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` };
+  const [account] = await db.select().from(usersTable).where(eq(usersTable.id, userId)).limit(1);
+  if (!account) return { ok: false, status: 404, error: "Account not found." };
+  if (account.passwordHash) return { ok: false, status: 409, error: "This account already has a password." };
+  if (!account.email) return { ok: false, status: 400, error: "This account has no email address to sign in with." };
+  const passwordHash = await hashPassword(password);
+  const [updated] = await db.update(usersTable)
+    .set({ passwordHash, updatedAt: new Date() })
+    .where(and(eq(usersTable.id, userId), sql`${usersTable.passwordHash} IS NULL`))
+    .returning();
+  if (!updated) return { ok: false, status: 409, error: "This account already has a password." };
+  return { ok: true, user: updated };
 }
 
 /**
@@ -113,7 +147,7 @@ export async function authenticateWithPassword(rawEmail: unknown, rawPassword: u
   if (!email || !password) return { ok: false, status: 400, error: "Email and password are required." };
   const user = await findUserByEmail(email);
   if (!user || !user.passwordHash) {
-    return { ok: false, status: 401, error: user ? `This email signed up with ${user.authProvider === "google" ? "Google" : "Replit"} sign-in. Use that instead.` : "Incorrect email or password." };
+    return { ok: false, status: 401, error: user ? `This email signed up with ${user.authProvider === "google" ? "Google" : "Replit"} sign-in. Use that, or set a password from Settings → Account after signing in.` : "Incorrect email or password." };
   }
   const valid = await verifyPassword(password, user.passwordHash);
   if (!valid) return { ok: false, status: 401, error: "Incorrect email or password." };
