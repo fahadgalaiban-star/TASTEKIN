@@ -184,7 +184,9 @@ html.native-app.keyboard-open .approved-shell { padding-bottom:16px; }
 .edit-detail-caption { margin:2px 0 14px; color:var(--tk-stone); font-size:13px; line-height:1.5; }
 .approved-button { min-height:46px; padding:0 15px; border:1px solid var(--tk-wine); border-radius:999px; background:transparent; color:var(--tk-wine); font-size:13px; font-weight:800; }
 .approved-button.primary { background:var(--tk-wine); color:var(--tk-text-inverse); }
-.approved-button.wide { width:100%; margin-top:10px; }
+/* Icon + label sit on one line, centred, in LTR and RTL (flex follows direction). */
+.approved-button.wide { width:100%; margin-top:10px; display:inline-flex; align-items:center; justify-content:center; gap:7px; }
+.approved-button.wide > svg { flex:0 0 auto; }
 .approved-button.danger { border-color:var(--tk-danger); color:var(--tk-danger); }
 .approved-error-text { color:var(--tk-danger); }
 a.approved-button { display:inline-flex; align-items:center; justify-content:center; text-decoration:none; }
@@ -658,8 +660,9 @@ a.approved-button { display:inline-flex; align-items:center; justify-content:cen
 .insights-stats > div { display:grid; gap:2px; padding:14px 11px; border:1px solid var(--tk-border); border-radius:15px; background:var(--tk-surface); }
 .insights-stats strong { color:var(--tk-wine); font-size:22px; }
 .insights-stats span { color:var(--tk-stone); font-size:10px; font-weight:700; }
-.insight-edit-list article { display:grid; gap:4px; padding:12px; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); }
-.insight-edit-list strong { font-size:12px; }
+.insight-edit-list article { display:grid; gap:4px; padding:12px; border:1px solid var(--tk-border); border-radius:14px; background:var(--tk-card); min-width:0; }
+/* Titles wrap on word boundaries and stop after two lines with an ellipsis — never cut mid-word. */
+.insight-edit-list strong { min-width:0; font-size:12px; line-height:1.35; white-space:normal; overflow-wrap:anywhere; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
 .insight-edit-list span { color:var(--tk-stone); font-size:10px; line-height:1.45; }
 .settings-section { margin:0 0 22px; padding-bottom:18px; border-bottom:1px solid var(--tk-border); }
 .settings-section:last-of-type { border-bottom:0; }
