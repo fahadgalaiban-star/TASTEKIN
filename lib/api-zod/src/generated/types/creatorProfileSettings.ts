@@ -30,6 +30,12 @@ export interface CreatorProfileSettings {
      * @items.maxLength 60
      */
   interests: string[];
+  /**
+     * @maxItems 8
+     * @items.minLength 1
+     * @items.maxLength 60
+     */
+  tasteTags?: string[];
   /** @maxLength 1024 */
   avatar: string;
   /**

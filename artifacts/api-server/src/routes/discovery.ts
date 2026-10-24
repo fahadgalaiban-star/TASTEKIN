@@ -15,12 +15,15 @@ import { creatorFollows, creatorWorkspaces, db, usersTable, userTastePreferences
 import {
   MIN_TASTE_CATEGORIES,
   MIN_TASTE_TAGS,
+  inferTasteTags,
   isCompleteTasteProfile,
+  normalizeTasteTagIds,
   tasteCategories,
   tasteCategoryIds,
   tasteCategoryLabel,
   tasteTagIds,
   tasteTags,
+  type TasteTagSource,
 } from "@workspace/taste-catalog";
 import { and, eq } from "drizzle-orm";
 import { Router, type IRouter } from "express";
@@ -196,22 +199,25 @@ async function allCreators(): Promise<Creator[]> {
   const persisted = rows.map(({ workspace, verified }) => {
     const profile = workspace.profile;
     const city = [profile.city, profile.country].filter(Boolean).join(", ");
-    const publishedEditCategories = Array.isArray(workspace.edits)
-      ? workspace.edits.flatMap((edit) => {
-        if (!edit || typeof edit !== "object") return [];
-        const value = edit as { category?: unknown; status?: unknown };
-        return value.status === "published" && typeof value.category === "string" && tasteCategoryIds.includes(value.category as never)
-          ? [value.category]
-          : [];
-      })
+    const publishedEdits = Array.isArray(workspace.edits)
+      ? workspace.edits.filter((edit): edit is Record<string, unknown> => Boolean(edit) && typeof edit === "object" && (edit as { status?: unknown }).status === "published")
       : [];
+    const publishedEditCategories = publishedEdits.flatMap((value) =>
+      typeof value.category === "string" && tasteCategoryIds.includes(value.category as never) ? [value.category] : []);
+    // A real creator's taste tags: what they picked on their profile plus
+    // what their published Edits talk about (inferred from the words). This
+    // is what lets Taste Match rise above the category share for them.
+    const creatorTasteTags = normalizeTasteTagIds([
+      ...(profile.tasteTags ?? []),
+      ...publishedEdits.flatMap((value) => inferTasteTags(value as TasteTagSource)),
+    ], 16);
     return {
       id: workspace.creatorId,
       username: profile.username,
       displayName: profile.displayName,
       avatar: profile.avatar.startsWith("/objects/") ? `/api/public-profile-media/${encodeURIComponent(profile.username)}` : profile.avatar,
       categories: Array.from(new Set([...profile.interests, ...publishedEditCategories])),
-      tasteTags: [],
+      tasteTags: creatorTasteTags,
       city,
       verified: Boolean(verified),
       bio: profile.bio,

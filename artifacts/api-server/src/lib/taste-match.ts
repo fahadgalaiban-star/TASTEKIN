@@ -1,4 +1,5 @@
 import {
+  TASTE_MATCH_WEIGHTS,
   jaccardOverlap,
   isCompleteTasteProfile,
   sharedUnique,
@@ -98,12 +99,23 @@ export function calculateTasteMatch(
     };
   }
 
-  const score = Math.round(
-    (jaccardOverlap(preferences.categories, creator.categories) * 0.35
-      + jaccardOverlap(preferences.tags, creator.tasteTags) * 0.65) * 100,
-  );
+  const score = Math.round(tasteMatchFraction(preferences, creator) * 100);
   const shared = sharedTastes(preferences, creator);
   return { state: "ready", score, sharedTastes: shared, ...explanationFor(shared) };
+}
+
+/**
+ * 0–1 taste match between a complete viewer profile and a creator profile:
+ * 35% category overlap, 65% tag overlap (Jaccard). When the creator side has
+ * no tags at all — a real creator who never described their taste and whose
+ * Edits carry no recognisable words — the tag term is undefined rather than
+ * zero, so the score falls back to the category overlap alone instead of
+ * being capped at 35%.
+ */
+export function tasteMatchFraction(preferences: TasteSelection, creator: CreatorTasteProfile): number {
+  const categoryOverlap = jaccardOverlap(preferences.categories, creator.categories);
+  if (!creator.tasteTags.length) return categoryOverlap;
+  return categoryOverlap * TASTE_MATCH_WEIGHTS.categories + jaccardOverlap(preferences.tags, creator.tasteTags) * TASTE_MATCH_WEIGHTS.tags;
 }
 
 export function tasteReasons(match: TransparentTasteMatch) {

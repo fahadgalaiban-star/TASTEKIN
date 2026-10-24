@@ -121,6 +121,7 @@ html.native-app.keyboard-open .approved-shell { padding-bottom:16px; }
 .feed-creator strong { overflow:hidden; color:var(--tk-ink); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
 .feed-creator small { color:var(--tk-stone); font-size:9px; }
 .feed-creator-button { width:100%; border:0; background:transparent; color:inherit; text-align:start; }
+.feed-match { display:flex; align-items:center; gap:5px; margin:-4px 0 0; padding:0 13px 8px; color:var(--tk-wine); font-size:11px; font-weight:700; }
 .feed-creator-button:focus-visible, .circle-rail-member:focus-visible { outline:2px solid var(--tk-wine); outline-offset:2px; }
 .feed-taste-seal { width:18px; height:18px; margin-inline-start:auto; object-fit:contain; }
 .approved-art { position:relative; display:block; width:100%; height:auto; aspect-ratio:4 / 5; padding:0; overflow:hidden; border:0; background:var(--tk-surface-muted); }

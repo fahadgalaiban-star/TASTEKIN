@@ -1393,6 +1393,10 @@ export const getCreatorProfileResponseInterestsItemMax = 60;
 
 export const getCreatorProfileResponseInterestsMax = 12;
 
+export const getCreatorProfileResponseTasteTagsItemMax = 60;
+
+export const getCreatorProfileResponseTasteTagsMax = 8;
+
 export const getCreatorProfileResponseAvatarMax = 1024;
 
 export const getCreatorProfileResponseAvatarObjectPathMax = 1024;
@@ -1415,6 +1419,7 @@ export const GetCreatorProfileResponse = zod.object({
   "city": zod.string().max(getCreatorProfileResponseCityMax),
   "country": zod.string().max(getCreatorProfileResponseCountryMax),
   "interests": zod.array(zod.string().min(1).max(getCreatorProfileResponseInterestsItemMax)).max(getCreatorProfileResponseInterestsMax),
+  "tasteTags": zod.array(zod.string().min(1).max(getCreatorProfileResponseTasteTagsItemMax)).max(getCreatorProfileResponseTasteTagsMax).optional(),
   "avatar": zod.string().max(getCreatorProfileResponseAvatarMax),
   "avatarObjectPath": zod.string().max(getCreatorProfileResponseAvatarObjectPathMax).nullable(),
   "coverImage": zod.string().max(getCreatorProfileResponseCoverImageMax),
@@ -1447,6 +1452,10 @@ export const saveCreatorProfileBodyInterestsItemMax = 60;
 
 export const saveCreatorProfileBodyInterestsMax = 12;
 
+export const saveCreatorProfileBodyTasteTagsItemMax = 60;
+
+export const saveCreatorProfileBodyTasteTagsMax = 8;
+
 export const saveCreatorProfileBodyDateOfBirthRegExp = new RegExp('^\\d{4}-\\d{2}-\\d{2}$');
 export const saveCreatorProfileBodyAvatarObjectPathMax = 1024;
 
@@ -1465,6 +1474,7 @@ export const SaveCreatorProfileBody = zod.object({
   "city": zod.string().max(saveCreatorProfileBodyCityMax),
   "country": zod.string().max(saveCreatorProfileBodyCountryMax),
   "interests": zod.array(zod.string().min(1).max(saveCreatorProfileBodyInterestsItemMax)).max(saveCreatorProfileBodyInterestsMax),
+  "tasteTags": zod.array(zod.string().min(1).max(saveCreatorProfileBodyTasteTagsItemMax)).max(saveCreatorProfileBodyTasteTagsMax).optional(),
   "dateOfBirth": zod.string().regex(saveCreatorProfileBodyDateOfBirthRegExp).nullable(),
   "showAge": zod.boolean(),
   "avatarObjectPath": zod.string().max(saveCreatorProfileBodyAvatarObjectPathMax).regex(saveCreatorProfileBodyAvatarObjectPathRegExp).nullable(),
@@ -1488,6 +1498,10 @@ export const saveCreatorProfileResponseInterestsItemMax = 60;
 
 export const saveCreatorProfileResponseInterestsMax = 12;
 
+export const saveCreatorProfileResponseTasteTagsItemMax = 60;
+
+export const saveCreatorProfileResponseTasteTagsMax = 8;
+
 export const saveCreatorProfileResponseAvatarMax = 1024;
 
 export const saveCreatorProfileResponseAvatarObjectPathMax = 1024;
@@ -1510,6 +1524,7 @@ export const SaveCreatorProfileResponse = zod.object({
   "city": zod.string().max(saveCreatorProfileResponseCityMax),
   "country": zod.string().max(saveCreatorProfileResponseCountryMax),
   "interests": zod.array(zod.string().min(1).max(saveCreatorProfileResponseInterestsItemMax)).max(saveCreatorProfileResponseInterestsMax),
+  "tasteTags": zod.array(zod.string().min(1).max(saveCreatorProfileResponseTasteTagsItemMax)).max(saveCreatorProfileResponseTasteTagsMax).optional(),
   "avatar": zod.string().max(saveCreatorProfileResponseAvatarMax),
   "avatarObjectPath": zod.string().max(saveCreatorProfileResponseAvatarObjectPathMax).nullable(),
   "coverImage": zod.string().max(saveCreatorProfileResponseCoverImageMax),

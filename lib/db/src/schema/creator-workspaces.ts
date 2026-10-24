@@ -8,6 +8,8 @@ export type CreatorProfileRecord = {
   city: string;
   country: string;
   interests: string[];
+  /** Taste tags the creator picked (catalog ids). Absent on profiles written before the field existed. */
+  tasteTags?: string[];
   dateOfBirth: string | null;
   showAge: boolean;
   avatar: string;

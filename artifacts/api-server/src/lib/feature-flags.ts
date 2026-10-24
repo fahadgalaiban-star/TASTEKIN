@@ -59,6 +59,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: "taste_ranking",
+    description: "Taste-driven Home: creators pick taste tags on their profile, every Edit gets a taste score for the viewer (category + tags, never counts), Home 'For you' is ordered by that score with a recency tiebreak and creator diversity, and cards say which shared tastes matched. Off: Home stays newest-first and the tag picker is hidden.",
+    defaultEnabled: false,
+  },
+  {
     key: "video_upload",
     description: "User-uploaded video via Bunny Stream (backend foundation only in this phase — no upload endpoint, webhook, or UI is gated by this flag yet; it exists so later phases have a kill switch from day one). Missing Bunny configuration (BUNNY_STREAM_API_KEY/BUNNY_STREAM_LIBRARY_ID) never affects startup or any other feature while this flag is disabled.",
     defaultEnabled: false,
