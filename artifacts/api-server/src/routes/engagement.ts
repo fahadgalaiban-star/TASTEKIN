@@ -1,6 +1,7 @@
 import {
   conversationMessages,
   conversations,
+  creatorFollows,
   creatorViewEvents,
   creatorWorkspaces,
   db,
@@ -12,6 +13,7 @@ import {
   savedLists,
   usersTable,
 } from "@workspace/db";
+import { isFeatureEnabled } from "../lib/feature-flags";
 import {
   CreateConversationBody,
   CreateConversationMessageBody,
@@ -457,10 +459,17 @@ router.get("/creator-insights", async (req, res): Promise<void> => {
     const [row] = await db.select({ count: sql<number>`count(*)::int` }).from(table).where(where);
     return Number(row?.count ?? 0);
   };
-  const [profileViews, totalLikes, totalSaves, totalComments] = await Promise.all([
+  const [profileViews, totalLikes, totalSaves, totalComments, followerCountEnabled] = await Promise.all([
     db.select({ count: sql<number>`count(*)::int` }).from(creatorViewEvents).where(and(eq(creatorViewEvents.creatorId, workspace.creatorId), isNull(creatorViewEvents.editId))),
     countFor(editLikes), countFor(editSaves), countFor(editComments),
+    isFeatureEnabled("owner_follower_count"),
   ]);
+  // Owner-only, and only on this owner-only route: the creator's follower
+  // count (flag owner_follower_count). It is never part of a public payload
+  // and never an input to any ranking.
+  const followers = followerCountEnabled
+    ? Number((await db.select({ count: sql<number>`count(*)::int` }).from(creatorFollows).where(eq(creatorFollows.creatorId, workspace.creatorId)))[0]?.count ?? 0)
+    : null;
   const edits = await Promise.all(editIds.map(async (editId) => {
     const [[likes], [saves], [comments], [views]] = await Promise.all([
       db.select({ count: sql<number>`count(*)::int` }).from(editLikes).where(eq(editLikes.editId, editId)),
@@ -471,7 +480,7 @@ router.get("/creator-insights", async (req, res): Promise<void> => {
     return { editId, likes: Number(likes?.count ?? 0), saves: Number(saves?.count ?? 0), comments: Number(comments?.count ?? 0), views: Number(views?.count ?? 0) };
   }));
   res.json(GetCreatorInsightsResponse.parse({
-    profileViews: Number(profileViews[0]?.count ?? 0), totalLikes, totalSaves, totalComments, edits,
+    profileViews: Number(profileViews[0]?.count ?? 0), totalLikes, totalSaves, totalComments, followers, edits,
   }));
 });
 

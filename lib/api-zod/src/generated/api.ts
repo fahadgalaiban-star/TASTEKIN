@@ -723,6 +723,8 @@ export const getCreatorInsightsResponseTotalSavesMin = 0;
 
 export const getCreatorInsightsResponseTotalCommentsMin = 0;
 
+export const getCreatorInsightsResponseFollowersMin = 0;
+
 export const getCreatorInsightsResponseEditsItemLikesMin = 0;
 
 export const getCreatorInsightsResponseEditsItemSavesMin = 0;
@@ -738,6 +740,7 @@ export const GetCreatorInsightsResponse = zod.object({
   "totalLikes": zod.number().min(getCreatorInsightsResponseTotalLikesMin),
   "totalSaves": zod.number().min(getCreatorInsightsResponseTotalSavesMin),
   "totalComments": zod.number().min(getCreatorInsightsResponseTotalCommentsMin),
+  "followers": zod.number().min(getCreatorInsightsResponseFollowersMin).nullish(),
   "edits": zod.array(zod.object({
   "editId": zod.string(),
   "likes": zod.number().min(getCreatorInsightsResponseEditsItemLikesMin),

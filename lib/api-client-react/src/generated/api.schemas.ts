@@ -223,6 +223,11 @@ export interface CreatorInsights {
   totalSaves: number;
   /** @minimum 0 */
   totalComments: number;
+  /**
+     * @minimum 0
+     * @nullable
+     */
+  followers?: number | null;
   edits: CreatorInsightItem[];
 }
 
