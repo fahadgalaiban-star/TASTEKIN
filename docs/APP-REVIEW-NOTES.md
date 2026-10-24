@@ -100,6 +100,7 @@ listing description.
 | `kin_looks` | off | Style (KIN Looks) tab in the KIN screen |
 | `my_circle` | off | My Circle on Home and the Circle button on verified profiles |
 | `taste_ranking` | off | Home "For you" ordered by the viewer's taste (never by counts), "Matches your taste" line on cards, taste-tag picker on Edit profile. Off: newest-first |
+| `taste_learning` | off | needs `taste_ranking`; Home also learns from the member's own saves, likes, follows, Circle, views and time on screen; "Not interested" in the Edit menu. Requires `edit_dismissals` on Production (migration 0025 via Publish diff) and the Privacy Policy date published first |
 | `video_upload` | off | kill switch for the video foundation; see its description before touching it |
 | `kin_travel_car_rental` | off | "Rent a car" referral link in a travel plan (external partner) |
 | `kin_travel_restaurant_reservations` | off | "Reserve a table" referral link on restaurant stops |

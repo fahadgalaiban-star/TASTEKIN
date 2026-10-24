@@ -120,7 +120,7 @@ identity** and **not used for tracking**.
 | User Content → Photos or Videos | Yes | Yes | No | App Functionality | Edits, profile photo, My Things photos, collection covers |
 | User Content → Emails or Text Messages | Yes | Yes | No | App Functionality | private messages with verified creators |
 | User Content → Other User Content | Yes | Yes | No | App Functionality | captions, comments, reviews, taste preferences, KIN requests, reports |
-| Usage Data → Product Interaction | Yes | Yes | No | Analytics | in-app events (views, saves, follows) kept by TASTEKIN itself |
+| Usage Data → Product Interaction | Yes | Yes | No | Analytics, Product Personalization | in-app events (views, saves, follows, time an Edit stayed on screen, "Not interested") kept by TASTEKIN itself; with the `taste_learning` flag on they also tune that member's own Home order |
 
 Not collected: precise or coarse location (KIN Travel uses a destination the
 user types; the app has no location permission), contacts, health or
