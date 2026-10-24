@@ -4,7 +4,7 @@ import { usersTable, db } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import {
   authenticateWithPassword, clearSession, createPasswordResetToken, createSession, consumePasswordResetToken,
-  findUserByEmail, getSessionId, hashPassword, MIN_PASSWORD_LENGTH, registerWithPassword, setSessionCookie,
+  findUserByEmail, getSessionId, hashPassword, MIN_PASSWORD_LENGTH, registerWithPassword, setPasswordForUser, setSessionCookie,
   upsertGoogleUser, upsertUser, validatePassword,
 } from "../lib/auth";
 import { createNativeSession, isNativePlatform, revokeEverySession, revokeNativeSession } from "../lib/native-auth";
@@ -109,6 +109,10 @@ router.get("/me", async (req, res) => {
       // Settings can describe the password accurately instead of assuming
       // every account is provider-managed.
       authProvider: account?.authProvider ?? null,
+      // Whether this account can sign in with email + password right now:
+      // true for email/password accounts and for provider accounts that set
+      // one from Settings → Account.
+      passwordSet: Boolean(account?.passwordHash),
       language: account?.language ?? "en",
       notifyPush: account?.notifyPush ?? true,
       notifyEmail: account?.notifyEmail ?? true,
@@ -221,6 +225,27 @@ function nativeClient(req: import("express").Request): { ok: true; platform: "io
   const appVersion = typeof req.body?.appVersion === "string" && req.body.appVersion.trim() ? req.body.appVersion.trim().slice(0, 64) : null;
   return { ok: true, platform, appVersion };
 }
+
+/**
+ * Settings → Account → "Set a password". Needs the current signed-in session
+ * (cookie or native bearer) — the request proves ownership of the account;
+ * nothing about it is reachable from the sign-in screen. Works for Replit
+ * and Google accounts; creates no user and changes no email.
+ */
+router.post("/auth/set-password", async (req, res) => {
+  if (!req.isAuthenticated() || !req.user) {
+    res.status(401).json({ error: "Sign in to set a password." });
+    return;
+  }
+  try {
+    const result = await setPasswordForUser(req.user.id, req.body?.password);
+    if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+    noStoreSessionResponse(res);
+    res.json({ ok: true, authProvider: result.user.authProvider, passwordSet: true });
+  } catch (error) {
+    authErrorResponse(res, error, "Set password");
+  }
+});
 
 router.post("/auth/native/signup", async (req, res) => {
   const client = nativeClient(req);
