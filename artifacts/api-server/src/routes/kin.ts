@@ -21,6 +21,7 @@ import {
 import { reserveKinSearchAttempt } from "../lib/kin-search-usage";
 import { hasCachedStayPool, runKinTravelPlan, searchStays, swapPlace, type ActivityInterest, type KinStayKind, type KinTravelSlot } from "../lib/kin-travel";
 import { withReservationReferral, withTravelReferrals, type ReferralFlags } from "../lib/kin-referrals";
+import { creatorPlacesForViewer } from "../lib/kin-taste-places";
 import { requireUser } from "./engagement";
 
 const router: IRouter = Router();
@@ -329,7 +330,17 @@ router.post("/kin/travel/plan", requireUserMw, kinSearchFlagMw, async (req, res)
     return;
   }
 
-  const result = await runKinTravelPlan(validated.value, user.id, itemContext, String(req.id));
+  // taste_everywhere: real places from Edits the member saved or creators
+  // they follow, in this destination, join the plan. A lookup problem here
+  // must never cost the member their plan, so it degrades to "none".
+  const creatorPlaces = (await isFeatureEnabled("taste_everywhere"))
+    ? await creatorPlacesForViewer(user.id, validated.value.destination).catch((error: unknown) => {
+      req.log.warn({ err: error, userId: user.id }, "KIN travel: creator places unavailable");
+      return [];
+    })
+    : [];
+
+  const result = await runKinTravelPlan(validated.value, user.id, itemContext, String(req.id), { creatorPlaces });
   if (result.status !== "ok") {
     if (result.reason !== "not configured") {
       req.log.warn({ reason: result.reason, userId: user.id }, "KIN travel plan unavailable");

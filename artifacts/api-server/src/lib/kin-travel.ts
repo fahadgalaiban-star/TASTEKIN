@@ -20,6 +20,7 @@ import {
 } from "./kin-search";
 import { logger } from "./logger";
 import { venueKindFor, type KinReferralLink, type KinVenueKind } from "./kin-referrals";
+import { mergeCreatorPlacesIntoDays, type CreatorPlace } from "@workspace/taste-catalog";
 
 const MAX_TRIP_DAYS = 10;
 const MAX_FOOD_CANDIDATES_PER_SLOT = 20;
@@ -36,9 +37,13 @@ export type KinTravelPlace = Omit<GooglePlace, "photoRef" | "openingPeriods" | "
   venueKind: KinVenueKind | null;
   /** External reservation referral — present only when the kin_travel_restaurant_reservations flag is on AND a partner URL is configured AND the place is a restaurant/café (see lib/kin-referrals.ts). Never emitted otherwise. */
   reservation?: KinReferralLink;
+  /** taste_everywhere only: this stop came from an Edit the member saved or from a creator they follow. A real username; never a count. */
+  fromCreator?: KinTravelPlaceCreator;
 };
 
-type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null; activityInterest?: ActivityInterest };
+export type KinTravelPlaceCreator = { username: string; displayName: string; editId: string; via: "saved" | "followed" };
+
+type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null; activityInterest?: ActivityInterest; fromCreator?: KinTravelPlaceCreator };
 
 /**
  * Resolves at most one real photo per place (Google's photos[0]) to an
@@ -47,7 +52,7 @@ type TravelPlaceCandidate = GooglePlace & { requestedSlot: KinTravelSlot | null;
  * alongside the URL since Google's ToS requires it be shown with the photo.
  */
 async function resolvePlace(place: TravelPlaceCandidate, date: string | null): Promise<KinTravelPlace | null> {
-  const { photoRef, openingPeriods, primaryType, types, priceLevel: _priceLevel, requestedSlot, activityInterest, ...rest } = place;
+  const { photoRef, openingPeriods, primaryType, types, priceLevel: _priceLevel, requestedSlot, activityInterest, fromCreator, ...rest } = place;
   if (requestedSlot && !isOpenForSlot(requestedSlot, date, openingPeriods)) return null;
   const photoUrl = photoRef ? await resolvePlacePhotoUrl(photoRef.name) : null;
   return {
@@ -56,6 +61,7 @@ async function resolvePlace(place: TravelPlaceCandidate, date: string | null): P
     photoAttribution: photoUrl ? photoRef!.attributionText : null,
     slot: requestedSlot,
     ...(activityInterest ? { activityInterest } : {}),
+    ...(fromCreator ? { fromCreator } : {}),
     openingHours: openingHoursForDate(date, openingPeriods),
     venueKind: venueKindFor(primaryType, types),
   };
@@ -481,13 +487,50 @@ async function routeBetween(from: KinTravelNeighbour, to: KinTravelNeighbour): P
  * nothing genuine to add over plain KIN Travel search, so it reports
  * unavailable rather than fabricating an itinerary.
  */
-export async function runKinTravelPlan(request: KinSearchRequest, userId: string, myThingsItemContext?: string, correlationId?: string): Promise<KinTravelResult> {
+export type KinTravelPlanOptions = {
+  /** taste_everywhere: places from the member's saved Edits / followed creators, already filtered to the destination. */
+  creatorPlaces?: readonly CreatorPlace[];
+};
+
+/**
+ * taste_everywhere: turns each creator place into a real Google place (one
+ * text search per place, name + the creator's location label, first result
+ * only) so it carries the same coordinates, hours and photo as every other
+ * stop. A place Google cannot find is left out; a lookup failure never
+ * fails the plan. Nothing here reads a count.
+ */
+async function resolveCreatorPlaces(creatorPlaces: readonly CreatorPlace[], destination: string): Promise<TravelPlaceCandidate[]> {
+  const resolved = await Promise.all(creatorPlaces.map(async (creatorPlace) => {
+    try {
+      const result = await searchPlaces(`${creatorPlace.placeName} ${creatorPlace.locationLabel || destination}`, 1, undefined, false);
+      const place = result.status === "ok" ? result.places[0] : undefined;
+      if (!place) return null;
+      const candidate: TravelPlaceCandidate = {
+        ...place,
+        requestedSlot: null,
+        fromCreator: { username: creatorPlace.creatorUsername, displayName: creatorPlace.creatorDisplayName, editId: creatorPlace.editId, via: creatorPlace.via },
+      };
+      return candidate;
+    } catch (error) {
+      logger.warn({ err: error }, "KIN travel: creator place lookup failed");
+      return null;
+    }
+  }));
+  const seen = new Set<string>();
+  return resolved.filter((place): place is TravelPlaceCandidate => place !== null && !seen.has(place.placeId) && Boolean(seen.add(place.placeId)));
+}
+
+export async function runKinTravelPlan(request: KinSearchRequest, userId: string, myThingsItemContext?: string, correlationId?: string, options: KinTravelPlanOptions = {}): Promise<KinTravelResult> {
   if (!request.destination) return { status: "unavailable", reason: "destination required" };
   if (!isGooglePlacesConfigured()) return { status: "unavailable", reason: "not configured" };
 
   const dayCount = dayCountFor(request.startDate, request.endDate);
   const placesResult = await placeBucketsForRequest(request, dayCount);
   if (placesResult.status !== "ok") return { status: "unavailable", reason: placesResult.reason };
+  if (options.creatorPlaces?.length) {
+    const creatorCandidates = await resolveCreatorPlaces(options.creatorPlaces, request.destination);
+    placesResult.buckets = mergeCreatorPlacesIntoDays(placesResult.buckets, creatorCandidates, (existing, incoming) => ({ ...existing, fromCreator: incoming.fromCreator }));
+  }
 
   // Stays are looked up alongside the narrative call, not after it — they
   // are independent (different Google queries, their own reasons call), so
