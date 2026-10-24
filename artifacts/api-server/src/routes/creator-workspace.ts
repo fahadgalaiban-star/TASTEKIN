@@ -526,8 +526,10 @@ router.get("/public-feed", async (req, res) => {
     // Block always takes precedence and is checked independently of mute;
     // mute only additionally hides content from this Home/For You feed for
     // the muter — it never affects what anyone else sees.
+    // A creator's own Edits are not "for you": they live on the creator's
+    // profile and Manage edits, never in their own Home feed.
     const visibleRows = rows.filter(({ workspace }) =>
-      !workspace.ownerUserId || (!blockedUserIds.has(workspace.ownerUserId) && !mutedIds.has(workspace.ownerUserId)));
+      !workspace.ownerUserId || (workspace.ownerUserId !== req.user?.id && !blockedUserIds.has(workspace.ownerUserId) && !mutedIds.has(workspace.ownerUserId)));
     // Phase 3B: gate on the flag once for the whole feed page, and — when
     // enabled — resolve every video-bearing edit's playback/poster URLs in
     // exactly ONE batched query across every creator on this page, never

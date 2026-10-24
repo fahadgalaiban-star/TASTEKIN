@@ -143,6 +143,13 @@ async function main() {
     const viewerTaste = { categories: ["Restaurants"], tags: ["coffee-stops", "long-lunches"] };
     assert.equal((await viewer.json("/api/taste-preferences", "PUT", viewerTaste)).status, 200);
 
+    await check("a creator's own Edits never appear in their own Home feed (visitors still see them)", async () => {
+      const own = (await cafe.feed()).items.filter((item) => item.creatorUsername === `cafe_${stamp}`);
+      assert.deepEqual(own, [], "no own Edits on the creator's Home");
+      const asViewer = (await viewer.feed()).items.filter((item) => item.creatorUsername === `cafe_${stamp}`);
+      assert.equal(asViewer.length, 2, "another member still sees both café Edits");
+    });
+
     await check("flag OFF: Home is newest-first with no scores, even for a viewer with a complete taste profile", async () => {
       const feed = await viewer.feed();
       assert.equal(feed.ranking, "recency");
@@ -162,10 +169,13 @@ async function main() {
       assert.ok(ours[0].sharedTastes!.some((taste) => taste.id === "coffee-stops"), "shared taste names coffee stops");
       const gymItems = ours.filter((item) => item.creatorUsername === `gym_${stamp}`);
       assert.ok(gymItems.every((item) => (item.matchScore ?? 0) === 0), "gym Edits score 0 for this viewer");
-      // Diversity: with two creators the sequence alternates while both have items left.
-      for (let i = 1; i < ours.length; i += 1) {
-        if (ours[i].creatorUsername === ours[i - 1].creatorUsername) {
-          const remaining = ours.slice(i).some((item) => item.creatorUsername !== ours[i - 1].creatorUsername);
+      // Diversity, checked on the whole feed (other creators from earlier
+      // runs may sit between ours): the same creator appears twice in a row
+      // only when no other creator's Edit is left further down.
+      const all = feed.items;
+      for (let i = 1; i < all.length; i += 1) {
+        if (all[i].creatorUsername === all[i - 1].creatorUsername) {
+          const remaining = all.slice(i).some((item) => item.creatorUsername !== all[i - 1].creatorUsername);
           assert.equal(remaining, false, `same creator twice in a row at ${i} while another creator still had Edits`);
         }
       }
