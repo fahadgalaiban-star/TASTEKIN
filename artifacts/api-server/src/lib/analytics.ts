@@ -64,6 +64,24 @@ const editViewed: Validator = (metadata) => {
   return result;
 };
 
+// edit_dwell: { editId, seconds (1–60, integer), surface? } — the only
+// implicit taste signal the client sends. Anything else is refused.
+const DWELL_SURFACES = new Set(["home", "explore", "profile", "saved", "detail"]);
+const editDwell: Validator = (metadata) => {
+  const keys = new Set(Object.keys(metadata));
+  if (!keys.has("editId") || !isSafeIdString(metadata.editId)) return null;
+  if (!keys.has("seconds") || typeof metadata.seconds !== "number" || !Number.isInteger(metadata.seconds) || metadata.seconds < 1 || metadata.seconds > 60) return null;
+  keys.delete("editId"); keys.delete("seconds");
+  const result: Record<string, unknown> = { editId: metadata.editId, seconds: metadata.seconds };
+  if (keys.has("surface")) {
+    if (typeof metadata.surface !== "string" || !DWELL_SURFACES.has(metadata.surface)) return null;
+    result.surface = metadata.surface;
+    keys.delete("surface");
+  }
+  if (keys.size > 0) return null;
+  return result;
+};
+
 const EVENT_VALIDATORS: Record<AnalyticsEventName, Validator> = {
   onboarding_started: noMetadata,
   onboarding_completed: noMetadata,
@@ -76,6 +94,7 @@ const EVENT_VALIDATORS: Record<AnalyticsEventName, Validator> = {
   save_removed: editViewed,
   follow_added: creatorProfileViewed,
   follow_removed: creatorProfileViewed,
+  edit_dwell: editDwell,
 };
 
 const EVENT_NAME_SET = new Set<string>(ANALYTICS_EVENT_NAMES);

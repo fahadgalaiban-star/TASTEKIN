@@ -91,4 +91,5 @@ schema instead.
 | Add a column/table | schema change + additive migration file in one PR → merge → dev push → read Publish diff → approve |
 | See what Production has | read-only query in the Neon SQL console (`information_schema.columns`); never change anything there |
 | Explain a "pending" 0023/0024 in the ledger | expected; the objects exist, Publishing created them |
+| `0025_edit_dismissals` (taste learning) | same workflow: after merge, dev push → Publish diff should show exactly `CREATE TABLE edit_dismissals` + one index; approve, then turn `taste_learning` on |
 | Roll back a schema change | a new, forward-only migration file that reverses it, same workflow |

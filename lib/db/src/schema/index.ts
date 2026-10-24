@@ -3,6 +3,7 @@ export * from "./auth";
 export * from "./blocks";
 export * from "./closet";
 export * from "./creator-workspaces";
+export * from "./edit-dismissals";
 export * from "./engagement";
 export * from "./feature-flags";
 export * from "./kin";

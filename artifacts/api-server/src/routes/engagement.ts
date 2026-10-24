@@ -11,7 +11,9 @@ import {
   savedListItems,
   savedLists,
   usersTable,
+  editDismissals,
 } from "@workspace/db";
+import { isFeatureEnabled } from "../lib/feature-flags";
 import {
   CreateConversationBody,
   CreateConversationMessageBody,
@@ -190,6 +192,25 @@ async function updateEngagement(req: Request, res: Response, kind: "like" | "sav
   const result = await engagementFor(params.data.editId, user.id);
   res.json((kind === "like" ? UpdateEditLikeResponse : UpdateEditSaveResponse).parse(result));
 }
+
+/**
+ * "Not interested" (feature flag taste_learning): hides the Edit from this
+ * member's feeds and counts against its tags for this member only. Not a
+ * report, never aggregated, never shown to the creator. Idempotent.
+ */
+router.post("/edits/:editId/not-interested", async (req, res): Promise<void> => {
+  privateResponse(res);
+  const user = requireUser(req, res);
+  if (!user) return;
+  if (!(await isFeatureEnabled("taste_learning"))) { res.status(404).json({ error: "Not available" }); return; }
+  const editId = typeof req.params.editId === "string" ? req.params.editId : "";
+  if (!editId || editId.length > 120) { res.status(400).json({ error: "Invalid Edit" }); return; }
+  const context = await getEditContext(editId, user.id);
+  if (!context || !context.canRead) { res.status(404).json({ error: "Edit not found" }); return; }
+  if (context.owner) { res.status(400).json({ error: "You cannot hide your own Edit." }); return; }
+  await db.insert(editDismissals).values({ userId: user.id, creatorId: context.workspace.creatorId, editId }).onConflictDoNothing();
+  res.json({ ok: true, editId });
+});
 
 router.put("/edits/:editId/like", async (req, res): Promise<void> => updateEngagement(req, res, "like"));
 router.put("/edits/:editId/save", async (req, res): Promise<void> => updateEngagement(req, res, "save"));

@@ -9,8 +9,20 @@
 // verifiable from the product: a legal entity name or registration number, a
 // postal address, a governing jurisdiction. Contact is the support mailbox.
 
-export const LEGAL_EFFECTIVE_DATE = '2026-09-23';
-export const LEGAL_VERSION = 1;
+// The two documents carry their own effective dates. The Terms date is
+// also the "version" stored with each sign-up's acceptance (mirrored by
+// TERMS_VERSION in api-server/src/lib/auth.ts — bump both together).
+export const TERMS_EFFECTIVE_DATE = '2026-09-23';
+// Privacy Policy: updated for taste learning (feature flag taste_learning):
+// feeds ranked from chosen tastes and in-app behaviour, "Not interested",
+// time an Edit stays on screen.
+export const PRIVACY_EFFECTIVE_DATE = '2026-10-24';
+/** @deprecated use TERMS_EFFECTIVE_DATE / PRIVACY_EFFECTIVE_DATE; kept for the sign-up Terms version. */
+export const LEGAL_EFFECTIVE_DATE = TERMS_EFFECTIVE_DATE;
+export const LEGAL_VERSION = 2;
+export function legalEffectiveDate(kind: LegalDocumentKind) {
+  return kind === 'privacy' ? PRIVACY_EFFECTIVE_DATE : TERMS_EFFECTIVE_DATE;
+}
 export const SUPPORT_EMAIL = 'support@tastekin.app';
 
 export type LegalDocumentKind = 'privacy' | 'terms';
@@ -28,6 +40,7 @@ const privacyEn: LegalDocument = {
         'Creator profile: display name, username, bio, city and country, interests, optional date of birth (your age is shown only if you turn that on), profile photo and cover photo.',
         'Content you create: Edits (photos, videos, captions, place details, ratings, reviews, outfit details and links), collections, drafts and archived items.',
         'Interactions: likes, saves and saved lists, comments, follows, My Circle members, and private messages you exchange with verified creators.',
+        'Taste signals: the taste categories and tags you choose, Edits you mark "Not interested", and how long an Edit stays on your screen (rounded to the second, capped at a minute, one note per Edit per session). We do not record scrolling, what you type, or anything outside the Edit.',
         'My Things (KIN): photos of your clothing and the details you enter about each item. Photos are re-encoded on our servers, which removes camera metadata such as location.',
         'KIN searches: the questions you ask, any clothing photos you attach, and the trip details you enter (destination, dates, budget); saved recommendations and trips you choose to keep.',
         'Safety and trust: reports you file, accounts you block or mute, and verification applications (your statement and evidence links).',
@@ -47,6 +60,7 @@ const privacyEn: LegalDocument = {
       heading: 'How we use information',
       bullets: [
         'To provide the service: show your content, feeds, profiles, saves, messages and settings, and keep you signed in.',
+        'To rank your feeds by taste: from the tastes you chose and how you use TASTEKIN (saves, likes, follows, My Circle, views, time an Edit stays on screen, "Not interested"). Ranking never uses follower or like counts, and your behaviour is never used to rank anyone else\'s feed or shown to creators.',
         'To power KIN and My Things suggestions using an AI provider (see below).',
         'To keep TASTEKIN safe: reports, blocks, mutes, moderation and verification, and protecting accounts.',
         'To understand how the product is used, in aggregate.',
@@ -121,6 +135,7 @@ const privacyAr: LegalDocument = {
         'ملف المبدع: الاسم المعروض، اسم المستخدم، النبذة، المدينة والدولة، الاهتمامات، تاريخ الميلاد اختيارياً (يُعرض عمرك فقط إذا فعّلت ذلك)، صورة الملف وصورة الغلاف.',
         'المحتوى الذي تنشئه: التعديلات (الصور والفيديوهات والتعليقات وتفاصيل الأماكن والتقييمات والمراجعات وتفاصيل الإطلالات والروابط)، المجموعات، المسودات والعناصر المؤرشفة.',
         'التفاعلات: الإعجابات، المحفوظات وقوائم الحفظ، التعليقات، المتابعات، أعضاء دائرتك، والرسائل الخاصة التي تتبادلها مع المبدعين الموثّقين.',
+        'إشارات الذوق: فئات ووسوم الذوق التي تختارها، والتعديلات التي تحددها بـ"لا يهمني"، ومدة بقاء التعديل على شاشتك (مقرّبة إلى الثانية، بحد أقصى دقيقة، وتسجيل واحد لكل تعديل في الجلسة). لا نسجّل التمرير ولا ما تكتبه ولا أي شيء خارج التعديل.',
         'أشيائي (KIN): صور ملابسك والتفاصيل التي تُدخلها عن كل قطعة. تُعاد معالجة الصور على خوادمنا، ما يزيل بيانات الكاميرا الوصفية مثل الموقع.',
         'عمليات بحث KIN: الأسئلة التي تطرحها، وأي صور ملابس ترفقها، وتفاصيل الرحلة التي تُدخلها (الوجهة والتواريخ والميزانية)؛ والتوصيات والرحلات التي تختار حفظها.',
         'الأمان والثقة: البلاغات التي تقدمها، الحسابات التي تحظرها أو تكتمها، وطلبات التوثيق (بيانك وروابط الإثبات).',
@@ -140,6 +155,7 @@ const privacyAr: LegalDocument = {
       heading: 'كيف نستخدم المعلومات',
       bullets: [
         'لتقديم الخدمة: عرض محتواك والخلاصات والملفات والمحفوظات والرسائل والإعدادات، وإبقاؤك مسجلاً للدخول.',
+        'لترتيب خلاصاتك حسب ذوقك: من الأذواق التي اخترتها ومن طريقة استخدامك لـ TASTEKIN (الحفظ، الإعجاب، المتابعة، دائرتك، المشاهدات، مدة بقاء التعديل على الشاشة، "لا يهمني"). لا يعتمد الترتيب أبداً على أعداد المتابعين أو الإعجابات، ولا يُستخدم سلوكك لترتيب خلاصة أي شخص آخر ولا يُعرض على المبدعين.',
         'لتشغيل اقتراحات KIN وأشيائي عبر مزوّد ذكاء اصطناعي (انظر أدناه).',
         'للحفاظ على أمان TASTEKIN: البلاغات والحظر والكتم والإشراف والتوثيق وحماية الحسابات.',
         'لفهم كيفية استخدام المنتج بشكل إجمالي.',

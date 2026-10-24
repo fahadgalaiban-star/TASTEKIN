@@ -59,6 +59,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: "taste_learning",
+    description: "Taste that learns from behaviour (needs taste_ranking): saves, likes, follows, Circle, views, time an Edit stays on screen and 'Not interested' become weighted, time-decayed votes on tags and categories, blended with the member's chosen tastes; 'Not interested' hides the Edit. Never counts, never other members' behaviour. Off: PR-A ranking from chosen tastes only, no dwell events, no Not interested action.",
+    defaultEnabled: false,
+  },
+  {
     key: "taste_ranking",
     description: "Taste-driven Home: creators pick taste tags on their profile, every Edit gets a taste score for the viewer (category + tags, never counts), Home 'For you' is ordered by that score with a recency tiebreak and creator diversity, and cards say which shared tastes matched. Off: Home stays newest-first and the tag picker is hidden.",
     defaultEnabled: false,

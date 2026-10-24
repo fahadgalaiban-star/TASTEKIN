@@ -23,6 +23,9 @@ export const ANALYTICS_EVENT_NAMES = [
   "save_removed",
   "follow_added",
   "follow_removed",
+  // Taste learning (flag taste_learning): how long an Edit stayed on screen
+  // (seconds, rounded, capped at 60, one per Edit per session).
+  "edit_dwell",
 ] as const;
 // `subscription_started` / `subscription_completed` were removed with the
 // paid tier (TASTEKIN v1 is free). Historical rows with those names may still
