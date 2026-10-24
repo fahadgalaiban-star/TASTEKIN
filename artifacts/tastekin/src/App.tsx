@@ -144,7 +144,9 @@ type EditComment = { id: string; editId: string; body: string; authorName: strin
 type ConversationMessage = { id: string; senderUserId: string; body: string; createdAt: string; readAt: string | null };
 type ConversationPreview = { id: string; participantName: string; participantAvatar: string | null; lastMessage: string | null; lastMessageAt: string | null; unreadCount: number };
 type Conversation = ConversationPreview & { messages: ConversationMessage[] };
-type CreatorInsights = { profileViews: number; totalLikes: number; totalSaves: number; totalComments: number; edits: Array<{ editId: string; likes: number; saves: number; comments: number; views: number }> };
+// `followers` is owner-only (flag owner_follower_count) and arrives only on
+// this private Insights payload; nothing public ever carries it.
+type CreatorInsights = { profileViews: number; totalLikes: number; totalSaves: number; totalComments: number; followers?: number | null; edits: Array<{ editId: string; likes: number; saves: number; comments: number; views: number }> };
 type SavedList = { id: string; name: string; editIds: string[]; createdAt: string; updatedAt: string };
 
 const categories: { id: Category; en: string; ar: string }[] = [
@@ -2577,7 +2579,7 @@ function InsightsScreen({ ar, edits }: { ar: boolean; edits: CreatorEdit[] }) {
     {state === 'loading' && <Empty text={ar ? 'جارٍ تحميل البيانات الفعلية…' : 'Loading real activity…'} />}
     {state === 'error' && <div className="workspace-notice">{ar ? 'الإحصاءات متاحة لمالك حساب المبدع فقط.' : 'Insights are available only to the creator owner.'}<button onClick={() => void load()}>{ar ? 'حاول مجدداً' : 'Try again'}</button></div>}
     {state === 'ready' && insights && <>
-      <div className="insights-stats"><Stat value={insights.profileViews} label={ar ? 'زيارات الملف' : 'Profile views'} /><Stat value={insights.totalLikes} label={ar ? 'الإعجابات' : 'Likes'} /><Stat value={insights.totalSaves} label={ar ? 'الحفظ' : 'Saves'} /><Stat value={insights.totalComments} label={ar ? 'التعليقات' : 'Comments'} /></div>
+      <div className="insights-stats"><Stat value={insights.profileViews} label={ar ? 'زيارات الملف' : 'Profile views'} /><Stat value={insights.totalLikes} label={ar ? 'الإعجابات' : 'Likes'} /><Stat value={insights.totalSaves} label={ar ? 'الحفظ' : 'Saves'} /><Stat value={insights.totalComments} label={ar ? 'التعليقات' : 'Comments'} />{typeof insights.followers === 'number' && <div data-testid="insights-followers"><strong>{insights.followers}</strong><span>{ar ? 'المتابعون (أنت فقط ترى هذا الرقم)' : 'Followers (only you see this)'}</span></div>}</div>
       {!insights.profileViews && !insights.totalLikes && !insights.totalSaves && !insights.totalComments && <Empty text={ar ? 'لا توجد بيانات بعد. ستظهر التفاعلات الحقيقية هنا عند حدوثها.' : 'No activity yet. Real views and engagement will appear here as they happen.'} />}
       <div className="insight-edit-list">{insights.edits.map((item) => <article key={item.editId}><strong>{titles.get(item.editId) || item.editId}</strong><span>{item.views} {ar ? 'مشاهدة' : 'views'} · {item.likes} {ar ? 'إعجاب' : 'likes'} · {item.saves} {ar ? 'حفظ' : 'saves'} · {item.comments} {ar ? 'تعليق' : 'comments'}</span></article>)}</div>
     </>}

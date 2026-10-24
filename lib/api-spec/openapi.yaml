@@ -919,6 +919,10 @@ components:
         totalLikes: { type: number, minimum: 0 }
         totalSaves: { type: number, minimum: 0 }
         totalComments: { type: number, minimum: 0 }
+        # Owner-only follower count (feature flag owner_follower_count).
+        # Present only on this owner-only route and only while the flag is
+        # on; it never appears in any public profile, Explore or feed payload.
+        followers: { type: ["number", "null"], minimum: 0 }
         edits:
           type: array
           items: { $ref: "#/components/schemas/CreatorInsightItem" }

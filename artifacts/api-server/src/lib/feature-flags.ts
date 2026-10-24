@@ -59,6 +59,11 @@ export const FEATURE_FLAG_DEFINITIONS = [
     defaultEnabled: false,
   },
   {
+    key: "owner_follower_count",
+    description: "Show a creator their own follower count, on the owner-only Insights screen only. Never shown to visitors and never part of any public payload or ranking; off by default.",
+    defaultEnabled: false,
+  },
+  {
     key: "taste_ranking",
     description: "Taste-driven Home: creators pick taste tags on their profile, every Edit gets a taste score for the viewer (category + tags, never counts), Home 'For you' is ordered by that score with a recency tiebreak and creator diversity, and cards say which shared tastes matched. Off: Home stays newest-first and the tag picker is hidden.",
     defaultEnabled: false,
