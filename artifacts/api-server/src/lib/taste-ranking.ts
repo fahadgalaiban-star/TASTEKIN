@@ -13,6 +13,7 @@ import {
 } from "@workspace/taste-catalog";
 // Type-only, so the unit tests can import this file straight from source.
 import type { TasteSelection } from "./taste-match";
+import type { ImplicitTaste } from "./taste-learning";
 
 /**
  * Per-Edit taste scoring and the "For you" ordering.
@@ -62,6 +63,36 @@ export function scoreEditForViewer(preferences: TasteSelection | null | undefine
     ? tasteCategories.filter((category) => category.id === edit.category).map((category) => ({ id: category.id, label: tasteCategoryLabel(category.id), labelAr: tasteCategoryLabel(category.id, "ar"), type: "category" as const }))
     : [];
   return { score, sharedTastes: [...sharedTags, ...sharedCategory].slice(0, 3) };
+}
+
+/** How the learned (implicit) taste is blended in when the taste_learning flag is on. */
+export const TASTE_LEARNING_BLEND = {
+  explicit: 0.6,
+  implicit: 0.4,
+  /** Points taken off per tag the Edit shares with a tag the member rejected ("Not interested"). */
+  rejectedTagPenalty: 15,
+} as const;
+
+/**
+ * Blended per-Edit score: 60% from the explicit picks, 40% from the implicit
+ * selection when there is one (the implicit selection needs at least one
+ * category and two tags to be scored by the shared scorer; until then the
+ * explicit score stands alone). Edits that share a rejected tag lose points.
+ * Same inputs as scoreEditForViewer: still no counts, still nobody else's data.
+ */
+export function scoreEditWithLearning(explicit: TasteSelection | null | undefined, learned: ImplicitTaste, edit: ScoredEditInput): EditTasteMatch {
+  const base = scoreEditForViewer(explicit, edit);
+  if (base.score === null) return base;
+  const implicitScorable = learned.selection.categories.length >= 1 && learned.selection.tags.length >= 2;
+  const implicit = implicitScorable ? scoreEditForViewer(learned.selection, edit) : null;
+  let score = implicit && implicit.score !== null
+    ? base.score * TASTE_LEARNING_BLEND.explicit + implicit.score * TASTE_LEARNING_BLEND.implicit
+    : base.score;
+  const rejectedShared = edit.tasteTags.filter((tag) => learned.rejectedTags.has(tag)).length;
+  score = Math.max(0, Math.round(score - rejectedShared * TASTE_LEARNING_BLEND.rejectedTagPenalty));
+  const seen = new Set(base.sharedTastes.map((taste) => taste.id));
+  const sharedTastes = [...base.sharedTastes, ...(implicit?.sharedTastes ?? []).filter((taste) => !seen.has(taste.id))].slice(0, 3);
+  return { score, sharedTastes };
 }
 
 export type RankableItem = {

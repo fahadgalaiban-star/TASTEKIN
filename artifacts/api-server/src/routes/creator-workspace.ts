@@ -10,7 +10,9 @@ import {
 import { and, asc, eq, inArray, notInArray, sql } from "drizzle-orm";
 import { Router, type IRouter } from "express";
 import { normalizeTasteTagIds, tasteCategoryIds, tasteTagIds } from "@workspace/taste-catalog";
-import { editTasteTags, hasCompleteTaste, rankForYou, scoreEditForViewer } from "../lib/taste-ranking";
+import { editTasteTags, hasCompleteTaste, rankForYou, scoreEditForViewer, scoreEditWithLearning } from "../lib/taste-ranking";
+import { implicitTaste, type CreatorFacts, type EditFacts } from "../lib/taste-learning";
+import { loadViewerSignals } from "../lib/taste-learning-signals";
 import type { TasteSelection } from "../lib/taste-match";
 
 import {
@@ -507,7 +509,7 @@ async function viewerTastePreferences(userId: string): Promise<TasteSelection | 
 
 router.get("/public-feed", async (req, res) => {
   try {
-    const [rows, followed, blockedUserIds, mutedIds, tasteRankingEnabled, viewerTaste] = await Promise.all([
+    const [rows, followed, blockedUserIds, mutedIds, tasteRankingEnabled, viewerTaste, tasteLearningEnabled] = await Promise.all([
       db.select({ workspace: creatorWorkspaces, verified: usersTable.isVerified })
         .from(creatorWorkspaces)
         .leftJoin(usersTable, eq(creatorWorkspaces.ownerUserId, usersTable.id)),
@@ -518,10 +520,34 @@ router.get("/public-feed", async (req, res) => {
       mutedUserIds(req.user?.id),
       isFeatureEnabled("taste_ranking"),
       req.user ? viewerTastePreferences(req.user.id) : Promise.resolve(null),
+      isFeatureEnabled("taste_learning"),
     ]);
     // Taste-driven "For you" (flag taste_ranking): only for a signed-in
     // viewer with a complete taste profile. Everyone else keeps newest-first.
     const rankByTaste = tasteRankingEnabled && hasCompleteTaste(viewerTaste);
+    // Taste learning (flag taste_learning, needs taste_ranking): the viewer's
+    // OWN saves, likes, follows, Circle, views, dwell and "Not interested"
+    // become decayed votes on tags/categories, blended with the explicit
+    // picks. Facts about Edits/creators come from the workspaces already
+    // loaded; nothing about other members' behaviour is read.
+    const learned = rankByTaste && tasteLearningEnabled && req.user
+      ? await (async () => {
+        const editsById = new Map<string, EditFacts>();
+        const creatorsById = new Map<string, CreatorFacts>();
+        for (const { workspace } of rows) {
+          const profile = normalizeProfile(workspace.profile);
+          const published = (workspace.edits as Array<Record<string, unknown>>).filter((edit) => edit && edit.status === "published" && typeof edit.id === "string");
+          const facts = published.map((edit) => ({ editId: String(edit.id), creatorId: workspace.creatorId, category: String(edit.category ?? ""), tasteTags: editTasteTags(edit as Record<string, string | undefined>, profile.tasteTags ?? []) }));
+          for (const fact of facts) editsById.set(fact.editId, fact);
+          creatorsById.set(workspace.creatorId, {
+            creatorId: workspace.creatorId,
+            categories: Array.from(new Set([...profile.interests, ...facts.map((fact) => fact.category).filter(Boolean)])),
+            tasteTags: normalizeTasteTagIds([...(profile.tasteTags ?? []), ...facts.flatMap((fact) => fact.tasteTags)], 16),
+          });
+        }
+        return implicitTaste(await loadViewerSignals(req.user!.id), editsById, creatorsById);
+      })()
+      : null;
     const followedIds = new Set(followed.map((item) => item.creatorId));
     // Block always takes precedence and is checked independently of mute;
     // mute only additionally hides content from this Home/For You feed for
@@ -538,7 +564,8 @@ router.get("/public-feed", async (req, res) => {
     const perWorkspaceEdits = visibleRows.map(({ workspace, verified }) => {
       const profile = normalizeProfile(workspace.profile);
       const edits = (workspace.edits as Array<Record<string, unknown>>)
-        .filter((edit) => edit.status === "published")
+        // "Not interested" (taste_learning) hides the Edit from this viewer only.
+        .filter((edit) => edit.status === "published" && !learned?.dismissedEditIds.has(String(edit.id)))
         .map((edit) => publicEditView(edit, profile.username));
       return { workspace, verified, profile, edits };
     });
@@ -553,8 +580,9 @@ router.get("/public-feed", async (req, res) => {
         // What this Edit is about: its own words plus the creator's picked
         // tags. Computed at read time; nothing derived is stored.
         const tasteTags = rankByTaste ? editTasteTags(edit as Record<string, string | undefined>, profile.tasteTags ?? []) : [];
+        const scored = { category: String(edit.category ?? ""), tasteTags };
         const match = rankByTaste
-          ? scoreEditForViewer(viewerTaste, { category: String(edit.category ?? ""), tasteTags })
+          ? (learned ? scoreEditWithLearning(viewerTaste, learned, scored) : scoreEditForViewer(viewerTaste, scored))
           : null;
         return {
           creatorUsername: profile.username,
@@ -573,7 +601,7 @@ router.get("/public-feed", async (req, res) => {
       ? rankForYou(items.map((item) => ({ ...item, id: `${item.creatorId}:${String(item.edit.id)}`, score: item.matchScore ?? null, updatedAt: item.workspaceUpdatedAt })))
       : [...items].sort((left, right) => right.workspaceUpdatedAt.getTime() - left.workspaceUpdatedAt.getTime());
     res.set("Cache-Control", "private, no-store");
-    res.json({ ranking: rankByTaste ? "taste" : "recency", items: ordered.map(({ workspaceUpdatedAt: _updatedAt, creatorId: _creatorId, id: _rankId, score: _score, updatedAt: _rankUpdatedAt, ...item }: Record<string, unknown>) => item) });
+    res.json({ ranking: rankByTaste ? "taste" : "recency", learning: Boolean(learned), items: ordered.map(({ workspaceUpdatedAt: _updatedAt, creatorId: _creatorId, id: _rankId, score: _score, updatedAt: _rankUpdatedAt, ...item }: Record<string, unknown>) => item) });
   } catch (error) {
     req.log.error({ err: error }, "Unable to load public creator feed");
     res.status(500).json({ error: "Unable to load the public feed" });
