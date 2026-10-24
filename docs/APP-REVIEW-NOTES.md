@@ -100,6 +100,7 @@ listing description.
 | `kin_looks` | off | Style (KIN Looks) tab in the KIN screen |
 | `my_circle` | off | My Circle on Home and the Circle button on verified profiles |
 | `taste_ranking` | off | Home "For you" ordered by the viewer's taste (never by counts), "Matches your taste" line on cards, taste-tag picker on Edit profile. Off: newest-first |
+| `taste_everywhere` | off | KIN Travel: interest chips pre-selected from the taste profile (editable), and places from saved Edits / followed creators in the destination join the plan as "from @creator". Needs `kin_search`. No new data |
 | `video_upload` | off | kill switch for the video foundation; see its description before touching it |
 | `kin_travel_car_rental` | off | "Rent a car" referral link in a travel plan (external partner) |
 | `kin_travel_restaurant_reservations` | off | "Reserve a table" referral link on restaurant stops |
