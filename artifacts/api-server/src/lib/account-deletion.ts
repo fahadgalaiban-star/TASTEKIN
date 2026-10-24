@@ -41,6 +41,7 @@ import {
   creatorWorkspaces,
   db,
   editComments,
+  editDismissals,
   editLikes,
   editSaves,
   featureFlagAuditLog,
@@ -177,6 +178,7 @@ async function deleteAccountRows(tx: Tx, userId: string): Promise<AccountDeletio
   await tx.delete(editComments).where(eq(editComments.userId, userId));
   await tx.delete(savedLists).where(eq(savedLists.userId, userId)); // saved_list_items cascade
   await tx.delete(creatorFollows).where(eq(creatorFollows.followerUserId, userId));
+  await tx.delete(editDismissals).where(eq(editDismissals.userId, userId)); // "Not interested" votes (taste_learning)
   await tx.update(creatorViewEvents).set({ viewerUserId: null }).where(eq(creatorViewEvents.viewerUserId, userId));
   await tx.delete(userTastePreferences).where(eq(userTastePreferences.userId, userId));
   await tx.delete(verificationApplications).where(eq(verificationApplications.userId, userId));
