@@ -15,6 +15,7 @@
     "verify:onboarding-live": "tsx ./src/verify-onboarding-live.ts",
     "verify:taste-ranking": "tsx ./src/verify-taste-ranking.ts",
     "verify:set-password": "tsx ./src/verify-set-password.ts",
+    "verify:owner-follower-count": "tsx ./src/verify-owner-follower-count.ts",
     "verify:reports": "tsx ./src/verify-reports.ts",
     "verify:blocks": "tsx ./src/verify-blocks.ts",
     "verify:mutes": "tsx ./src/verify-mutes.ts",
