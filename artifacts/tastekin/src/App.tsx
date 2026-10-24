@@ -101,7 +101,7 @@ type CropMetadata = { aspect: CropAspect; zoom: number; x: number; y: number; ro
 type PendingCrop = { source: File; crop: File; cropMetadata: CropMetadata; cropUrl: string };
 type OutfitItem = { type: string; brand: string; name: string; link: string };
 type CreatorProfile = {
-  id?: string; displayName: string; username: string; bio: string; city: string; country: string; interests: string[];
+  id?: string; displayName: string; username: string; bio: string; city: string; country: string; interests: string[]; tasteTags: string[];
   avatar: string; avatarObjectPath: string | null; coverImage: string; coverImageObjectPath: string | null; age: number | null; dateOfBirth: string | null; showAge: boolean; verified: boolean; revision: number;
 };
 type PendingProfilePhoto = { file: File; url: string };
@@ -125,7 +125,12 @@ type CreatorEdit = {
   image?: string; sourceImage?: string; previewImage?: string; imageMetadata?: ImageMetadata; crop?: CropMetadata; video?: CreatorEditVideo; location: string; locationAr: string; altText: string; access: Access; status: EditStatus; collectionIds: string[]; outfitItems?: OutfitItem[]; showOutfitDetails?: boolean;
   placeName?: string | null; locationLabel?: string | null; mapsUrl?: string | null; tasteRating?: number | null; creatorReview?: string | null;
   creatorUsername?: string; creatorName?: string; creatorVerified?: boolean; creatorAvatar?: string; following?: boolean;
+  // Present on Home "For you" items only while the taste_ranking flag is on
+  // and the viewer has a complete taste profile: the Edit's taste score for
+  // this viewer and the shared tastes behind it (never a popularity number).
+  matchScore?: number | null; sharedTastes?: SharedTaste[];
 };
+type SharedTaste = { id: string; label: string; labelAr: string; type: 'category' | 'tag' };
 // A collection item that has no backing Edit — uploaded straight into the
 // collection, so it never appears as a standalone Edit. `type` is kept
 // explicit (rather than assumed photo) so video items can slot in later
@@ -174,13 +179,13 @@ const media = (name: string) => `/tastekin-media/${name}`;
 const TASTE_SEAL_IMAGE = tasteSealImage;
 const defaultCreatorProfile: CreatorProfile = {
   displayName: 'Fheed Alaiban', username: 'fheed', bio: 'A considered edit of fashion, places, travel, and the rituals that make everyday life feel better.',
-  city: 'Kuwait City', country: 'Kuwait', interests: ['Fashion', 'Travel', 'Places'], avatar: media('fheed-profile.webp'),
+  city: 'Kuwait City', country: 'Kuwait', interests: ['Fashion', 'Travel', 'Places'], tasteTags: [], avatar: media('fheed-profile.webp'),
   avatarObjectPath: null, coverImage: media('coastal-notes.webp'), coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: true, revision: 1,
 };
 // A genuinely empty placeholder — used before a signed-in user's own profile has loaded (or when
 // signed out), so nobody ever sees Fheed's showcased identity mistaken for their own account.
 const blankCreatorProfile: CreatorProfile = {
-  displayName: '', username: '', bio: '', city: '', country: '', interests: [],
+  displayName: '', username: '', bio: '', city: '', country: '', interests: [], tasteTags: [],
   avatar: '', avatarObjectPath: null, coverImage: '', coverImageObjectPath: null, age: null, dateOfBirth: null, showAge: false, verified: false, revision: 1,
 };
 const seedEdits: CreatorEdit[] = [
@@ -616,8 +621,8 @@ function TastekinApp() {
     try {
       const response = await fetch('/api/public-feed', { credentials: 'include', cache: 'no-store' });
       if (!response.ok) { setPublicFeedError(true); setPublicFeedEdits([]); return; }
-      const payload = await response.json() as { items?: Array<{ creatorUsername: string; creatorName: string; creatorVerified: boolean; creatorAvatar: string; following: boolean; edit: CreatorEdit }> };
-      setPublicFeedEdits((payload.items || []).map((item) => ({ ...item.edit, creatorUsername: item.creatorUsername, creatorName: item.creatorName, creatorVerified: item.creatorVerified, creatorAvatar: item.creatorAvatar, following: item.following })));
+      const payload = await response.json() as { items?: Array<{ creatorUsername: string; creatorName: string; creatorVerified: boolean; creatorAvatar: string; following: boolean; edit: CreatorEdit; matchScore?: number | null; sharedTastes?: SharedTaste[] }> };
+      setPublicFeedEdits((payload.items || []).map((item) => ({ ...item.edit, creatorUsername: item.creatorUsername, creatorName: item.creatorName, creatorVerified: item.creatorVerified, creatorAvatar: item.creatorAvatar, following: item.following, matchScore: item.matchScore, sharedTastes: item.sharedTastes })));
       setPublicFeedError(false);
     } catch { setPublicFeedError(true); setPublicFeedEdits([]); }
   }, []);
@@ -1079,7 +1084,7 @@ function TastekinApp() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           displayName: profileForm.displayName, username: profileForm.username, bio: profileForm.bio, city: profileForm.city,
-          country: profileForm.country, interests: profileForm.interests, dateOfBirth: profileForm.dateOfBirth,
+          country: profileForm.country, interests: profileForm.interests, tasteTags: profileForm.tasteTags, dateOfBirth: profileForm.dateOfBirth,
           showAge: profileForm.showAge, avatarObjectPath, coverImageObjectPath: profileForm.coverImageObjectPath,
         }),
       });
@@ -1783,7 +1788,7 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
   const toggleCategory = (id: string) => setCategories((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
   const toggleTag = (id: string) => setTags((prev) => prev.includes(id) ? prev.filter((tg) => tg !== id) : [...prev, id]);
 
-  const saveProfileFields = async (updates: Partial<Pick<CreatorProfile, 'displayName' | 'username' | 'city' | 'avatarObjectPath' | 'interests'>>) => {
+  const saveProfileFields = async (updates: Partial<Pick<CreatorProfile, 'displayName' | 'username' | 'city' | 'avatarObjectPath' | 'interests' | 'tasteTags'>>) => {
     const body = {
       displayName: updates.displayName ?? creatorProfile.displayName,
       username: updates.username ?? creatorProfile.username,
@@ -1791,6 +1796,7 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
       city: updates.city ?? creatorProfile.city,
       country: creatorProfile.country,
       interests: updates.interests ?? creatorProfile.interests,
+      tasteTags: updates.tasteTags ?? creatorProfile.tasteTags ?? [],
       dateOfBirth: creatorProfile.dateOfBirth,
       showAge: creatorProfile.showAge,
       avatarObjectPath: updates.avatarObjectPath !== undefined ? updates.avatarObjectPath : creatorProfile.avatarObjectPath,
@@ -1851,7 +1857,9 @@ function OnboardingScreen({ ar, creatorProfile, onUploadPhoto, onDone }: { ar: b
   const continueTaste = () => void finishStep(async () => {
     const response = await fetch('/api/taste-preferences', { method: 'PUT', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ categories, tags }) });
     if (!response.ok) throw new Error(t('Could not save your taste preferences.', 'تعذر حفظ تفضيلات ذوقك.'));
-    await saveProfileFields({ interests: categories });
+    // With taste ranking on, the tags a new creator picks for themselves also
+    // describe their profile, so their Edits can match from day one.
+    await saveProfileFields({ interests: categories, ...(session.featureFlags.taste_ranking === true ? { tasteTags: tags } : {}) });
   });
 
   const stepIndex = Math.max(0, ONBOARDING_STEPS.slice(0, 4).indexOf(step as (typeof ONBOARDING_STEPS)[number]));
@@ -1979,6 +1987,18 @@ function PlaceDetails({ edit, ar, compact = false, showName = true, showLocation
   </div>;
 }
 function SaveButton({ edit, ar, saved, onSave }: { edit: CreatorEdit; ar: boolean; saved: boolean; onSave: () => void }) { return <button className={`approved-save ${saved ? 'saved' : ''}`} data-testid={`save-${edit.id}`} onClick={onSave} aria-label={saved ? (ar ? 'إزالة من المحفوظات' : 'Remove from saved') : (ar ? 'حفظ التعديل' : 'Save Edit')} aria-pressed={saved}><Bookmark size={18} fill={saved ? 'currentColor' : 'none'} /></button>; }
+/**
+ * "Matches your taste: quiet luxury, tailoring" under a Home card — the
+ * transparent reason an Edit is where it is. Rendered only when the server
+ * sent a taste score (taste_ranking flag on, complete viewer profile) and at
+ * least one shared taste exists; never shows any count.
+ */
+function TasteMatchLine({ edit, ar }: { edit: CreatorEdit; ar: boolean }) {
+  if (typeof edit.matchScore !== 'number' || !edit.sharedTastes?.length) return null;
+  const names = edit.sharedTastes.slice(0, 2).map((taste) => ar ? taste.labelAr : taste.label.toLowerCase());
+  return <p className="feed-match" data-testid={`feed-match-${edit.id}`}><Sparkles size={12} aria-hidden="true" /> {ar ? `يطابق ذوقك: ${names.join('، ')}` : `Matches your taste: ${names.join(', ')}`}</p>;
+}
+
 function CreatorAttribution({ edit, ar, onOpenProfile }: { edit: CreatorEdit; ar: boolean; onOpenProfile?: () => void }) {
   if (!edit.creatorUsername) return null;
   const content = <><span className="feed-creator-avatar">{edit.creatorAvatar ? <MediaImage src={imageSrc(edit.creatorAvatar)} alt="" /> : edit.creatorName?.slice(0, 1)}</span><span><strong>{edit.creatorName || edit.creatorUsername}</strong><small>@{edit.creatorUsername}</small></span>{edit.creatorVerified && <img className="feed-taste-seal" src={TASTE_SEAL_IMAGE} alt="Verified by TASTEKIN" />}</>;
@@ -2233,15 +2253,15 @@ function EditCard({ edit, ar, saved, onSave, onOpen, onOpenProfile, videoAutopla
   const caption = publicCaptionLine(edit, ar);
   if (edit.video) {
     return <article className="approved-card" data-testid={`edit-card-${edit.id}`}>
-      <CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} />
+      <CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} />
       {videoAutoplay ? <HomeVideoCard id={edit.id} video={edit.video} ar={ar} onOpen={onOpen} /> : <button className="approved-art" onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><PosterVideoCard video={edit.video} ar={ar} /></button>}
       {caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}
       {!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}
     </article>;
   }
   const noPhoto = !edit.image;
-  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
-  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
+  if (noPhoto) return <article className="approved-card place-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} /><button className="place-card-main" onClick={onOpen}><span className="place-card-category">{displayCategory(edit.category, ar ? 'ar' : 'en')}</span><PlaceDetails edit={edit} ar={ar} /><span className="place-card-open">{ar ? 'عرض التوصية' : 'View recommendation'} <ChevronRight size={15} /></span></button><div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div></div></article>;
+  return <article className="approved-card" data-testid={`edit-card-${edit.id}`}><CreatorAttribution edit={edit} ar={ar} onOpenProfile={onOpenProfile} /><TasteMatchLine edit={edit} ar={ar} /><button className="approved-art" style={{ aspectRatio: capPortraitHeight ? homeFeedAspectRatio(edit.crop?.aspect, edit.crop) : cropAspectRatio(edit.crop?.aspect, edit.crop) }} onClick={onOpen} aria-label={ar ? `فتح ${caption || edit.titleAr || edit.title || 'التعديل'}` : `Open ${caption || edit.title || 'Edit'}`}><MediaImage src={imageSrc(edit.image)} alt={edit.altText} /></button>{caption && <div className="approved-caption"><div className="approved-caption-row"><button className="approved-card-title" data-testid={`edit-title-${edit.id}`} onClick={onOpen}>{caption}</button><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>{isPlaceCategory(edit.category) && <PlaceDetails edit={edit} ar={ar} compact />}</div>}{!caption && <div className="approved-caption approved-caption-empty"><SaveButton edit={edit} ar={ar} saved={saved} onSave={onSave} /></div>}</article>;
 }
 
 function SavedScreen({ ar, saved, lists, activeListId, edits, onSelectList, onCreateList, onRenameList, onDeleteList, onOpen, onUnsave }: { ar: boolean; saved: string[]; lists: SavedList[]; activeListId: string | null; edits: CreatorEdit[]; onSelectList: (id: string | null) => void; onCreateList: () => void; onRenameList: (id: string, name: string) => Promise<void>; onDeleteList: (id: string) => Promise<void>; onOpen: (edit: CreatorEdit) => void; onUnsave: (id: string) => void }) {
@@ -5978,6 +5998,11 @@ function VerificationApplicationScreen({ ar, onDone, hasPublishedEdit, onOpenCom
 }
 
 function ProfileEditor({ ar, form, photo, busy, error, saved, onChange, onPhotoPrepared, onCancelPhoto, onSave }: { ar: boolean; form: CreatorProfile; photo: PendingProfilePhoto | null; busy: boolean; error: string; saved: boolean; onChange: (profile: CreatorProfile) => void; onPhotoPrepared: (photo: PendingProfilePhoto) => void; onCancelPhoto: () => void; onSave: () => void }) {
+  // Taste tags (flag taste_ranking): the catalog's tags, narrowed to the
+  // categories the creator picked when there are any, up to 8 selected.
+  const tasteRankingEnabled = useTasteSession().featureFlags.taste_ranking === true;
+  const { data: tasteCatalog } = useGetTasteCatalog();
+  const tasteTagOptions = (tasteCatalog?.tags ?? []).filter((tag) => !form.interests.length || form.interests.includes(tag.categoryId) || form.tasteTags.includes(tag.id));
   const t = (en: string, arabic: string) => ar ? arabic : en;
   const [processing, setProcessing] = useState(false);
   const [imageError, setImageError] = useState('');
@@ -5989,7 +6014,7 @@ function ProfileEditor({ ar, form, photo, busy, error, saved, onChange, onPhotoP
     try { setSource(await prepareImage(file)); } catch (cause) { setImageError(cause instanceof Error ? cause.message : t('Could not prepare your photo.', 'تعذر تجهيز صورتك.')); event.target.value = ''; } finally { setProcessing(false); }
   };
   if (source) return <ProfilePhotoCropper ar={ar} source={source} onCancel={() => { URL.revokeObjectURL(source.url); setSource(null); }} onConfirm={(next) => { URL.revokeObjectURL(source.url); setSource(null); onPhotoPrepared(next); }} />;
-  return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || apiUrl(form.avatar)} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div><div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{profileErrorText(error, ar)}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
+  return <section className="profile-editor"><span className="approved-kicker">{t('Creator profile', 'ملف المبدع')}</span><h1 className="approved-title">{t('Edit profile', 'تعديل الملف')}</h1><p className="profile-editor-intro">{t('Shape the identity visitors see. Verification and audience numbers remain managed by TASTEKIN.', 'حدّد الهوية التي يراها الزوار. تبقى حالة التوثيق وأرقام الجمهور تحت إدارة تيستكن.')}</p><label className="profile-photo-picker"><Avatar profile={form} src={photo?.url || apiUrl(form.avatar)} /><span><ImagePlus size={16} /> {processing ? t('Preparing…', 'جارٍ التجهيز…') : t('Change photo', 'تغيير الصورة')}</span><input aria-label={t('Change profile photo', 'تغيير صورة الملف')} type="file" accept="image/jpeg,image/png,image/heic,image/heif,image/webp,.heic,.heif" onChange={selectPhoto} disabled={processing || busy} /></label>{imageError && <p className="workspace-notice" role="alert">{imageError}</p>}<Field label={t('Display name', 'الاسم الظاهر')} value={form.displayName} onChange={(value) => update('displayName', value)} placeholder={t('Your name', 'اسمك')} /><Field label={t('Username', 'اسم المستخدم')} value={form.username} onChange={(value) => update('username', value.toLowerCase().replace(/[^a-z0-9_]/g, ''))} placeholder="yourname" /><Field label={t('Bio', 'النبذة')} value={form.bio} onChange={(value) => update('bio', value)} placeholder={t('A few words about your taste…', 'بضع كلمات عن ذوقك…')} multiline /><div className="form-two"><Field label={t('City', 'المدينة')} value={form.city} onChange={(value) => update('city', value)} placeholder={t('Your city', 'مدينتك')} /><Field label={t('Country', 'الدولة')} value={form.country} onChange={(value) => update('country', value)} placeholder={t('Your country', 'دولتك')} /></div><span className="form-label">{t('Taste categories', 'فئات الذوق')}</span><div className="profile-interests">{categories.filter((category) => category.id !== 'All').map((category) => <button key={category.id} type="button" className={form.interests.includes(category.id) ? 'selected' : ''} onClick={() => update('interests', form.interests.includes(category.id) ? form.interests.filter((id) => id !== category.id) : [...form.interests, category.id])} disabled={busy}>{form.interests.includes(category.id) && <Check size={13} />}{ar ? category.ar : category.en}</button>)}</div>{tasteRankingEnabled && <><span className="form-label">{t('Taste tags', 'وسوم الذوق')}</span><p className="form-field-hint">{t('Up to 8 tags that describe what you publish. They power Taste Match and the taste-ranked Home.', 'حتى 8 وسوم تصف ما تنشره؛ تُستخدم في تطابق الذوق وترتيب الرئيسية حسب الذوق.')}</p><div className="profile-interests" data-testid="profile-taste-tags">{tasteTagOptions.map((tag) => { const selected = form.tasteTags.includes(tag.id); const full = !selected && form.tasteTags.length >= 8; return <button key={tag.id} type="button" className={selected ? 'selected' : ''} data-testid={`taste-tag-${tag.id}`} aria-pressed={selected} onClick={() => update('tasteTags', selected ? form.tasteTags.filter((id) => id !== tag.id) : [...form.tasteTags, tag.id])} disabled={busy || full}>{selected && <Check size={13} />}{ar ? tag.labelAr : tag.label}</button>; })}</div></>}<div className="profile-privacy"><Field label={t('Date of birth', 'تاريخ الميلاد')} value={form.dateOfBirth || ''} onChange={(value) => update('dateOfBirth', value || null)} placeholder="YYYY-MM-DD" type="date" /><label className="age-toggle"><input type="checkbox" checked={form.showAge} onChange={(event) => update('showAge', event.target.checked)} disabled={busy} /><span><strong>{t('Show my age on my profile', 'أظهر عمري في ملفي')}</strong><small>{t('Your date of birth stays private.', 'يبقى تاريخ ميلادك خاصاً.')}</small></span></label></div>{error && <p className="workspace-notice" role="alert">{profileErrorText(error, ar)}</p>}{saved && <p className="profile-save-success" role="status">{t('Profile saved. Your public profile is up to date.', 'تم حفظ الملف. ملفك العام محدّث الآن.')}</p>}<button className="approved-button primary wide" onClick={onSave} disabled={busy || processing}>{busy ? t('Saving…', 'جارٍ الحفظ…') : t('Save profile', 'حفظ الملف')}</button>{photo && <button className="profile-remove-photo" type="button" onClick={onCancelPhoto}>{t('Discard new photo', 'تجاهل الصورة الجديدة')}</button>}</section>;
 }
 
 // --- Video Foundation, Phase 3A: the composer's upload state machine -------
