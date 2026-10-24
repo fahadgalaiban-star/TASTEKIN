@@ -137,3 +137,229 @@ export function inferTasteTags(source: TasteTagSource, max = MAX_INFERRED_EDIT_T
   scored.sort((left, right) => right.sameCategory - left.sameCategory || right.hits - left.hits || left.index - right.index);
   return scored.slice(0, max).map((entry) => entry.id);
 }
+
+// ---------------------------------------------------------------------------
+/**
+ * Taste in KIN Travel (feature flag taste_everywhere).
+ *
+ * Two pure helpers shared by the web app, the API server and the unit
+ * tests:
+ *  - travelInterestsForTaste: which "Choose your interests" chips a taste
+ *    profile suggests, so the step opens with them already on;
+ *  - creatorPlacesForDestination: which real places from Edits the member
+ *    saved, or from creators they follow, sit in the destination and may
+ *    join the plan.
+ *
+ * "Follow your taste, not the numbers": neither helper has an input for
+ * likes, saves, views or followers. Candidate order is: the member's own
+ * saved Edits first, then followed creators, then newest Edit first. The
+ * tests permute count fields on the inputs and assert nothing moves.
+ */
+
+/** The guided flow's chip values (kin-search.ts KIN_TRAVEL_INTERESTS, mirrored to keep this package dependency-free). */
+export const TRAVEL_INTERESTS = [
+  "breakfast", "dinner", "cafes", "shopping", "museums", "parks", "hidden_gems", "gyms", "pilates", "walking_places",
+] as const;
+export type TravelInterest = (typeof TRAVEL_INTERESTS)[number];
+
+/** At most this many chips are pre-selected; the member can always add or remove any. */
+export const MAX_PRESELECTED_TRAVEL_INTERESTS = 4;
+/** A chip needs at least this many votes to be pre-selected: one tag's first chip, or two weaker hints. */
+export const MIN_PRESELECT_TRAVEL_VOTES = 2;
+
+/** Tag → chips. A tag may speak to more than one chip; the first listed is the strongest. */
+const TAG_TO_INTERESTS: Record<string, readonly TravelInterest[]> = {
+  "coffee-stops": ["cafes", "breakfast"],
+  "long-lunches": ["dinner"],
+  "table-setting": ["dinner"],
+  "morning-rituals": ["breakfast", "cafes"],
+  "city-guides": ["museums", "hidden_gems"],
+  "hidden-gems": ["hidden_gems"],
+  "architecture": ["museums", "walking_places"],
+  "slow-travel": ["walking_places", "parks"],
+  "coastal-escapes": ["walking_places", "parks"],
+  "packing-notes": [],
+  "quiet-luxury": ["shopping"],
+  "tailoring": ["shopping"],
+  "neutral-layers": ["shopping"],
+  "everyday-uniforms": ["shopping"],
+  "fragrance": ["shopping"],
+  "simple-skincare": [],
+  "wellbeing": ["walking_places", "pilates"],
+  "strength-training": ["gyms"],
+  "recovery": ["pilates", "walking_places"],
+  "calm-interiors": ["shopping"],
+  "natural-light": ["parks"],
+  "slow-living": ["parks", "cafes"],
+  "weekly-reset": [],
+  "reading-lists": ["cafes"],
+  "creative-nonfiction": ["museums"],
+  "city-diaries": ["hidden_gems", "walking_places"],
+  "visual-journals": ["walking_places", "museums"],
+};
+
+/** Category → chips, used with a lower weight so tags decide ties. */
+const CATEGORY_TO_INTERESTS: Record<string, readonly TravelInterest[]> = {
+  Restaurants: ["dinner", "cafes"],
+  Travel: ["hidden_gems", "walking_places"],
+  Places: ["museums", "hidden_gems"],
+  Fashion: ["shopping"],
+  Decor: ["shopping"],
+  PersonalCare: ["shopping"],
+  HealthFitness: ["gyms", "walking_places"],
+  DailyRoutine: ["breakfast", "cafes"],
+  Books: ["cafes"],
+  Vlogs: ["hidden_gems"],
+};
+
+export type TasteSelectionLike = { categories: readonly string[]; tags: readonly string[] };
+
+/**
+ * The chips a taste profile suggests, strongest first, capped. Every tag
+ * votes 2 for its first chip and 1 for each other chip it lists; every
+ * category votes 1 for its chips. Only chips with MIN_PRESELECT_TRAVEL_VOTES
+ * or more are suggested. Ties keep the catalog chip order so the result is
+ * stable. An empty or unknown profile suggests nothing.
+ */
+export function travelInterestsForTaste(selection: TasteSelectionLike | null | undefined, max = MAX_PRESELECTED_TRAVEL_INTERESTS): TravelInterest[] {
+  if (!selection) return [];
+  const votes = new Map<TravelInterest, number>();
+  const vote = (interest: TravelInterest, weight: number) => votes.set(interest, (votes.get(interest) ?? 0) + weight);
+  for (const tag of new Set(selection.tags)) {
+    const chips = TAG_TO_INTERESTS[tag] ?? [];
+    chips.forEach((chip, index) => vote(chip, index === 0 ? 2 : 1));
+  }
+  for (const category of new Set(selection.categories)) {
+    for (const chip of CATEGORY_TO_INTERESTS[category] ?? []) vote(chip, 1);
+  }
+  return [...votes.entries()]
+    .filter(([, weight]) => weight >= MIN_PRESELECT_TRAVEL_VOTES)
+    .sort((left, right) => right[1] - left[1] || TRAVEL_INTERESTS.indexOf(left[0]) - TRAVEL_INTERESTS.indexOf(right[0]))
+    .slice(0, Math.max(0, max))
+    .map(([chip]) => chip);
+}
+
+/** An Edit with a real place on it, as stored on the creator's workspace. */
+export type CreatorPlaceSource = {
+  editId: string;
+  creatorUsername: string;
+  creatorDisplayName: string;
+  placeName: string;
+  /** "Paris, France", "Saint-Germain, Paris" — whatever the creator typed. */
+  locationLabel?: string | null;
+  location?: string | null;
+  locationAr?: string | null;
+  mapsUrl?: string | null;
+  /** Why this Edit is a candidate for THIS member. */
+  via: "saved" | "followed";
+  /** Newest first within a group; any monotonic value (workspace update time is fine). */
+  updatedAt?: Date | string | null;
+};
+
+export type CreatorPlace = {
+  editId: string;
+  creatorUsername: string;
+  creatorDisplayName: string;
+  placeName: string;
+  locationLabel: string;
+  mapsUrl: string | null;
+  via: "saved" | "followed";
+};
+
+export const MAX_CREATOR_PLACES_PER_PLAN = 5;
+
+/**
+ * Puts resolved creator places into a day-by-day plan. A place the plan
+ * already holds (same placeId) is kept where it is and only gains its
+ * creator label; a new one goes to the day with the fewest stops, between
+ * breakfast and dinner when the day has them. Nothing is dropped.
+ */
+export function mergeCreatorPlacesIntoDays<T extends { placeId: string; requestedSlot?: string | null }>(
+  days: readonly (readonly T[])[],
+  creatorPlaces: readonly T[],
+  label: (existing: T, incoming: T) => T,
+): T[][] {
+  const result = days.map((day) => [...day]);
+  if (!result.length) return result;
+  for (const incoming of creatorPlaces) {
+    let placed = false;
+    for (const day of result) {
+      const index = day.findIndex((place) => place.placeId === incoming.placeId);
+      if (index >= 0) { day[index] = label(day[index], incoming); placed = true; break; }
+    }
+    if (placed) continue;
+    const target = result.reduce((best, day) => (day.length < best.length ? day : best), result[0]);
+    const lastIsDinner = target.length > 0 && target[target.length - 1].requestedSlot === "DINNER";
+    target.splice(lastIsDinner ? target.length - 1 : target.length, 0, incoming);
+  }
+  return result;
+}
+
+/** Lower-cases, strips punctuation/diacritics and the Arabic definite article, so "Paris", "paris, france" and "باريس" compare by words. */
+export function normalizePlaceWords(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .normalize("NFKD")
+    .replace(/[̀-ًͯ-ْ]/g, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .split(/\s+/)
+    .map((word) => word.replace(/^(ال|the)/u, ""))
+    .filter((word) => word.length >= 2);
+}
+
+/**
+ * True when every word of the destination's first part (before a comma)
+ * appears in the Edit's place text. "Paris" matches "Paris, France" and
+ * "Le Marais, Paris"; "Paris, Texas" does not match "Paris, France".
+ */
+export function placeMatchesDestination(source: Pick<CreatorPlaceSource, "placeName" | "locationLabel" | "location" | "locationAr">, destination: string): boolean {
+  const [head, ...rest] = destination.split(",");
+  const wanted = normalizePlaceWords(head);
+  if (!wanted.length) return false;
+  const haystack = new Set(normalizePlaceWords([source.locationLabel, source.location, source.locationAr, source.placeName].filter(Boolean).join(" ")));
+  if (!wanted.every((word) => haystack.has(word))) return false;
+  // A qualifier after the comma ("Paris, Texas") must not contradict the Edit's own qualifier.
+  const qualifier = normalizePlaceWords(rest.join(" "));
+  const editQualifier = normalizePlaceWords((source.locationLabel ?? source.location ?? "").split(",").slice(1).join(" "));
+  if (qualifier.length && editQualifier.length && !qualifier.some((word) => editQualifier.includes(word))) return false;
+  return true;
+}
+
+/**
+ * Picks the creator places for one plan: in the destination, no duplicate
+ * place names, saved Edits before followed creators, newest first within
+ * each group, capped. Nothing about counts is read; nothing about other
+ * members is an input.
+ */
+export function creatorPlacesForDestination(sources: readonly CreatorPlaceSource[], destination: string, max = MAX_CREATOR_PLACES_PER_PLAN): CreatorPlace[] {
+  const time = (value: CreatorPlaceSource["updatedAt"]) => {
+    if (!value) return 0;
+    const parsed = value instanceof Date ? value.getTime() : new Date(value).getTime();
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const ordered = sources
+    .filter((source) => source.placeName.trim() && placeMatchesDestination(source, destination))
+    .sort((left, right) =>
+      (left.via === right.via ? 0 : left.via === "saved" ? -1 : 1)
+      || time(right.updatedAt) - time(left.updatedAt)
+      || left.editId.localeCompare(right.editId));
+  const seen = new Set<string>();
+  const picked: CreatorPlace[] = [];
+  for (const source of ordered) {
+    const key = normalizePlaceWords(source.placeName).join(" ");
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    picked.push({
+      editId: source.editId,
+      creatorUsername: source.creatorUsername,
+      creatorDisplayName: source.creatorDisplayName,
+      placeName: source.placeName.trim(),
+      locationLabel: (source.locationLabel || source.location || "").trim(),
+      mapsUrl: source.mapsUrl ?? null,
+      via: source.via,
+    });
+    if (picked.length >= max) break;
+  }
+  return picked;
+}
